@@ -1,268 +1,43 @@
+// index.html (gekürzt für Übersicht)
+
 <!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Eierhütten-Radtour</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <style>
-    body, html {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      font-family: sans-serif;
-    }
-    #map {
-      height: 100%;
-      width: 100%;
-    }
-    .info-box {
-      background: white;
-      padding: 10px;
-      border-radius: 5px;
-      font-size: 14px;
-    }
-    .btn-tour {
-      margin-top: 10px;
-      padding: 5px 10px;
-      background: green;
-      color: white;
-      border: none;
-      cursor: pointer;
-      border-radius: 3px;
-    }
-    #sidebar {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background: white;
-      padding: 10px;
-      border-radius: 8px;
-      z-index: 1000;
-      box-shadow: 0 0 10px rgba(0,0,0,0.2);
-      width: 270px;
-    }
-    #sidebar h2 {
-      margin-top: 0;
-    }
-    #tour-list {
-      margin: 10px 0;
-      max-height: 150px;
-      overflow-y: auto;
-    }
-    .tour-item {
-      padding: 5px;
-      border-bottom: 1px solid #ddd;
-    }
-    #routeBtn, #downloadBtn, #adminBtn {
-      background: #007bff;
-      color: white;
-      padding: 6px 10px;
-      border: none;
-      border-radius: 3px;
-      cursor: pointer;
-      margin-top: 10px;
-    }
-    #stats {
-      margin-top: 10px;
-      font-size: 14px;
-    }
-    .filter {
-      margin-bottom: 10px;
-    }
-    #adminPanel {
-      display: none;
-      position: absolute;
-      top: 20px;
-      right: 20px;
-      background: white;
-      padding: 10px;
-      width: 300px;
-      max-height: 90%;
-      overflow-y: auto;
-      border-radius: 8px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.3);
-      z-index: 2000;
-    }
-    #adminPanel input, #adminPanel textarea {
-      width: 100%;
-      margin-bottom: 5px;
-      padding: 4px;
-    }
-    .admin-entry {
-      border-bottom: 1px solid #ccc;
-      margin-bottom: 10px;
-    }
-  </style>
+  <meta charset="UTF-8">
+  <title>Eierhütten-Fahrradtour</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
   <div id="sidebar">
-    <h2>Meine Tour</h2>
-    <div class="filter">
-      <label><input type="checkbox" id="stromFilter"> Nur mit Stromversorgung anzeigen</label>
+    <h2>🐣 Eierhütten</h2>
+    <button onclick="toggleAdmin()">Admin</button>
+    <div id="info"></div>
+  </div>
+  <div id="map"></div>  <div id="adminPanel" style="display:none">
+    <h3>Admin-Modus</h3>
+    <label>Passwort: <input id="adminPass" type="password"></label>
+    <button onclick="checkAdmin()">Login</button>
+    <div id="adminControls" style="display:none">
+      <h4>Neue Hütte hinzufügen</h4>
+      <input id="newName" placeholder="Name">
+      <input id="newDesc" placeholder="Beschreibung">
+      <label><input type="checkbox" id="newStrom"> Strom</label>
+      <input type="date" id="newAbo">
+      <button onclick="addHuette()">Hinzufügen</button>
+      <div id="huettenList"></div>
     </div>
-    <div id="tour-list"></div>
-    <button id="routeBtn">Route berechnen</button>
-    <button id="downloadBtn" style="display:none">GPX herunterladen</button>
-    <button id="adminBtn">Admin</button>
-    <div id="stats"></div>
-  </div>  <div id="adminPanel">
-    <h3>Admin-Panel</h3>
-    <input type="password" id="adminPass" placeholder="Passwort eingeben...">
-    <div id="adminContent" style="display:none">
-      <button onclick="addNewHuette()">+ Neue Hütte hinzufügen</button>
-      <div id="adminList"></div>
-    </div>
-  </div>  <div id="map"></div>  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>  <script>
-    const apiKey = "5b3ce3597851110001cf624893412fe92e0448e493663f2482a80572";
-
-    const map = L.map('map').setView([51.1657, 10.4515], 6);
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 18,
-      attribution: '&copy; OpenStreetMap-Mitwirkende'
-    }).addTo(map);
-
-    const huetten = [
-      {
-        id: 1,
-        name: "Hofladen Müller",
-        lat: 50.9375,
-        lon: 6.9603,
-        strom: true,
-        besonderheiten: "Hausgemachte Nudeln, SB-Kasse"
-      },
-      {
-        id: 2,
-        name: "Eierhütte am Waldrand",
-        lat: 51.0504,
-        lon: 13.7373,
-        strom: false,
-        besonderheiten: "Eier, Kartoffeln, Marmelade"
-      }
-    ];
-
-    let nextId = 3;
-    const selectedHuetten = [];
-    let routeLine = null;
-    let lastGeoJSON = null;
-    const markerLayer = L.layerGroup().addTo(map);
-
-    function createPopupContent(hütte) {
-      return `
-        <div class="info-box">
-          <strong>${hütte.name}</strong><br/>
-          Besonderheiten: ${hütte.besonderheiten}<br/>
-          Stromversorgung: ${hütte.strom ? 'Ja' : 'Nein'}<br/>
-          <button class="btn-tour" onclick="addToTour(${hütte.id})">Zur Tour hinzufügen</button>
-        </div>
-      `;
-    }
-
-    function addToTour(id) {
-      const hütte = huetten.find(h => h.id === id);
-      if (!selectedHuetten.includes(hütte)) {
-        selectedHuetten.push(hütte);
-        updateTourList();
-      }
-    }
-
-    function updateTourList() {
-      document.getElementById('tour-list').innerHTML = selectedHuetten.map(h => `<div class="tour-item">${h.name}</div>`).join('');
-    }
-
-    async function calculateRoute() {
-      if (routeLine) map.removeLayer(routeLine);
-      if (selectedHuetten.length < 2) return alert("Bitte mindestens zwei Hütten auswählen.");
-      const coordinates = selectedHuetten.map(h => [h.lon, h.lat]);
-      try {
-        const res = await fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": apiKey
-          },
-          body: JSON.stringify({ coordinates })
-        });
-        const data = await res.json();
-        lastGeoJSON = data;
-        routeLine = L.geoJSON(data, { style: { color: 'blue', weight: 5 } }).addTo(map);
-        map.fitBounds(routeLine.getBounds());
-        const s = data.features[0].properties.summary;
-        document.getElementById("stats").innerHTML = `<strong>Gesamtdistanz:</strong> ${(s.distance / 1000).toFixed(2)} km<br/><strong>Fahrzeit:</strong> ca. ${Math.round(s.duration / 60)} Minuten`;
-        document.getElementById("downloadBtn").style.display = "inline-block";
-      } catch (e) {
-        alert("Fehler beim Routing: " + e.message);
-      }
-    }
-
-    function downloadGPX() {
-      if (!lastGeoJSON) return;
-      const coords = lastGeoJSON.features[0].geometry.coordinates;
-      let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="EierhüttenApp" xmlns="http://www.topografix.com/GPX/1/1">\n<trk><name>Meine Eierhüttentour</name><trkseg>`;
-      coords.forEach(([lon, lat]) => { gpx += `\n<trkpt lat="${lat}" lon="${lon}"></trkpt>`; });
-      gpx += `\n</trkseg></trk></gpx>`;
-      const blob = new Blob([gpx], { type: 'application/gpx+xml' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = "tour.gpx";
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-
-    function updateMarkers() {
-      markerLayer.clearLayers();
-      const filterStrom = document.getElementById("stromFilter").checked;
-      huetten.filter(h => !filterStrom || h.strom).forEach(hütte => {
-        const m = L.marker([hütte.lat, hütte.lon]).bindPopup(createPopupContent(hütte));
-        markerLayer.addLayer(m);
-      });
-    }
-
-    function showAdmin() {
-      const pw = document.getElementById("adminPass").value;
-      if (pw === "admin") {
-        document.getElementById("adminContent").style.display = "block";
-        renderAdminList();
-      } else {
-        alert("Falsches Passwort");
-      }
-    }
-
-    function renderAdminList() {
-      const list = document.getElementById("adminList");
-      list.innerHTML = huetten.map(h => `
-        <div class="admin-entry">
-          <input value="${h.name}" onchange="h.name=this.value" />
-          <textarea onchange="h.besonderheiten=this.value">${h.besonderheiten}</textarea><label><input type="checkbox" ${h.strom ? 'checked' : ''} onchange="h.strom=this.checked"> Strom</label>
-      <button onclick="deleteHuette(${h.id})">Löschen</button>
-    </div>`).join('');
-  updateMarkers();
-}
-
-function deleteHuette(id) {
-  const idx = huetten.findIndex(h => h.id === id);
-  if (idx > -1) huetten.splice(idx, 1);
-  renderAdminList();
-}
-
-function addNewHuette() {
-  const latlng = map.getCenter();
-  huetten.push({ id: nextId++, name: "Neue Hütte", lat: latlng.lat, lon: latlng.lng, strom: false, besonderheiten: "" });
-  renderAdminList();
-}
-
-document.getElementById("routeBtn").addEventListener("click", calculateRoute);
-document.getElementById("downloadBtn").addEventListener("click", downloadGPX);
-document.getElementById("stromFilter").addEventListener("change", updateMarkers);
-document.getElementById("adminBtn").addEventListener("click", () => {
-  const panel = document.getElementById("adminPanel");
-  panel.style.display = panel.style.display === "none" ? "block" : "none";
-});
-document.getElementById("adminPass").addEventListener("change", showAdmin);
-
-updateMarkers();
-
-  </script>
+  </div>
+  <script src="app.js"></script>
 </body>
-</html>
+</html>// app.js const map = L.map('map').setView([51, 10], 6); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+let huetten = [ { id: 1, name: "Müllers Eier", desc: "Bio-Eier und Honig", lat: 51.5, lng: 10.5, strom: true, aboBis: "2025-12-31" }, { id: 2, name: "Hofladen Schulze", desc: "Eier & Saft", lat: 51.7, lng: 10.8, strom: false, aboBis: "2024-12-01" }, ];
+
+const markerLayer = L.layerGroup().addTo(map); function renderHuetten() { markerLayer.clearLayers(); huetten.filter(h => new Date(h.aboBis) >= new Date()).forEach(h => { const m = L.marker([h.lat, h.lng]).addTo(markerLayer); m.bindPopup(<b>${h.name}</b><br>${h.desc}<br>${h.strom ? '🔌 Strom vorhanden' : '❌ Kein Strom'}); }); } renderHuetten();
+
+// Admin let isAdmin = false; function toggleAdmin() { document.getElementById('adminPanel').style.display = 'block'; } function checkAdmin() { if (document.getElementById('adminPass').value === 'admin') { isAdmin = true; document.getElementById('adminControls').style.display = 'block'; renderAdminList(); } } function renderAdminList() { const list = document.getElementById('huettenList'); list.innerHTML = huetten.map(h => <div><b>${h.name}</b> (${h.aboBis}) <button onclick="removeHuette(${h.id})">🗑</button> <input type="date" value="${h.aboBis}" onchange="updateAbo(${h.id}, this.value)"></div> ).join(''); } function updateAbo(id, date) { const h = huetten.find(h => h.id === id); if (h) h.aboBis = date; renderHuetten(); renderAdminList(); } function removeHuette(id) { huetten = huetten.filter(h => h.id !== id); renderHuetten(); renderAdminList(); } function addHuette() { const name = document.getElementById('newName').value; const desc = document.getElementById('newDesc').value; const strom = document.getElementById('newStrom').checked; const aboBis = document.getElementById('newAbo').value; const id = Date.now(); const center = map.getCenter(); huetten.push({ id, name, desc, strom, lat: center.lat, lng: center.lng, aboBis }); renderHuetten(); renderAdminList(); }
+
+// TODO: Route, Teilen, Favoriten usw.
+
