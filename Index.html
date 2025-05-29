@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Eierhütten-Fahrradtour</title>
+  <title>Eierhütten-Radtour</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
-    html, body {
+    body, html {
       margin: 0;
       padding: 0;
       height: 100%;
@@ -21,9 +21,9 @@
     }
 
     #sidebar {
-      width: 250px;
+      width: 280px;
       padding: 10px;
-      background: #f8f8f8;
+      background: #f7f7f7;
       overflow-y: auto;
       border-right: 1px solid #ccc;
     }
@@ -32,16 +32,10 @@
       flex: 1;
     }
 
-    #adminPanel {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      background: white;
-      z-index: 1000;
-      padding: 10px;
-      border-bottom: 1px solid #aaa;
-      display: none;
+    button {
+      margin: 5px 0;
+      width: 100%;
+      padding: 8px;
     }
 
     @media (max-width: 768px) {
@@ -51,7 +45,6 @@
 
       #sidebar {
         width: 100%;
-        height: auto;
         border-right: none;
         border-bottom: 1px solid #ccc;
       }
@@ -59,22 +52,6 @@
       #map {
         height: 100%;
       }
-
-      #adminPanel {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        max-height: 90vh;
-        overflow-y: auto;
-      }
-    }
-
-    input, button {
-      display: block;
-      margin: 5px 0;
-      width: 100%;
-      box-sizing: border-box;
     }
   </style>
 </head>
@@ -82,32 +59,21 @@
   <div id="app">
     <div id="sidebar">
       <h2>🐣 Eierhütten</h2>
-      <button onclick="toggleAdmin()">Admin</button>
-      <div id="info"></div>
+      <p>Klicke auf eine Hütte, um sie zur Route hinzuzufügen.</p>
+      <ul id="selectedList"></ul>
+      <button onclick="calculateRoute()">🗺️ Route berechnen</button>
+      <button onclick="resetRoute()">❌ Auswahl zurücksetzen</button>
     </div>
     <div id="map"></div>
   </div>
 
-  <div id="adminPanel">
-    <h3>Admin-Modus</h3>
-    <label>Passwort: <input id="adminPass" type="password" /></label>
-    <button onclick="checkAdmin()">Login</button>
-    <div id="adminControls" style="display: none;">
-      <h4>Neue Hütte hinzufügen</h4>
-      <input id="newName" placeholder="Name" />
-      <input id="newDesc" placeholder="Beschreibung" />
-      <label><input type="checkbox" id="newStrom" /> Strom</label>
-      <input type="date" id="newAbo" />
-      <button onclick="addHuette()">Hinzufügen</button>
-      <div id="huettenList"></div>
-    </div>
-  </div>
-
   <script>
-    const map = L.map('map').setView([51.5, 10.5], 7);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const apiKey = "5b3ce3597851110001cf624893412fe92e0448e493663f2482a80572"; // ← dein API-Key
 
-    let huetten = [
+    const map = L.map("map").setView([51.5, 10.5], 7);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+    const huetten = [
       {
         id: 1,
         name: "Müllers Eier",
@@ -115,7 +81,6 @@
         lat: 51.5,
         lng: 10.5,
         strom: true,
-        aboBis: "2025-12-31"
       },
       {
         id: 2,
@@ -124,82 +89,88 @@
         lat: 51.7,
         lng: 10.7,
         strom: false,
-        aboBis: "2024-12-01"
+      },
+      {
+        id: 3,
+        name: "Hofladen Huber",
+        desc: "Frische Eier aus Freilandhaltung",
+        lat: 51.6,
+        lng: 10.9,
+        strom: true,
       }
     ];
 
+    let selectedHuetten = [];
+    let routeLine = null;
+
     const markerLayer = L.layerGroup().addTo(map);
 
-    function renderHuetten() {
-      markerLayer.clearLayers();
-      const now = new Date();
-      huetten.filter(h => new Date(h.aboBis) >= now).forEach(h => {
-        const m = L.marker([h.lat, h.lng]).addTo(markerLayer);
-        m.bindPopup(`<b>${h.name}</b><br>${h.desc}<br>${h.strom ? "🔌 Strom vorhanden" : "❌ Kein Strom"}`);
+    huetten.forEach(h => {
+      const marker = L.marker([h.lat, h.lng]).addTo(markerLayer);
+      marker.bindPopup(`<b>${h.name}</b><br>${h.desc}<br>${h.strom ? "🔌 Strom vorhanden" : "❌ Kein Strom"}`);
+      marker.on("click", () => {
+        if (!selectedHuetten.includes(h)) {
+          selectedHuetten.push(h);
+          updateSelectedList();
+        }
       });
-    }
-    renderHuetten();
+    });
 
-    let isAdmin = false;
-
-    function toggleAdmin() {
-      document.getElementById("adminPanel").style.display = "block";
+    function updateSelectedList() {
+      const list = document.getElementById("selectedList");
+      list.innerHTML = selectedHuetten.map(h => `<li>${h.name}</li>`).join("");
     }
 
-    function checkAdmin() {
-      const input = document.getElementById("adminPass").value;
-      if (input === "admin") {
-        isAdmin = true;
-        document.getElementById("adminControls").style.display = "block";
-        renderAdminList();
-      } else {
-        alert("Falsches Passwort");
+    function resetRoute() {
+      selectedHuetten = [];
+      updateSelectedList();
+      if (routeLine) {
+        map.removeLayer(routeLine);
+        routeLine = null;
       }
     }
 
-    function renderAdminList() {
-      const list = document.getElementById("huettenList");
-      list.innerHTML = huetten.map(h =>
-        `<div><b>${h.name}</b> (Abo bis: ${h.aboBis})
-          <button onclick="removeHuette(${h.id})">🗑</button>
-          <input type="date" value="${h.aboBis}" onchange="updateAbo(${h.id}, this.value)">
-        </div>`
-      ).join('');
-    }
-
-    function updateAbo(id, newDate) {
-      const hut = huetten.find(h => h.id === id);
-      if (hut) {
-        hut.aboBis = newDate;
-        renderHuetten();
-        renderAdminList();
+    async function calculateRoute() {
+      if (selectedHuetten.length < 2) {
+        alert("Bitte mindestens zwei Hütten auswählen.");
+        return;
       }
-    }
 
-    function removeHuette(id) {
-      huetten = huetten.filter(h => h.id !== id);
-      renderHuetten();
-      renderAdminList();
-    }
-
-    function addHuette() {
-      const name = document.getElementById("newName").value;
-      const desc = document.getElementById("newDesc").value;
-      const strom = document.getElementById("newStrom").checked;
-      const aboBis = document.getElementById("newAbo").value;
-      const center = map.getCenter();
-      const newHuette = {
-        id: Date.now(),
-        name,
-        desc,
-        strom,
-        aboBis,
-        lat: center.lat,
-        lng: center.lng
+      const coordinates = selectedHuetten.map(h => [h.lng, h.lat]); // [lon, lat]
+      const body = {
+        coordinates,
+        format: "geojson",
       };
-      huetten.push(newHuette);
-      renderHuetten();
-      renderAdminList();
+
+      const response = await fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
+        method: "POST",
+        headers: {
+          "Authorization": apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        alert("Fehler bei der Routenberechnung.");
+        return;
+      }
+
+      const data = await response.json();
+
+      if (routeLine) {
+        map.removeLayer(routeLine);
+      }
+
+      routeLine = L.geoJSON(data, {
+        style: {
+          color: "green",
+          weight: 5,
+        }
+      }).addTo(map);
+
+      const bounds = routeLine.getBounds();
+      map.fitBounds(bounds);
     }
   </script>
 </body>
