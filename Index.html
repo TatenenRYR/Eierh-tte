@@ -1,13 +1,38 @@
-// index.html (gekürzt für Übersicht)
-
-<!DOCTYPE html><html lang="de">
+<!DOCTYPE html>
+<html lang="de">
 <head>
   <meta charset="UTF-8">
   <title>Eierhütten-Fahrradtour</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="style.css">
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      height: 100vh;
+      font-family: sans-serif;
+    }
+    #map {
+      flex: 1;
+    }
+    #sidebar {
+      width: 250px;
+      padding: 10px;
+      background: #f8f8f8;
+      overflow-y: auto;
+      border-right: 1px solid #ccc;
+    }
+    #adminPanel {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: white;
+      padding: 10px;
+      border: 1px solid #aaa;
+      z-index: 1000;
+    }
+  </style>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
   <div id="sidebar">
@@ -15,7 +40,9 @@
     <button onclick="toggleAdmin()">Admin</button>
     <div id="info"></div>
   </div>
-  <div id="map"></div>  <div id="adminPanel" style="display:none">
+  <div id="map"></div>
+
+  <div id="adminPanel" style="display:none">
     <h3>Admin-Modus</h3>
     <label>Passwort: <input id="adminPass" type="password"></label>
     <button onclick="checkAdmin()">Login</button>
@@ -29,15 +56,105 @@
       <div id="huettenList"></div>
     </div>
   </div>
-  <script src="app.js"></script>
+
+  <script>
+    const map = L.map('map').setView([51.5, 10.5], 7);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    let huetten = [
+      {
+        id: 1,
+        name: "Müllers Eier",
+        desc: "Bio-Eier und Honig",
+        lat: 51.5,
+        lng: 10.5,
+        strom: true,
+        aboBis: "2025-12-31"
+      },
+      {
+        id: 2,
+        name: "Schulze Hof",
+        desc: "Eier und Saft",
+        lat: 51.7,
+        lng: 10.7,
+        strom: false,
+        aboBis: "2024-12-01"
+      }
+    ];
+
+    const markerLayer = L.layerGroup().addTo(map);
+
+    function renderHuetten() {
+      markerLayer.clearLayers();
+      const now = new Date();
+      huetten.filter(h => new Date(h.aboBis) >= now).forEach(h => {
+        const m = L.marker([h.lat, h.lng]).addTo(markerLayer);
+        m.bindPopup(`<b>${h.name}</b><br>${h.desc}<br>${h.strom ? "🔌 Strom vorhanden" : "❌ Kein Strom"}`);
+      });
+    }
+    renderHuetten();
+
+    let isAdmin = false;
+
+    function toggleAdmin() {
+      document.getElementById("adminPanel").style.display = "block";
+    }
+
+    function checkAdmin() {
+      const input = document.getElementById("adminPass").value;
+      if (input === "admin") {
+        isAdmin = true;
+        document.getElementById("adminControls").style.display = "block";
+        renderAdminList();
+      } else {
+        alert("Falsches Passwort");
+      }
+    }
+
+    function renderAdminList() {
+      const list = document.getElementById("huettenList");
+      list.innerHTML = huetten.map(h =>
+        `<div><b>${h.name}</b> (Abo bis: ${h.aboBis})
+          <button onclick="removeHuette(${h.id})">🗑</button>
+          <input type="date" value="${h.aboBis}" onchange="updateAbo(${h.id}, this.value)">
+        </div>`
+      ).join('');
+    }
+
+    function updateAbo(id, newDate) {
+      const hut = huetten.find(h => h.id === id);
+      if (hut) {
+        hut.aboBis = newDate;
+        renderHuetten();
+        renderAdminList();
+      }
+    }
+
+    function removeHuette(id) {
+      huetten = huetten.filter(h => h.id !== id);
+      renderHuetten();
+      renderAdminList();
+    }
+
+    function addHuette() {
+      const name = document.getElementById("newName").value;
+      const desc = document.getElementById("newDesc").value;
+      const strom = document.getElementById("newStrom").checked;
+      const aboBis = document.getElementById("newAbo").value;
+      const center = map.getCenter();
+      const newHuette = {
+        id: Date.now(),
+        name,
+        desc,
+        strom,
+        aboBis,
+        lat: center.lat,
+        lng: center.lng
+      };
+      huetten.push(newHuette);
+      renderHuetten();
+      renderAdminList();
+    }
+  </script>
 </body>
-</html>// app.js const map = L.map('map').setView([51, 10], 6); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-let huetten = [ { id: 1, name: "Müllers Eier", desc: "Bio-Eier und Honig", lat: 51.5, lng: 10.5, strom: true, aboBis: "2025-12-31" }, { id: 2, name: "Hofladen Schulze", desc: "Eier & Saft", lat: 51.7, lng: 10.8, strom: false, aboBis: "2024-12-01" }, ];
-
-const markerLayer = L.layerGroup().addTo(map); function renderHuetten() { markerLayer.clearLayers(); huetten.filter(h => new Date(h.aboBis) >= new Date()).forEach(h => { const m = L.marker([h.lat, h.lng]).addTo(markerLayer); m.bindPopup(<b>${h.name}</b><br>${h.desc}<br>${h.strom ? '🔌 Strom vorhanden' : '❌ Kein Strom'}); }); } renderHuetten();
-
-// Admin let isAdmin = false; function toggleAdmin() { document.getElementById('adminPanel').style.display = 'block'; } function checkAdmin() { if (document.getElementById('adminPass').value === 'admin') { isAdmin = true; document.getElementById('adminControls').style.display = 'block'; renderAdminList(); } } function renderAdminList() { const list = document.getElementById('huettenList'); list.innerHTML = huetten.map(h => <div><b>${h.name}</b> (${h.aboBis}) <button onclick="removeHuette(${h.id})">🗑</button> <input type="date" value="${h.aboBis}" onchange="updateAbo(${h.id}, this.value)"></div> ).join(''); } function updateAbo(id, date) { const h = huetten.find(h => h.id === id); if (h) h.aboBis = date; renderHuetten(); renderAdminList(); } function removeHuette(id) { huetten = huetten.filter(h => h.id !== id); renderHuetten(); renderAdminList(); } function addHuette() { const name = document.getElementById('newName').value; const desc = document.getElementById('newDesc').value; const strom = document.getElementById('newStrom').checked; const aboBis = document.getElementById('newAbo').value; const id = Date.now(); const center = map.getCenter(); huetten.push({ id, name, desc, strom, lat: center.lat, lng: center.lng, aboBis }); renderHuetten(); renderAdminList(); }
-
-// TODO: Route, Teilen, Favoriten usw.
-
+</html>
