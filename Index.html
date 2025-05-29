@@ -71,6 +71,8 @@
     <button id="routeBtn">Route berechnen</button>
   </div>
   <div id="map"></div>  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>  <script>
+    const apiKey = "5b3ce3597851110001cf624893412fe92e0448e493663f2482a80572";
+
     const map = L.map('map').setView([51.1657, 10.4515], 6);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -124,7 +126,7 @@
       tourList.innerHTML = selectedHuetten.map(h => `<div class="tour-item">${h.name}</div>`).join('');
     }
 
-    function calculateRoute() {
+    async function calculateRoute() {
       if (routeLine) {
         map.removeLayer(routeLine);
       }
@@ -134,9 +136,31 @@
         return;
       }
 
-      const coords = selectedHuetten.map(h => [h.lat, h.lon]);
-      routeLine = L.polyline(coords, { color: 'blue' }).addTo(map);
-      map.fitBounds(routeLine.getBounds());
+      const coordinates = selectedHuetten.map(h => [h.lon, h.lat]);
+
+      try {
+        const response = await fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": apiKey
+          },
+          body: JSON.stringify({
+            coordinates: coordinates
+          })
+        });
+
+        if (!response.ok) throw new Error("Fehler bei der Routenanfrage.");
+
+        const data = await response.json();
+        const geojson = L.geoJSON(data, { style: { color: 'blue', weight: 5 } });
+
+        routeLine = geojson.addTo(map);
+        map.fitBounds(routeLine.getBounds());
+
+      } catch (err) {
+        alert("Routing fehlgeschlagen: " + err.message);
+      }
     }
 
     document.getElementById("routeBtn").addEventListener("click", calculateRoute);
