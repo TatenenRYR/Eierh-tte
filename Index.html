@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Eierhütten-Radtour</title>
+  <title>Eierhütten-Radtour (Debug)</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
@@ -18,7 +18,8 @@
     .small-btn { font-size: 0.9em; padding: 3px 6px; margin-left: 10px; }
     ul { padding-left: 20px; }
     li { margin-bottom: 5px; }
-    #routeInfo { margin-top: 10px; font-weight: bold; }
+    #routeInfo { margin-top: 10px; font-weight: bold; color: green; }
+    #errorInfo { color: red; margin-top: 10px; }
     @media (max-width: 768px) {
       #app { flex-direction: column; }
       #sidebar { width: 100%; border-right: none; border-bottom: 1px solid #ccc; }
@@ -30,24 +31,25 @@
   <div id="app">
     <div id="sidebar">
       <h2>🐣 Eierhütten</h2>
-      <p>Füge Hütten zur Route hinzu:</p>
+      <p>Wähle Hütten aus:</p>
       <ul id="selectedList"></ul>
       <button onclick="calculateRoute()">🗺️ Route berechnen</button>
       <button onclick="resetRoute()">❌ Auswahl zurücksetzen</button>
       <div id="routeInfo"></div>
+      <div id="errorInfo"></div>
     </div>
     <div id="map"></div>
   </div>
 
   <script>
-    const apiKey = "DEIN_API_KEY_HIER"; // 🔑 DEIN API-KEY!
+    const apiKey = "5b3ce3597851110001cf624893412fe92e0448e493663f2482a80572";
     const map = L.map("map").setView([51.5, 10.5], 7);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
 
     const huetten = [
       { id: 1, name: "Müllers Eier", desc: "Bio-Eier und Honig", lat: 51.5, lng: 10.5, strom: true },
       { id: 2, name: "Schulze Hof", desc: "Eier und Saft", lat: 51.7, lng: 10.7, strom: false },
-      { id: 3, name: "Hofladen Huber", desc: "Frische Eier aus Freilandhaltung", lat: 51.6, lng: 10.9, strom: true }
+      { id: 3, name: "Hofladen Huber", desc: "Frische Eier", lat: 51.6, lng: 10.9, strom: true }
     ];
 
     let selectedHuetten = [];
@@ -75,11 +77,9 @@
     function removeFromRoute(id) {
       selectedHuetten = selectedHuetten.filter(h => h.id !== id);
       updateSelectedList();
-      if (routeLine) {
-        map.removeLayer(routeLine);
-        routeLine = null;
-      }
+      if (routeLine) map.removeLayer(routeLine);
       document.getElementById("routeInfo").innerText = "";
+      document.getElementById("errorInfo").innerText = "";
     }
 
     function updateSelectedList() {
@@ -92,56 +92,57 @@
     function resetRoute() {
       selectedHuetten = [];
       updateSelectedList();
-      if (routeLine) {
-        map.removeLayer(routeLine);
-        routeLine = null;
-      }
+      if (routeLine) map.removeLayer(routeLine);
       document.getElementById("routeInfo").innerText = "";
+      document.getElementById("errorInfo").innerText = "";
     }
 
     async function calculateRoute() {
+      const errorBox = document.getElementById("errorInfo");
+      errorBox.innerText = "";
       if (selectedHuetten.length < 2) {
         alert("Bitte mindestens zwei Hütten auswählen.");
         return;
       }
 
-      const coordinates = selectedHuetten.map(h => [h.lng, h.lat]); // [lon, lat]
+      const coordinates = selectedHuetten.map(h => [h.lng, h.lat]);
+      const body = { coordinates };
 
-      const body = { coordinates: coordinates };
+      console.log("📤 Sende Koordinaten an OpenRouteService:", body);
 
-      const response = await fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
-        method: "POST",
-        headers: {
-          "Authorization": apiKey,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
+      try {
+        const res = await fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
+          method: "POST",
+          headers: {
+            "Authorization": apiKey,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
 
-      if (!response.ok) {
-        alert("Fehler bei der Routenberechnung. HTTP " + response.status);
-        return;
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`Fehler ${res.status}: ${text}`);
+        }
+
+        const data = await res.json();
+
+        if (routeLine) map.removeLayer(routeLine);
+        routeLine = L.geoJSON(data, {
+          style: { color: "green", weight: 5 }
+        }).addTo(map);
+
+        map.fitBounds(routeLine.getBounds());
+
+        const summary = data.features[0].properties.summary;
+        const km = (summary.distance / 1000).toFixed(1);
+        const min = Math.round(summary.duration / 60);
+        document.getElementById("routeInfo").innerText = `🚴 ${km} km – ca. ${min} Min`;
+
+      } catch (err) {
+        console.error("❌ Fehler bei der Routenberechnung:", err);
+        errorBox.innerText = err.message;
       }
-
-      const data = await response.json();
-
-      if (routeLine) {
-        map.removeLayer(routeLine);
-      }
-
-      routeLine = L.geoJSON(data, {
-        style: { color: "green", weight: 5 }
-      }).addTo(map);
-
-      const bounds = routeLine.getBounds();
-      map.fitBounds(bounds);
-
-      const summary = data.features[0].properties.summary;
-      const km = (summary.distance / 1000).toFixed(1);
-      const min = Math.round(summary.duration / 60);
-
-      document.getElementById("routeInfo").innerText =
-        `🚴 Strecke: ${km} km, ⏱️ Dauer: ca. ${min} Min`;
     }
   </script>
 </body>
