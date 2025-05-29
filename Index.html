@@ -53,7 +53,7 @@
       padding: 5px;
       border-bottom: 1px solid #ddd;
     }
-    #routeBtn {
+    #routeBtn, #downloadBtn {
       background: #007bff;
       color: white;
       padding: 6px 10px;
@@ -66,14 +66,22 @@
       margin-top: 10px;
       font-size: 14px;
     }
+    .filter {
+      margin-bottom: 10px;
+    }
   </style>
 </head>
 <body>
   <div id="sidebar">
-    <h2>Meine Tour</h2>
-    <div id="tour-list"></div>
-    <button id="routeBtn">Route berechnen</button>
-    <div id="stats"></div>
+    <h2>Meine Tour</h2><div class="filter">
+  <label><input type="checkbox" id="stromFilter"> Nur mit Stromversorgung</label>
+</div>
+
+<div id="tour-list"></div>
+<button id="routeBtn">Route berechnen</button>
+<button id="downloadBtn" style="display:none">GPX herunterladen</button>
+<div id="stats"></div>
+
   </div>
   <div id="map"></div>  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>  <script>
     const apiKey = "5b3ce3597851110001cf624893412fe92e0448e493663f2482a80572";
@@ -106,6 +114,8 @@
 
     const selectedHuetten = [];
     let routeLine = null;
+    let lastGeoJSON = null;
+    const markerLayer = L.layerGroup().addTo(map);
 
     function createPopupContent(hütte) {
       return `
@@ -158,12 +168,12 @@
         if (!response.ok) throw new Error("Fehler bei der Routenanfrage.");
 
         const data = await response.json();
-        const geojson = L.geoJSON(data, { style: { color: 'blue', weight: 5 } });
+        lastGeoJSON = data;
 
+        const geojson = L.geoJSON(data, { style: { color: 'blue', weight: 5 } });
         routeLine = geojson.addTo(map);
         map.fitBounds(routeLine.getBounds());
 
-        // Distanz & Dauer anzeigen
         const summary = data.features[0].properties.summary;
         const distanceKm = (summary.distance / 1000).toFixed(2);
         const durationMin = Math.round(summary.duration / 60);
@@ -172,17 +182,47 @@
           `<strong>Gesamtdistanz:</strong> ${distanceKm} km<br/>` +
           `<strong>Fahrzeit:</strong> ca. ${durationMin} Minuten`;
 
+        document.getElementById("downloadBtn").style.display = "inline-block";
+
       } catch (err) {
         alert("Routing fehlgeschlagen: " + err.message);
       }
     }
 
-    document.getElementById("routeBtn").addEventListener("click", calculateRoute);
+    function downloadGPX() {
+      if (!lastGeoJSON) return;
 
-    huetten.forEach(hütte => {
-      L.marker([hütte.lat, hütte.lon])
-        .addTo(map)
-        .bindPopup(createPopupContent(hütte));
-    });
+      const coords = lastGeoJSON.features[0].geometry.coordinates;
+      let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="EierhüttenApp" xmlns="http://www.topografix.com/GPX/1/1">\n<trk><name>Meine Eierhüttentour</name><trkseg>`;
+      coords.forEach(([lon, lat]) => {
+        gpx += `\n<trkpt lat="${lat}" lon="${lon}"></trkpt>`;
+      });
+      gpx += `\n</trkseg></trk></gpx>`;
+
+      const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = "tour.gpx";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function updateMarkers() {
+      markerLayer.clearLayers();
+      const filterStrom = document.getElementById("stromFilter").checked;
+      const visibleHuetten = huetten.filter(h => !filterStrom || h.strom);
+      visibleHuetten.forEach(hütte => {
+        const m = L.marker([hütte.lat, hütte.lon])
+          .bindPopup(createPopupContent(hütte));
+        markerLayer.addLayer(m);
+      });
+    }
+
+    document.getElementById("routeBtn").addEventListener("click", calculateRoute);
+    document.getElementById("downloadBtn").addEventListener("click", downloadGPX);
+    document.getElementById("stromFilter").addEventListener("change", updateMarkers);
+
+    updateMarkers();
   </script></body>
 </html>
