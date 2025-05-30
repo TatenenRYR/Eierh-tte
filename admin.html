@@ -1,115 +1,65 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <title>Admin – Eierhütten hinzufügen</title>
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAEKf0hPfUQKPoIw4xNLswITPnXUAMVFOo&libraries=places"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin – Eierhüttenverwaltung</title>
   <style>
     body {
       font-family: sans-serif;
-      margin: 20px;
+      padding: 20px;
+      background: #f7f7f7;
     }
-
-    #map {
-      width: 100%;
-      height: 300px;
-      margin-top: 20px;
-      border: 1px solid #ccc;
-    }
-
     input, button {
-      padding: 8px;
-      margin: 5px 0;
-      font-size: 1em;
+      margin-top: 8px;
     }
   </style>
 </head>
 <body>
-  <h1>Adminbereich: Neue Eierhütte hinzufügen</h1>
+  <h1>🔐 Admin-Bereich</h1>  <h2>🗺️ Eierhütte über Ortssuche hinzufügen</h2>
+  <input type="text" id="placeSearch" placeholder="z. B. Twist Eierhütte" style="width: 100%; padding: 8px;" />
+  <button onclick="searchPlace()">🔍 Suchen</button>
+  <ul id="searchResults"></ul>  <script>
+    async function searchPlace() {
+      const query = document.getElementById("placeSearch").value;
+      const resultList = document.getElementById("searchResults");
+      resultList.innerHTML = "⏳ Suche läuft...";
 
-  <input id="placesSearch" type="text" placeholder="Eierhütte suchen, z. B. Twist Eierhütte" size="40" />
-  <button onclick="clearSelection()">Zurücksetzen</button>
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+        const results = await response.json();
 
-  <div id="map"></div>
-
-  <div id="info" style="margin-top: 20px;"></div>
-  <button onclick="saveHuette()">✅ Als Eierhütte speichern</button>
-
-  <script>
-    let map;
-    let marker = null;
-    let selectedPlace = null;
-
-    const huetten = []; // ← Du kannst später hier Firebase integrieren
-
-    function initMap() {
-      map = new google.maps.Map(document.getElementById("map"), {
-        center: { lat: 51.5, lng: 10.5 },
-        zoom: 7
-      });
-
-      const input = document.getElementById("placesSearch");
-      const autocomplete = new google.maps.places.Autocomplete(input);
-      autocomplete.bindTo("bounds", map);
-
-      autocomplete.addListener("place_changed", () => {
-        const place = autocomplete.getPlace();
-        if (!place.geometry || !place.geometry.location) {
-          alert("Ort nicht gefunden.");
+        if (results.length === 0) {
+          resultList.innerHTML = "❌ Keine Ergebnisse gefunden.";
           return;
         }
 
-        map.setCenter(place.geometry.location);
-        map.setZoom(14);
-
-        if (marker) marker.setMap(null);
-
-        marker = new google.maps.Marker({
-          map,
-          position: place.geometry.location,
-          title: place.name
-        });
-
-        selectedPlace = place;
-
-        document.getElementById("info").innerHTML = `
-          <b>${place.name}</b><br>
-          ${place.formatted_address}<br>
-          📍 Lat: ${place.geometry.location.lat().toFixed(5)}<br>
-          📍 Lng: ${place.geometry.location.lng().toFixed(5)}
-        `;
-      });
-    }
-
-    function clearSelection() {
-      document.getElementById("placesSearch").value = "";
-      document.getElementById("info").innerHTML = "";
-      if (marker) marker.setMap(null);
-      selectedPlace = null;
-    }
-
-    function saveHuette() {
-      if (!selectedPlace) {
-        alert("Bitte wähle zuerst einen Ort.");
-        return;
+        resultList.innerHTML = results.map((place, index) => `
+          <li style="margin-bottom: 10px;">
+            <b>${place.display_name}</b><br>
+            <button onclick='addHutFromSearch(${place.lat}, ${place.lon}, \`${place.display_name.replace(/`/g, "'")}\`)'>➕ Hinzufügen</button>
+          </li>
+        `).join("");
+      } catch (err) {
+        console.error("Fehler bei der Suche:", err);
+        resultList.innerHTML = "❌ Fehler bei der Ortssuche.";
       }
+    }
 
-      const neueHuette = {
-        id: Date.now(), // einfach eindeutige ID erzeugen
-        name: selectedPlace.name,
-        desc: selectedPlace.formatted_address || "Adresse unbekannt",
-        lat: selectedPlace.geometry.location.lat(),
-        lng: selectedPlace.geometry.location.lng(),
-        strom: false // später ggf. auswählbar
+    function addHutFromSearch(lat, lon, name) {
+      const neueHütte = {
+        id: Date.now(),
+        name: name.split(",")[0],
+        desc: "Hütte hinzugefügt via Suche",
+        lat: parseFloat(lat),
+        lng: parseFloat(lon),
+        strom: false,
       };
 
-      huetten.push(neueHuette);
-      alert("✅ Eierhütte gespeichert (lokal im Speicher – Firebase folgt).");
-      console.log("Neue Hütte:", neueHuette);
-      clearSelection();
+      // Beispiel: in LocalStorage speichern
+      const gespeicherte = JSON.parse(localStorage.getItem("huetten")) || [];
+      gespeicherte.push(neueHütte);
+      localStorage.setItem("huetten", JSON.stringify(gespeicherte));
+      alert(`✅ ${neueHütte.name} wurde als Hütte gespeichert.`);
     }
-
-    window.onload = initMap;
-  </script>
-</body>
+  </script></body>
 </html>
