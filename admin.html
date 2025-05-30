@@ -2,90 +2,114 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Admin – Eierhütten</title>
+  <title>Admin – Eierhütten hinzufügen</title>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAEKf0hPfUQKPoIw4xNLswITPnXUAMVFOo&libraries=places"></script>
   <style>
     body {
       font-family: sans-serif;
-      background: #f2f2f2;
-      padding: 20px;
+      margin: 20px;
     }
-    input, button {
-      padding: 6px;
-      margin: 5px 0;
-      display: block;
+
+    #map {
       width: 100%;
-      max-width: 400px;
+      height: 300px;
+      margin-top: 20px;
+      border: 1px solid #ccc;
     }
-    .hidden { display: none; }
-    .box {
-      background: white;
-      padding: 20px;
-      border-radius: 8px;
-      max-width: 420px;
+
+    input, button {
+      padding: 8px;
+      margin: 5px 0;
+      font-size: 1em;
     }
   </style>
 </head>
 <body>
-  <div class="box">
-    <h2>🔐 Adminbereich</h2>
-    <div id="loginBox">
-      <input type="password" id="adminPass" placeholder="Passwort eingeben..." />
-      <button onclick="checkPass()">Login</button>
-    </div>
+  <h1>Adminbereich: Neue Eierhütte hinzufügen</h1>
 
-    <div id="adminPanel" class="hidden">
-      <h3>➕ Neue Hütte eintragen</h3>
-      <input type="text" id="name" placeholder="Name der Hütte" />
-      <input type="text" id="desc" placeholder="Beschreibung" />
-      <input type="number" id="lat" placeholder="Breitengrad (lat)" />
-      <input type="number" id="lng" placeholder="Längengrad (lng)" />
-      <label><input type="checkbox" id="strom" /> Strom vorhanden</label>
-      <button onclick="speichern()">💾 Speichern</button>
-    </div>
-  </div>
+  <input id="placesSearch" type="text" placeholder="Eierhütte suchen, z. B. Twist Eierhütte" size="40" />
+  <button onclick="clearSelection()">Zurücksetzen</button>
+
+  <div id="map"></div>
+
+  <div id="info" style="margin-top: 20px;"></div>
+  <button onclick="saveHuette()">✅ Als Eierhütte speichern</button>
 
   <script>
-    const adminPasswort = "admin123"; // 🔐 Einfaches Passwort (später Firebase)
+    let map;
+    let marker = null;
+    let selectedPlace = null;
 
-    function checkPass() {
-      const eingabe = document.getElementById("adminPass").value;
-      if (eingabe === adminPasswort) {
-        document.getElementById("loginBox").classList.add("hidden");
-        document.getElementById("adminPanel").classList.remove("hidden");
-      } else {
-        alert("Falsches Passwort");
-      }
+    const huetten = []; // ← Du kannst später hier Firebase integrieren
+
+    function initMap() {
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: { lat: 51.5, lng: 10.5 },
+        zoom: 7
+      });
+
+      const input = document.getElementById("placesSearch");
+      const autocomplete = new google.maps.places.Autocomplete(input);
+      autocomplete.bindTo("bounds", map);
+
+      autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+        if (!place.geometry || !place.geometry.location) {
+          alert("Ort nicht gefunden.");
+          return;
+        }
+
+        map.setCenter(place.geometry.location);
+        map.setZoom(14);
+
+        if (marker) marker.setMap(null);
+
+        marker = new google.maps.Marker({
+          map,
+          position: place.geometry.location,
+          title: place.name
+        });
+
+        selectedPlace = place;
+
+        document.getElementById("info").innerHTML = `
+          <b>${place.name}</b><br>
+          ${place.formatted_address}<br>
+          📍 Lat: ${place.geometry.location.lat().toFixed(5)}<br>
+          📍 Lng: ${place.geometry.location.lng().toFixed(5)}
+        `;
+      });
     }
 
-    function speichern() {
-      const name = document.getElementById("name").value.trim();
-      const desc = document.getElementById("desc").value.trim();
-      const lat = parseFloat(document.getElementById("lat").value);
-      const lng = parseFloat(document.getElementById("lng").value);
-      const strom = document.getElementById("strom").checked;
+    function clearSelection() {
+      document.getElementById("placesSearch").value = "";
+      document.getElementById("info").innerHTML = "";
+      if (marker) marker.setMap(null);
+      selectedPlace = null;
+    }
 
-      if (!name || !desc || isNaN(lat) || isNaN(lng)) {
-        alert("Bitte alle Felder korrekt ausfüllen.");
+    function saveHuette() {
+      if (!selectedPlace) {
+        alert("Bitte wähle zuerst einen Ort.");
         return;
       }
 
       const neueHuette = {
-        id: Date.now(),
-        name,
-        desc,
-        lat,
-        lng,
-        strom
+        id: Date.now(), // einfach eindeutige ID erzeugen
+        name: selectedPlace.name,
+        desc: selectedPlace.formatted_address || "Adresse unbekannt",
+        lat: selectedPlace.geometry.location.lat(),
+        lng: selectedPlace.geometry.location.lng(),
+        strom: false // später ggf. auswählbar
       };
 
-      const huetten = JSON.parse(localStorage.getItem("huetten")) || [];
       huetten.push(neueHuette);
-      localStorage.setItem("huetten", JSON.stringify(huetten));
-
-      alert("✅ Hütte gespeichert!");
-      location.reload();
+      alert("✅ Eierhütte gespeichert (lokal im Speicher – Firebase folgt).");
+      console.log("Neue Hütte:", neueHuette);
+      clearSelection();
     }
+
+    window.onload = initMap;
   </script>
 </body>
 </html>
