@@ -1,422 +1,158 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Eierhütten-Radtour (Debug)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eierhütten-Tour</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<style>
-body {
-  margin: 0;
-  padding: 0;
-  font-family: 'Segoe UI', sans-serif;
-  height: 100vh;
-  overflow: hidden;
-}
-
-#app {
-  height: 100vh;
-  width: 100vw;
-  display: flex;
-  flex-direction: row;
-  position: relative;
-}
-  
-#mapContainer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  overflow: hidden;
-  z-index: 0;
-}
-
-#map {
-  height: 100%;
-  width: 100%;
-}
-
-#ui {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none; /* alles durchklicken außer Buttons */
-  z-index: 1000;
-}
-
-#menuButton {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 1010;
-  pointer-events: auto; /* wieder klickbar */
-}
-
-#sidebar {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 300px;
-  height: 100%;
-  background: white;
-  z-index: 1009;
-  display: none; /* oder flex */
-  pointer-events: auto;
-}
-#sidebar.open ~ #map {
-  margin-left: 300px;
-}
-
-
-
-#sidebar.open {
-  left: 0; /* eingeblendet */
-}
-  #sidebar-edge {
-  position: fixed;
-  top: 0;
-  left: 0;
-  height: 100%;
-  width: 15px; /* schmaler Streifen */
-  
-  cursor: pointer;
-  }
-
-#topbar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 60px;
-  background-color: white;
-  display: flex;
-  align-items: center;
-  padding: 0 20px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-  z-index: 1000;
-}
-
-.logo-area {
-  display: flex;
-  align-items: center;
-}
-
-.logo {
-  height: 32px;
-  margin-right: 10px;
-}
-
-.title {
-  font-size: 1.2em;
-  font-weight: bold;
-  color: #2c7be5;
-}
-
-button {
-  background-color: #2c7be5;
-  color: white;
-  border: none;
-  padding: 8px 14px;
-  border-radius: 20px;
-  margin: 6px 0;
-  font-size: 0.9em;
-  cursor: pointer;
-  transition: background 0.2s;
-  z-index: 1000;
-}
-
-button:hover {
-  background-color: #1a5fcc;
-}
-
-input[type="checkbox"] {
-  transform: scale(1.3);
-  margin-right: 6px;
-}
-
-ul {
-  padding-left: 20px;
-  margin: 0;
-}
-
-li {
-  margin: 6px 0;
-}
-
-#routeInfo, #errorInfo {
-  font-size: 0.9em;
-  padding: 8px 12px;
-  border-radius: 8px;
-  margin-top: 10px;
-}
-
-#routeInfo {
-  background-color: #e6f4ea;
-  color: #155724;
-}
-
-#errorInfo {
-  background-color: #f8d7da;
-  color: #721c24;
-}
-</style>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      font-family: sans-serif;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+    #sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 300px;
+      height: 100%;
+      background: white;
+      box-shadow: 2px 0 5px rgba(0,0,0,0.3);
+      padding: 1rem;
+      overflow-y: auto;
+      display: none;
+    }
+    #sidebar.open {
+      display: block;
+    }
+    #menuButton {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      background: green;
+      color: white;
+      border: none;
+      padding: 10px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .small-btn {
+      padding: 2px 6px;
+      margin-top: 5px;
+      cursor: pointer;
+    }
+    .route-list li {
+      margin: 5px 0;
+    }
+  </style>
 </head>
 <body>
-<header id="topbar">
-  <div class="logo-area">
-    <img src="file_00000000302061f49725a2fe1ef22d21.png" alt="Logo" class="logo">
-    <span class="title">Eierhütten-Tour</span>
+  <button id="menuButton">☰</button>
+  <div id="sidebar">
+    <h2>Tour</h2>
+    <ul id="tourList" class="route-list"></ul>
+    <button onclick="berechneRoute()">Route berechnen</button>
+    <button onclick="zeigeNaechsteHuette()">Nächste Hütte</button>
+    <p id="distanz"></p>
   </div>
-</header>
+  <div id="map"></div>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script>
+    let karte = L.map('map').setView([51.505, 10.5], 13);
 
-  
-  <div style="height: 60px;"></div>
-  <div id="app">
-    <div id="mapContainer">
-  <div id="map"></div>
-</div>
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap-Mitwirkende'
+    }).addTo(karte);
 
-<!-- Außerhalb der Karte -->
-<div id="ui">
-  <button id="menuButton">☰ Menü</button>
-  
+    let markerLayer = L.layerGroup().addTo(karte);
+    let route = [];
+    let routingLayer;
 
-    <div id="sidebar-toggle" onclick="toggleSidebar()">☰</div>
-    <div id="sidebar">
+    document.getElementById("menuButton").onclick = () => {
+      document.getElementById("sidebar").classList.toggle("open");
+    };
 
-
-
-      
-      
-      <h2>🐣 Eierhütten</h2>
-      <label>
-      <input type="checkbox" id="stromFilter" onchange="updateMapMarkers()" />
-      Nur Hütten mit Strom 🔌
-      </label>
-      <p>Wähle Hütten aus:</p>
-      <ul id="selectedList"></ul>
-      <button onclick="calculateRoute()">🗺️ Route berechnen</button>
-      <button onclick="resetRoute()">❌ Auswahl zurücksetzen</button>
-      <div id="routeInfo"></div>
-      <div id="errorInfo"></div>
-    </div>
-    
-  </div>
-  </div>
-
-  <script>
-    
-    const apiKey = "5b3ce3597851110001cf624893412fe92e0448e493663f2482a80572";
-    const map = L.map("map").setView([51.5, 10.5], 7);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
-
-    
-    
-    //sorgt dafür das beim Klick auf der map die sidebar sich schließt 
-    map.on("click", () => {
-  document.getElementById("sidebar").classList.remove("open");
-});
-    
-let huetten = JSON.parse(localStorage.getItem("huetten")) || [];
-    let selectedHuetten = [];
-    let routeLine = null;
-    const markerLayer = L.layerGroup().addTo(map);
-
+    let huetten = JSON.parse(localStorage.getItem("huetten")) || [];
 
     function updateMapMarkers() {
-  markerLayer.clearLayers();
-  const stromAktiv = document.getElementById("stromFilter").checked;
-
-  const gefilterte = stromAktiv ? huetten.filter(h => h.strom) : huetten;
-
-  gefilterte.forEach(h => {
-    const marker = L.marker([h.lat, h.lng]).addTo(markerLayer);
-    marker.bindPopup(`
-      <b>${h.name}</b><br>
-      ${h.desc}<br>
-      ${h.strom ? "🔌 Strom vorhanden" : "❌ Kein Strom"}<br><br>
-      <button onclick="addToRoute(${h.id})" class="small-btn">➕ Hinzufügen</button>
-      createPopupContent(${h.id});
-    `);
-    
-  });
+      markerLayer.clearLayers();
+      huetten.forEach(h => {
+        if (filterAktiv && !h.strom) return;
+        let marker = L.marker([h.lat, h.lng]);
+        marker.bindPopup(`
+          <b>${h.name}</b><br>
+          ${h.desc}<br>
+          ${h.strom ? "🔌 Strom vorhanden" : "❌ Kein Strom"}<br><br>
+          <button onclick="addToRoute(${h.id})" class="small-btn">➕ Hinzufügen</button>
+        `);
+        markerLayer.addLayer(marker);
+      });
     }
-
-    huetten.forEach(h => {
-      const marker = L.marker([h.lat, h.lng]).addTo(markerLayer);
-      marker.bindPopup(`
-        <b>${h.name}</b><br>
-        ${h.desc}<br>
-        ${h.strom ? "🔌 Strom vorhanden" : "❌ Kein Strom"}<br><br>
-        <button onclick="addToRoute(${h.id})" class="small-btn">+ Zur Route</button>
-        createPopupContent(${h.id});
-      `);
-      
-    });
 
     function addToRoute(id) {
+      if (!route.includes(id)) {
+        route.push(id);
+        updateTourList();
+      }
+    }
+
+    function updateTourList() {
+      let list = document.getElementById("tourList");
+      list.innerHTML = "";
+      route.forEach(id => {
+        let h = huetten.find(h => h.id === id);
+        let li = document.createElement("li");
+        li.textContent = h.name;
+        list.appendChild(li);
+      });
+    }
+
+    function berechneRoute() {
+      if (routingLayer) karte.removeLayer(routingLayer);
+
+      let punkte = route.map(id => {
+        let h = huetten.find(h => h.id === id);
+        return [h.lat, h.lng];
+      });
+
+      if (punkte.length < 2) return alert("Mindestens zwei Ziele wählen.");
+
+      routingLayer = L.polyline(punkte, { color: "blue" }).addTo(karte);
+
+      let distanz = 0;
+      for (let i = 1; i < punkte.length; i++) {
+        distanz += karte.distance(punkte[i - 1], punkte[i]);
+      }
+      document.getElementById("distanz").innerText =
+        "Gesamtdistanz: " + (distanz / 1000).toFixed(2) + " km";
+    }
+
+    let aktuellePosition = 0;
+    function zeigeNaechsteHuette() {
+      if (route.length == 0) return;
+      let h = huetten.find(h => h.id === route[aktuellePosition]);
+      karte.setView([h.lat, h.lng], 16);
+      aktuellePosition = (aktuellePosition + 1) % route.length;
+    }
+
+    let filterAktiv = false;
+    function toggleStromFilter() {
+      filterAktiv = !filterAktiv;
+      updateMapMarkers();
+    }
+
+    function toggleFavorit(id) {
       const h = huetten.find(h => h.id === id);
-      if (!selectedHuetten.includes(h)) {
-        selectedHuetten.push(h);
-        updateSelectedList();
-
-        // 🧹 Route entfernen, falls vorher berechnet
-    if (routeLine) {
-      map.removeLayer(routeLine);
-      routeLine = null;
-    }
-    document.getElementById("routeInfo").innerText = "";
-    document.getElementById("errorInfo").innerText = "";
-      }
-      
-    }
-
-    function removeFromRoute(id) {
-      selectedHuetten = selectedHuetten.filter(h => h.id !== id);
-      updateSelectedList();
-      if (routeLine) map.removeLayer(routeLine);
-
-      // 🧹 Route entfernen, falls vorher berechnet
-    if (routeLine) {
-      map.removeLayer(routeLine);
-      routeLine = null;
-    }
-      document.getElementById("routeInfo").innerText = "";
-      document.getElementById("errorInfo").innerText = "";
-      
-    }
-
-
-    function createPopupContent(huette) {
-  const isFav = huette.favorit ? "⭐" : "☆";
-  return `
-    <strong>${huette.name}</strong><br>
-    <button onclick="toggleFavorit('${huette.id}')">${isFav} Favorit</button>
-  `;
-}
-
-    function updateSelectedList() {
-      const list = document.getElementById("selectedList");
-      list.innerHTML = selectedHuetten
-        .map(h => `<li>${h.name} <button class="small-btn" onclick="removeFromRoute(${h.id})">❌</button></li>`)
-        .join("");
-    }
-
-    function resetRoute() {
-      selectedHuetten = [];
-      updateSelectedList();
-      if (routeLine) map.removeLayer(routeLine);
-      document.getElementById("routeInfo").innerText = "";
-      document.getElementById("errorInfo").innerText = "";
-    }
-
-    async function calculateRoute() {
-      const errorBox = document.getElementById("errorInfo");
-      errorBox.innerText = "";
-      if (selectedHuetten.length < 2) {
-        alert("Bitte mindestens zwei Hütten auswählen.");
-        return;
-      }
-
-      const coordinates = selectedHuetten.map(h => [h.lng, h.lat]);
-      const body = { coordinates };
-
-      console.log("📤 Sende Koordinaten an OpenRouteService:", body);
-
-      try {
-        const res = await fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
-          method: "POST",
-          headers: {
-            "Authorization": apiKey,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(body),
-        });
-
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Fehler ${res.status}: ${text}`);
-        }
-
-        const data = await res.json();
-
-        if (routeLine) map.removeLayer(routeLine);
-        routeLine = L.geoJSON(data, {
-          style: { color: "green", weight: 5 }
-        }).addTo(map);
-
-        map.fitBounds(routeLine.getBounds());
-
-        const summary = data.features[0].properties.summary;
-        const km = (summary.distance / 1000).toFixed(1);
-        const min = Math.round(summary.duration / 60);
-        document.getElementById("routeInfo").innerText = `🚴 ${km} km – ca. ${min} Min`;
-
-      } catch (err) {
-        console.error("❌ Fehler bei der Routenberechnung:", err);
-        errorBox.innerText = err.message;
-      }
-    }
-    function toggleSidebar() {
-  const sidebar = document.getElementById("sidebar");
-  sidebar.classList.toggle("open");
-    }
- function zeigeNaechsteHuette() {
-  if (!navigator.geolocation) {
-    console.warn("Geolocation wird nicht unterstützt.");
-    document.getElementById("errorInfo").innerText = "Geolocation wird nicht unterstützt.";
-    return;
-  }
-
-  navigator.geolocation.getCurrentPosition(pos => {
-    const userLat = pos.coords.latitude;
-    const userLng = pos.coords.longitude;
-
-    if (!Array.isArray(huetten) || huetten.length === 0) {
-      console.warn("Keine Eierhütten verfügbar.");
-      document.getElementById("errorInfo").innerText = "Keine Eierhütten verfügbar.";
-      return;
-    }
-
-    let nächste = huetten[0];
-    let minDist = entfernung(userLat, userLng, nächste.lat, nächste.lng);
-
-    for (let i = 1; i < huetten.length; i++) {
-      const hütte = huetten[i]; // <- korrigiert
-      const dist = entfernung(userLat, userLng, hütte.lat, hütte.lng);
-      if (dist < minDist) {
-        minDist = dist;
-        nächste = hütte;
+      if (h) {
+        h.favorit = !h.favorit;
+        localStorage.setItem("huetten", JSON.stringify(huetten));
+        updateMapMarkers();
       }
     }
 
-    map.setView([nächste.lat, nächste.lng], 15);
-
-    L.popup()
-      .setLatLng([nächste.lat, nächste.lng])
-      .setContent(`Nächstgelegene Hütte: ${nächste.name}`)
-      .openOn(map);
-  }, err => {
-    console.error("Fehler beim Abrufen der Position:", err);
-    document.getElementById("errorInfo").innerText = err.message;
-  });
- }
-
-function entfernung(lat1, lng1, lat2, lng2) {
-  const dx = lat1 - lat2;
-  const dy = lng1 - lng2;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-    
-window.addEventListener("load", () => {
-  //initKarte();      // deine Karte aufbauen
-  updateMapMarkers(); // deine Hütten laden
-  setTimeout(zeigeNaechsteHuette, 1000); // kurz warten, bis alles bereit
-});
-  </script>
-</body>
+    updateMapMarkers();
+  </script></body>
 </html>
