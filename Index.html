@@ -359,56 +359,49 @@
 
 
     // Funktion, um nächstgelegene Hütte basierend auf Nutzerposition zu finden
+let letzteNaechsteMarker = null;
+
 function zeigeNaechsteHütte() {
   if (!navigator.geolocation) {
-    alert("Geolocation wird von diesem Browser nicht unterstützt.");
+    alert("Geolocation wird nicht unterstützt.");
     return;
   }
 
   navigator.geolocation.getCurrentPosition(
-    (position) => {
-      const userLat = position.coords.latitude;
-      const userLng = position.coords.longitude;
-
-      if (huetten.length === 0) {
-        alert("Keine Hütten verfügbar.");
-        return;
-      }
+    (pos) => {
+      const userLat = pos.coords.latitude;
+      const userLng = pos.coords.longitude;
 
       let minDist = Infinity;
       let naechste = null;
-
       huetten.forEach((h) => {
-        const dist = getDistance(userLat, userLng, h.lat, h.lng);
+        const dist = Math.sqrt((h.lat - userLat) ** 2 + (h.lng - userLng) ** 2);
         if (dist < minDist) {
           minDist = dist;
           naechste = h;
         }
       });
 
-      if (naechste) {
-        const popupText = `<b>Nächste Hütte:</b><br>${naechste.name}<br>${naechste.desc}<br>${
-          naechste.strom ? "🔌 Strom vorhanden" : "❌ Kein Strom"
-        }`;
-        const marker = L.marker([naechste.lat, naechste.lng], {
-          icon: L.icon({
-            iconUrl:
-              "https://cdn-icons-png.flaticon.com/512/854/854878.png", // Beispiel: grünes Standort-Icon
-            iconSize: [32, 32],
-            iconAnchor: [16, 32],
-            popupAnchor: [0, -32],
-          }),
-        })
-          .addTo(map)
-          .bindPopup(popupText)
-          .openPopup();
+      if (!naechste) return;
 
-        map.setView([naechste.lat, naechste.lng], 13);
-      }
+      markerLayer.clearLayers();
+
+      letzteNaechsteMarker = L.marker([naechste.lat, naechste.lng])
+        .addTo(markerLayer)
+        .bindPopup(
+          `<b>${naechste.name}</b><br>${naechste.desc}<br>${naechste.strom ? "🔌 Strom vorhanden" : "❌ Kein Strom"}<br><br>
+          <button onclick="addToRoute(${naechste.id})" class="small-btn">➕ Hinzufügen</button>`
+        )
+        .on("popupclose", () => {
+          updateMapMarkers();
+        })
+        .openPopup();
+
+      map.setView([naechste.lat, naechste.lng], 13);
     },
-    (error) => {
+    (err) => {
       alert("Standort konnte nicht ermittelt werden.");
-      console.error(error);
+      console.error(err);
     }
   );
 }
