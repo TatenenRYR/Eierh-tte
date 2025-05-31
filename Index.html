@@ -408,70 +408,67 @@ function hideCenterButton() {
 
     
 
-    
-     function calculateRoute() {
-
-      if (!userBikeMarker || !userBikeMarker.getLatLng()) {
-    document.getElementById("errorInfo").innerText = "📍 Aktuelle Position nicht verfügbar. Bitte Standortfreigabe prüfen.";
-        errorBox.innerText = "📍 Aktuelle Position nicht verfügbar. Bitte Standortfreigabe prüfen.";
+    function calculateRoute() {
+  if (!userBikeMarker || !userBikeMarker.getLatLng) {
+    document.getElementById("errorInfo").innerText =
+      "📍 Aktuelle Position nicht verfügbar. Bitte Standortfreigabe aktivieren.";
     return;
-      }
-      const errorBox = document.getElementById("errorInfo");
-      errorBox.innerText = "";
-      if (selectedHuetten.length < 2) {
-        alert("Bitte mindestens zwei Hütten auswählen.");
-        return;
-      }
-      // Startpunkt: aktuelle Position
-      const start = userBikeMarker.getLatLng();
+  }
 
-      
-      const coordinates = [start, selectedHuetten.map((h) => [h.lng, h.lat])];
-      // Format für ORS
-  const orsCoords = coordinates.map((c) => [c.lng, c.lat]); // GeoJSON: [lng, lat]
-      const body = { orsCoords };
+  if (selectedHuetten.length === 0) {
+    document.getElementById("errorInfo").innerText =
+      "Bitte mindestens eine Hütte auswählen.";
+    return;
+  }
 
-      try {
-        const res = await fetch(
-          "https://api.openrouteservice.org/v2/directions/cycling-regular/geojson",
-          {
-            method: "POST",
-            headers: {
-              Authorization: apiKey,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-      coordinates: orsCoords,
+  document.getElementById("errorInfo").innerText = "";
+
+  const userCoords = userBikeMarker.getLatLng();
+  const coordinates = [[userCoords.lng, userCoords.lat]];
+
+  selectedHuetten.forEach((h) => {
+    coordinates.push([h.lng, h.lat]);
+  });
+
+  fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: apiKey,
+    },
+    body: JSON.stringify({
+      coordinates: coordinates,
       instructions: false,
     }),
-          }
-        );
-
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Fehler ${res.status}: ${text}`);
-        }
-
-        const data = await res.json();
-
-        if (routeLine) map.removeLayer(routeLine);
-        routeLine = L.geoJSON(data, {
-          style: { color: "var(--green-route)", weight: 5 },
-        }).addTo(map);
-
-        map.fitBounds(routeLine.getBounds());
-
-        const summary = data.features[0].properties.summary;
-        const km = (summary.distance / 1000).toFixed(1);
-        const min = Math.round(summary.duration / 60);
-        document.getElementById(
-          "routeInfo"
-        ).innerText = `🚴 ${km} km – ca. ${min} Min`;
-      } catch (err) {
-        console.error("Fehler bei der Routenberechnung:", err);
-        errorBox.innerText = err.message;
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      if (routeLine) {
+        map.removeLayer(routeLine);
       }
-    }
+
+      routeLine = L.geoJSON(data, {
+        style: {
+          color: "#27ae60",
+          weight: 4,
+        },
+      }).addTo(map);
+
+      const dist = data.features[0].properties.summary.distance / 1000;
+      const dur = data.features[0].properties.summary.duration / 60;
+
+      document.getElementById("routeInfo").innerText =
+        `📏 ${dist.toFixed(1)} km\n⏱️ ca. ${Math.round(dur)} Min`;
+
+      map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+    })
+    .catch((err) => {
+      console.error(err);
+      document.getElementById("errorInfo").innerText =
+        "Fehler bei der Routenberechnung.";
+    });
+          }
+     
 
     
 
