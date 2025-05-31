@@ -406,13 +406,67 @@ function hideCenterButton() {
       document.getElementById("errorInfo").innerText = "";
     }
 
-    async function calculateRoute() {
+    function calculateRoute() {
+  if (!userBikeMarker || !userBikeMarker.getLatLng()) {
+    document.getElementById("errorInfo").innerText = "📍 Aktuelle Position nicht verfügbar. Bitte Standortfreigabe prüfen.";
+    return;
+  }
+
+  if (selectedHuetten.length < 1) {
+    document.getElementById("errorInfo").innerText = "Bitte mindestens eine Hütte auswählen.";
+    return;
+  }
+
+  document.getElementById("errorInfo").innerText = "";
+
+  // Startpunkt: aktuelle Position
+  const start = userBikeMarker.getLatLng();
+
+  // Zielpunkte: Koordinaten der ausgewählten Hütten
+  const coordinates = [start, ...selectedHuetten.map((h) => [h.lat, h.lng])];
+
+  // Format für ORS
+  const orsCoords = coordinates.map((c) => [c.lng, c.lat]); // GeoJSON: [lng, lat]
+
+  fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: apiKey,
+    },
+    body: JSON.stringify({
+      coordinates: orsCoords,
+      instructions: false,
+    }),
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      if (routeLine) map.removeLayer(routeLine);
+      routeLine = L.geoJSON(data, {
+        style: {
+          color: "#2ecc71",
+          weight: 5,
+        },
+      }).addTo(map);
+
+      // RouteInfo anzeigen
+      const dist = data.features[0].properties.summary.distance / 1000;
+      const dur = data.features[0].properties.summary.duration / 60;
+      document.getElementById("routeInfo").innerText =
+        `📏 ${dist.toFixed(1)} km\n⏱️ ca. ${Math.round(dur)} Min`;
+    })
+    .catch((err) => {
+      document.getElementById("errorInfo").innerText =
+        "Fehler bei der Routenberechnung.\n" + err.message;
+    });
+    }
+    /*async function calculateRoute() {
       const errorBox = document.getElementById("errorInfo");
       errorBox.innerText = "";
       if (selectedHuetten.length < 2) {
         alert("Bitte mindestens zwei Hütten auswählen.");
         return;
-      }
+      }*/
 
       const coordinates = selectedHuetten.map((h) => [h.lng, h.lat]);
       const body = { coordinates };
