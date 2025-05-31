@@ -225,7 +225,8 @@
       </label>
       <p>Wähle Hütten aus:</p>
       <ul id="selectedList"></ul>
-      <button onclick="calculateRoute()">🗺️ Route berechnen</button>
+      <button onclick="calculateRoute()">Normale Route</button>
+<button onclick="calculateOptimizedRoute()">Optimierte Route</button>
       <button onclick="resetRoute()">❌ Auswahl zurücksetzen</button>
       <button onclick="zeigeNaechsteHütte()">📍 Nächste Hütte anzeigen</button>
       <div id="routeInfo"></div>
@@ -406,7 +407,101 @@ function hideCenterButton() {
       document.getElementById("errorInfo").innerText = "";
     }
 
-    
+    function calculateOptimizedRoute() {
+  if (!userBikeMarker || !userBikeMarker.getLatLng) {
+    document.getElementById("errorInfo").innerText =
+      "📍 Aktuelle Position nicht verfügbar.";
+    return;
+  }
+
+  if (selectedHuetten.length === 0) {
+    document.getElementById("errorInfo").innerText =
+      "Bitte mindestens eine Hütte auswählen.";
+    return;
+  }
+
+  document.getElementById("errorInfo").innerText = "";
+
+  const start = userBikeMarker.getLatLng();
+
+  const jobs = selectedHuetten.map((hut, index) => ({
+    id: index + 1,
+    location: [hut.lng, hut.lat],
+  }));
+
+  const body = {
+    jobs: jobs,
+    vehicles: [
+      {
+        id: 1,
+        profile: "cycling-regular",
+        start: [start.lng, start.lat],
+      },
+    ],
+  };
+
+  fetch("https://api.openrouteservice.org/optimization", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: apiKey,
+    },
+    body: JSON.stringify(body),
+  })
+    .then((res) => res.json())
+    .then((optData) => {
+      const routeCoords = [];
+
+      // Startpunkt (Fahrradposition)
+      routeCoords.push([start.lng, start.lat]);
+
+      optData.routes[0].steps.forEach((step) => {
+        if (step.type === "job") {
+          const job = jobs.find((j) => j.id === step.id);
+          routeCoords.push(job.location);
+        }
+      });
+
+      // Anfrage zur finalen Route (diese wird dann schön geroutet über Straßen)
+      return fetch(
+        "https://api.openrouteservice.org/v2/directions/cycling-regular/geojson",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: apiKey,
+          },
+          body: JSON.stringify({
+            coordinates: routeCoords,
+            instructions: false,
+          }),
+        }
+      );
+    })
+    .then((res) => res.json())
+    .then((data) => {
+      if (routeLine) {
+        map.removeLayer(routeLine);
+      }
+
+      routeLine = L.geoJSON(data, {
+        style: { color: "#e67e22", weight: 4 },
+      }).addTo(map);
+
+      const dist = data.features[0].properties.summary.distance / 1000;
+      const dur = data.features[0].properties.summary.duration / 60;
+
+      document.getElementById("routeInfo").innerText =
+        `📏 Optimiert: ${dist.toFixed(1)} km\n⏱️ ca. ${Math.round(dur)} Min`;
+
+      map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+    })
+    .catch((err) => {
+      console.error(err);
+      document.getElementById("errorInfo").innerText =
+        "Fehler bei der Routenoptimierung.";
+    });
+    }
 
     function calculateRoute() {
   if (!userBikeMarker || !userBikeMarker.getLatLng) {
