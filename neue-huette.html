@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Neue Eierhütte melden</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 600px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+      border-radius: 12px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    label {
+      display: block;
+      margin-top: 12px;
+      font-weight: bold;
+    }
+    input, textarea, select, button {
+      width: 100%;
+      padding: 8px;
+      margin-top: 4px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    button {
+      margin-top: 20px;
+      background: green;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .info {
+      font-size: 0.9em;
+      color: #555;
+      margin-top: 10px;
+    }
+    #hut-coordinates {
+      font-style: italic;
+      color: #333;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Neue Eierhütte beantragen</h1>
+
+  <form id="add-hut-form">
+    <label for="hut-name">Name der Hütte:</label>
+    <input type="text" id="hut-name" required>
+
+    <label for="hut-description">Beschreibung / Besonderheiten:</label>
+    <textarea id="hut-description" rows="4" required></textarea>
+
+    <label>Standort:</label>
+    <p id="hut-coordinates">Klicke auf die Karte zur Standortauswahl</p>
+    <div id="map" style="height: 300px; margin-top: 10px;"></div>
+
+    <label for="hut-power">Stromversorgung vorhanden?</label>
+    <select id="hut-power" required>
+      <option value="">Bitte auswählen</option>
+      <option value="ja">Ja</option>
+      <option value="nein">Nein</option>
+    </select>
+
+    <label for="hut-image">Optional: Foto der Hütte</label>
+    <input type="file" id="hut-image" accept="image/*">
+
+    <p class="info">Mit dem Absenden akzeptierst du eine monatliche Gebühr von 2 €, sobald die Hütte freigeschaltet wird.</p>
+
+    <button type="submit">Hütte beantragen</button>
+  </form>
+
+  <!-- Firebase & Leaflet (nur wenn du sie brauchst) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "DEIN_KEY",
+      authDomain: "DEIN_PROJECT.firebaseapp.com",
+      projectId: "DEIN_PROJECT",
+      storageBucket: "DEIN_PROJECT.appspot.com",
+      messagingSenderId: "XXXX",
+      appId: "XXX"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const storage = firebase.storage();
+
+    let selectedLatLng = null;
+
+    const map = L.map('map').setView([51, 10], 6); // Deutschland Mitte
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap-Mitwirkende'
+    }).addTo(map);
+
+    let marker = null;
+    map.on('click', function(e) {
+      selectedLatLng = e.latlng;
+      document.getElementById('hut-coordinates').innerText =
+        `Lat: ${e.latlng.lat.toFixed(5)}, Lng: ${e.latlng.lng.toFixed(5)}`;
+      if (marker) marker.setLatLng(e.latlng);
+      else marker = L.marker(e.latlng).addTo(map);
+    });
+
+    document.getElementById('add-hut-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      if (!selectedLatLng) {
+        alert("Bitte wähle zuerst den Standort auf der Karte.");
+        return;
+      }
+
+      const data = {
+        name: document.getElementById('hut-name').value,
+        description: document.getElementById('hut-description').value,
+        lat: selectedLatLng.lat,
+        lng: selectedLatLng.lng,
+        power: document.getElementById('hut-power').value,
+        approved: false,
+        createdAt: Date.now(),
+        imageUrl: null,
+      };
+
+      const file = document.getElementById('hut-image').files[0];
+      if (file) {
+        const ref = storage.ref(`hutImages/${Date.now()}_${file.name}`);
+        await ref.put(file);
+        data.imageUrl = await ref.getDownloadURL();
+      }
+
+      await db.collection('hutRequests').add(data);
+      alert("Danke! Dein Antrag wurde übermittelt und wird bald geprüft.");
+      document.getElementById('add-hut-form').reset();
+      document.getElementById('hut-coordinates').innerText = "Klicke auf die Karte zur Standortauswahl";
+      if (marker) map.removeLayer(marker);
+      selectedLatLng = null;
+    });
+  </script>
+</body>
+</html>
