@@ -2,103 +2,100 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>Admin: Eierhütten-Anträge</title>
+  <title>Admin – Neue Eierhütten</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     body {
       font-family: sans-serif;
-      background: #f8f8f8;
       padding: 2rem;
+      background: #f9f9f9;
     }
+
     h1 {
-      text-align: center;
-      margin-bottom: 2rem;
+      color: #333;
     }
-    .antrag {
+
+    .huette {
       background: white;
-      padding: 1rem;
       border-radius: 10px;
+      padding: 1rem;
       margin-bottom: 1rem;
-      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
-    .antrag p {
+
+    .huette p {
       margin: 0.3rem 0;
     }
-    .buttons {
-      margin-top: 1rem;
-    }
+
     button {
-      padding: 0.5rem 1rem;
+      margin-top: 0.5rem;
       margin-right: 0.5rem;
+      padding: 0.5rem 1rem;
       border: none;
       border-radius: 5px;
       cursor: pointer;
     }
-    .freigeben {
-      background: #4caf50;
-      color: white;
-    }
-    .ablehnen {
-      background: #f44336;
-      color: white;
-    }
+
+    .genehmigt { background-color: #2e7d32; color: white; }
+    .abgelehnt { background-color: #c62828; color: white; }
   </style>
 </head>
 <body>
-  <h1>Admin-Bereich – Eierhütten-Anträge</h1>
-  <div id="anträge"></div>
 
-  <script>
-    async function ladeAnträge() {
-      const container = document.getElementById('anträge');
-      container.innerHTML = 'Lade Anträge...';
+  <h1>Admin – Neue Eierhütten-Anträge</h1>
+  <div id="liste"></div>
 
-      try {
-        const res = await fetch('https://dein-server-url/api/antraege'); // Anpassen
-        const antraege = await res.json();
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getFirestore, collection, getDocs, updateDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-        if (!antraege.length) {
-          container.innerHTML = '<p>Keine neuen Anträge vorhanden.</p>';
-          return;
-        }
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.firebasestorage.app",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
+    };
 
-        container.innerHTML = '';
-        antraege.forEach(antrag => {
-          const div = document.createElement('div');
-          div.className = 'antrag';
-          div.innerHTML = `
-            <p><strong>Name:</strong> ${antrag.name}</p>
-            <p><strong>Beschreibung:</strong> ${antrag.beschreibung}</p>
-            <p><strong>Adresse:</strong> ${antrag.adresse}</p>
-            <p><strong>Strom:</strong> ${antrag.strom}</p>
-            <p><strong>E-Mail:</strong> ${antrag.email}</p>
-            ${antrag.fotoUrl ? `<p><img src="${antrag.fotoUrl}" width="200" /></p>` : ''}
-            <div class="buttons">
-              <button class="freigeben" onclick="freigeben('${antrag.id}')">Freigeben</button>
-              <button class="ablehnen" onclick="ablehnen('${antrag.id}')">Ablehnen</button>
-            </div>
-          `;
-          container.appendChild(div);
-        });
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const huettenRef = collection(db, "neue_huetten");
 
-      } catch (e) {
-        container.innerHTML = '<p>Fehler beim Laden der Anträge.</p>';
-        console.error(e);
-      }
+    const liste = document.getElementById("liste");
+
+    async function ladeAntraege() {
+      const snapshot = await getDocs(huettenRef);
+      liste.innerHTML = "";
+
+      snapshot.forEach(docSnap => {
+        const daten = docSnap.data();
+        const id = docSnap.id;
+
+        const div = document.createElement("div");
+        div.className = "huette";
+        div.innerHTML = `
+          <p><strong>🐣 Name:</strong> ${daten.name}</p>
+          <p><strong>📝 Beschreibung:</strong> ${daten.beschreibung}</p>
+          <p><strong>⚡️ Extras:</strong> ${daten.extras || "-"}</p>
+          <p><strong>💶 Beitrag:</strong> ${daten.zahlung} €/Monat</p>
+          <p><strong>📅 Status:</strong> <span id="status-${id}">${daten.status}</span></p>
+          <button class="genehmigt" onclick="updateStatus('${id}', 'genehmigt')">Genehmigen</button>
+          <button class="abgelehnt" onclick="updateStatus('${id}', 'abgelehnt')">Ablehnen</button>
+        `;
+        liste.appendChild(div);
+      });
     }
 
-    async function freigeben(id) {
-      if (!confirm('Diesen Antrag wirklich freigeben?')) return;
-      await fetch(`https://dein-server-url/api/freigeben/${id}`, { method: 'POST' });
-      ladeAnträge();
-    }
+    window.updateStatus = async function(id, neuerStatus) {
+      const docRef = doc(db, "neue_huetten", id);
+      await updateDoc(docRef, { status: neuerStatus });
+      document.getElementById(`status-${id}`).textContent = neuerStatus;
+    };
 
-    async function ablehnen(id) {
-      if (!confirm('Diesen Antrag wirklich ablehnen?')) return;
-      await fetch(`https://dein-server-url/api/ablehnen/${id}`, { method: 'POST' });
-      ladeAnträge();
-    }
-
-    ladeAnträge();
+    ladeAntraege();
   </script>
+
 </body>
 </html>
