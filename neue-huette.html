@@ -4,83 +4,76 @@
   <meta charset="UTF-8">
   <title>Neue Eierhütte einreichen</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link 
+    rel="stylesheet" 
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+    integrity="sha512-p6LUYYD9u4tHrf0TGeQnHZ59Y5gN3DnWJ2q6LJ6DZ2C1ZOmh3Z1ZPOAeWWU9HgiZghXnhDj5hdW1CkSvxwrwEA==" 
+    crossorigin=""
+  />
   <style>
     body {
       font-family: sans-serif;
-      padding: 2rem;
-      background: #f4f4f4;
-    }
-
-    h1 {
-      color: #2b7a0b;
+      padding: 1rem;
     }
 
     form {
-      background: white;
-      padding: 1.5rem;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
       max-width: 500px;
-    }
-
-    label {
-      display: block;
-      margin-top: 1rem;
+      margin-bottom: 2rem;
     }
 
     input, textarea {
       width: 100%;
-      padding: 0.6rem;
-      margin-top: 0.3rem;
-      border: 1px solid #ccc;
-      border-radius: 5px;
+      margin-bottom: 1rem;
+      padding: 0.5rem;
+      font-size: 1rem;
     }
 
     button {
-      margin-top: 1.5rem;
-      background: #2b7a0b;
+      padding: 0.7rem 1.2rem;
+      background: green;
       color: white;
-      padding: 0.8rem 1.5rem;
       border: none;
       border-radius: 5px;
       cursor: pointer;
     }
 
-    #status {
-      margin-top: 1rem;
-      font-weight: bold;
+    #map {
+      height: 300px;
+      margin-bottom: 1rem;
+      border: 2px solid #ccc;
+      border-radius: 8px;
+    }
+
+    .info {
+      margin-top: -0.5rem;
+      margin-bottom: 1rem;
+      color: gray;
+      font-size: 0.9rem;
     }
   </style>
 </head>
 <body>
 
-  <h1>Neue Eierhütte beantragen</h1>
+  <h1>🐣 Neue Eierhütte einreichen</h1>
 
-  <form id="huettenForm">
-    <label>
-      Name der Hütte:
-      <input type="text" name="name" required>
-    </label>
+  <form id="huetteForm">
+    <input type="text" id="name" placeholder="Name der Hütte" required />
+    <textarea id="beschreibung" placeholder="Beschreibung" required></textarea>
+    <input type="text" id="extras" placeholder="Besondere Merkmale (optional)" />
+    <input type="number" id="zahlung" placeholder="Monatlicher Beitrag (€)" required />
 
-    <label>
-      Beschreibung:
-      <textarea name="beschreibung" required></textarea>
-    </label>
+    <div id="map"></div>
+    <div class="info">📍 Tippe auf die Karte, um die Position deiner Hütte zu wählen.</div>
+    
+    <input type="hidden" id="lat" />
+    <input type="hidden" id="lng" />
 
-    <label>
-      Besonderheiten (z. B. Strom, Schatten):
-      <input type="text" name="extras">
-    </label>
-
-    <label>
-      Monatlicher Beitrag (€):
-      <input type="number" name="zahlung" required min="1" step="0.01">
-    </label>
-
-    <button type="submit">Antrag absenden</button>
-    <div id="status"></div>
+    <button type="submit">Einreichen</button>
   </form>
 
+  <div id="status"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -99,30 +92,64 @@
     const db = getFirestore(app);
     const huettenRef = collection(db, "neue_huetten");
 
-    const form = document.getElementById('huettenForm');
-    const status = document.getElementById('status');
+    const form = document.getElementById("huetteForm");
+    const statusEl = document.getElementById("status");
 
-    form.addEventListener('submit', async (e) => {
+    form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const data = Object.fromEntries(new FormData(form));
+
+      const name = document.getElementById("name").value;
+      const beschreibung = document.getElementById("beschreibung").value;
+      const extras = document.getElementById("extras").value;
+      const zahlung = parseFloat(document.getElementById("zahlung").value);
+      const lat = parseFloat(document.getElementById("lat").value);
+      const lng = parseFloat(document.getElementById("lng").value);
+
+      if (!lat || !lng) {
+        statusEl.textContent = "❗ Bitte wähle zuerst einen Ort auf der Karte.";
+        return;
+      }
 
       try {
         await addDoc(huettenRef, {
-          name: data.name,
-          beschreibung: data.beschreibung,
-          extras: data.extras,
-          zahlung: parseFloat(data.zahlung),
+          name,
+          beschreibung,
+          extras,
+          zahlung,
+          lat,
+          lng,
           status: "offen",
-          timestamp: new Date()
+          eingereicht_am: new Date().toISOString()
         });
-        status.textContent = "✅ Antrag erfolgreich eingereicht!";
+
         form.reset();
+        marker?.remove();
+        statusEl.textContent = "✅ Antrag erfolgreich gesendet!";
       } catch (err) {
-        console.error(err);
-        status.textContent = "❌ Fehler beim Einreichen.";
+        statusEl.textContent = "❌ Fehler beim Senden: " + err.message;
+      }
+    });
+
+    // Leaflet-Karte
+    const map = L.map("map").setView([51.0, 10.0], 6); // Deutschland-Zentrum
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap"
+    }).addTo(map);
+
+    let marker = null;
+
+    map.on("click", function (e) {
+      const { lat, lng } = e.latlng;
+
+      document.getElementById("lat").value = lat.toFixed(6);
+      document.getElementById("lng").value = lng.toFixed(6);
+
+      if (marker) {
+        marker.setLatLng([lat, lng]);
+      } else {
+        marker = L.marker([lat, lng]).addTo(map);
       }
     });
   </script>
-
 </body>
 </html>
