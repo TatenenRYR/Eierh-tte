@@ -576,110 +576,54 @@ function updateHuettenMarkers(huettenListe) {
   });
 }
 
-// Funktion zum Laden der bestätigten Hütten
-  /*async function ladeEierhuetten() {
-  const querySnapshot = await getDocs(collection(db, "eierhuetten"));
-  
-  const huettenListe = [];
-  querySnapshot.forEach((doc) => {
-    const data = doc.data();
-    const coords = data.coords;
 
-    // Nur anzeigen, wenn bestätigt und Koordinaten vorhanden
-    if (data.status !== "aktiviert" || !coords) return;
+// 🔄 Live-Aktualisierung der Eierhütten mit Speicherung in globaler Variable import { collection, onSnapshot } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 
-    huettenListe.push({
-      id: doc.id,
-      lat: coords.lat,
-      lng: coords.lng,
-      name: data.standort || "Unbekannter Ort",
-      desc: data.beschreibung || "Keine Beschreibung",
-      strom: data.strom || false,
-    });
-  });
+function ladeEierhuettenLive() { console.log("🔄 Starte Live-Überwachung der Eierhütten...");
 
-  updateHuettenMarkers(huettenListe);
-  }
-async function ladeEierhuetten() {
-  //const querySnapshot = await getDocs(collection(db, "eierhuetten"));
-  let debugText = "🐣 Debug-Info:\n";
+const huettenRef = collection(db, "eierhuetten");
 
-  const huettenListe = [];
-  let gesamt = 0;
-  let übersprungen = 0;
+onSnapshot(huettenRef, (querySnapshot) => { const geladeneHuetten = []; huettenMarkerLayer.clearLayers();
 
-  querySnapshot.forEach((doc) => {
-    gesamt++;
-    const data = doc.data();
-    const coords = data.coords;
+querySnapshot.forEach((doc) => {
+  const data = doc.data();
+  const coords = data.coords;
 
-    if (data.status !== "aktiviert" || !coords) {
-      übersprungen++;
-      debugText += `⚠️ Übersprungen: ${doc.id} (Status: ${data.status}, Koordinaten: ${coords ? "vorhanden" : "fehlen"})\n`;
-      return;
-    }
+  if (data.status !== "aktiviert" || !coords) return;
 
-    huettenListe.push({
-      id: doc.id,
-      lat: coords.lat,
-      lng: coords.lng,
-      name: data.standort || "Unbekannter Ort",
-      desc: data.beschreibung || "Keine Beschreibung",
-      strom: data.strom || false,
-    });
-  });
+  const hut = {
+    id: doc.id,
+    lat: coords.lat,
+    lng: coords.lng,
+    name: data.standort || "Unbekannter Ort",
+    desc: data.beschreibung || "Keine Beschreibung",
+    strom: data.strom || false,
+  };
 
-  updateHuettenMarkers(huettenListe);
+  geladeneHuetten.push(hut);
 
-  debugText += `✅ Insgesamt gefunden: ${gesamt}\n`;
-  debugText += `✅ Davon geladen: ${huettenListe.length}\n`;
-  debugText += `🚫 Übersprungen: ${übersprungen}\n`;
+  const marker = L.marker([coords.lat, coords.lng]).addTo(huettenMarkerLayer);
+  const inhalt = `
+    <b>${hut.name}</b><br>
+    ${hut.desc}<br>
+    Strom: ${hut.strom ? "✅ Ja" : "❌ Nein"}
+  `;
+  marker.bindPopup(inhalt);
+});
 
-  document.getElementById("errorInfo").innerText = debugText;
-}*/
+// Globale Variable aktualisieren
+huetten = geladeneHuetten;
+localStorage.setItem("huetten", JSON.stringify(huetten));
 
-function ladeEierhuetten() {
-  console.log("🔄 Starte Live-Überwachung der Eierhütten...");
+console.log(`✅ ${huetten.length} Eierhütten geladen.`);
 
-  const huettenRef = collection(db, "eierhuetten");
+}); }
 
-  onSnapshot(huettenRef, (querySnapshot) => {
-    const huettenListe = [];
-    let gesamt = 0;
-    let übersprungen = 0;
-    let debugText = "🐣 Live-Debug:\n";
+// 🔧 Ergänzung in der Funktion updateUserBike() im Fehlerfall: // // (err) => { //   console.warn('Standort konnte nicht ermittelt werden:', err.message); //   map.setView([51.1657, 10.4515], 6); // Fallback: Deutschland //   document.getElementById("loader").style.display = "none"; // Ladebildschirm ausblenden // }
 
-    /*querySnapshot.forEach((doc) => {
-      gesamt++;
-      const data = doc.data();
-      const coords = data.coords;
+// ✅ Initialisierung (z. B. nach dem Map-Setup): // ladeEierhuettenLive();
 
-      if (data.status !== "aktiviert" || !coords) {
-        übersprungen++;
-        debugText += `⚠️ Übersprungen: ${doc.id} (Status: ${data.status}, Koordinaten: ${coords ? "vorhanden" : "fehlen"})\n`;
-        return;
-      }
 
-      huettenListe.push({
-        id: doc.id,
-        lat: coords.lat,
-        lng: coords.lng,
-        name: data.standort || "Unbekannter Ort",
-        desc: data.beschreibung || "Keine Beschreibung",
-        strom: data.strom || false,
-      });
-    });*/
-
-    updateHuettenMarkers(huettenListe);
-
-    debugText += `✅ Insgesamt gefunden: ${gesamt}\n`;
-    debugText += `✅ Davon geladen: ${huettenListe.length}\n`;
-    debugText += `🚫 Übersprungen: ${übersprungen}\n`;
-
-    const infoEl = document.getElementById("routeInfo");
-    if (infoEl) infoEl.innerText = debugText;
-  });
-}
     function addToRoute(id) {
       const h = huetten.find((h) => h.id === id);
       if (!selectedHuetten.includes(h)) {
