@@ -260,6 +260,7 @@
   <div class="spinner"></div>
   <p>Lade Karte…</p>
   </div>
+  
 <body>
   <header id="topbar">
     <div class="logo-area">
@@ -576,20 +577,28 @@ function updateHuettenMarkers(huettenListe) {
   });
 }
 
+// 🔄 Live-Aktualisierung der Eierhütten mit Speicherung in globaler Variable und Debug-Ausgabe import { collection, onSnapshot } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 
-// 🔄 Live-Aktualisierung der Eierhütten mit Speicherung in globaler Variable import { collection, onSnapshot } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
-
-function ladeEierhuetten() { console.log("🔄 Starte Live-Überwachung der Eierhütten...");
+function ladeEierhuettenLive() { console.log("🔄 Starte Live-Überwachung der Eierhütten...");
 
 const huettenRef = collection(db, "eierhuetten");
 
 onSnapshot(huettenRef, (querySnapshot) => { const geladeneHuetten = []; huettenMarkerLayer.clearLayers();
 
+let gesamt = 0;
+let übersprungen = 0;
+let debugText = "🐣 Debug-Info:\n";
+
 querySnapshot.forEach((doc) => {
+  gesamt++;
   const data = doc.data();
   const coords = data.coords;
 
-  if (data.status !== "aktiviert" || !coords) return;
+  if (data.status !== "aktiviert" || !coords) {
+    übersprungen++;
+    debugText += `⚠️ Übersprungen: ${doc.id} (Status: ${data.status}, Koordinaten: ${coords ? "vorhanden" : "fehlen"})\n`;
+    return;
+  }
 
   const hut = {
     id: doc.id,
@@ -615,13 +624,30 @@ querySnapshot.forEach((doc) => {
 huetten = geladeneHuetten;
 localStorage.setItem("huetten", JSON.stringify(huetten));
 
-console.log(`✅ ${huetten.length} Eierhütten geladen.`);
+debugText += `\n✅ Insgesamt gefunden: ${gesamt}\n`;
+debugText += `✅ Davon geladen: ${geladeneHuetten.length}\n`;
+debugText += `🚫 Übersprungen: ${übersprungen}`;
+
+const debugBox = document.getElementById("routeInfo");
+if (debugBox) debugBox.innerText = debugText;
+
+const debugConsole = document.getElementById("debugConsole");
+if (debugConsole) {
+  debugConsole.textContent = debugText;
+  debugConsole.style.display = "block";
+}
+
+console.log("✅ Eierhütten aktualisiert");
 
 }); }
 
 // 🔧 Ergänzung in der Funktion updateUserBike() im Fehlerfall: // // (err) => { //   console.warn('Standort konnte nicht ermittelt werden:', err.message); //   map.setView([51.1657, 10.4515], 6); // Fallback: Deutschland //   document.getElementById("loader").style.display = "none"; // Ladebildschirm ausblenden // }
 
 // ✅ Initialisierung (z. B. nach dem Map-Setup): // ladeEierhuettenLive();
+
+// 🔧 Debug-Overlay hinzufügen (optional im HTML einbauen): // <div id="debugConsole" style="position:fixed; bottom:0; left:0; right:0; background:#222; color:#0f0; padding:10px; font-size:12px; max-height:200px; overflow:auto; z-index:3000; display:none;"></div>
+
+
 
 
     function addToRoute(id) {
@@ -959,5 +985,11 @@ setInterval(() => {
 
     
   </script>
+  <div id="debugConsole"
+     style="position:fixed; bottom:0; left:0; right:0;
+            background:#222; color:#0f0; padding:10px;
+            font-size:12px; max-height:200px;
+            overflow:auto; z-index:3000; display:none;">
+</div>
 </body>
 </html>
