@@ -1,101 +1,93 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>Admin – Neue Eierhütten</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin: Eierhütten-Anträge</title>
   <style>
-    body {
-      font-family: sans-serif;
-      padding: 2rem;
-      background: #f9f9f9;
-    }
-
-    h1 {
-      color: #333;
-    }
-
-    .huette {
-      background: white;
-      border-radius: 10px;
-      padding: 1rem;
-      margin-bottom: 1rem;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    }
-
-    .huette p {
-      margin: 0.3rem 0;
-    }
-
-    button {
-      margin-top: 0.5rem;
-      margin-right: 0.5rem;
-      padding: 0.5rem 1rem;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-
-    .genehmigt { background-color: #2e7d32; color: white; }
-    .abgelehnt { background-color: #c62828; color: white; }
+    body { font-family: sans-serif; padding: 1rem; }
+    .antrag { border: 1px solid #ccc; padding: 1rem; margin-bottom: 1rem; }
+    .antrag h3 { margin-top: 0; }
+    button { margin-right: 0.5rem; }
+    input[type='number'] { width: 5rem; }
   </style>
 </head>
 <body>
+  <h1>Adminpanel: Eierhütten-Anträge</h1><label for="betrag">Monatlicher Beitrag (€): </label> <input type="number" id="betrag" step="0.01" min="0"> <button id="speichernBetrag">Speichern</button>
 
-  <h1>Admin – Neue Eierhütten-Anträge</h1>
-  <div id="liste"></div>
-
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getFirestore, collection, getDocs, updateDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  <p id="status"></p>  <h2>Offene Anträge</h2>
+  <div id="antraege"></div>  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+    import { getDatabase, ref, get, set, remove, update, onValue } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
       authDomain: "eierhuettentour.firebaseapp.com",
       projectId: "eierhuettentour",
-      storageBucket: "eierhuettentour.firebasestorage.app",
+      storageBucket: "eierhuettentour.appspot.com",
       messagingSenderId: "348272135205",
       appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
-      measurementId: "G-16V6K5GXDT"
+      measurementId: "G-16V6K5GXDT",
+      databaseURL: "https://eierhuettentour-default-rtdb.europe-west1.firebasedatabase.app"
     };
 
     const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const huettenRef = collection(db, "neue_huetten");
+    const db = getDatabase(app);
 
-    const liste = document.getElementById("liste");
+    const betragInput = document.getElementById("betrag");
+    const statusEl = document.getElementById("status");
 
-    async function ladeAntraege() {
-      const snapshot = await getDocs(huettenRef);
-      liste.innerHTML = "";
-
-      snapshot.forEach(docSnap => {
-        const daten = docSnap.data();
-        const id = docSnap.id;
-
-        const div = document.createElement("div");
-        div.className = "huette";
-        div.innerHTML = `
-          <p><strong>🐣 Name:</strong> ${daten.name}</p>
-          <p><strong>📝 Beschreibung:</strong> ${daten.beschreibung}</p>
-          <p><strong>⚡️ Extras:</strong> ${daten.extras || "-"}</p>
-          <p><strong>💶 Beitrag:</strong> ${daten.zahlung} €/Monat</p>
-          <p><strong>📅 Status:</strong> <span id="status-${id}">${daten.status}</span></p>
-          <button class="genehmigt" onclick="updateStatus('${id}', 'genehmigt')">Genehmigen</button>
-          <button class="abgelehnt" onclick="updateStatus('${id}', 'abgelehnt')">Ablehnen</button>
-        `;
-        liste.appendChild(div);
+    // Aktuellen Betrag laden
+    get(ref(db, "admin/eintragungsbetrag"))
+      .then(snapshot => {
+        if (snapshot.exists()) {
+          betragInput.value = snapshot.val();
+        }
       });
-    }
 
-    window.updateStatus = async function(id, neuerStatus) {
-      const docRef = doc(db, "neue_huetten", id);
-      await updateDoc(docRef, { status: neuerStatus });
-      document.getElementById(`status-${id}`).textContent = neuerStatus;
-    };
+    // Betrag speichern
+    document.getElementById("speichernBetrag").addEventListener("click", async () => {
+      const neuerBetrag = parseFloat(betragInput.value);
+      if (!isNaN(neuerBetrag)) {
+        await set(ref(db, "admin/eintragungsbetrag"), neuerBetrag);
+        statusEl.textContent = "Beitrag gespeichert.";
+        setTimeout(() => statusEl.textContent = "", 2000);
+      }
+    });
 
-    ladeAntraege();
-  </script>
+    // Offene Anträge laden
+    const antraegeRef = ref(db, "antraege");
+    const antraegeContainer = document.getElementById("antraege");
 
-</body>
+    onValue(antraegeRef, snapshot => {
+      antraegeContainer.innerHTML = "";
+      snapshot.forEach(child => {
+        const antrag = child.val();
+        if (!antrag.genehmigt) {
+          const el = document.createElement("div");
+          el.className = "antrag";
+          el.innerHTML = `
+            <h3>${antrag.name}</h3>
+            <p><strong>Beschreibung:</strong> ${antrag.beschreibung}</p>
+            <p><strong>Strom:</strong> ${antrag.strom}</p>
+            <p><strong>Koordinaten:</strong> ${antrag.lat}, ${antrag.lng}</p>
+            <p><strong>Betrag:</strong> ${antrag.betrag.toFixed(2)} € / Monat</p>
+            <button data-id="${child.key}" class="genehmigen">Genehmigen</button>
+            <button data-id="${child.key}" class="ablehnen">Ablehnen</button>
+          `;
+          antraegeContainer.appendChild(el);
+        }
+      });
+    });
+
+    // Aktionen auf Buttons
+    document.addEventListener("click", async (e) => {
+      const id = e.target.dataset.id;
+      if (e.target.classList.contains("genehmigen")) {
+        await update(ref(db, `antraege/${id}`), { genehmigt: true });
+      }
+      if (e.target.classList.contains("ablehnen")) {
+        await remove(ref(db, `antraege/${id}`));
+      }
+    });
+  </script></body>
 </html>
