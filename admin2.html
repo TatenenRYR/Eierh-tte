@@ -1,93 +1,110 @@
-<!DOCTYPE html><html lang="de">
+<!DOCTYPE html>
+<html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin: Eierhütten-Anträge</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin Bereich - Monatlicher Betrag einstellen</title>
   <style>
-    body { font-family: sans-serif; padding: 1rem; }
-    .antrag { border: 1px solid #ccc; padding: 1rem; margin-bottom: 1rem; }
-    .antrag h3 { margin-top: 0; }
-    button { margin-right: 0.5rem; }
-    input[type='number'] { width: 5rem; }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 1rem;
+      max-width: 400px;
+    }
+    label, input, button {
+      display: block;
+      margin-top: 1rem;
+      width: 100%;
+      font-size: 1.1rem;
+    }
+    button {
+      padding: 0.5rem;
+      cursor: pointer;
+    }
+    #status {
+      margin-top: 1rem;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
-  <h1>Adminpanel: Eierhütten-Anträge</h1><label for="betrag">Monatlicher Beitrag (€): </label> <input type="number" id="betrag" step="0.01" min="0"> <button id="speichernBetrag">Speichern</button>
+  <h1>Admin: Monatlicher Betrag</h1>
+  <label for="betragInput">Monatlicher Betrag (€):</label>
+  <input type="number" id="betragInput" step="0.01" min="0" />
 
-  <p id="status"></p>  <h2>Offene Anträge</h2>
-  <div id="antraege"></div>  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-    import { getDatabase, ref, get, set, remove, update, onValue } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+  <button id="saveBtn">Speichern</button>
 
+  <div id="status"></div>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
       authDomain: "eierhuettentour.firebaseapp.com",
       projectId: "eierhuettentour",
-      storageBucket: "eierhuettentour.appspot.com",
+      storageBucket: "eierhuettentour.firebasestorage.app",
       messagingSenderId: "348272135205",
       appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
       measurementId: "G-16V6K5GXDT",
-      databaseURL: "https://eierhuettentour-default-rtdb.europe-west1.firebasedatabase.app"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+    // Firebase initialisieren
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
 
-    const betragInput = document.getElementById("betrag");
-    const statusEl = document.getElementById("status");
+    const betragInput = document.getElementById("betragInput");
+    const saveBtn = document.getElementById("saveBtn");
+    const statusDiv = document.getElementById("status");
 
     // Aktuellen Betrag laden
-    get(ref(db, "admin/eintragungsbetrag"))
-      .then(snapshot => {
-        if (snapshot.exists()) {
-          betragInput.value = snapshot.val();
+    async function loadBetrag() {
+      try {
+        const docRef = db.collection("config").doc("settings");
+        const docSnap = await docRef.get();
+        if (docSnap.exists) {
+          const data = docSnap.data();
+          betragInput.value = data.monatlicherBetrag || 0;
+          statusDiv.textContent = "Betrag geladen.";
+          statusDiv.style.color = "green";
+        } else {
+          betragInput.value = 0;
+          statusDiv.textContent = "Keine Einstellung gefunden, Standard 0 €";
+          statusDiv.style.color = "orange";
         }
-      });
+      } catch (error) {
+        statusDiv.textContent = "Fehler beim Laden des Betrags.";
+        statusDiv.style.color = "red";
+        console.error(error);
+      }
+    }
+
+    loadBetrag();
 
     // Betrag speichern
-    document.getElementById("speichernBetrag").addEventListener("click", async () => {
+    saveBtn.addEventListener("click", async () => {
       const neuerBetrag = parseFloat(betragInput.value);
-      if (!isNaN(neuerBetrag)) {
-        await set(ref(db, "admin/eintragungsbetrag"), neuerBetrag);
-        statusEl.textContent = "Beitrag gespeichert.";
-        setTimeout(() => statusEl.textContent = "", 2000);
+      if (isNaN(neuerBetrag) || neuerBetrag < 0) {
+        alert("Bitte einen gültigen Betrag eingeben (>= 0).");
+        return;
+      }
+
+      try {
+        await db.collection("config").doc("settings").set(
+          {
+            monatlicherBetrag: neuerBetrag,
+          },
+          { merge: true }
+        );
+        statusDiv.textContent = "Betrag erfolgreich gespeichert.";
+        statusDiv.style.color = "green";
+      } catch (error) {
+        statusDiv.textContent = "Fehler beim Speichern.";
+        statusDiv.style.color = "red";
+        console.error(error);
       }
     });
-
-    // Offene Anträge laden
-    const antraegeRef = ref(db, "antraege");
-    const antraegeContainer = document.getElementById("antraege");
-
-    onValue(antraegeRef, snapshot => {
-      antraegeContainer.innerHTML = "";
-      snapshot.forEach(child => {
-        const antrag = child.val();
-        if (!antrag.genehmigt) {
-          const el = document.createElement("div");
-          el.className = "antrag";
-          el.innerHTML = `
-            <h3>${antrag.name}</h3>
-            <p><strong>Beschreibung:</strong> ${antrag.beschreibung}</p>
-            <p><strong>Strom:</strong> ${antrag.strom}</p>
-            <p><strong>Koordinaten:</strong> ${antrag.lat}, ${antrag.lng}</p>
-            <p><strong>Betrag:</strong> ${antrag.betrag.toFixed(2)} € / Monat</p>
-            <button data-id="${child.key}" class="genehmigen">Genehmigen</button>
-            <button data-id="${child.key}" class="ablehnen">Ablehnen</button>
-          `;
-          antraegeContainer.appendChild(el);
-        }
-      });
-    });
-
-    // Aktionen auf Buttons
-    document.addEventListener("click", async (e) => {
-      const id = e.target.dataset.id;
-      if (e.target.classList.contains("genehmigen")) {
-        await update(ref(db, `antraege/${id}`), { genehmigt: true });
-      }
-      if (e.target.classList.contains("ablehnen")) {
-        await remove(ref(db, `antraege/${id}`));
-      }
-    });
-  </script></body>
+  </script>
+</body>
 </html>
