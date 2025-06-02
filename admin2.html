@@ -1,185 +1,80 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Admin - Eierhütten</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-    h1, h2 { color: #333; }
-    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-    th { background: #ddd; }
-    button { padding: 6px 12px; margin-right: 5px; cursor: pointer; }
-    button.approve { background-color: #4CAF50; color: white; border: none; }
-    button.reject { background-color: #f44336; color: white; border: none; }
-    #betrag { margin-top: 20px; }
-    #statusMessage { margin-top: 15px; color: green; }
-    input[type="number"] { padding: 6px; width: 100px; }
-  </style>
+  <meta charset="UTF-8">
+  <title>Admin – Betrag festlegen</title>
 </head>
 <body>
+  <h1>Adminbereich: Monatlicher Betrag</h1>
 
-<h1>Adminbereich - Eierhütten Anträge</h1>
+  <label for="betrag">Neuer Betrag (€):</label>
+  <input type="number" step="0.01" id="betrag">
+  <button id="betragSpeichern">Speichern</button>
 
-<div id="betrag">
-  <h2>Monatlicher Betrag</h2>
-  <p>Aktuell: <strong id="betragAnzeigen">Lade...</strong></p>
-  <input type="number" id="betragEingabe" step="0.01" min="0" />
-  <button onclick="betragSpeichern()">Betrag speichern</button>
-</div>
+  <p id="aktuellerBetrag">Lade aktuellen Betrag...</p>
 
-<table id="antraegeTable">
-  <thead>
-    <tr>
-      <th>Name</th>
-      <th>Beschreibung</th>
-      <th>Koordinaten (Lat, Lng)</th>
-      <th>Adresse</th>
-      <th>Status</th>
-      <th>Aktionen</th>
-    </tr>
-  </thead>
-  <tbody>
-    <!-- Anträge -->
-  </tbody>
-</table>
+  <script type="module">
+    // Firebase importieren
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import {
+      getFirestore,
+      doc,
+      setDoc,
+      getDoc
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 
-<div id="statusMessage"></div>
+    // Konfiguration
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.firebasestorage.app",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
+    };
 
-<!-- Firebase SDK -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-  import {
-    getFirestore, collection, doc, getDoc, getDocs,
-    updateDoc, deleteDoc, setDoc, query, where
-  } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+    // Initialisierung
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
 
-  const firebaseConfig = {
-    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-    authDomain: "eierhuettentour.firebaseapp.com",
-    projectId: "eierhuettentour",
-    storageBucket: "eierhuettentour.firebasestorage.app",
-    messagingSenderId: "348272135205",
-    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
-    measurementId: "G-16V6K5GXDT"
-  };
+    const betragInput = document.getElementById("betrag");
+    const speichernBtn = document.getElementById("betragSpeichern");
+    const anzeige = document.getElementById("aktuellerBetrag");
 
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-
-  const betragAnzeigen = document.getElementById("betragAnzeigen");
-  const betragEingabe = document.getElementById("betragEingabe");
-  const antraegeTableBody = document.querySelector("#antraegeTable tbody");
-  const statusMessage = document.getElementById("statusMessage");
-
-  let monatlicherBetrag = null;
-
-  async function ladeMonatlichenBetrag() {
-    try {
+    // Aktuellen Betrag laden
+    async function ladeBetrag() {
       const docRef = doc(db, "settings", "gebuehren");
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        monatlicherBetrag = docSnap.data().monatlicherBetrag;
-        betragAnzeigen.textContent = `${monatlicherBetrag.toFixed(2)} €`;
-        betragEingabe.value = monatlicherBetrag.toFixed(2);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        anzeige.textContent = "Aktueller Betrag: €" + data.monatlicherBetrag;
       } else {
-        betragAnzeigen.textContent = "Noch kein Betrag festgelegt.";
-        betragEingabe.value = "";
+        anzeige.textContent = "Kein Betrag gesetzt.";
       }
-    } catch (err) {
-      betragAnzeigen.textContent = "Fehler beim Laden.";
-      console.error("Fehler beim Laden des Betrags:", err);
-    }
-  }
-
-  async function betragSpeichern() {
-    const neuerBetrag = parseFloat(betragEingabe.value);
-    if (isNaN(neuerBetrag) || neuerBetrag < 0) {
-      alert("Bitte gib einen gültigen Betrag ein.");
-      return;
     }
 
-    try {
-      const docRef = doc(db, "settings", "gebuehren");
-      await setDoc(docRef, { monatlicherBetrag: neuerBetrag });
-      statusMessage.textContent = "Betrag erfolgreich gespeichert.";
-      await ladeMonatlichenBetrag();
-    } catch (err) {
-      statusMessage.textContent = "Fehler beim Speichern.";
-      console.error("Fehler beim Speichern:", err);
-    }
-  }
+    ladeBetrag();
 
-  async function ladeAntraege() {
-    antraegeTableBody.innerHTML = "Lade Anträge...";
-    try {
-      const antraegeQuery = query(collection(db, "eierhuetten"), where("approved", "==", false));
-      const querySnapshot = await getDocs(antraegeQuery);
-
-      if (querySnapshot.empty) {
-        antraegeTableBody.innerHTML = "<tr><td colspan='6'>Keine neuen Anträge.</td></tr>";
+    // Speichern-Button
+    speichernBtn.addEventListener("click", async () => {
+      const neuerBetrag = parseFloat(betragInput.value);
+      if (isNaN(neuerBetrag)) {
+        alert("Bitte gültigen Betrag eingeben.");
         return;
       }
 
-      antraegeTableBody.innerHTML = "";
+      const docRef = doc(db, "settings", "gebuehren");
 
-      querySnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        const id = docSnap.id;
-
-        const tr = document.createElement("tr");
-
-        tr.innerHTML = `
-          <td>${data.name || "-"}</td>
-          <td>${data.beschreibung || "-"}</td>
-          <td>${(data.lat && data.lng) ? `${data.lat.toFixed(5)}, ${data.lng.toFixed(5)}` : "-"}</td>
-          <td>${data.adresse || "-"}</td>
-          <td>${data.approved ? "Freigegeben" : "Ausstehend"}</td>
-          <td>
-            <button class="approve" onclick="approveAntrag('${id}')">Freigeben</button>
-            <button class="reject" onclick="rejectAntrag('${id}')">Ablehnen</button>
-          </td>
-        `;
-
-        antraegeTableBody.appendChild(tr);
-      });
-    } catch (err) {
-      antraegeTableBody.innerHTML = `<tr><td colspan="6">Fehler: ${err.message}</td></tr>`;
-      console.error("Fehler beim Laden der Anträge:", err);
-    }
-  }
-
-  window.approveAntrag = async (id) => {
-    try {
-      const antragRef = doc(db, "eierhuetten", id);
-      await updateDoc(antragRef, { approved: true });
-      statusMessage.textContent = "Antrag wurde freigegeben.";
-      await ladeAntraege();
-    } catch (err) {
-      statusMessage.textContent = "Fehler beim Freigeben.";
-      console.error("Freigabe-Fehler:", err);
-    }
-  };
-
-  window.rejectAntrag = async (id) => {
-    if (!confirm("Diesen Antrag wirklich ablehnen und löschen?")) return;
-    try {
-      const antragRef = doc(db, "eierhuetten", id);
-      await deleteDoc(antragRef);
-      statusMessage.textContent = "Antrag gelöscht.";
-      await ladeAntraege();
-    } catch (err) {
-      statusMessage.textContent = "Fehler beim Löschen.";
-      console.error("Löschfehler:", err);
-    }
-  };
-
-  window.onload = async () => {
-    await ladeMonatlichenBetrag();
-    await ladeAntraege();
-  };
-</script>
-
+      try {
+        await setDoc(docRef, { monatlicherBetrag: neuerBetrag });
+        alert("Betrag erfolgreich gespeichert.");
+        ladeBetrag();
+      } catch (err) {
+        console.error("Fehler beim Speichern:", err);
+        alert("Fehler beim Speichern: " + err.message);
+      }
+    });
+  </script>
 </body>
 </html>
