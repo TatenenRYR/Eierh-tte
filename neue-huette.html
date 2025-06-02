@@ -1,91 +1,59 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Neue Eierhütte eintragen</title>
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
-    crossorigin=""
-  />
-  <style>
-    #map {
-      width: 100%;
-      height: 400px;
-      margin-bottom: 1rem;
-    }
-    body {
-      font-family: Arial, sans-serif;
-      margin: 1rem;
-      max-width: 600px;
-    }
-    label {
-      display: block;
-      margin-top: 0.5rem;
-    }
-    input, textarea, button {
-      width: 100%;
-      padding: 0.4rem;
-      margin-top: 0.2rem;
-      box-sizing: border-box;
-    }
-    button {
-      margin-top: 1rem;
-      background-color: #4CAF50;
-      color: white;
-      border: none;
-      cursor: pointer;
-      font-size: 1rem;
-    }
-    button:hover {
-      background-color: #45a049;
-    }
-    .message {
-      margin-top: 1rem;
-      font-weight: bold;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Neue Eierhütte einreichen</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  label { display: block; margin-top: 10px; }
+  input, textarea { width: 100%; padding: 8px; box-sizing: border-box; }
+  #map { height: 300px; margin-top: 10px; }
+  #betragAnzeigen { font-weight: bold; margin-top: 10px; }
+  button { margin-top: 15px; padding: 10px 15px; }
+</style>
+<!-- Leaflet CSS -->
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+/>
 </head>
 <body>
 
-<h1>Neue Eierhütte eintragen</h1>
+<h1>Neue Eierhütte Antrag einreichen</h1>
 
-<div id="map"></div>
+<form id="antragForm">
+  <label for="name">Name der Hütte *</label>
+  <input type="text" id="name" required />
 
-<form id="newHutForm">
-  <label for="name">Hüttenname:</label>
-  <input type="text" id="name" name="name" required />
+  <label for="beschreibung">Beschreibung *</label>
+  <textarea id="beschreibung" rows="4" required></textarea>
 
-  <label for="beschreibung">Beschreibung:</label>
-  <textarea id="beschreibung" name="beschreibung" rows="3" required></textarea>
-
-  <label for="strom">Stromversorgung:</label>
-  <select id="strom" name="strom" required>
+  <label for="strom">Stromversorgung *</label>
+  <select id="strom" required>
     <option value="">Bitte wählen</option>
     <option value="ja">Ja</option>
     <option value="nein">Nein</option>
   </select>
 
-  <label for="lat">Latitude:</label>
-  <input type="text" id="lat" name="lat" readonly required />
+  <label>Standort auswählen (Karte):</label>
+  <div id="map"></div>
 
-  <label for="lng">Longitude:</label>
-  <input type="text" id="lng" name="lng" readonly required />
+  <p id="koordInfo">Keine Koordinaten gewählt</p>
 
-  <button type="submit">Hütte einreichen</button>
+  <p id="betragAnzeigen">Monatlicher Betrag: ...</p>
+
+  <button type="submit">Antrag absenden</button>
 </form>
 
-<div class="message" id="message"></div>
-
-<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js" crossorigin=""></script>
-
-<!-- Firebase SDK -->
-<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<!-- Leaflet -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-  // Firebase konfigurieren
+  // Firebase config & init
   const firebaseConfig = {
     apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
     authDomain: "eierhuettentour.firebaseapp.com",
@@ -95,49 +63,77 @@
     appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
     measurementId: "G-16V6K5GXDT"
   };
-
-  // Firebase initialisieren
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
 
-  // Leaflet Karte initialisieren
-  const map = L.map('map').setView([51.1657, 10.4515], 6); // Mitte Deutschland
+  // UI Elemente
+  const betragAnzeigen = document.getElementById('betragAnzeigen');
+  const koordInfo = document.getElementById('koordInfo');
+  const form = document.getElementById('antragForm');
 
+  // Betrag aus Firebase laden
+  let monatlicherBetrag = null;
+  async function ladeBetrag() {
+    try {
+      const docRef = db.collection('settings').doc('gebuehren');
+      const docSnap = await docRef.get();
+      if (docSnap.exists) {
+        monatlicherBetrag = docSnap.data().monatlicherBetrag;
+        betragAnzeigen.textContent = `Monatlicher Betrag: ${monatlicherBetrag.toFixed(2)} €`;
+      } else {
+        betragAnzeigen.textContent = 'Monatlicher Betrag konnte nicht geladen werden.';
+      }
+    } catch (err) {
+      betragAnzeigen.textContent = 'Fehler beim Laden des Betrags.';
+      console.error(err);
+    }
+  }
+  ladeBetrag();
+
+  // Leaflet Karte initialisieren
+  const map = L.map('map').setView([51.1657, 10.4515], 6);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '© OpenStreetMap'
   }).addTo(map);
 
-  let marker;
+  let marker = null;
+  let aktuelleCoords = null;
 
-  // Klick auf Karte: Marker setzen und Koordinaten ins Formular eintragen
   map.on('click', (e) => {
+    aktuelleCoords = e.latlng;
     if (marker) {
-      marker.setLatLng(e.latlng);
+      marker.setLatLng(aktuelleCoords);
     } else {
-      marker = L.marker(e.latlng).addTo(map);
+      marker = L.marker(aktuelleCoords).addTo(map);
     }
-    document.getElementById('lat').value = e.latlng.lat.toFixed(6);
-    document.getElementById('lng').value = e.latlng.lng.toFixed(6);
+    koordInfo.textContent = `Koordinaten gewählt: ${aktuelleCoords.lat.toFixed(6)}, ${aktuelleCoords.lng.toFixed(6)}`;
   });
 
   // Formular absenden
-  document.getElementById('newHutForm').addEventListener('submit', async (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
+
+    if (!aktuelleCoords) {
+      alert('Bitte wählen Sie den Standort auf der Karte aus.');
+      return;
+    }
+    if (monatlicherBetrag === null) {
+      alert('Monatlicher Betrag wird noch geladen. Bitte warten.');
+      return;
+    }
+
+    const bestaetigung = confirm(
+      `Wenn Sie den Antrag absenden, stimmen Sie den allgemeinen Nutzungsbedingungen zu und bestätigen den monatlichen Preis von ${monatlicherBetrag.toFixed(2)} €.`
+    );
+    if (!bestaetigung) return;
 
     const name = document.getElementById('name').value.trim();
     const beschreibung = document.getElementById('beschreibung').value.trim();
     const strom = document.getElementById('strom').value;
-    const lat = parseFloat(document.getElementById('lat').value);
-    const lng = parseFloat(document.getElementById('lng').value);
 
-    const messageEl = document.getElementById('message');
-    messageEl.style.color = 'black';
-    messageEl.textContent = 'Speichere...';
-
-    if (!name || !beschreibung || !strom || isNaN(lat) || isNaN(lng)) {
-      messageEl.style.color = 'red';
-      messageEl.textContent = 'Bitte alle Felder korrekt ausfüllen und Standort auf der Karte wählen.';
+    if (!name || !beschreibung || !strom) {
+      alert('Bitte füllen Sie alle Pflichtfelder aus.');
       return;
     }
 
@@ -146,26 +142,20 @@
         name,
         beschreibung,
         strom,
-        location: new firebase.firestore.GeoPoint(lat, lng),
+        location: new firebase.firestore.GeoPoint(aktuelleCoords.lat, aktuelleCoords.lng),
         status: 'ausstehend',
-        erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
+        erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
       });
-
-      messageEl.style.color = 'green';
-      messageEl.textContent = 'Danke! Dein Antrag wurde eingereicht und wartet auf Freischaltung.';
-
-      // Formular zurücksetzen und Marker entfernen
-      e.target.reset();
+      alert('Antrag erfolgreich eingereicht. Vielen Dank!');
+      form.reset();
       if (marker) {
         map.removeLayer(marker);
         marker = null;
+        koordInfo.textContent = 'Keine Koordinaten gewählt';
+        aktuelleCoords = null;
       }
-      document.getElementById('lat').value = '';
-      document.getElementById('lng').value = '';
     } catch (error) {
-      console.error('Fehler beim Speichern:', error);
-      messageEl.style.color = 'red';
-      messageEl.textContent = 'Fehler beim Speichern. Bitte versuche es später nochmal.';
+      alert('Fehler beim Absenden des Antrags: ' + error.message);
     }
   });
 </script>
