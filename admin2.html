@@ -1,110 +1,198 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Admin Bereich - Monatlicher Betrag einstellen</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 1rem;
-      max-width: 400px;
-    }
-    label, input, button {
-      display: block;
-      margin-top: 1rem;
-      width: 100%;
-      font-size: 1.1rem;
-    }
-    button {
-      padding: 0.5rem;
-      cursor: pointer;
-    }
-    #status {
-      margin-top: 1rem;
-      font-weight: bold;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin Eierhütten</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  #antraegeListe > div { 
+    border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; 
+    background: #f9f9f9; border-radius: 5px;
+  }
+  button { margin-right: 10px; }
+  #map { height: 300px; margin-top: 20px; }
+</style>
+<!-- Leaflet CSS -->
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-o9N1j6L56MYXErR4rIu8V7QYbIytwv3kek6nY5Pyy0E="
+  crossorigin=""
+/>
 </head>
 <body>
-  <h1>Admin: Monatlicher Betrag</h1>
-  <label for="betragInput">Monatlicher Betrag (€):</label>
-  <input type="number" id="betragInput" step="0.01" min="0" />
 
-  <button id="saveBtn">Speichern</button>
+<h1>Adminbereich - Eierhütten Anträge</h1>
+<div id="antraegeContainer">
+  <h2>Ausstehende Hütten-Anträge</h2>
+  <div id="antraegeListe">Lade Anträge...</div>
+</div>
 
-  <div id="status"></div>
+<div>
+  <h2>Karte zur Hütten-Ansicht</h2>
+  <div id="map"></div>
+  <button id="zentrierBtn">Auf Fahrrad zentrieren</button>
+</div>
 
-  <!-- Firebase SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
-  <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-      authDomain: "eierhuettentour.firebaseapp.com",
-      projectId: "eierhuettentour",
-      storageBucket: "eierhuettentour.firebasestorage.app",
-      messagingSenderId: "348272135205",
-      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
-      measurementId: "G-16V6K5GXDT",
-    };
+<!-- Leaflet JS -->
+<script
+  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-o9N1j6L56MYXErR4rIu8V7QYbIytwv3kek6nY5Pyy0E="
+  crossorigin=""
+></script>
 
-    // Firebase initialisieren
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
+<script>
+  // Firebase konfigurieren und initialisieren
+  const firebaseConfig = {
+    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+    authDomain: "eierhuettentour.firebaseapp.com",
+    projectId: "eierhuettentour",
+    storageBucket: "eierhuettentour.firebasestorage.app",
+    messagingSenderId: "348272135205",
+    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+    measurementId: "G-16V6K5GXDT"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
 
-    const betragInput = document.getElementById("betragInput");
-    const saveBtn = document.getElementById("saveBtn");
-    const statusDiv = document.getElementById("status");
+  // Elemente
+  const antraegeListe = document.getElementById('antraegeListe');
+  const mapDiv = document.getElementById('map');
+  const zentrierBtn = document.getElementById('zentrierBtn');
 
-    // Aktuellen Betrag laden
-    async function loadBetrag() {
-      try {
-        const docRef = db.collection("config").doc("settings");
-        const docSnap = await docRef.get();
-        if (docSnap.exists) {
-          const data = docSnap.data();
-          betragInput.value = data.monatlicherBetrag || 0;
-          statusDiv.textContent = "Betrag geladen.";
-          statusDiv.style.color = "green";
-        } else {
-          betragInput.value = 0;
-          statusDiv.textContent = "Keine Einstellung gefunden, Standard 0 €";
-          statusDiv.style.color = "orange";
-        }
-      } catch (error) {
-        statusDiv.textContent = "Fehler beim Laden des Betrags.";
-        statusDiv.style.color = "red";
-        console.error(error);
-      }
+  // Leaflet Karte initialisieren
+  const map = L.map('map').setView([51.1657, 10.4515], 6); // Deutschland Mitte als Start
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© OpenStreetMap'
+  }).addTo(map);
+
+  // Marker für "Fahrrad" (Beispielkoordinaten, später mit Hütten anpassen)
+  let bikeCoords = [51.1657, 10.4515];
+  let bikeMarker = L.marker(bikeCoords).addTo(map).bindPopup('Fahrrad');
+
+  // Flag fürs Folgen der Karte
+  let folgtFahrrad = true;
+
+  // Zentrier-Funktion
+  function zentriereKarte() {
+    map.setView(bikeMarker.getLatLng(), 14);
+    folgtFahrrad = true;
+  }
+  zentrierBtn.style.display = 'inline-block';
+  zentrierBtn.addEventListener('click', zentriereKarte);
+
+  // Wenn Nutzer die Karte bewegt, folgt die Karte nicht mehr automatisch
+  let bewegungsStart = false;
+  map.on('movestart', () => {
+    if (folgtFahrrad && !bewegungsStart) {
+      folgtFahrrad = false;
+      bewegungsStart = true;
+      console.log("Folgen deaktiviert durch Nutzer");
     }
+  });
+  map.on('moveend', () => {
+    bewegungsStart = false;
+  });
 
-    loadBetrag();
+  // Anträge laden und in Liste + Karte anzeigen
+  async function ladeAntraege() {
+    antraegeListe.innerHTML = 'Lade Anträge...';
+    try {
+      const snapshot = await db.collection('eierhuetten_antraege')
+        .where('status', '==', 'ausstehend')
+        .orderBy('erstelltAm', 'desc')
+        .get();
 
-    // Betrag speichern
-    saveBtn.addEventListener("click", async () => {
-      const neuerBetrag = parseFloat(betragInput.value);
-      if (isNaN(neuerBetrag) || neuerBetrag < 0) {
-        alert("Bitte einen gültigen Betrag eingeben (>= 0).");
+      if (snapshot.empty) {
+        antraegeListe.innerHTML = '<p>Keine neuen Anträge vorhanden.</p>';
         return;
       }
 
-      try {
-        await db.collection("config").doc("settings").set(
-          {
-            monatlicherBetrag: neuerBetrag,
-          },
-          { merge: true }
-        );
-        statusDiv.textContent = "Betrag erfolgreich gespeichert.";
-        statusDiv.style.color = "green";
-      } catch (error) {
-        statusDiv.textContent = "Fehler beim Speichern.";
-        statusDiv.style.color = "red";
-        console.error(error);
-      }
-    });
-  </script>
+      antraegeListe.innerHTML = '';
+
+      // Alle Marker von Karte entfernen vor neuem Zeichnen
+      map.eachLayer(layer => {
+        if (layer instanceof L.Marker && layer !== bikeMarker) {
+          map.removeLayer(layer);
+        }
+      });
+
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const id = doc.id;
+
+        const div = document.createElement('div');
+        div.style.border = '1px solid #ccc';
+        div.style.marginBottom = '10px';
+        div.style.padding = '10px';
+        div.style.background = '#fff';
+
+        div.innerHTML = `
+          <strong>${data.name}</strong> (erstellt am: ${data.erstelltAm?.toDate().toLocaleString() || 'unbekannt'})<br>
+          <em>Beschreibung:</em> ${data.beschreibung}<br>
+          <em>Stromversorgung:</em> ${data.strom}<br>
+          <em>Koordinaten:</em> ${data.location.latitude.toFixed(6)}, ${data.location.longitude.toFixed(6)}<br>
+          <button onclick="freischalten('${id}')">Freischalten</button>
+          <button onclick="loeschen('${id}')">Löschen</button>
+          <button onclick="karteZentrieren(${data.location.latitude}, ${data.location.longitude})">Karte zentrieren</button>
+        `;
+
+        antraegeListe.appendChild(div);
+
+        // Marker auf Karte setzen
+        L.marker([data.location.latitude, data.location.longitude])
+          .addTo(map)
+          .bindPopup(`<b>${data.name}</b><br>${data.beschreibung}`);
+      });
+
+    } catch (error) {
+      antraegeListe.innerHTML = `<p style="color:red;">Fehler beim Laden: ${error.message}</p>`;
+    }
+  }
+
+  // Antrag freischalten
+  async function freischalten(id) {
+    try {
+      await db.collection('eierhuetten_antraege').doc(id).update({
+        status: 'freigeschaltet',
+        freigeschaltetAm: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      alert('Antrag freigeschaltet!');
+      ladeAntraege();
+    } catch (error) {
+      alert('Fehler beim Freischalten: ' + error.message);
+    }
+  }
+
+  // Antrag löschen
+  async function loeschen(id) {
+    if (!confirm('Willst du den Antrag wirklich löschen?')) return;
+    try {
+      await db.collection('eierhuetten_antraege').doc(id).delete();
+      alert('Antrag gelöscht!');
+      ladeAntraege();
+    } catch (error) {
+      alert('Fehler beim Löschen: ' + error.message);
+    }
+  }
+
+  // Karte auf beliebige Koordinaten zentrieren (z.B. von Anträgen)
+  function karteZentrieren(lat, lng) {
+    map.setView([lat, lng], 14);
+    folgtFahrrad = false; // Nutzer hat manuell zentriert, daher kein automatisches Folgen mehr
+  }
+
+  // Init: Anträge laden & Karte zentrieren
+  ladeAntraege();
+  zentriereKarte();
+</script>
+
 </body>
 </html>
