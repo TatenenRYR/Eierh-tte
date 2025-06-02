@@ -2,156 +2,175 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <title>Neue Eierhütte einreichen</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Neue Hütte Antrag</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-sA+4SgF5xjeNu9h3vuHMohLDmG6rg9EBlxEeGQo3uBg="
+    crossorigin=""
+  />
   <style>
-    body { font-family: sans-serif; padding: 1rem; }
-    #map { height: 300px; margin-bottom: 1rem; z-index: 0; }
-    .form-group { margin-bottom: 1rem; }
-    label { display: block; font-weight: bold; margin-bottom: 0.3rem; }
-    button { padding: 0.5rem 1rem; }
-    #betragAnzeigen { font-weight: bold; color: green; }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 1rem;
+    }
+    form > label {
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+    #map {
+      width: 100%;
+      max-width: 500px;
+      height: 300px;
+      margin-top: 10px;
+      border: 1px solid #ccc;
+    }
+    #message {
+      margin-top: 1rem;
+      font-weight: bold;
+      color: green;
+    }
   </style>
 </head>
 <body>
+  <h1>Neue Hütte Antrag</h1>
 
-  <h1>Neue Eierhütte einreichen</h1>
+  <form id="huttenForm">
+    <label>
+      Name der Hütte:
+      <input type="text" id="name" required />
+    </label>
+    <label>
+      Beschreibung:
+      <textarea id="beschreibung" required></textarea>
+    </label>
+    <label>
+      Monatlicher Betrag: <span id="betrag">wird geladen...</span> €
+    </label>
+    <label>
+      Koordinaten (bitte Karte klicken):
+      <input type="text" id="coords" readonly required />
+    </label>
 
-  <form id="huettenForm">
-    <div class="form-group">
-      <label for="name">Name der Hütte</label>
-      <input type="text" id="name" name="name" required />
-    </div>
-
-    <div class="form-group">
-      <label for="beschreibung">Beschreibung</label>
-      <textarea id="beschreibung" name="beschreibung" rows="3" required></textarea>
-    </div>
-
-    <div class="form-group">
-      <label for="strom">Stromversorgung</label>
-      <select id="strom" name="strom" required>
-        <option value="">Bitte wählen</option>
-        <option value="Ja">Ja</option>
-        <option value="Nein">Nein</option>
-      </select>
-    </div>
-
-    <div class="form-group">
-      <label>Position auf Karte auswählen:</label>
-      <div id="map"></div>
-    </div>
-
-    <div class="form-group">
-      <label>Gewählte Koordinaten:</label>
-      <input type="text" id="lat" name="lat" readonly required />
-      <input type="text" id="lng" name="lng" readonly required />
-    </div>
-
-    <div class="form-group">
-      <label>Monatlicher Beitrag:</label>
-      <p id="betragAnzeigen">Lade Betrag...</p>
-      <input type="hidden" name="betrag" id="betragInput">
-    </div>
-
-    <button type="submit">Einreichen</button>
+    <button type="submit">Antrag senden</button>
   </form>
 
-  <p id="status"></p>
+  <div id="map"></div>
 
-  <!-- Firebase + Leaflet + App -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module">
-    // Firebase
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-    import { getDatabase, ref, set, push, get } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+  <div id="message"></div>
 
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+  <!-- Leaflet -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-o9N1j6rqNQJtGSwoQFp4QW09vN1p1Djb0k67tYkL0Tw="
+    crossorigin=""
+  ></script>
+
+  <script>
+    // Firebase Config
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
       authDomain: "eierhuettentour.firebaseapp.com",
       projectId: "eierhuettentour",
-      storageBucket: "eierhuettentour.appspot.com",
+      storageBucket: "eierhuettentour.firebasestorage.app",
       messagingSenderId: "348272135205",
       appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
       measurementId: "G-16V6K5GXDT",
-      databaseURL: "https://eierhuettentour-default-rtdb.europe-west1.firebasedatabase.app"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+    // Firebase initialisieren
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
 
-    // Betrag aus admin/eintragungsbetrag laden
-    function ladeBetrag() {
-      const betragRef = ref(db, 'admin/eintragungsbetrag');
-      get(betragRef).then(snapshot => {
-        if (snapshot.exists()) {
-          const betrag = snapshot.val();
-          document.getElementById('betragAnzeigen').innerText = `${betrag.toFixed(2)} € / Monat`;
-          document.getElementById('betragInput').value = betrag;
-        } else {
-          document.getElementById('betragAnzeigen').innerText = "Kein Betrag festgelegt.";
-        }
-      }).catch(error => {
-        console.error("Betrag konnte nicht geladen werden:", error);
-        document.getElementById('betragAnzeigen').innerText = "Fehler beim Laden.";
-      });
-    }
+    // Leaflet Karte initialisieren
+    const map = L.map("map").setView([51.1657, 10.4515], 6);
 
-    ladeBetrag();
-
-    // Karte anzeigen & Marker setzen
-    let selectedLatLng = null;
-    const map = L.map('map').setView([51.1657, 10.4515], 6); // Deutschland-Zentrum
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap'
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
     }).addTo(map);
 
     let marker = null;
 
-    map.on('click', function (e) {
-      selectedLatLng = e.latlng;
-      document.getElementById('lat').value = selectedLatLng.lat.toFixed(6);
-      document.getElementById('lng').value = selectedLatLng.lng.toFixed(6);
-
+    map.on("click", (e) => {
+      const { lat, lng } = e.latlng;
       if (marker) {
-        marker.setLatLng(selectedLatLng);
+        marker.setLatLng(e.latlng);
       } else {
-        marker = L.marker(selectedLatLng).addTo(map);
+        marker = L.marker(e.latlng).addTo(map);
       }
+      document.getElementById("coords").value =
+        lat.toFixed(6) + "," + lng.toFixed(6);
     });
+
+    // Monatlichen Betrag aus Firestore laden
+    async function loadMonthlyFee() {
+      try {
+        const docRef = db.collection("config").doc("settings");
+        const docSnap = await docRef.get();
+        if (docSnap.exists) {
+          const data = docSnap.data();
+          const betrag = data.monatlicherBetrag || "0";
+          document.getElementById("betrag").textContent = betrag;
+        } else {
+          document.getElementById("betrag").textContent = "nicht gesetzt";
+        }
+      } catch (error) {
+        console.error("Fehler beim Laden des Betrags:", error);
+        document.getElementById("betrag").textContent = "Fehler";
+      }
+    }
+
+    loadMonthlyFee();
 
     // Formular absenden
-    document.getElementById('huettenForm').addEventListener('submit', async function (e) {
-      e.preventDefault();
+    document
+      .getElementById("huttenForm")
+      .addEventListener("submit", async (e) => {
+        e.preventDefault();
 
-      const form = e.target;
-      const daten = {
-        name: form.name.value,
-        beschreibung: form.beschreibung.value,
-        strom: form.strom.value,
-        lat: parseFloat(form.lat.value),
-        lng: parseFloat(form.lng.value),
-        betrag: parseFloat(form.betrag.value),
-        genehmigt: false,
-        eingereichtAm: new Date().toISOString()
-      };
+        const name = document.getElementById("name").value.trim();
+        const beschreibung = document.getElementById("beschreibung").value.trim();
+        const coords = document.getElementById("coords").value.trim();
+        const monatlicherBetragText = document.getElementById("betrag").textContent;
+        const monatlicherBetrag = parseFloat(monatlicherBetragText.replace(",", "."));
 
-      try {
-        await push(ref(db, 'antraege'), daten);
-        form.reset();
-        document.getElementById('betragAnzeigen').innerText = '';
-        document.getElementById('status').innerText = "Erfolgreich eingereicht!";
-        if (marker) {
-          map.removeLayer(marker);
-          marker = null;
+        if (!name || !beschreibung || !coords) {
+          alert("Bitte alle Felder ausfüllen und Koordinaten auswählen.");
+          return;
         }
-      } catch (err) {
-        console.error("Fehler beim Speichern:", err);
-        document.getElementById('status').innerText = "Fehler beim Einreichen.";
-      }
-    });
+        if (isNaN(monatlicherBetrag)) {
+          alert("Monatlicher Betrag ungültig.");
+          return;
+        }
+
+        try {
+          await db.collection("antraege").add({
+            name,
+            beschreibung,
+            koordinaten: coords,
+            monatlicherBetrag,
+            genehmigt: false,
+            erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+          });
+
+          document.getElementById("message").textContent =
+            "Antrag erfolgreich gesendet!";
+          e.target.reset();
+          if (marker) {
+            map.removeLayer(marker);
+            marker = null;
+          }
+          document.getElementById("coords").value = "";
+        } catch (error) {
+          console.error("Fehler beim Speichern:", error);
+          alert("Fehler beim Senden des Antrags. Bitte versuche es erneut.");
+        }
+      });
   </script>
 </body>
 </html>
