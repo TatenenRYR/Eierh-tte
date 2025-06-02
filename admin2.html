@@ -1,29 +1,32 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Admin - Eierhütten Anträge</title>
-<style>
-  body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-  h1, h2 { color: #333; }
-  table { width: 100%; border-collapse: collapse; margin-top: 1em; }
-  th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-  th { background: #ddd; }
-  button { padding: 6px 12px; margin-right: 5px; cursor: pointer; }
-  button.approve { background-color: #4CAF50; color: white; border: none; }
-  button.reject { background-color: #f44336; color: white; border: none; }
-  #betrag { margin-top: 20px; }
-  #statusMessage { margin-top: 15px; color: green; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin - Eierhütten</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+    h1, h2 { color: #333; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background: #ddd; }
+    button { padding: 6px 12px; margin-right: 5px; cursor: pointer; }
+    button.approve { background-color: #4CAF50; color: white; border: none; }
+    button.reject { background-color: #f44336; color: white; border: none; }
+    #betrag { margin-top: 20px; }
+    #statusMessage { margin-top: 15px; color: green; }
+    input[type="number"] { padding: 6px; width: 100px; }
+  </style>
 </head>
 <body>
 
 <h1>Adminbereich - Eierhütten Anträge</h1>
 
 <div id="betrag">
-  <h2>Aktueller monatlicher Betrag:</h2>
-  <span id="betragAnzeigen">Lade Betrag...</span>
+  <h2>Monatlicher Betrag</h2>
+  <p>Aktuell: <strong id="betragAnzeigen">Lade...</strong></p>
+  <input type="number" id="betragEingabe" step="0.01" min="0" />
+  <button onclick="betragSpeichern()">Betrag speichern</button>
 </div>
 
 <table id="antraegeTable">
@@ -38,7 +41,7 @@
     </tr>
   </thead>
   <tbody>
-    <!-- Anträge kommen hier rein -->
+    <!-- Anträge -->
   </tbody>
 </table>
 
@@ -49,10 +52,9 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
   import {
     getFirestore, collection, doc, getDoc, getDocs,
-    updateDoc, deleteDoc, query, where
+    updateDoc, deleteDoc, setDoc, query, where
   } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
-  // Firebase-Konfiguration (ersetze durch deine)
   const firebaseConfig = {
     apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
     authDomain: "eierhuettentour.firebaseapp.com",
@@ -63,43 +65,60 @@
     measurementId: "G-16V6K5GXDT"
   };
 
-  // Firebase initialisieren
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
   const betragAnzeigen = document.getElementById("betragAnzeigen");
+  const betragEingabe = document.getElementById("betragEingabe");
   const antraegeTableBody = document.querySelector("#antraegeTable tbody");
   const statusMessage = document.getElementById("statusMessage");
 
   let monatlicherBetrag = null;
 
-  // Monatlichen Betrag laden
   async function ladeMonatlichenBetrag() {
     try {
       const docRef = doc(db, "settings", "gebuehren");
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         monatlicherBetrag = docSnap.data().monatlicherBetrag;
-        betragAnzeigen.textContent = `${monatlicherBetrag.toFixed(2)} € pro Monat`;
+        betragAnzeigen.textContent = `${monatlicherBetrag.toFixed(2)} €`;
+        betragEingabe.value = monatlicherBetrag.toFixed(2);
       } else {
-        betragAnzeigen.textContent = "Monatlicher Betrag nicht gesetzt.";
+        betragAnzeigen.textContent = "Noch kein Betrag festgelegt.";
+        betragEingabe.value = "";
       }
     } catch (err) {
-      betragAnzeigen.textContent = "Fehler beim Laden des Betrags.";
-      console.error("Fehler beim Laden des monatlichen Betrags:", err);
+      betragAnzeigen.textContent = "Fehler beim Laden.";
+      console.error("Fehler beim Laden des Betrags:", err);
     }
   }
 
-  // Alle Anträge laden, die noch nicht freigegeben sind (approved != true)
+  async function betragSpeichern() {
+    const neuerBetrag = parseFloat(betragEingabe.value);
+    if (isNaN(neuerBetrag) || neuerBetrag < 0) {
+      alert("Bitte gib einen gültigen Betrag ein.");
+      return;
+    }
+
+    try {
+      const docRef = doc(db, "settings", "gebuehren");
+      await setDoc(docRef, { monatlicherBetrag: neuerBetrag });
+      statusMessage.textContent = "Betrag erfolgreich gespeichert.";
+      await ladeMonatlichenBetrag();
+    } catch (err) {
+      statusMessage.textContent = "Fehler beim Speichern.";
+      console.error("Fehler beim Speichern:", err);
+    }
+  }
+
   async function ladeAntraege() {
     antraegeTableBody.innerHTML = "Lade Anträge...";
     try {
-      // Nur Einträge mit approved != true (also pending oder abgelehnt)
       const antraegeQuery = query(collection(db, "eierhuetten"), where("approved", "==", false));
       const querySnapshot = await getDocs(antraegeQuery);
 
       if (querySnapshot.empty) {
-        antraegeTableBody.innerHTML = "<tr><td colspan='6'>Keine neuen Anträge vorhanden.</td></tr>";
+        antraegeTableBody.innerHTML = "<tr><td colspan='6'>Keine neuen Anträge.</td></tr>";
         return;
       }
 
@@ -111,86 +130,51 @@
 
         const tr = document.createElement("tr");
 
-        // Name
-        const nameTd = document.createElement("td");
-        nameTd.textContent = data.name || "-";
-        tr.appendChild(nameTd);
-
-        // Beschreibung
-        const beschreibungTd = document.createElement("td");
-        beschreibungTd.textContent = data.beschreibung || "-";
-        tr.appendChild(beschreibungTd);
-
-        // Koordinaten
-        const coordsTd = document.createElement("td");
-        coordsTd.textContent = data.lat && data.lng ? `${data.lat.toFixed(5)}, ${data.lng.toFixed(5)}` : "-";
-        tr.appendChild(coordsTd);
-
-        // Adresse
-        const adresseTd = document.createElement("td");
-        adresseTd.textContent = data.adresse || "-";
-        tr.appendChild(adresseTd);
-
-        // Status
-        const statusTd = document.createElement("td");
-        statusTd.textContent = data.approved ? "Freigegeben" : "Ausstehend";
-        tr.appendChild(statusTd);
-
-        // Aktionen
-        const actionTd = document.createElement("td");
-
-        // Freischalten Button
-        const approveBtn = document.createElement("button");
-        approveBtn.textContent = "Freigeben";
-        approveBtn.classList.add("approve");
-        approveBtn.addEventListener("click", () => approveAntrag(id));
-        actionTd.appendChild(approveBtn);
-
-        // Ablehnen Button
-        const rejectBtn = document.createElement("button");
-        rejectBtn.textContent = "Ablehnen";
-        rejectBtn.classList.add("reject");
-        rejectBtn.addEventListener("click", () => rejectAntrag(id));
-        actionTd.appendChild(rejectBtn);
-
-        tr.appendChild(actionTd);
+        tr.innerHTML = `
+          <td>${data.name || "-"}</td>
+          <td>${data.beschreibung || "-"}</td>
+          <td>${(data.lat && data.lng) ? `${data.lat.toFixed(5)}, ${data.lng.toFixed(5)}` : "-"}</td>
+          <td>${data.adresse || "-"}</td>
+          <td>${data.approved ? "Freigegeben" : "Ausstehend"}</td>
+          <td>
+            <button class="approve" onclick="approveAntrag('${id}')">Freigeben</button>
+            <button class="reject" onclick="rejectAntrag('${id}')">Ablehnen</button>
+          </td>
+        `;
 
         antraegeTableBody.appendChild(tr);
       });
     } catch (err) {
-      antraegeTableBody.innerHTML = `<tr><td colspan="6">Fehler beim Laden der Anträge: ${err.message}</td></tr>`;
+      antraegeTableBody.innerHTML = `<tr><td colspan="6">Fehler: ${err.message}</td></tr>`;
       console.error("Fehler beim Laden der Anträge:", err);
     }
   }
 
-  // Antrag freigeben (approved auf true setzen)
-  async function approveAntrag(id) {
+  window.approveAntrag = async (id) => {
     try {
       const antragRef = doc(db, "eierhuetten", id);
       await updateDoc(antragRef, { approved: true });
       statusMessage.textContent = "Antrag wurde freigegeben.";
       await ladeAntraege();
     } catch (err) {
-      statusMessage.textContent = "Fehler beim Freigeben des Antrags.";
-      console.error("Fehler beim Freigeben:", err);
+      statusMessage.textContent = "Fehler beim Freigeben.";
+      console.error("Freigabe-Fehler:", err);
     }
-  }
+  };
 
-  // Antrag ablehnen (Eintrag löschen)
-  async function rejectAntrag(id) {
-    if (!confirm("Bist du sicher, dass du diesen Antrag ablehnen und löschen möchtest?")) return;
+  window.rejectAntrag = async (id) => {
+    if (!confirm("Diesen Antrag wirklich ablehnen und löschen?")) return;
     try {
       const antragRef = doc(db, "eierhuetten", id);
       await deleteDoc(antragRef);
-      statusMessage.textContent = "Antrag wurde abgelehnt und gelöscht.";
+      statusMessage.textContent = "Antrag gelöscht.";
       await ladeAntraege();
     } catch (err) {
-      statusMessage.textContent = "Fehler beim Ablehnen des Antrags.";
-      console.error("Fehler beim Ablehnen:", err);
+      statusMessage.textContent = "Fehler beim Löschen.";
+      console.error("Löschfehler:", err);
     }
-  }
+  };
 
-  // Seite initial laden
   window.onload = async () => {
     await ladeMonatlichenBetrag();
     await ladeAntraege();
