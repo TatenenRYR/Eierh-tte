@@ -2,28 +2,57 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>Admin – Betrag festlegen</title>
+  <title>Admin – Eierhütten</title>
+  <style>
+    table, th, td {
+      border: 1px solid #ccc;
+      border-collapse: collapse;
+      padding: 8px;
+    }
+    th {
+      background-color: #f0f0f0;
+    }
+    button {
+      margin: 0 4px;
+    }
+  </style>
 </head>
 <body>
-  <h1>Adminbereich: Monatlicher Betrag</h1>
+  <h1>Adminbereich</h1>
 
-  <label for="betrag">Neuer Betrag (€):</label>
-  <input type="number" step="0.01" id="betrag">
-  <button id="betragSpeichern">Speichern</button>
+  <section>
+    <h2>Monatlichen Betrag festlegen</h2>
+    <label for="betrag">Neuer Betrag (€):</label>
+    <input type="number" step="0.01" id="betrag">
+    <button id="betragSpeichern">Speichern</button>
+    <p id="aktuellerBetrag">Lade aktuellen Betrag...</p>
+  </section>
 
-  <p id="aktuellerBetrag">Lade aktuellen Betrag...</p>
+  <hr>
+
+  <section>
+    <h2>Neue Eierhütten-Anträge</h2>
+    <table id="antragstabelle">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Standort</th>
+          <th>Koordinaten</th>
+          <th>Aktionen</th>
+        </tr>
+      </thead>
+      <tbody id="antraegeBody">
+        <tr><td colspan="4">Lade Anträge...</td></tr>
+      </tbody>
+    </table>
+  </section>
 
   <script type="module">
-    // Firebase importieren
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import {
-      getFirestore,
-      doc,
-      setDoc,
-      getDoc
+      getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, updateDoc
     } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 
-    // Konfiguration
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
       authDomain: "eierhuettentour.firebaseapp.com",
@@ -34,15 +63,14 @@
       measurementId: "G-16V6K5GXDT"
     };
 
-    // Initialisierung
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
     const betragInput = document.getElementById("betrag");
     const speichernBtn = document.getElementById("betragSpeichern");
     const anzeige = document.getElementById("aktuellerBetrag");
+    const antraegeBody = document.getElementById("antraegeBody");
 
-    // Aktuellen Betrag laden
     async function ladeBetrag() {
       const docRef = doc(db, "settings", "gebuehren");
       const snap = await getDoc(docRef);
@@ -54,27 +82,73 @@
       }
     }
 
-    ladeBetrag();
-
-    // Speichern-Button
-    speichernBtn.addEventListener("click", async () => {
+    async function speichereBetrag() {
       const neuerBetrag = parseFloat(betragInput.value);
       if (isNaN(neuerBetrag)) {
         alert("Bitte gültigen Betrag eingeben.");
         return;
       }
-
       const docRef = doc(db, "settings", "gebuehren");
+      await setDoc(docRef, { monatlicherBetrag: neuerBetrag });
+      alert("Betrag gespeichert.");
+      ladeBetrag();
+    }
 
-      try {
-        await setDoc(docRef, { monatlicherBetrag: neuerBetrag });
-        alert("Betrag erfolgreich gespeichert.");
-        ladeBetrag();
-      } catch (err) {
-        console.error("Fehler beim Speichern:", err);
-        alert("Fehler beim Speichern: " + err.message);
+    speichernBtn.addEventListener("click", speichereBetrag);
+    ladeBetrag();
+
+    // Anträge laden
+    async function ladeAntraege() {
+      const querySnapshot = await getDocs(collection(db, "eierhuetten_antraege"));
+      antraegeBody.innerHTML = "";
+
+      if (querySnapshot.empty) {
+        antraegeBody.innerHTML = `<tr><td colspan="4">Keine neuen Anträge.</td></tr>`;
+        return;
       }
-    });
+
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const tr = document.createElement("tr");
+
+        const name = data.name || "-";
+        const ort = data.standort || "-";
+        const coords = data.coords ? `${data.coords.lat.toFixed(5)}, ${data.coords.lng.toFixed(5)}` : "-";
+
+        tr.innerHTML = `
+          <td>${name}</td>
+          <td>${ort}</td>
+          <td>${coords}</td>
+          <td>
+            <button onclick="bearbeiteAntrag('${docSnap.id}', true)">✔️ Bestätigen</button>
+            <button onclick="bearbeiteAntrag('${docSnap.id}', false)">❌ Ablehnen</button>
+          </td>
+        `;
+
+        antraegeBody.appendChild(tr);
+      });
+    }
+
+    // Globale Funktion für Buttons
+    window.bearbeiteAntrag = async (id, akzeptiert) => {
+      const docRef = doc(db, "eierhuetten_antraege", id);
+      const snap = await getDoc(docRef);
+      const data = snap.data();
+
+      if (akzeptiert) {
+        const zielRef = doc(db, "eierhuetten", id); // gleiche ID übernehmen
+        await setDoc(zielRef, {
+          ...data,
+          status: "aktiviert",
+          erstelltAm: new Date().toISOString()
+        });
+      }
+
+      await deleteDoc(docRef);
+      ladeAntraege();
+    };
+
+    ladeAntraege();
   </script>
 </body>
 </html>
