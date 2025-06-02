@@ -3,51 +3,56 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Admin Eierhütten</title>
+<title>Admin - Eierhütten Anträge</title>
 <style>
-  body { font-family: Arial, sans-serif; margin: 20px; }
-  #antraegeListe > div { 
-    border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; 
-    background: #f9f9f9; border-radius: 5px;
-  }
-  button { margin-right: 10px; }
-  #map { height: 300px; margin-top: 20px; }
+  body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+  h1, h2 { color: #333; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+  th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+  th { background: #ddd; }
+  button { padding: 6px 12px; margin-right: 5px; cursor: pointer; }
+  button.approve { background-color: #4CAF50; color: white; border: none; }
+  button.reject { background-color: #f44336; color: white; border: none; }
+  #betrag { margin-top: 20px; }
+  #statusMessage { margin-top: 15px; color: green; }
 </style>
-<!-- Leaflet CSS -->
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha256-o9N1j6L56MYXErR4rIu8V7QYbIytwv3kek6nY5Pyy0E="
-  crossorigin=""
-/>
 </head>
 <body>
 
 <h1>Adminbereich - Eierhütten Anträge</h1>
-<div id="antraegeContainer">
-  <h2>Ausstehende Hütten-Anträge</h2>
-  <div id="antraegeListe">Lade Anträge...</div>
+
+<div id="betrag">
+  <h2>Aktueller monatlicher Betrag:</h2>
+  <span id="betragAnzeigen">Lade Betrag...</span>
 </div>
 
-<div>
-  <h2>Karte zur Hütten-Ansicht</h2>
-  <div id="map"></div>
-  <button id="zentrierBtn">Auf Fahrrad zentrieren</button>
-</div>
+<table id="antraegeTable">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Beschreibung</th>
+      <th>Koordinaten (Lat, Lng)</th>
+      <th>Adresse</th>
+      <th>Status</th>
+      <th>Aktionen</th>
+    </tr>
+  </thead>
+  <tbody>
+    <!-- Anträge kommen hier rein -->
+  </tbody>
+</table>
+
+<div id="statusMessage"></div>
 
 <!-- Firebase SDK -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+  import {
+    getFirestore, collection, doc, getDoc, getDocs,
+    updateDoc, deleteDoc, query, where
+  } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
-<!-- Leaflet JS -->
-<script
-  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha256-o9N1j6L56MYXErR4rIu8V7QYbIytwv3kek6nY5Pyy0E="
-  crossorigin=""
-></script>
-
-<script>
-  // Firebase konfigurieren und initialisieren
+  // Firebase-Konfiguration (ersetze durch deine)
   const firebaseConfig = {
     apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
     authDomain: "eierhuettentour.firebaseapp.com",
@@ -57,141 +62,139 @@
     appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
     measurementId: "G-16V6K5GXDT"
   };
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.firestore();
 
-  // Elemente
-  const antraegeListe = document.getElementById('antraegeListe');
-  const mapDiv = document.getElementById('map');
-  const zentrierBtn = document.getElementById('zentrierBtn');
+  // Firebase initialisieren
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
 
-  // Leaflet Karte initialisieren
-  const map = L.map('map').setView([51.1657, 10.4515], 6); // Deutschland Mitte als Start
+  const betragAnzeigen = document.getElementById("betragAnzeigen");
+  const antraegeTableBody = document.querySelector("#antraegeTable tbody");
+  const statusMessage = document.getElementById("statusMessage");
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '© OpenStreetMap'
-  }).addTo(map);
+  let monatlicherBetrag = null;
 
-  // Marker für "Fahrrad" (Beispielkoordinaten, später mit Hütten anpassen)
-  let bikeCoords = [51.1657, 10.4515];
-  let bikeMarker = L.marker(bikeCoords).addTo(map).bindPopup('Fahrrad');
-
-  // Flag fürs Folgen der Karte
-  let folgtFahrrad = true;
-
-  // Zentrier-Funktion
-  function zentriereKarte() {
-    map.setView(bikeMarker.getLatLng(), 14);
-    folgtFahrrad = true;
-  }
-  zentrierBtn.style.display = 'inline-block';
-  zentrierBtn.addEventListener('click', zentriereKarte);
-
-  // Wenn Nutzer die Karte bewegt, folgt die Karte nicht mehr automatisch
-  let bewegungsStart = false;
-  map.on('movestart', () => {
-    if (folgtFahrrad && !bewegungsStart) {
-      folgtFahrrad = false;
-      bewegungsStart = true;
-      console.log("Folgen deaktiviert durch Nutzer");
-    }
-  });
-  map.on('moveend', () => {
-    bewegungsStart = false;
-  });
-
-  // Anträge laden und in Liste + Karte anzeigen
-  async function ladeAntraege() {
-    antraegeListe.innerHTML = 'Lade Anträge...';
+  // Monatlichen Betrag laden
+  async function ladeMonatlichenBetrag() {
     try {
-      const snapshot = await db.collection('eierhuetten_antraege')
-        .where('status', '==', 'ausstehend')
-        .orderBy('erstelltAm', 'desc')
-        .get();
+      const docRef = doc(db, "settings", "gebuehren");
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        monatlicherBetrag = docSnap.data().monatlicherBetrag;
+        betragAnzeigen.textContent = `${monatlicherBetrag.toFixed(2)} € pro Monat`;
+      } else {
+        betragAnzeigen.textContent = "Monatlicher Betrag nicht gesetzt.";
+      }
+    } catch (err) {
+      betragAnzeigen.textContent = "Fehler beim Laden des Betrags.";
+      console.error("Fehler beim Laden des monatlichen Betrags:", err);
+    }
+  }
 
-      if (snapshot.empty) {
-        antraegeListe.innerHTML = '<p>Keine neuen Anträge vorhanden.</p>';
+  // Alle Anträge laden, die noch nicht freigegeben sind (approved != true)
+  async function ladeAntraege() {
+    antraegeTableBody.innerHTML = "Lade Anträge...";
+    try {
+      // Nur Einträge mit approved != true (also pending oder abgelehnt)
+      const antraegeQuery = query(collection(db, "eierhuetten"), where("approved", "==", false));
+      const querySnapshot = await getDocs(antraegeQuery);
+
+      if (querySnapshot.empty) {
+        antraegeTableBody.innerHTML = "<tr><td colspan='6'>Keine neuen Anträge vorhanden.</td></tr>";
         return;
       }
 
-      antraegeListe.innerHTML = '';
+      antraegeTableBody.innerHTML = "";
 
-      // Alle Marker von Karte entfernen vor neuem Zeichnen
-      map.eachLayer(layer => {
-        if (layer instanceof L.Marker && layer !== bikeMarker) {
-          map.removeLayer(layer);
-        }
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const id = docSnap.id;
+
+        const tr = document.createElement("tr");
+
+        // Name
+        const nameTd = document.createElement("td");
+        nameTd.textContent = data.name || "-";
+        tr.appendChild(nameTd);
+
+        // Beschreibung
+        const beschreibungTd = document.createElement("td");
+        beschreibungTd.textContent = data.beschreibung || "-";
+        tr.appendChild(beschreibungTd);
+
+        // Koordinaten
+        const coordsTd = document.createElement("td");
+        coordsTd.textContent = data.lat && data.lng ? `${data.lat.toFixed(5)}, ${data.lng.toFixed(5)}` : "-";
+        tr.appendChild(coordsTd);
+
+        // Adresse
+        const adresseTd = document.createElement("td");
+        adresseTd.textContent = data.adresse || "-";
+        tr.appendChild(adresseTd);
+
+        // Status
+        const statusTd = document.createElement("td");
+        statusTd.textContent = data.approved ? "Freigegeben" : "Ausstehend";
+        tr.appendChild(statusTd);
+
+        // Aktionen
+        const actionTd = document.createElement("td");
+
+        // Freischalten Button
+        const approveBtn = document.createElement("button");
+        approveBtn.textContent = "Freigeben";
+        approveBtn.classList.add("approve");
+        approveBtn.addEventListener("click", () => approveAntrag(id));
+        actionTd.appendChild(approveBtn);
+
+        // Ablehnen Button
+        const rejectBtn = document.createElement("button");
+        rejectBtn.textContent = "Ablehnen";
+        rejectBtn.classList.add("reject");
+        rejectBtn.addEventListener("click", () => rejectAntrag(id));
+        actionTd.appendChild(rejectBtn);
+
+        tr.appendChild(actionTd);
+
+        antraegeTableBody.appendChild(tr);
       });
-
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        const id = doc.id;
-
-        const div = document.createElement('div');
-        div.style.border = '1px solid #ccc';
-        div.style.marginBottom = '10px';
-        div.style.padding = '10px';
-        div.style.background = '#fff';
-
-        div.innerHTML = `
-          <strong>${data.name}</strong> (erstellt am: ${data.erstelltAm?.toDate().toLocaleString() || 'unbekannt'})<br>
-          <em>Beschreibung:</em> ${data.beschreibung}<br>
-          <em>Stromversorgung:</em> ${data.strom}<br>
-          <em>Koordinaten:</em> ${data.location.latitude.toFixed(6)}, ${data.location.longitude.toFixed(6)}<br>
-          <button onclick="freischalten('${id}')">Freischalten</button>
-          <button onclick="loeschen('${id}')">Löschen</button>
-          <button onclick="karteZentrieren(${data.location.latitude}, ${data.location.longitude})">Karte zentrieren</button>
-        `;
-
-        antraegeListe.appendChild(div);
-
-        // Marker auf Karte setzen
-        L.marker([data.location.latitude, data.location.longitude])
-          .addTo(map)
-          .bindPopup(`<b>${data.name}</b><br>${data.beschreibung}`);
-      });
-
-    } catch (error) {
-      antraegeListe.innerHTML = `<p style="color:red;">Fehler beim Laden: ${error.message}</p>`;
+    } catch (err) {
+      antraegeTableBody.innerHTML = `<tr><td colspan="6">Fehler beim Laden der Anträge: ${err.message}</td></tr>`;
+      console.error("Fehler beim Laden der Anträge:", err);
     }
   }
 
-  // Antrag freischalten
-  async function freischalten(id) {
+  // Antrag freigeben (approved auf true setzen)
+  async function approveAntrag(id) {
     try {
-      await db.collection('eierhuetten_antraege').doc(id).update({
-        status: 'freigeschaltet',
-        freigeschaltetAm: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      alert('Antrag freigeschaltet!');
-      ladeAntraege();
-    } catch (error) {
-      alert('Fehler beim Freischalten: ' + error.message);
+      const antragRef = doc(db, "eierhuetten", id);
+      await updateDoc(antragRef, { approved: true });
+      statusMessage.textContent = "Antrag wurde freigegeben.";
+      await ladeAntraege();
+    } catch (err) {
+      statusMessage.textContent = "Fehler beim Freigeben des Antrags.";
+      console.error("Fehler beim Freigeben:", err);
     }
   }
 
-  // Antrag löschen
-  async function loeschen(id) {
-    if (!confirm('Willst du den Antrag wirklich löschen?')) return;
+  // Antrag ablehnen (Eintrag löschen)
+  async function rejectAntrag(id) {
+    if (!confirm("Bist du sicher, dass du diesen Antrag ablehnen und löschen möchtest?")) return;
     try {
-      await db.collection('eierhuetten_antraege').doc(id).delete();
-      alert('Antrag gelöscht!');
-      ladeAntraege();
-    } catch (error) {
-      alert('Fehler beim Löschen: ' + error.message);
+      const antragRef = doc(db, "eierhuetten", id);
+      await deleteDoc(antragRef);
+      statusMessage.textContent = "Antrag wurde abgelehnt und gelöscht.";
+      await ladeAntraege();
+    } catch (err) {
+      statusMessage.textContent = "Fehler beim Ablehnen des Antrags.";
+      console.error("Fehler beim Ablehnen:", err);
     }
   }
 
-  // Karte auf beliebige Koordinaten zentrieren (z.B. von Anträgen)
-  function karteZentrieren(lat, lng) {
-    map.setView([lat, lng], 14);
-    folgtFahrrad = false; // Nutzer hat manuell zentriert, daher kein automatisches Folgen mehr
-  }
-
-  // Init: Anträge laden & Karte zentrieren
-  ladeAntraege();
-  zentriereKarte();
+  // Seite initial laden
+  window.onload = async () => {
+    await ladeMonatlichenBetrag();
+    await ladeAntraege();
+  };
 </script>
 
 </body>
