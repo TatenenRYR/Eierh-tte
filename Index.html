@@ -333,7 +333,30 @@ let visibleRadiusKm = 10;
 const apiKey = "5b3ce3597851110001cf624893412fe92e0448e493663f2482a80572";
 const map = L.map("map", { zoomControl: false }).setView([51.5, 10.5], 7);
 let nearbyHuetten = []; // global definieren
-let radiusCircle = null;    
+let radiusCircle = null;
+const radiusSlider = document.getElementById("radiusSlider");
+let userBikeMarker = null;
+let followBike = true;
+let userInteracted = false;
+let huetten = JSON.parse(localStorage.getItem("huetten")) || [];
+let selectedHuetten = [];
+let routeLine = null;
+const markerLayer = L.layerGroup().addTo(map);
+let huettenMarker = [];
+
+/*
+######################
+- Icons
+######################
+*/
+const animatedBikeIcon = L.divIcon({
+    className: 'animated-bike-icon',
+    html: `<div class="bike-animation">
+      🚲
+    </div>`,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16]
+    });
 /*
 ######################
 - Debug
@@ -401,21 +424,25 @@ const db = firebase.firestore();
 */
 updateUserBike();
 
-    //RadiusCircel
+/*
+######################
+- Circal(Radar)
+######################
+*/
     
-    function updateRadiusCircle(centerPos) {
+function updateRadiusCircle(centerPos) {
   if (radiusCircle) {
     radiusCircle.setLatLng(centerPos);
     radiusCircle.setRadius(visibleRadiusMeters);
   } else {
     radiusCircle = L.circle(centerPos, {
-      radius: visibleRadiusMeters,
-      color: "#3388ff",
-      fillColor: "#3388ff",
-      fillOpacity: 0.2,
+    radius: visibleRadiusMeters,
+    color: "#3388ff",
+    fillColor: "#3388ff",
+    fillOpacity: 0.2,
     }).addTo(map);
   }
-    }
+}
 
 function updateRadiusDisplay(km) {
   visibleRadiusKm = km;
@@ -423,10 +450,6 @@ function updateRadiusDisplay(km) {
   document.getElementById("radiusValue").textContent = `${km} km`;
 }
 
-    //Silder
-
-
-const radiusSlider = document.getElementById("radiusSlider");
 
 radiusSlider.addEventListener("input", () => {
   const value = parseInt(radiusSlider.value);
@@ -438,7 +461,12 @@ radiusSlider.addEventListener("input", () => {
     nearbyHuetten = filterHuettenByRadius(pos);
     updateHuettenMarkers(nearbyHuetten); // Nur Hütten im Umkreis anzeigen
   }
-});
+}
+/*
+######################
+- load Huetten
+######################
+*/
 
 function ladeHuettenVonFirebase() {
   debug("Starte Ladevorgang der Eierhütten aus Firestore...");
@@ -492,25 +520,20 @@ function ladeHuettenVonFirebase() {
   });
 }
 
-    function filterHuettenByRadius(centerPos) {
-  return huetten.filter((hut) => {
-    const hutPos = L.latLng(hut.lat, hut.lng);
-    const distance = map.distance(centerPos, hutPos);
-    return distance <= visibleRadiusMeters;
-  });
-    }
-
-    
-    const animatedBikeIcon = L.divIcon({
-    className: 'animated-bike-icon',
-    html: `<div class="bike-animation">
-      🚲
-    </div>`,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16]
+function filterHuettenByRadius(centerPos) {
+    return huetten.filter((hut) => {
+      const hutPos = L.latLng(hut.lat, hut.lng);
+      const distance = map.distance(centerPos, hutPos);
+      return distance <= visibleRadiusMeters;
     });
-//live 
-    let userBikeMarker = null;
+  }
+
+/*
+######################
+- huetten functions
+######################
+*/
+    
 function removeOutOfRangeHuetten() {
   nearbyIds = nearbyHuetten.map(h => h.id);
   const vorherigeAnzahl = selectedHuetten.length;
@@ -524,6 +547,13 @@ function removeOutOfRangeHuetten() {
     updateRoutenAnzeige();     // Route neu zeichnen + Marker anpassen
   }
 }
+
+
+/*
+######################
+- update/initalize
+######################
+*/
 function updateUserBike() {
   navigator.geolocation.watchPosition(
     (position) => {
@@ -571,23 +601,55 @@ function updateCenterButtonState() {
     btn.style.color = "";
   }
 }
-let followBike = true;
-let userInteracted = false;
 
+   function updateMapMarkers() {
+      markerLayer.clearLayers();
+      const stromAktiv = document.getElementById("stromFilter").checked;
+
+      const gefilterte = stromAktiv
+        ? huetten.filter((h) => h.strom)
+        : huetten;
+
+    
+
+      
+      gefilterte.forEach((h) => {
+        const marker = L.marker([h.lat, h.lng]).addTo(markerLayer);
+        marker.bindPopup(
+          `<b>${h.name}</b><br>${h.desc}<br>${
+            h.strom ? "🔌 Strom vorhanden" : "❌ Kein Strom"
+          }<br><br><button onclick="addToRoute(${h.id})" class="small-btn">➕ Hinzufügen</button>`
+        );
+      });
+    }
+
+
+
+
+function updateHuettenMarkers(huettenListe) {
+  huettenMarker.forEach(marker => map.removeLayer(marker));
+  huettenMarker = [];
+
+  huettenListe.forEach((h) => {
+    const marker = L.marker([h.lat, h.lng]).addTo(map);
+     
+    marker.bindPopup(createHuettenPopupContent(h));
+    huettenMarker.push(marker);
+
+  });
+}
+
+/*
+######################
+- Events
+######################
+*/
 // Karte wurde geklickt – Benutzer schaut sich um
 map.on("click", () => {
   userInteracted = true;
 });
 
-// Sobald Bewegung beginnt und zuvor geklickt wurde, zentrierung deaktivieren
-/*map.on("movestart", () => {
-  if (userInteracted) {
-    followBike = false;
-    showCenterButton();
-    updateCenterButtonState(); // falls du optisches Feedback verwendest
-  }
-});*/
-    // Merken, dass der Nutzer die Karte anklickt
+// Merken, dass der Nutzer die Karte anklickt
 map.on('pointerdown', () => {
   userInteracted = true;
 });
@@ -602,14 +664,11 @@ map.on('moveend', () => {
   }
 });
 
-// Buttonfunktion zum Zurückzentrieren
-/*function centerOnBike() {
-  if (userBikeMarker && userBikeMarker.getLatLng()) {
-    map.setView(userBikeMarker.getLatLng(), map.getZoom());
-    followBike = true;
-    //hideCenterButton();
-  }
-}*/
+/*
+######################
+- Center Button
+######################
+*/
 document.getElementById("centerButton").addEventListener("click", () => {
   followBike = true;
   //hideCenterButton();
@@ -641,56 +700,11 @@ function hideCenterButton() {
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(map);
 
-    // Dummy-Daten für Hütten (Beispiel)
-    /*const huetten = [
-      { id: 1, name: "Hütte A", lat: 51.0, lng: 10.0, strom: true, desc: "Schöne Hütte A" },
-      { id: 2, name: "Hütte B", lat: 51.2, lng: 10.3, strom: false, desc: "Gemütliche Hütte B" },
-      { id: 3, name: "Hütte C", lat: 51.4, lng: 10.6, strom: true, desc: "Große Hütte C" },
-      { id: 4, name: "Hütte D", lat: 51.6, lng: 10.8, strom: false, desc: "Rustikale Hütte D" },
-    ];*/
-    let huetten = JSON.parse(localStorage.getItem("huetten")) || [];
-   
-
-    let selectedHuetten = [];
-    let routeLine = null;
-    const markerLayer = L.layerGroup().addTo(map);
-
-    function updateMapMarkers() {
-      markerLayer.clearLayers();
-      const stromAktiv = document.getElementById("stromFilter").checked;
-
-      const gefilterte = stromAktiv
-        ? huetten.filter((h) => h.strom)
-        : huetten;
-
-    
-
-      
-      gefilterte.forEach((h) => {
-        const marker = L.marker([h.lat, h.lng]).addTo(markerLayer);
-        marker.bindPopup(
-          `<b>${h.name}</b><br>${h.desc}<br>${
-            h.strom ? "🔌 Strom vorhanden" : "❌ Kein Strom"
-          }<br><br><button onclick="addToRoute(${h.id})" class="small-btn">➕ Hinzufügen</button>`
-        );
-      });
-    }
-
-
-let huettenMarker = [];
-
-function updateHuettenMarkers(huettenListe) {
-  huettenMarker.forEach(marker => map.removeLayer(marker));
-  huettenMarker = [];
-
-  huettenListe.forEach((h) => {
-    const marker = L.marker([h.lat, h.lng]).addTo(map);
-     
-    marker.bindPopup(createHuettenPopupContent(h));
-    huettenMarker.push(marker);
-
-  });
-}
+/*
+######################
+- Popup
+######################
+*/    
 function createHuettenPopupContent(huette) {
   const bildUrl = "https://via.placeholder.com/300x150?text=Eierh%C3%BCtte"; // Fake-Bild
 
@@ -705,23 +719,14 @@ function createHuettenPopupContent(huette) {
     </div>
   `;
 }
-    
-/*let huettenMarkerLayer = L.layerGroup().addTo(map);
-
-function updateHuettenMarkers(huettenListe) {
-  huettenMarkerLayer.clearLayers();
-  huettenListe.forEach((h) => {
-    const marker = L.marker([h.lat, h.lng]).addTo(huettenMarkerLayer);
-    marker.bindPopup(
-          `<b>${h.name}</b><br>${h.desc}<br>${
-            h.strom ? "🔌 Strom vorhanden" : "❌ Kein Strom"
-          }<br><br><button onclick="addToRoute(${h.id})" class="small-btn">➕ Hinzufügen</button>`
-        );
-  });
-}*/
-    function addToRoute(id) {
-      const h = huetten.find((h) => h.id === id);
-      if (!selectedHuetten.includes(h)) {
+/*
+######################
+- Route functions
+######################
+*/    
+function addToRoute(id) {
+  const h = huetten.find((h) => h.id === id);
+  if (!selectedHuetten.includes(h)) {
         selectedHuetten.push(h);
         updateSelectedList();
 
@@ -738,8 +743,7 @@ function updateHuettenMarkers(huettenListe) {
         toggleSidebar();
       }
     }
-
-    function removeFromRoute(id) {
+function removeFromRoute(id) {
       selectedHuetten = selectedHuetten.filter((h) => h.id !== id);
       updateSelectedList();
       if (routeLine) map.removeLayer(routeLine);
@@ -747,7 +751,7 @@ function updateHuettenMarkers(huettenListe) {
       document.getElementById("errorInfo").innerText = "";
     }
 
-    function updateSelectedList() {
+function updateSelectedList() {
       const list = document.getElementById("selectedList");
       list.innerHTML = selectedHuetten
         .map(
@@ -757,7 +761,7 @@ function updateHuettenMarkers(huettenListe) {
         .join("");
     }
 
-    function resetRoute() {
+function resetRoute() {
       selectedHuetten = [];
       updateSelectedList();
       if (routeLine) map.removeLayer(routeLine);
@@ -765,7 +769,7 @@ function updateHuettenMarkers(huettenListe) {
       document.getElementById("errorInfo").innerText = "";
     }
 
-    function calculateOptimizedRoute() {
+function calculateOptimizedRoute() {
   if (!userBikeMarker || !userBikeMarker.getLatLng) {
     document.getElementById("errorInfo").innerText =
       "📍 Aktuelle Position nicht verfügbar.";
@@ -861,7 +865,7 @@ function updateHuettenMarkers(huettenListe) {
     });
     }
 
-    function calculateRoute() {
+function calculateRoute() {
   if (!userBikeMarker || !userBikeMarker.getLatLng) {
     document.getElementById("errorInfo").innerText =
       "📍 Aktuelle Position nicht verfügbar. Bitte Standortfreigabe aktivieren.";
