@@ -260,6 +260,12 @@
   <div class="spinner"></div>
   <p>Lade Karte…</p>
   </div>
+
+
+  <!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  
 <body>
   <header id="topbar">
     <div class="logo-area">
@@ -316,6 +322,23 @@
   </div>
 
   <script>
+
+    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.firebasestorage.app",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+  measurementId: "G-16V6K5GXDT"
+};
+// Firebase initialisieren
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+
+    
     let visibleRadiusMeters = 25000; // 25 Kilometer Umkreis
     let visibleRadiusKm = 10;
     const apiKey = "5b3ce3597851110001cf624893412fe92e0448e493663f2482a80572";
@@ -364,6 +387,31 @@ radiusSlider.addEventListener("input", () => {
   }
 });
 
+function ladeHuettenVonFirebase() {
+  db.collection("eierhuetten").get().then((querySnapshot) => {
+    huetten = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      huetten.push({
+        id: doc.id,
+        name: data.name || "Unbenannte Hütte",
+        lat: data.lat,
+        lng: data.lng,
+        strom: data.strom === true
+      });
+    });
+
+    // Falls Position bekannt ist, filtere im Radius
+    if (userBikeMarker) {
+      const pos = userBikeMarker.getLatLng();
+      const nearbyHuetten = filterHuettenByRadius(pos);
+      updateHuettenMarkers(nearbyHuetten);
+    }
+  }).catch((error) => {
+    console.error("Fehler beim Laden der Hütten:", error);
+  });
+}
+
     function filterHuettenByRadius(centerPos) {
   return huetten.filter((hut) => {
     const hutPos = L.latLng(hut.lat, hut.lng);
@@ -397,9 +445,10 @@ function updateUserBike() {
         // Kreis und Hütten aktualisieren
         updateRadiusCircle(currentPos);
         // Nur nahe Hütten anzeigen
-        const nearbyHuetten = filterHuettenByRadius(currentPos);
-        updateHuettenMarkers(nearbyHuetten);
+        //const nearbyHuetten = filterHuettenByRadius(currentPos);
+        //updateHuettenMarkers(nearbyHuetten);
 
+        ladeHuettenVonFirebase();
         
         userBikeMarker = L.marker([lat, lng], { icon: animatedBikeIcon }).addTo(map);
         // 👉 Ladebildschirm ausblenden
@@ -533,7 +582,23 @@ function hideCenterButton() {
         );
       });
     }
-let huettenMarkerLayer = L.layerGroup().addTo(map);
+
+
+let huettenMarker = [];
+
+function updateHuettenMarkers(huettenListe) {
+  huettenMarker.forEach(marker => map.removeLayer(marker));
+  huettenMarker = [];
+
+  huettenListe.forEach((hut) => {
+    const marker = L.marker([hut.lat, hut.lng]).addTo(map)
+      .bindPopup(`<strong>${hut.name}</strong><br>Strom: ${hut.strom ? "✅" : "❌"}`);
+    huettenMarker.push(marker);
+  });
+}
+
+    
+/*let huettenMarkerLayer = L.layerGroup().addTo(map);
 
 function updateHuettenMarkers(huettenListe) {
   huettenMarkerLayer.clearLayers();
@@ -545,7 +610,7 @@ function updateHuettenMarkers(huettenListe) {
           }<br><br><button onclick="addToRoute(${h.id})" class="small-btn">➕ Hinzufügen</button>`
         );
   });
-}
+}*/
     function addToRoute(id) {
       const h = huetten.find((h) => h.id === id);
       if (!selectedHuetten.includes(h)) {
