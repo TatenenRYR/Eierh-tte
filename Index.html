@@ -1,33 +1,50 @@
 <!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Eierhütten-Radtour</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eierhütten Radtour</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
-    /* Design-Styles wie oben (unverändert) */
-    /* ... */
+    html, body {
+      height: 100%; margin: 0; padding: 0; font-family: Arial, sans-serif;
+    }
+    #map { height: 100%; z-index: 1; }
+    #loader {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: white; font-size: 1.5rem; z-index: 999;
+    }
+    #sidebar {
+      position: absolute;
+      top: 10px; left: 10px;
+      background: white;
+      border-radius: 8px;
+      padding: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+      z-index: 500;
+      max-height: 90%;
+      overflow-y: auto;
+      width: 260px;
+    }
+    #routeInfo, #debugConsole {
+      margin-top: 10px;
+      white-space: pre-wrap;
+      font-size: 0.9rem;
+    }
+    #debugConsole {
+      background: #222; color: #0f0; padding: 10px; max-height: 200px; overflow: auto;
+    }
   </style>
 </head>
 <body>
-  <div id="topbar">
-    <div class="logo-area">
-      <img src="logo.png" class="logo" alt="Logo">
-      <div class="title">Eierhütten-Tour</div>
-    </div>
-    <button id="toggleSidebarBtn">☰</button>
-  </div>  <div id="sidebar" class="hidden">
+  <div id="loader">🚲 Karte wird geladen…</div>
+  <div id="map"></div>
+  <div id="sidebar">
     <label><input type="checkbox" id="filterStrom"> Nur mit Strom</label>
     <ul id="huettenListe"></ul>
     <div id="routeInfo"></div>
-    <div id="errorInfo"></div>
-  </div>  <div id="loader">
-    <div class="spinner"></div>
-    <p>Lade Karte…</p>
-  </div>
-  <div id="map"></div>
-  <div id="debugConsole"></div>  <script type="module">
+    <div id="debugConsole"></div>
+  </div>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
 
@@ -49,100 +66,77 @@
     }).addTo(map);
 
     let huetten = [];
-    let huettenMarkerLayer = L.layerGroup().addTo(map);
-    let userBikeMarker = null;
-    let followBike = true;
-
-    const animatedBikeIcon = L.divIcon({
-      className: 'animated-bike-icon',
-      html: `<div style="animation:bounce 1s infinite ease-in-out;">🚲</div>`,
-      iconSize: [32, 32],
-      iconAnchor: [16, 16]
-    });
-
-    function filterHuettenByCheckbox() {
-      const nurStrom = document.getElementById("filterStrom").checked;
-      return nurStrom ? huetten.filter(h => h.strom) : huetten;
-    }
+    const huettenMarkerLayer = L.layerGroup().addTo(map);
 
     async function ladeEierhuetten() {
-      try {
-        const snapshot = await getDocs(collection(db, "eierhuetten"));
-        huetten = [];
-        huettenMarkerLayer.clearLayers();
-        const ul = document.getElementById("huettenListe");
-        ul.innerHTML = "";
-        let debug = "";
+      const querySnapshot = await getDocs(collection(db, "eierhuetten"));
+      const huettenListe = [];
+      let debug = "🐣 Debug-Info:\n";
 
-        snapshot.forEach(doc => {
-          const d = doc.data();
-          if (d.status === "aktiviert" && d.coords) {
-            const hut = {
-              id: doc.id,
-              lat: d.coords.lat,
-              lng: d.coords.lng,
-              name: d.standort || "Unbekannt",
-              desc: d.beschreibung || "",
-              strom: d.strom || false
-            };
-            huetten.push(hut);
+      querySnapshot.forEach(doc => {
+        const data = doc.data();
+        const coords = data.coords;
 
-            const marker = L.marker([hut.lat, hut.lng]).addTo(huettenMarkerLayer);
-            marker.bindPopup(`<b>${hut.name}</b><br>${hut.desc}<br>${hut.strom ? "✅ Strom" : "❌ Kein Strom"}`);
+        if (data.status !== "aktiviert" || !coords) {
+          debug += `⚠️ Übersprungen: ${doc.id}\n`;
+          return;
+        }
 
-            const li = document.createElement("li");
-            li.innerHTML = `${hut.name}<button class='small-btn' onclick='addToRoute("${hut.id}")'>➕</button>`;
-            ul.appendChild(li);
-          } else {
-            debug += `⚠️ ${doc.id} übersprungen\n`;
-          }
-        });
+        const hut = {
+          id: doc.id,
+          lat: coords.lat,
+          lng: coords.lng,
+          name: data.standort || "Unbekannt",
+          desc: data.beschreibung || "",
+          strom: data.strom || false
+        };
 
-        document.getElementById("debugConsole").textContent = debug;
-        document.getElementById("debugConsole").style.display = "block";
-      } catch (err) {
-        document.getElementById("errorInfo").innerText = "Fehler beim Laden der Daten.";
-      }
+        huettenListe.push(hut);
+      });
+
+      huetten = huettenListe;
+      zeigeHuettenAufKarte();
+      document.getElementById("debugConsole").textContent = debug + `\nGeladen: ${huetten.length}`;
     }
 
-    function updateUserBike() {
+    function zeigeHuettenAufKarte() {
+      const ul = document.getElementById("huettenListe");
+      ul.innerHTML = "";
+      huettenMarkerLayer.clearLayers();
+      const nurStrom = document.getElementById("filterStrom").checked;
+      const gefiltert = nurStrom ? huetten.filter(h => h.strom) : huetten;
+
+      gefiltert.forEach(h => {
+        const marker = L.marker([h.lat, h.lng]).addTo(huettenMarkerLayer);
+        marker.bindPopup(`<b>${h.name}</b><br>${h.desc}<br>${h.strom ? '✅ Strom' : '❌ Kein Strom'}`);
+
+        const li = document.createElement("li");
+        li.textContent = h.name;
+        ul.appendChild(li);
+      });
+    }
+
+    document.getElementById("filterStrom").addEventListener("change", zeigeHuettenAufKarte);
+
+    function starteGPS() {
       navigator.geolocation.watchPosition(
         pos => {
           const lat = pos.coords.latitude;
           const lng = pos.coords.longitude;
-
-          if (!userBikeMarker) {
-            userBikeMarker = L.marker([lat, lng], { icon: animatedBikeIcon }).addTo(map);
-            document.getElementById("loader").style.display = "none";
-          } else {
-            userBikeMarker.setLatLng([lat, lng]);
-          }
-
-          if (followBike) {
-            map.setView([lat, lng], 14);
-          }
+          L.marker([lat, lng], { icon: L.divIcon({ className: '', html: '📍', iconSize: [24,24] }) })
+            .addTo(map)
+            .bindPopup("Dein Standort").openPopup();
+          map.setView([lat, lng], 14);
+          document.getElementById("loader").style.display = "none";
         },
         err => {
-          console.warn("Standortfehler", err);
-          map.setView([51.1657, 10.4515], 6);
+          console.warn("GPS Fehler", err);
           document.getElementById("loader").style.display = "none";
         }
       );
     }
 
-    window.addToRoute = function (id) {
-      alert(`Hütte ${id} zur Route hinzugefügt.`); // Platzhalter
-    };
-
-    document.getElementById("toggleSidebarBtn").addEventListener("click", () => {
-      document.getElementById("sidebar").classList.toggle("hidden");
-    });
-    document.getElementById("filterStrom").addEventListener("change", () => {
-      huetten = filterHuettenByCheckbox();
-      ladeEierhuetten();
-    });
-
     ladeEierhuetten();
-    updateUserBike();
+    starteGPS();
   </script></body>
 </html>
