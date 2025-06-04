@@ -346,6 +346,19 @@ let huettenMarker = [];
 
 /*
 ######################
+- Datenstruktur
+######################
+*/
+let routeData = {
+  huetten: [],
+  geojsonLine: null,
+  totalDistance: 0,
+  totalDuration: 0,
+  lastUpdated: null
+};
+
+/*
+######################
 - Icons
 ######################
 */
@@ -725,50 +738,68 @@ function createHuettenPopupContent(huette) {
 ######################
 */    
 function addToRoute(id) {
-  const h = huetten.find((h) => h.id === id);
-  if (!selectedHuetten.includes(h)) {
-        selectedHuetten.push(h);
-        updateSelectedList();
+  const h = huetten.find(h => h.id === id);
+  if (!h || routeData.huetten.find(e => e.id === h.id)) return;
 
-        if (routeLine) {
-          map.removeLayer(routeLine);
-          routeLine = null;
-        }
-        document.getElementById("routeInfo").innerText = "";
-        document.getElementById("errorInfo").innerText = "";
-        // ✅ Popup automatisch schließen
-        map.closePopup();
+  routeData.huetten.push(h);
+  routeData.lastUpdated = new Date();
+  updateSelectedList();
 
-        // ✅ sidebar
-        toggleSidebar();
-      }
-    }
+  if (routeData.geojsonLine) {
+    map.removeLayer(routeData.geojsonLine);
+    routeData.geojsonLine = null;
+  }
+
+  document.getElementById("routeInfo").innerText = "";
+  document.getElementById("errorInfo").innerText = "";
+  map.closePopup();
+  toggleSidebar();
+
+  debug("Hütte zur Route hinzugefügt", h);
+}
 function removeFromRoute(id) {
-      selectedHuetten = selectedHuetten.filter((h) => h.id !== id);
-      updateSelectedList();
-      if (routeLine) map.removeLayer(routeLine);
-      document.getElementById("routeInfo").innerText = "";
-      document.getElementById("errorInfo").innerText = "";
-    }
+  routeData.huetten = routeData.huetten.filter(h => h.id !== id);
+  updateSelectedList();
 
+  if (routeData.geojsonLine) {
+    map.removeLayer(routeData.geojsonLine);
+    routeData.geojsonLine = null;
+  }
+
+  document.getElementById("routeInfo").innerText = "";
+  document.getElementById("errorInfo").innerText = "";
+}
 function updateSelectedList() {
-      const list = document.getElementById("selectedList");
-      list.innerHTML = selectedHuetten
-        .map(
-          (h) =>
-            `<li>${h.name} <button class="small-btn" onclick="removeFromRoute(${h.id})">❌</button></li>`
-        )
-        .join("");
-    }
+  const list = document.getElementById("selectedList");
+  list.innerHTML = routeData.huetten
+    .map(h =>
+      `<li>${h.name} <button class="small-btn" onclick="removeFromRoute('${h.id}')">❌</button></li>`
+    )
+    .join("");
+}
 
 function resetRoute() {
-      selectedHuetten = [];
-      updateSelectedList();
-      if (routeLine) map.removeLayer(routeLine);
-      document.getElementById("routeInfo").innerText = "";
-      document.getElementById("errorInfo").innerText = "";
-    }
+  routeData.huetten = [];
+  if (routeData.geojsonLine) {
+    map.removeLayer(routeData.geojsonLine);
+    routeData.geojsonLine = null;
+  }
 
+  updateSelectedList();
+  document.getElementById("routeInfo").innerText = "";
+  document.getElementById("errorInfo").innerText = "";
+}
+
+function removeOutOfRangeHuetten() {
+  const nearbyIds = nearbyHuetten.map(h => h.id);
+  const vorherigeAnzahl = routeData.huetten.length;
+
+  routeData.huetten = routeData.huetten.filter(h => nearbyIds.includes(h.id));
+
+  if (routeData.huetten.length !== vorherigeAnzahl) {
+    debug("Route aktualisiert: Entfernte Hütten, die nicht mehr im Umkreis sind.");
+    updateSelectedList();
+  }
 function calculateOptimizedRoute() {
   if (!userBikeMarker || !userBikeMarker.getLatLng) {
     document.getElementById("errorInfo").innerText =
@@ -776,7 +807,7 @@ function calculateOptimizedRoute() {
     return;
   }
 
-  if (selectedHuetten.length === 0) {
+  if (routeData.huetten.length === 0) {
     document.getElementById("errorInfo").innerText =
       "Bitte mindestens eine Hütte auswählen.";
     return;
@@ -786,7 +817,7 @@ function calculateOptimizedRoute() {
 
   const start = userBikeMarker.getLatLng();
 
-  const jobs = selectedHuetten.map((hut, index) => ({
+  const jobs = routeData.huetten.map((hut, index) => ({
     id: index + 1,
     location: [hut.lng, hut.lat],
   }));
@@ -813,8 +844,6 @@ function calculateOptimizedRoute() {
     .then((res) => res.json())
     .then((optData) => {
       const routeCoords = [];
-
-      // Startpunkt (Fahrradposition)
       routeCoords.push([start.lng, start.lat]);
 
       optData.routes[0].steps.forEach((step) => {
@@ -824,7 +853,6 @@ function calculateOptimizedRoute() {
         }
       });
 
-      // Anfrage zur finalen Route (diese wird dann schön geroutet über Straßen)
       return fetch(
         "https://api.openrouteservice.org/v2/directions/cycling-regular/geojson",
         {
@@ -842,37 +870,42 @@ function calculateOptimizedRoute() {
     })
     .then((res) => res.json())
     .then((data) => {
-      if (routeLine) {
-        map.removeLayer(routeLine);
+      if (routeData.geojsonLine) {
+        map.removeLayer(routeData.geojsonLine);
       }
 
-      routeLine = L.geoJSON(data, {
+      routeData.geojsonLine = L.geoJSON(data, {
         style: { color: "#e67e22", weight: 4 },
       }).addTo(map);
 
       const dist = data.features[0].properties.summary.distance / 1000;
       const dur = data.features[0].properties.summary.duration / 60;
 
+      routeData.totalDistance = dist;
+      routeData.totalDuration = dur;
+
       document.getElementById("routeInfo").innerText =
         `📏 Optimiert: ${dist.toFixed(1)} km\n⏱️ ca. ${Math.round(dur)} Min`;
 
-      map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+      map.fitBounds(routeData.geojsonLine.getBounds(), { padding: [30, 30] });
     })
     .catch((err) => {
       console.error(err);
       document.getElementById("errorInfo").innerText =
         "Fehler bei der Routenoptimierung.";
     });
-    }
+}
 
-function calculateRoute() {
+
+
+  function calculateRoute() {
   if (!userBikeMarker || !userBikeMarker.getLatLng) {
     document.getElementById("errorInfo").innerText =
       "📍 Aktuelle Position nicht verfügbar. Bitte Standortfreigabe aktivieren.";
     return;
   }
 
-  if (selectedHuetten.length === 0) {
+  if (routeData.huetten.length === 0) {
     document.getElementById("errorInfo").innerText =
       "Bitte mindestens eine Hütte auswählen.";
     return;
@@ -883,7 +916,7 @@ function calculateRoute() {
   const userCoords = userBikeMarker.getLatLng();
   const coordinates = [[userCoords.lng, userCoords.lat]];
 
-  selectedHuetten.forEach((h) => {
+  routeData.huetten.forEach((h) => {
     coordinates.push([h.lng, h.lat]);
   });
 
@@ -900,11 +933,11 @@ function calculateRoute() {
   })
     .then((res) => res.json())
     .then((data) => {
-      if (routeLine) {
-        map.removeLayer(routeLine);
+      if (routeData.geojsonLine) {
+        map.removeLayer(routeData.geojsonLine);
       }
 
-      routeLine = L.geoJSON(data, {
+      routeData.geojsonLine = L.geoJSON(data, {
         style: {
           color: "#27ae60",
           weight: 4,
@@ -914,19 +947,22 @@ function calculateRoute() {
       const dist = data.features[0].properties.summary.distance / 1000;
       const dur = data.features[0].properties.summary.duration / 60;
 
+      routeData.totalDistance = dist;
+      routeData.totalDuration = dur;
+
       document.getElementById("routeInfo").innerText =
         `📏 ${dist.toFixed(1)} km\n⏱️ ca. ${Math.round(dur)} Min`;
 
-      map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+      map.fitBounds(routeData.geojsonLine.getBounds(), { padding: [30, 30] });
     })
     .catch((err) => {
       console.error(err);
       document.getElementById("errorInfo").innerText =
         "Fehler bei der Routenberechnung.";
     });
-          }
-     
+}
 
+ 
     
 
     // Event Listener
