@@ -739,32 +739,73 @@
     - Karte initialisieren & App starten
     ######################
     */
+    function updateUserBike() {
+      navigator.geolocation.watchPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          const currentPos = L.latLng(lat, lng);
+
+          if (!userBikeMarker) {
+            userBikeMarker = L.marker(currentPos, { icon: animatedBikeIcon }).addTo(map);
+          } else {
+            userBikeMarker.setLatLng(currentPos);
+          }
+
+          updateRadiusCircle(currentPos);
+          nearbyHuetten = filterHuettenByRadius(currentPos);
+          updateHuettenMarkers(nearbyHuetten);
+          removeOutOfRangeHuetten();
+
+          const loader = document.getElementById("loader");
+          if (loader) loader.style.display = "none";
+
+          if (followBike && userBikeMarker) {
+            map.setView(currentPos, 14);
+          }
+        },
+        (err) => {
+          console.warn("Standort konnte nicht ermittelt werden:", err.message);
+          map.setView([51.1657, 10.4515], 6);
+
+          const loader = document.getElementById("loader");
+          if (loader) loader.style.display = "none";
+        }
+      );
+    }
+
     window.addEventListener("DOMContentLoaded", () => {
       debug("🌐 DOM vollständig geladen. Initialisiere App...");
       try {
-        // TileLayer & Zoom-Control
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         }).addTo(map);
         L.control.zoom({ position: "topright" }).addTo(map);
 
-        // Standort & Hütten laden
         updateUserBike();
         ladeHuettenVonFirebase();
 
-        // Event-Listener
-        document.getElementById("stromFilter")?.addEventListener("change", () => {
-          if (userBikeMarker) {
-            updateHuettenMarkers(filterHuettenByRadius(userBikeMarker.getLatLng()));
-          } else {
-            updateHuettenMarkers(huetten);
-          }
-        });
-        document.getElementById("toggleSidebarBtn")?.addEventListener("click", () => {
-          const sidebar = document.getElementById("sidebar");
-          sidebar.classList.toggle("hidden");
-          setTimeout(() => { map.invalidateSize(); }, 310);
-        });
+        document
+          .getElementById("stromFilter")
+          ?.addEventListener("change", () => {
+            if (userBikeMarker) {
+              updateHuettenMarkers(
+                filterHuettenByRadius(userBikeMarker.getLatLng())
+              );
+            } else {
+              updateHuettenMarkers(huetten);
+            }
+          });
+        document
+          .getElementById("toggleSidebarBtn")
+          ?.addEventListener("click", () => {
+            const sidebar = document.getElementById("sidebar");
+            sidebar.classList.toggle("hidden");
+            setTimeout(() => {
+              map.invalidateSize();
+            }, 310);
+          });
         document.getElementById("centerButton")?.addEventListener("click", () => {
           followBike = true;
           userInteracted = false;
@@ -779,8 +820,9 @@
       }
     });
 
-    // Karteninteraktionen: deaktiviere Follow bei Nutzerinteraktion
-    map.on("pointerdown", () => { userInteracted = true; });
+    map.on("pointerdown", () => {
+      userInteracted = true;
+    });
     map.on("moveend", () => {
       if (userInteracted) {
         followBike = false;
@@ -834,7 +876,9 @@
               }<br><br>
               <button onclick="addToRoute('${naechste.id}')" class="small-btn">➕ Hinzufügen</button>`
             )
-            .on("popupclose", () => { updateHuettenMarkers(nearbyHuetten); })
+            .on("popupclose", () => {
+              updateHuettenMarkers(nearbyHuetten);
+            })
             .openPopup();
           map.setView([naechste.lat, naechste.lng], 13);
         },
