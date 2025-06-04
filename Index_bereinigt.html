@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+
+<html lang="de">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>Eierhütten-Radtour (Debug)</title>
+<link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+    :root {
+      --primary-color: #2c7be5;
+      --secondary-color: #1a5fcc;
+      --light-bg: #f8f9fa;
+      --text-color: #333;
+      --green-route: #2ecc71;
+    }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      height: 100vh;
+      overflow: hidden;
+      background-color: var(--light-bg);
+    }
+    #topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 60px;
+      background-color: white;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+      z-index: 1000;
+    }
+    .logo-area {
+      display: flex;
+      align-items: center;
+      flex-grow: 1;
+    }
+    .logo {
+      height: 32px;
+      margin-right: 10px;
+    }
+    .title {
+      font-size: 1.2em;
+      font-weight: bold;
+      color: var(--primary-color);
+    }
+    #toggleSidebarBtn {
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 20px;
+      font-size: 1em;
+      cursor: pointer;
+      margin-left: auto;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #toggleSidebarBtn:hover {
+      background: var(--secondary-color);
+    }
+    #app {
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  position: relative;
+}
+#map {
+  position: fixed;
+  top: 60px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+}
+    #sidebar {
+  position: fixed;
+  top: 60px; /* Schließt direkt an die Topbar an */
+  left: 0;
+  width: 260px;
+  height: calc(100vh - 60px); /* Passt sich unterhalb der Topbar an */
+  background-color: var(--light-bg);
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+  padding: 15px;
+  overflow-y: auto;
+  transition: transform 0.3s ease;
+  z-index: 999;
+  flex-shrink: 0;
+}
+    #sidebar.hidden {
+      transform: translateX(-100%);
+      width: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    #sidebar.hidden + #map {
+      margin-left: 0;
+    }
+    #sidebar:not(.hidden) + #map {
+      margin-left: 260px;
+    }
+    button.small-btn {
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      border-radius: 14px;
+      font-size: 0.9em;
+      padding: 2px 8px;
+      margin-left: 8px;
+      cursor: pointer;
+    }
+    button.small-btn:hover {
+      background-color: var(--secondary-color);
+    }
+    label {
+      display: flex;
+      align-items: center;
+      font-weight: 600;
+      margin-bottom: 8px;
+      cursor: pointer;
+    }
+    input[type="checkbox"] {
+      margin-right: 6px;
+      width: 18px;
+      height: 18px;
+    }
+    ul {
+      padding-left: 20px;
+      margin-top: 0;
+      margin-bottom: 12px;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    li {
+      margin: 5px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    #routeInfo, #errorInfo {
+      font-size: 0.9em;
+      padding: 8px 12px;
+      border-radius: 8px;
+      margin-top: 10px;
+    }
+    #routeInfo {
+      background-color: #e6f4ea;
+      color: #155724;
+    }
+    #errorInfo {
+      background-color: #f8d7da;
+      color: #721c24;
+      white-space: pre-wrap;
+    }
+    .animated-bike-icon .bike-animation {
+  animation: bounce 1s infinite ease-in-out;
+  font-size: 28px;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+.map-buttons {
+  position: absolute;
+  top: 80px; /* Unterhalb der Zoom-Buttons */
+  right: 10px;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.map-buttons button {
+  background-color: white;
+  border: 1px solid #ccc;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+  transition: background-color 0.2s;
+}
+
+.map-buttons button:hover {
+  background-color: #f0f0f0;
+}
+
+    .map-buttons-floating {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 1000;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.map-buttons-floating button {
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  background-color: #f4f4f4;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+#centerButton {
+  display: block;
+}
+    #loader {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.95);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  font-family: sans-serif;
+  color: #2c7be5;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #ccc;
+  border-top: 4px solid #2c7be5;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 10px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+  
+  </style>
+</head>
+<div id="loader">
+<div class="spinner"></div>
+<p>Lade Karte…</p>
+</div>
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+<body>
+<header id="topbar">
+<div class="logo-area">
+<img alt="Logo" class="logo" src="file_00000000302061f49725a2fe1ef22d21.png"/>
+<span class="title">Eierhütten-Tour</span>
+</div>
+<button id="toggleSidebarBtn" title="Sidebar ein-/ausblenden">☰</button>
+</header>
+<div id="app">
+<aside class="hidden" id="sidebar">
+<h2>🐣 Eierhütten</h2>
+<label>
+<input id="stromFilter" type="checkbox"/>
+        Nur Hütten mit Strom 🔌
+      </label>
+<p>Wähle Hütten aus:</p>
+<ul id="selectedList"></ul>
+<button onclick="calculateRoute()">Normale Route</button>
+<button onclick="calculateOptimizedRoute()">Optimierte Route</button>
+<button onclick="resetRoute()">❌ Auswahl zurücksetzen</button>
+<button onclick="zeigeNaechsteHütte()">📍 Nächste Hütte anzeigen</button>
+<div id="routeInfo"></div>
+<div id="errorInfo"></div>
+</aside>
+<div id="map">
+<div class="map-buttons-floating">
+<button id="centerButton">🔄 Zentrieren</button>
+<!-- Hier kannst du weitere Buttons einfügen -->
+</div>
+<!-- ... Leaflet Map folgt hier ... -->
+<div class="map-buttons">
+<input id="radiusSlider" max="20" min="1" type="range" value="10"/>
+<span id="radiusValue">10 km</span>
+</div>
+</div>
+</div>
+
+<div id="debugConsole" style="
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  background: rgba(0,0,0,0.85);
+  color: #00ff00;
+  font-family: monospace;
+  font-size: 11px;
+  padding: 6px 10px 25px 10px;
+  z-index: 9999;
+  display: none;
+  border-top: 2px solid #00ff00;
+  box-sizing: border-box;
+">
+<button onclick="toggleDebugConsole()" style="
+    position: absolute;
+    right: 10px;
+    bottom: 5px;
+    background: #111;
+    color: #0f0;
+    border: 1px solid #0f0;
+    border-radius: 4px;
+    font-size: 12px;
+    padding: 2px 6px;
+    cursor: pointer;
+  ">Schließen</button>
+<div id="debugContent" style="padding-bottom: 20px;"></div>
+</div>
+<script>
+let routeData = {
+  huetten: [],
+  geojsonLine: null,
+  totalDistance: 0,
+  totalDuration: 0,
+  lastUpdated: null
+};
+
+let userBikeMarker = null;
+let nearbyHuetten = [];
+
+function debug(msg, data = null) {
+  console.log("[DEBUG]", msg, data);
+}
+
+function updateUserBike() {
+  navigator.geolocation.watchPosition(
+    (position) => {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      const currentPos = L.latLng(lat, lng);
+
+      if (!userBikeMarker) {
+        userBikeMarker = L.marker(currentPos, { icon: animatedBikeIcon }).addTo(map);
+      } else {
+        userBikeMarker.setLatLng(currentPos);
+      }
+
+      updateRadiusCircle(currentPos);
+      nearbyHuetten = filterHuettenByRadius(currentPos);
+      updateHuettenMarkers(nearbyHuetten);
+      removeOutOfRangeHuetten();
+
+      const loader = document.getElementById("loader");
+      if (loader) loader.style.display = "none";
+
+      if (followBike && userBikeMarker) {
+        map.setView(currentPos, 14);
+      }
+    },
+    (err) => {
+      console.warn('Standort konnte nicht ermittelt werden:', err.message);
+      map.setView([51.1657, 10.4515], 6);
+
+      const loader = document.getElementById("loader");
+      if (loader) loader.style.display = "none";
+    }
+  );
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  debug("🌐 DOM vollständig geladen. Initialisiere App...");
+
+  try {
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    L.control.zoom({ position: "topright" }).addTo(map);
+
+    updateUserBike();
+    ladeHuettenVonFirebase();
+
+    document.getElementById("stromFilter")?.addEventListener("change", updateMapMarkers);
+    document.getElementById("toggleSidebarBtn")?.addEventListener("click", toggleSidebar);
+    document.getElementById("centerButton")?.addEventListener("click", () => {
+      followBike = true;
+      userInteracted = false;
+      if (userBikeMarker) {
+        map.setView(userBikeMarker.getLatLng(), 14);
+      }
+      updateCenterButtonState();
+    });
+
+    debug("✅ App initialisiert.");
+  } catch (err) {
+    console.error("❌ Fehler beim Start der Anwendung:", err);
+    const loader = document.getElementById("loader");
+    if (loader) loader.style.display = "none";
+  }
+});
+</script></body>
+</html>
