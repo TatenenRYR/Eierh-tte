@@ -552,16 +552,86 @@ const eierhuettenIconActive = L.icon({
           ➕ Zur Route hinzufügen
        </button>`;
 
+  const isOwnerbutton = isOwner
+          ? `${button}`
+          : `<span>👁️ Ansicht</span>`;
+       
   return `
     <div class="huetten-popup" style="max-width: 300px;">
       <h3>${huette.name}</h3>
       <img src="${bildUrl}" 
            alt="Eierhütte" style="width: 100px; display: block; margin: 8px auto;" />
       <p><strong>Strom:</strong> ${huette.strom ? "Ja 🔌" : "Nein ❌"}</p>
-      ${button}
+      ${isOwnerbutton}
     </div>
   `;
 }
+    /*
+    ######################
+    - Routen-Link
+    ######################
+    */
+
+    clientId = localStorage.getItem("bike_id") || crypto.randomUUID();
+    localStorage.setItem("bike_id", clientId);
+    let tourIdFromURL = null, isOwner = false;
+
+    function kopiereTourLink() {
+      if (!tourIdFromURL) return alert("Tour wurde noch nicht gespeichert.");
+      const baseUrl = location.origin + location.pathname;
+      const link = `${baseUrl}?tourId=${tourIdFromURL}`;
+      navigator.clipboard.writeText(link).then(() => alert("Link kopiert:\n" + link));
+    }
+
+    function tourSpeichern() {
+      if (routeData.huetten.length === 0) return alert("Keine Hütten ausgewählt.");
+      const tour = { ids: routeData.huetten.map(h => h.id), erstelltAm: new Date().toISOString(), owner: clientId };
+      db.collection("touren").add(tour).then(docRef => {
+        tourIdFromURL = docRef.id;
+        kopiereTourLink();
+      });
+    }
+
+    function ladeTourAusTourId() {
+      const params = new URLSearchParams(location.search);
+      const tid = params.get("tourId");
+      if (!tid) return;
+      tourIdFromURL = tid;
+      db.collection("touren").doc(tid).onSnapshot(doc => {
+        if (!doc.exists) return;
+        const data = doc.data();
+        isOwner = data.owner === clientId;
+        const ids = data.ids || [];
+        routeData.huetten = huetten.filter(h => ids.includes(h.id));
+        updateMapMarkers();
+        calculateRoute();
+      });
+    }
+function userLocation() {
+      navigator.geolocation.watchPosition(pos => {
+        const { latitude, longitude } = pos.coords;
+        db.collection("positions").doc(clientId).set({ lat: latitude, lng: longitude, timestamp: Date.now(), tourId: tourIdFromURL || null });
+      });
+    }
+
+    function ladeFremdeFahrradPositionen() {
+      db.collection("positions").onSnapshot(snapshot => {
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          const id = doc.id;
+          if (id === clientId) return;
+          if (tourIdFromURL && data.tourId !== tourIdFromURL) return;
+          const pos = L.latLng(data.lat, data.lng);
+          if (bikeMarkers[id]) bikeMarkers[id].setLatLng(pos);
+          else {
+            bikeMarkers[id] = L.marker(pos, {
+              icon: L.divIcon({ className: 'animated-bike-icon', html: '<div class="bike-animation">🚴‍♂️</div>' })
+            }).addTo(map).bindTooltip("📍 Mitfahrer");
+          }
+        });
+      });
+    }
+    
     /*
     ######################
     - Route-Funktionen
@@ -591,7 +661,9 @@ const eierhuettenIconActive = L.icon({
   }
   }
 function removeFromRoute(id) {
-  routeData.huetten = routeData.huetten.filter(h => h.id !== id);
+  if (!isOwner) return alert("Nur der Ersteller kann bearbeiten.");
+      routeData.huetten = routeData.huetten.filter(h => h.id !== id);
+      db.collection("touren").doc(tourIdFromURL).update({ ids: routeData.huetten.map(h => h.id) });
   updateSelectedList();
 
   if (routeData.geojsonLine) {
@@ -826,6 +898,9 @@ function removeFromRoute(id) {
 
         updateUserBike();
         ladeHuettenVonFirebase();
+        ladeTourAusTourId();
+        ladeFremdeFahrradPositionen();
+        userLocation();
 
         document
           .getElementById("stromFilter")
