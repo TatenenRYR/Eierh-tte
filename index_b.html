@@ -391,6 +391,7 @@
     const markerLayer = L.layerGroup().addTo(map);
     let fahrradGeladen = false;
     let huettenGeladen = false;
+    let tourAktualisierungLokal = false;
 /*
     ######################
     - Hilfsfunktion 
@@ -687,6 +688,10 @@ const eierhuettenIconActive = L.icon({
   starteGuide();
 
   db.collection("touren").doc(tid).onSnapshot(doc => {
+  if (tourAktualisierungLokal) {
+    debug("🔁 Lokale Änderung ignoriert");
+    return;
+  }
     if (!doc.exists) return;
 
     const data = doc.data();
@@ -950,27 +955,29 @@ function removeFromRoute(id) {
         });
     }
 function speichereOderAktualisiereTour() {
-  const tour = {
-    ids: routeData.huetten.map(h => h.id),
-    erstelltAm: new Date().toISOString(),
-    owner: clientId
-  };
+  tourAktualisierungLokal = true;
 
-  if (tourIdFromURL) {
-    // ✅ Bestehende Tour updaten
-    db.collection("touren").doc(tourIdFromURL).update(tour).then(() => {
-      debug("🔄 Tour aktualisiert");
-    });
-  } else {
-    // ✅ Neue Tour anlegen
-    db.collection("touren").add(tour).then((docRef) => {
-      tourIdFromURL = docRef.id;
-      const newUrl = new URL(window.location.href);
-      newUrl.searchParams.set("tourId", docRef.id);
-      window.history.replaceState({}, "", newUrl.toString());
-      debug("🆕 Neue Tour gespeichert & Link aktualisiert");
-    });
-  }
+const tour = {
+  ids: routeData.huetten.map(h => h.id),
+  erstelltAm: new Date().toISOString(),
+  owner: clientId
+};
+
+if (tourIdFromURL) {
+  db.collection("touren").doc(tourIdFromURL).update(tour).then(() => {
+    debug("🔄 Tour aktualisiert");
+    tourAktualisierungLokal = false;
+  });
+} else {
+  db.collection("touren").add(tour).then((docRef) => {
+    tourIdFromURL = docRef.id;
+    const newUrl = new URL(window.location.href);
+    newUrl.searchParams.set("tourId", docRef.id);
+    window.history.replaceState({}, "", newUrl.toString());
+    debug("🆕 Neue Tour gespeichert & Link aktualisiert");
+    tourAktualisierungLokal = false;
+  });
+}
 }
     /*
     ######################
