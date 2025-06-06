@@ -393,6 +393,9 @@
     let huettenGeladen = false;
     let tourAktualisierungLokal = false;
     let zuletztGeseheneTourIds = [];
+    const fremdeFahrradMarker = {};
+    const fahrerFarben = {};
+    const farbPalette = ['#e74c3c', '#2ecc71', '#3498db', '#f39c12', '#9b59b6', '#1abc9c'];
 /*
     ######################
     - Hilfsfunktion 
@@ -732,11 +735,23 @@ if (routeData.huetten.length >= 1) {
 function userLocation() {
       navigator.geolocation.watchPosition(pos => {
         const { latitude, longitude } = pos.coords;
-        db.collection("positions").doc(clientId).set({ lat: latitude, lng: longitude, timestamp: Date.now(), tourId: tourIdFromURL || null });
+        const name = localStorage.getItem("bike_name") || "Ich";
+
+db.collection("touren")
+  .doc(tourIdFromURL)
+  .collection("positionen")
+  .doc(clientId)
+  .set({
+    lat: pos.lat,
+    lng: pos.lng,
+    name: name,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+      
       });
     }
 
-    function ladeFremdeFahrradPositionen() {
+   /* function ladeFremdeFahrradPositionen() {
       db.collection("positions").onSnapshot(snapshot => {
         snapshot.forEach(doc => {
           const data = doc.data();
@@ -753,7 +768,40 @@ function userLocation() {
         });
       });
     }
-    
+    */
+    function ladeFremdeFahrradPositionen() {
+  if (!tourIdFromURL) return;
+
+  db.collection("touren").doc(tourIdFromURL).collection("positionen").onSnapshot(snapshot => {
+    snapshot.docChanges().forEach(change => {
+      const docId = change.doc.id;
+      if (docId === clientId) return; // eigenes Bike ignorieren
+
+      const data = change.doc.data();
+      const { lat, lng, name } = data;
+      if (!lat || !lng) return;
+
+      const pos = L.latLng(lat, lng);
+
+      // Neue Farbe zuweisen (einmalig)
+      if (!fahrerFarben[docId]) {
+        fahrerFarben[docId] = farbPalette[Object.keys(fahrerFarben).length % farbPalette.length];
+      }
+
+      // Marker aktualisieren oder erstellen
+      if (fremdeFahrradMarker[docId]) {
+        fremdeFahrradMarker[docId].setLatLng(pos);
+      } else {
+        fremdeFahrradMarker[docId] = L.circleMarker(pos, {
+          radius: 10,
+          color: fahrerFarben[docId],
+          fillColor: fahrerFarben[docId],
+          fillOpacity: 0.8
+        }).addTo(map).bindTooltip(name || "Mitfahrer", { permanent: true, direction: "top" });
+      }
+    });
+  });
+    }
     /*
     ######################
     - Route-Funktionen
@@ -1044,6 +1092,13 @@ if (tourIdFromURL) {
 
     window.addEventListener("DOMContentLoaded", () => {
       debug("🌐 DOM vollständig geladen. Initialisiere App...");
+     if (!localStorage.getItem("bike_name")) {
+  const name = prompt("Wie möchtest du heißen?");
+  if (name) localStorage.setItem("bike_name", name.trim());
+}
+      
+      
+      
       try {
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution:
