@@ -278,6 +278,31 @@
     #debugContent {
       padding-bottom: 20px;
     }
+
+    #guideOverlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.75);
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    color: white;
+    font-size: 18px;
+    z-index: 2000;
+    padding: 20px;
+    text-align: center;
+  }
+  #guideOverlay button {
+    margin-top: 20px;
+    padding: 10px 20px;
+    font-size: 16px;
+    background-color: #2c7be5;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    color: white;
+  }
   </style>
 </head>
 <body>
@@ -286,6 +311,11 @@
     <div class="spinner"></div>
     <p>Lade Karte…</p>
   </div>
+  <ul id="selectedList"></ul>
+  <div id="map"></div>
+  <div id="guideOverlay">
+    <div id="guideText"></div>
+    <button onclick="weiterGuide()">Weiter</button>
 
   <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -441,6 +471,37 @@ const eierhuettenIconActive = L.icon({
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
+    /*
+    ######################
+    - Guide
+    ######################
+    */
+    const guideTexte = [
+      "👋 Willkommen zur Eierhütten-Tour!",
+      "📍 Auf der Karte siehst du die Route und alle Eierhütten.",
+      "🧭 Deine eigene Position wird live angezeigt.",
+      "➕ Klicke auf eine Hütte, um sie zur Route hinzuzufügen.",
+      "📤 Nutze den Tour-Link oben zum Teilen deiner Route."
+    ];
+    let guideIndex = 0;
+
+    function starteGuide() {
+      const visitedKey = "guide_shown_" + tourIdFromURL;
+      if (!tourIdFromURL || localStorage.getItem(visitedKey)) return;
+      document.getElementById("guideOverlay").style.display = "flex";
+      document.getElementById("guideText").innerText = guideTexte[0];
+      guideIndex = 0;
+    }
+
+    function weiterGuide() {
+      guideIndex++;
+      if (guideIndex >= guideTexte.length) {
+        document.getElementById("guideOverlay").style.display = "none";
+        localStorage.setItem("guide_shown_" + tourIdFromURL, "true");
+      } else {
+        document.getElementById("guideText").innerText = guideTexte[guideIndex];
+      }
+    }
     /*
     ######################
     - Kreis (Radius) anzeigen
@@ -600,15 +661,20 @@ const eierhuettenIconActive = L.icon({
       const params = new URLSearchParams(location.search);
       const tid = params.get("tourId");
       if (!tid) return;
+
       tourIdFromURL = tid;
+      starteGuide();
+
       db.collection("touren").doc(tid).onSnapshot(doc => {
         if (!doc.exists) return;
         const data = doc.data();
         isOwner = data.owner === clientId;
-        const ids = data.ids || [];
-        routeData.huetten = huetten.filter(h => ids.includes(h.id));
-        updateHuettenMarkers(routeData.huetten);
+
+        const selectedIds = data.ids || [];
+        routeData.huetten = huetten.filter(h => selectedIds.includes(h.id));
+
         updateSelectedList();
+        updateHuettenMarkers(huetten);
         calculateRoute();
       });
     }
