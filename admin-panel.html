@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="de">
+<!DOCTYPE html>
+<html lang="de">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6,7 +7,6 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
   <style>
     body {
       font-family: sans-serif;
@@ -61,58 +61,57 @@
   </style>
 </head>
 <body>
-  <h1>🧑‍💼 Admin: Hüttenanfragen</h1>  <div id="loginForm">
+  <h1>🧑‍💼 Admin: Hüttenanfragen</h1>
+  <div id="loginForm">
     <h2>Admin Login</h2>
     <button onclick="loginMitGoogle()">🔐 Mit Google anmelden</button>
     <div id="loginError" style="color:red;"></div>
-  </div>  <div id="adminHeader" style="display:none;">
+  </div>
+
+  <div id="adminHeader" style="display:none;">
     <div id="adminName"></div>
     <button class="logout" onclick="logout()">Abmelden</button>
-  </div>  <div id="anfragen" style="display:none;"></div>  <script>
-    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-  authDomain: "eierhuettentour.firebaseapp.com",
-  projectId: "eierhuettentour",
-  storageBucket: "eierhuettentour.firebasestorage.app",
-  messagingSenderId: "348272135205",
-  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
-  measurementId: "G-16V6K5GXDT"
-};
+  </div>
+
+  <div id="anfragen" style="display:none;"></div>
+
+  <script>
+    // Neue Firebase-Konfiguration
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.firebaseapp.com",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
+    };
 
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
-    const storage = firebase.storage();
     const auth = firebase.auth();
 
     async function loginMitGoogle() {
-  const provider = new firebase.auth.GoogleAuthProvider();
-  try {
-    const result = await auth.signInWithPopup(provider);
-    const user = result.user;
+      const provider = new firebase.auth.GoogleAuthProvider();
+      try {
+        const result = await auth.signInWithPopup(provider);
+        const user = result.user;
 
-    const adminRef = db.collection("admins").doc(user.uid);
-    const adminDoc = await adminRef.get();
+        const adminRef = await db.collection("admins").doc(user.uid).get();
+        if (!adminRef.exists) {
+          document.getElementById("loginError").innerText = "Kein Admin-Zugriff für diesen Account.";
+          await auth.signOut();
+          return;
+        }
 
-    if (!adminDoc.exists) {
-      // Admin-Dokument existiert noch nicht -> automatisch erstellen
-      await adminRef.set({
-        name: user.displayName,
-        email: user.email,
-        erstelltAm: new Date().toISOString()
-      });
-      console.log("Neuer Admin wurde angelegt.");
-    }
-
-    document.getElementById("loginForm").style.display = "none";
-    document.getElementById("adminHeader").style.display = "flex";
-    document.getElementById("anfragen").style.display = "block";
-    document.getElementById("adminName").innerText = `👋 Willkommen, ${user.displayName}`;
-    ladeAnfragen();
-
-  } catch (err) {
-    document.getElementById("loginError").innerText = err.message;
-  }
+        document.getElementById("loginForm").style.display = "none";
+        document.getElementById("adminHeader").style.display = "flex";
+        document.getElementById("anfragen").style.display = "block";
+        document.getElementById("adminName").innerText = `👋 Willkommen, ${user.displayName}`;
+        ladeAnfragen();
+      } catch (err) {
+        document.getElementById("loginError").innerText = err.message;
+      }
     }
 
     function logout() {
@@ -132,10 +131,17 @@ const firebaseConfig = {
           div.innerHTML = `
             <h3>${data.name}</h3>
             <p><strong>Strom:</strong> ${data.strom ? "✅ Ja" : "❌ Nein"}</p>
-            <p><strong>Monatliche Kosten:</strong> ${data.kosten?.toFixed(2) || "2.00"} €</p>
+            <p><strong>Beschreibung:</strong> ${data.beschreibung || "–"}</p>
             <p><strong>Koordinaten:</strong> ${data.lat.toFixed(5)}, ${data.lng.toFixed(5)}</p>
             ${data.fotoUrl ? `<img src="${data.fotoUrl}" alt="Hüttenfoto" />` : "<em>Kein Foto</em>"}
-            <button class="annehmen" onclick="annehmen('${doc.id}', ${data.lat}, ${data.lng}, '${data.name}', ${data.strom})">Annehmen</button>
+            <button class="annehmen" onclick="annehmen(
+              '${doc.id}',
+              ${data.lat},
+              ${data.lng},
+              \`${data.name}\`,
+              ${data.strom},
+              \`${data.beschreibung || ""}\`
+            )">Annehmen</button>
             <button class="ablehnen" onclick="ablehnen('${doc.id}')">Ablehnen</button>
           `;
           anfragenContainer.appendChild(div);
@@ -143,22 +149,23 @@ const firebaseConfig = {
       });
     }
 
-    function annehmen(id, lat, lng, name, strom) {
-      const kosten = 2.00;
+    function annehmen(id, lat, lng, name, strom, beschreibung) {
+      const erstelltAm = new Date().toISOString();
       db.collection("huetten_pending").doc(id).update({ status: "angenommen" });
-      db.collection("huetten").add({
-        name,
-        lat,
-        lng,
-        strom,
-        aktiv: true,
-        kosten,
-        hinzugefuegtAm: new Date().toISOString()
+
+      db.collection("eierhuetten").add({
+        name: name,
+        strom: strom ? "ja" : "nein",
+        status: "aktiviert",
+        beschreibung: beschreibung || "",
+        location: new firebase.firestore.GeoPoint(lat, lng),
+        erstelltAm: erstelltAm
       });
     }
 
     function ablehnen(id) {
       db.collection("huetten_pending").doc(id).update({ status: "abgelehnt" });
     }
-  </script></body>
+  </script>
+</body>
 </html>
