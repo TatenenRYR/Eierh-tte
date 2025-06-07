@@ -428,7 +428,8 @@
     const farbPalette = ['#e74c3c', '#2ecc71', '#3498db', '#f39c12', '#9b59b6', '#1abc9c'];
     let letzterKompassWinkel = 0;
     let letzteFahrtrichtung = null;
-    let letzteHeadingZeit = 0;
+let letzteHeadingZeit = 0;
+let fallbackKompassWinkel = null;
 /*
     ######################
     - Hilfsfunktion 
@@ -1102,33 +1103,45 @@ if (tourIdFromURL) {
             const heading = position.coords.heading;
 const speed = position.coords.speed || 0;
 const now = Date.now();
+const bikeEl = document.getElementById("bikeHeading");
 
-// 🚫 Keine Rotation, wenn zu langsam oder heading fehlt
-if (heading === null || isNaN(heading) || speed < 1.5) return;
+if (!bikeEl) return;
 
-// ⏱️ Begrenze Updates auf max. alle 300 ms
+// ⏱️ Begrenze Update auf alle 300 ms
 if (now - letzteHeadingZeit < 300) return;
 letzteHeadingZeit = now;
 
-// 🔁 Interpolation mit Begrenzung
-if (letzteFahrtrichtung === null) {
-  letzteFahrtrichtung = heading;
+let zielWinkel = null;
+
+// 🧭 Entscheidung: Quelle der Richtung
+if (heading !== null && !isNaN(heading) && speed >= 0.55) {
+  // Bewegung → GPS-Richtung
+  zielWinkel = heading;
+} else if (fallbackKompassWinkel !== null) {
+  // Stehend → Kompassrichtung
+  zielWinkel = fallbackKompassWinkel;
 }
 
-let delta = (heading - letzteFahrtrichtung + 360) % 360;
-if (delta > 180) delta -= 360; // kürzester Weg
-if (Math.abs(delta) < 3) return; // Ignoriere Mini-Wackler
+// 🚫 Kein gültiger Wert vorhanden
+if (zielWinkel === null) return;
 
+// 🔄 Interpoliert & weich
+if (letzteFahrtrichtung === null) {
+  letzteFahrtrichtung = zielWinkel;
+}
+
+let delta = (zielWinkel - letzteFahrtrichtung + 360) % 360;
+if (delta > 180) delta -= 360;
+
+// Ignoriere Mini-Schwankung
+if (Math.abs(delta) < 5) return;
+
+// Weich interpolieren
 let weich = (letzteFahrtrichtung + delta * 0.1 + 360) % 360;
 letzteFahrtrichtung = weich;
 
-// 🔄 Fahrrad-Icon drehen
-const bikeEl = document.getElementById("bikeHeading");
-if (bikeEl) {
-  bikeEl.style.transform = `rotate(${weich}deg)`;
-}
-          }
-
+// Drehen
+bikeEl.style.transform = `rotate(${weich}deg)`;
           
 
 
@@ -1251,6 +1264,17 @@ map.on("moveend", () => {
     updateCenterButtonState();
     userInteracted = false;
     debug("🛑 Automatische Zentrierung deaktiviert durch Nutzer");
+  }
+});
+    window.addEventListener("deviceorientation", (event) => {
+  let heading = event.alpha;
+
+  if (typeof event.webkitCompassHeading !== "undefined") {
+    heading = event.webkitCompassHeading;
+  }
+
+  if (heading !== null && !isNaN(heading)) {
+    fallbackKompassWinkel = heading;
   }
 });
 /*    map.on("moveend", () => {
