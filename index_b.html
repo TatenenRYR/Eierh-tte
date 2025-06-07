@@ -428,6 +428,7 @@
     const farbPalette = ['#e74c3c', '#2ecc71', '#3498db', '#f39c12', '#9b59b6', '#1abc9c'];
     let letzterKompassWinkel = 0;
     let letzteFahrtrichtung = null;
+    let letzteHeadingZeit = 0;
 /*
     ######################
     - Hilfsfunktion 
@@ -1097,28 +1098,35 @@ if (tourIdFromURL) {
             userBikeMarker = L.marker(currentPos, { icon: animatedBikeIcon }).addTo(map);
           } else {
             userBikeMarker.setLatLng(currentPos);
-           const heading = position.coords.heading;
+           
+            const heading = position.coords.heading;
+const speed = position.coords.speed || 0;
+const now = Date.now();
 
-if (heading !== null && !isNaN(heading)) {
-  // Richtung glätten
-  if (letzteFahrtrichtung === null) {
-    letzteFahrtrichtung = heading;
-  }
+// 🚫 Keine Rotation, wenn zu langsam oder heading fehlt
+if (heading === null || isNaN(heading) || speed < 1.5) return;
 
-  const delta = (heading - letzteFahrtrichtung + 360) % 360;
+// ⏱️ Begrenze Updates auf max. alle 300 ms
+if (now - letzteHeadingZeit < 300) return;
+letzteHeadingZeit = now;
 
-  // Nur drehen, wenn Änderung groß genug
-  if (delta > 2 && delta < 358) {
-    const weich = (letzteFahrtrichtung + delta * 0.2) % 360;
-    letzteFahrtrichtung = weich;
-
-    const bikeEl = document.getElementById("bikeHeading");
-    if (bikeEl) {
-      bikeEl.style.transform = `rotate(${weich}deg)`;
-    }
-  }
+// 🔁 Interpolation mit Begrenzung
+if (letzteFahrtrichtung === null) {
+  letzteFahrtrichtung = heading;
 }
-          
+
+let delta = (heading - letzteFahrtrichtung + 360) % 360;
+if (delta > 180) delta -= 360; // kürzester Weg
+if (Math.abs(delta) < 3) return; // Ignoriere Mini-Wackler
+
+let weich = (letzteFahrtrichtung + delta * 0.1 + 360) % 360;
+letzteFahrtrichtung = weich;
+
+// 🔄 Fahrrad-Icon drehen
+const bikeEl = document.getElementById("bikeHeading");
+if (bikeEl) {
+  bikeEl.style.transform = `rotate(${weich}deg)`;
+}
           }
 
           
