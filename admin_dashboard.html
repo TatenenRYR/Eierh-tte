@@ -3,165 +3,143 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <title>Admin-Dashboard – Eierhütten</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
+  <title>Admin Dashboard – Eierhütten</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     body {
       font-family: sans-serif;
       background: #f9f9f9;
-      padding: 1rem;
-      margin: auto;
-      max-width: 1200px;
+      margin: 0;
+      padding: 0;
     }
-
     header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+      background: #2e7d32;
+      color: white;
+      padding: 1rem;
+      text-align: center;
+    }
+    main {
+      padding: 1rem;
+      max-width: 1000px;
+      margin: auto;
+    }
+    .card {
+      background: white;
+      padding: 1rem;
+      border-radius: 10px;
       margin-bottom: 1rem;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
-
-    h1 {
-      color: #2e7d32;
-    }
-
     button {
-      background-color: #2e7d32;
+      background: #2e7d32;
       color: white;
       padding: 0.5rem 1rem;
       border: none;
       border-radius: 6px;
+      margin-right: 0.5rem;
       cursor: pointer;
     }
-
-    nav {
-      display: flex;
-      gap: 1rem;
-      margin-bottom: 1rem;
+    button.secondary {
+      background: #aaa;
     }
-
-    nav button {
-      background-color: #e0e0e0;
-      color: #000;
-    }
-
-    nav button.active {
-      background-color: #2e7d32;
-      color: white;
-    }
-
-    .hidden {
-      display: none;
-    }
-
-    .huette-card {
-      background: white;
-      padding: 1rem;
-      margin: 0.5rem 0;
+    img {
+      max-width: 100%;
       border-radius: 8px;
-      border: 1px solid #ccc;
-    }
-
-    .huette-card .actions {
       margin-top: 0.5rem;
-      display: flex;
-      gap: 0.5rem;
-    }
-
-    #karte {
-      height: 300px;
-      border-radius: 8px;
-      margin-bottom: 1rem;
-    }
-
-    .log-area {
-      background: #f1f1f1;
-      padding: 1rem;
-      border-radius: 6px;
-      max-height: 200px;
-      overflow-y: auto;
-      font-size: 0.9rem;
-    }
-
-    .dark-mode {
-      background-color: #1e1e1e;
-      color: white;
-    }
-
-    .dark-mode .huette-card {
-      background: #2a2a2a;
-      border-color: #444;
-    }
-
-    .dark-mode nav button {
-      background-color: #444;
-      color: white;
-    }
-
-    .dark-mode nav button.active {
-      background-color: #66bb6a;
     }
   </style>
 </head>
 <body>
   <header>
-    <h1>Admin-Dashboard</h1>
-    <button id="logoutBtn">Logout</button>
+    <h1>Eierhütten Admin-Dashboard</h1>
+    <button onclick="logout()">Abmelden</button>
   </header>
-
-  <nav>
-    <button class="active" data-tab="offen">Offene Anfragen</button>
-    <button data-tab="freigegeben">Freigegeben</button>
-    <button data-tab="abgelehnt">Abgelehnt</button>
-    <button data-tab="archiv">Archiv</button>
-    <button data-tab="logs">Logs</button>
-  </nav>
-
-  <div id="offen" class="tab">
-    <h2>Offene Anfragen</h2>
-    <div id="offenList"></div>
-  </div>
-
-  <div id="freigegeben" class="tab hidden">
-    <h2>Freigegebene Hütten</h2>
-    <div id="freigegebenList"></div>
-  </div>
-
-  <div id="abgelehnt" class="tab hidden">
-    <h2>Abgelehnte Hütten</h2>
-    <div id="abgelehntList"></div>
-  </div>
-
-  <div id="archiv" class="tab hidden">
-    <h2>Archivierte Einträge</h2>
-    <div id="archivList"></div>
-  </div>
-
-  <div id="logs" class="tab hidden">
-    <h2>Verlauf & Logs</h2>
-    <div class="log-area" id="logArea">Wird geladen…</div>
-  </div>
-
-  <div id="karte"></div>
+  <main>
+    <div id="loginStatus">Bitte warten...</div>
+    <div id="huettenContainer" style="display:none;"></div>
+  </main>
 
   <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-firestore-compat.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
-    // Tabs
-    document.querySelectorAll("nav button").forEach(btn => {
-      btn.addEventListener("click", () => {
-        document.querySelectorAll(".tab").forEach(tab => tab.classList.add("hidden"));
-        document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
-        document.getElementById(btn.dataset.tab).classList.remove("hidden");
-        btn.classList.add("active");
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.appspot.com",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const auth = firebase.auth();
+
+    async function checkAdmin(user) {
+      const doc = await db.collection("Admin").doc(user.uid).get();
+      return doc.exists;
+    }
+
+    function renderHuette(doc) {
+      const data = doc.data();
+      const div = document.createElement("div");
+      div.className = "card";
+      div.innerHTML = \`
+        <h3>\${data.name}</h3>
+        <p>\${data.beschreibung}</p>
+        <p><strong>Strom:</strong> \${data.strom}</p>
+        <p><strong>Status:</strong> \${data.status}</p>
+        <p><strong>Erstellt:</strong> \${new Date(data.erstelltAm).toLocaleString()}</p>
+        \${data.bildUrl ? '<img src="' + data.bildUrl + '" />' : ''}
+        <br><br>
+        <button onclick="freigeben('\${doc.id}')">Freigeben</button>
+        <button class="secondary" onclick="ablehnen('\${doc.id}')">Ablehnen</button>
+      \`;
+      document.getElementById("huettenContainer").appendChild(div);
+    }
+
+    function freigeben(id) {
+      db.collection("eierhuetten").doc(id).update({
+        status: "angenommen",
+        bearbeitetAm: new Date().toISOString()
       });
+      alert("Hütte freigegeben.");
+    }
+
+    function ablehnen(id) {
+      db.collection("eierhuetten").doc(id).update({
+        status: "abgelehnt",
+        bearbeitetAm: new Date().toISOString()
+      });
+      alert("Hütte abgelehnt.");
+    }
+
+    function logout() {
+      firebase.auth().signOut();
+    }
+
+    auth.onAuthStateChanged(async (user) => {
+      const loginStatus = document.getElementById("loginStatus");
+      if (user) {
+        const isAdmin = await checkAdmin(user);
+        if (!isAdmin) {
+          loginStatus.innerText = "Zugriff verweigert – kein Admin.";
+          return;
+        }
+        loginStatus.style.display = "none";
+        document.getElementById("huettenContainer").style.display = "block";
+        db.collection("eierhuetten").where("status", "==", "offen").onSnapshot(snapshot => {
+          const container = document.getElementById("huettenContainer");
+          container.innerHTML = "";
+          snapshot.forEach(doc => renderHuette(doc));
+        });
+      } else {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        firebase.auth().signInWithPopup(provider);
+      }
     });
   </script>
 </body>
