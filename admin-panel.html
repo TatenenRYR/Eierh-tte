@@ -2,36 +2,50 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Eierhütten Admin</title>
+  <title>Admin Dashboard – Eierhütten</title>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
-  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <style>
-    #map { height: 300px; }
-  </style>
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-100 text-gray-900">
-  <div class="max-w-5xl mx-auto p-4">
-    <h1 class="text-2xl font-bold mb-4">Eierhütten Admin Panel</h1><div id="user-info" class="mb-6"></div>
+<body class="bg-gray-100 text-gray-800">
+  <div class="flex flex-col min-h-screen">
+    <header class="bg-green-700 text-white p-4 shadow">
+      <h1 class="text-2xl font-bold">Eierhütten Admin Dashboard</h1>
+    </header><main class="flex flex-1">
+  <aside class="w-64 bg-white p-4 border-r">
+    <nav class="space-y-4">
+      <button onclick="showTab('open')" class="w-full text-left font-medium">Offene Anfragen</button>
+      <button onclick="showTab('archiv')" class="w-full text-left font-medium">Archivierte Anfragen</button>
+      <button onclick="showTab('heatmap')" class="w-full text-left font-medium">Heatmap</button>
+      <button onclick="showTab('zahlung')" class="w-full text-left font-medium">Zahlungshistorie</button>
+    </nav>
+  </aside>
 
-<div class="mb-6">
-  <h2 class="text-xl font-semibold">Offene Anfragen</h2>
-  <div id="anfragenListe" class="space-y-4 mt-2"></div>
-</div>
+  <section class="flex-1 p-6 overflow-auto">
+    <div id="tab-open" class="tab">
+      <h2 class="text-xl font-semibold mb-4">Offene Anfragen</h2>
+      <div id="openList" class="grid gap-4"></div>
+    </div>
 
-<div class="mb-6">
-  <h2 class="text-xl font-semibold">Archiv (Abgelehnt)</h2>
-  <div id="archivListe" class="space-y-4 mt-2"></div>
-</div>
+    <div id="tab-archiv" class="tab hidden">
+      <h2 class="text-xl font-semibold mb-4">Archivierte Anfragen</h2>
+      <div id="archivList" class="grid gap-4"></div>
+    </div>
 
-<div class="mb-6">
-  <h2 class="text-xl font-semibold">Heatmap</h2>
-  <div id="map" class="rounded shadow"></div>
-</div>
+    <div id="tab-heatmap" class="tab hidden">
+      <h2 class="text-xl font-semibold mb-4">Heatmap</h2>
+      <div id="heatmap" class="h-[500px] w-full"></div>
+    </div>
+
+    <div id="tab-zahlung" class="tab hidden">
+      <h2 class="text-xl font-semibold mb-4">Zahlungshistorie</h2>
+      <div id="zahlungList" class="grid gap-4"></div>
+    </div>
+  </section>
+</main>
 
   </div>  <script>
     const firebaseConfig = {
@@ -45,82 +59,93 @@
     };
 
     firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
     const db = firebase.firestore();
 
-    auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).then(userCredential => {
-      const user = userCredential.user;
-      document.getElementById('user-info').innerText = `Angemeldet als ${user.displayName}`;
-      ladeAnfragen();
-    });
+    const showTab = (id) => {
+      document.querySelectorAll('.tab').forEach(tab => tab.classList.add('hidden'));
+      document.getElementById(`tab-${id}`).classList.remove('hidden');
+    };
 
-    function ladeAnfragen() {
-      db.collection("eierhuetten").orderBy("erstelltAm", "desc").onSnapshot(snapshot => {
-        const offenContainer = document.getElementById("anfragenListe");
-        const archivContainer = document.getElementById("archivListe");
-        offenContainer.innerHTML = "";
-        archivContainer.innerHTML = "";
-        snapshot.forEach(doc => {
-          const daten = doc.data();
-          const div = document.createElement("div");
-          div.className = "bg-white shadow rounded p-4";
-
-          const bild = daten.bildUrl ? `<img src="${daten.bildUrl}" class="w-full h-40 object-cover rounded mb-2">` : "";
-
-          div.innerHTML = `
-            ${bild}
-            <h3 class="text-lg font-semibold">${daten.name}</h3>
-            <p>${daten.beschreibung}</p>
-            <p class="text-sm text-gray-600">Strom: ${daten.strom}</p>
-            <p class="text-sm text-gray-600">Erstellt: ${new Date(daten.erstelltAm).toLocaleString()}</p>
-            <div class="mt-2 space-x-2">
-              <button onclick="freigeben('${doc.id}')" class="bg-green-500 text-white px-3 py-1 rounded">Freigeben</button>
-              <button onclick="ablehnen('${doc.id}')" class="bg-red-500 text-white px-3 py-1 rounded">Ablehnen</button>
-              <button onclick="bearbeiten('${doc.id}')" class="bg-blue-500 text-white px-3 py-1 rounded">Bearbeiten</button>
-            </div>
-          `;
-
-          if (daten.status === "offen") {
-            offenContainer.appendChild(div);
-          } else if (daten.status === "abgelehnt") {
-            archivContainer.appendChild(div);
-          }
-        });
-        ladeHeatmap(snapshot);
+    const loadOpen = async () => {
+      const querySnapshot = await db.collection("eierhuetten").where("status", "==", "offen").get();
+      const container = document.getElementById("openList");
+      container.innerHTML = "";
+      querySnapshot.forEach(doc => {
+        const data = doc.data();
+        const card = document.createElement("div");
+        card.className = "bg-white p-4 rounded shadow";
+        card.innerHTML = `
+          <p><strong>${data.name}</strong></p>
+          <p>${data.beschreibung}</p>
+          <p>Strom: ${data.strom}</p>
+          <button class="mt-2 bg-green-500 text-white px-3 py-1 rounded" onclick="activateHut('${doc.id}')">Freigeben</button>
+          <button class="mt-2 ml-2 bg-red-500 text-white px-3 py-1 rounded" onclick="archiveHut('${doc.id}')">Ablehnen</button>
+        `;
+        container.appendChild(card);
       });
-    }
+    };
 
-    function freigeben(id) {
-      db.collection("eierhuetten").doc(id).update({ status: "aktiviert" });
-    }
+    const loadArchiv = async () => {
+      const querySnapshot = await db.collection("eierhuetten").where("status", "==", "abgelehnt").get();
+      const container = document.getElementById("archivList");
+      container.innerHTML = "";
+      querySnapshot.forEach(doc => {
+        const data = doc.data();
+        const card = document.createElement("div");
+        card.className = "bg-white p-4 rounded shadow";
+        card.innerHTML = `
+          <p><strong>${data.name}</strong></p>
+          <p>${data.beschreibung}</p>
+        `;
+        container.appendChild(card);
+      });
+    };
 
-    function ablehnen(id) {
-      db.collection("eierhuetten").doc(id).update({ status: "abgelehnt" });
-    }
+    const loadZahlung = async () => {
+      const querySnapshot = await db.collection("zahlungen").orderBy("datum", "desc").limit(50).get();
+      const container = document.getElementById("zahlungList");
+      container.innerHTML = "";
+      querySnapshot.forEach(doc => {
+        const data = doc.data();
+        const card = document.createElement("div");
+        card.className = "bg-white p-4 rounded shadow";
+        card.innerHTML = `
+          <p><strong>${data.huettenName}</strong> – ${data.betrag} €</p>
+          <p>${new Date(data.datum).toLocaleDateString()}</p>
+        `;
+        container.appendChild(card);
+      });
+    };
 
-    function bearbeiten(id) {
-      const neueBeschreibung = prompt("Neue Beschreibung eingeben:");
-      if (neueBeschreibung !== null) {
-        db.collection("eierhuetten").doc(id).update({ beschreibung: neueBeschreibung });
-      }
-    }
+    const activateHut = async (id) => {
+      await db.collection("eierhuetten").doc(id).update({ status: "aktiviert" });
+      loadOpen();
+    };
 
-    let map = L.map('map').setView([52.67, 7.17], 10);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap'
-    }).addTo(map);
+    const archiveHut = async (id) => {
+      await db.collection("eierhuetten").doc(id).update({ status: "abgelehnt" });
+      loadOpen();
+    };
 
-    let heatLayer;
-    function ladeHeatmap(snapshot) {
-      const punkte = [];
-      snapshot.forEach(doc => {
-        const daten = doc.data();
-        if (daten.status === "offen" && daten.location?.latitude) {
-          punkte.push([daten.location.latitude, daten.location.longitude]);
+    const loadHeatmap = async () => {
+      const map = L.map('heatmap').setView([52.6, 7.1], 10);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      const querySnapshot = await db.collection("eierhuetten").get();
+      querySnapshot.forEach(doc => {
+        const d = doc.data();
+        if (d.location?.latitude && d.location?.longitude) {
+          L.circle([d.location.latitude, d.location.longitude], {
+            radius: 300,
+            color: d.status === 'aktiviert' ? 'green' : d.status === 'abgelehnt' ? 'red' : 'orange'
+          }).addTo(map);
         }
       });
-      if (heatLayer) map.removeLayer(heatLayer);
-      heatLayer = L.heatLayer(punkte, {radius: 25}).addTo(map);
-    }
-  </script>  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script></body>
+    };
+
+    showTab('open');
+    loadOpen();
+    loadArchiv();
+    loadZahlung();
+    loadHeatmap();
+  </script></body>
 </html>
