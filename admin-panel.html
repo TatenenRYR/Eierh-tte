@@ -1,83 +1,118 @@
-<!DOCTYPE html><html lang="de">
+<!DOCTYPE html>
+<html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Eierhütten Admin Dashboard</title>
   <style>
+    :root {
+      --bg-light: #f9fafb;
+      --bg-dark: #111827;
+      --text-light: #111827;
+      --text-dark: #f9fafb;
+      --primary: #10b981;
+      --border-radius: 1rem;
+    }
+
     body {
       margin: 0;
       font-family: sans-serif;
-      background-color: #f9fafb;
-      color: #111827;
+      background-color: var(--bg-light);
+      color: var(--text-light);
+      transition: background 0.3s, color 0.3s;
     }
+
     .dark-mode {
-      background-color: #111827;
-      color: #f9fafb;
+      background-color: var(--bg-dark);
+      color: var(--text-dark);
     }
+
     header {
-      background-color: #10b981;
+      background-color: var(--primary);
       color: white;
       padding: 1rem;
       display: flex;
       justify-content: space-between;
       align-items: center;
     }
+
     .container {
       padding: 1rem;
-      max-width: 900px;
+      max-width: 1000px;
       margin: auto;
     }
-    .entry {
+
+    .card {
       background: white;
       padding: 1rem;
       margin-bottom: 1rem;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+      border-radius: var(--border-radius);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
     }
-    .dark-mode .entry {
+    .dark-mode .card {
       background: #1f2937;
     }
+
     .badge {
-      display: inline-block;
-      padding: 0.3rem 0.6rem;
-      border-radius: 5px;
+      padding: 0.25rem 0.5rem;
       font-size: 0.75rem;
       font-weight: bold;
+      border-radius: 5px;
+      display: inline-block;
+      margin-top: 0.5rem;
     }
-    .badge-offen { background-color: orange; color: white; }
-    .badge-angenommen { background-color: green; color: white; }
-    .badge-abgelehnt { background-color: red; color: white; }
-    .map {
+    .badge.offen { background: orange; color: white; }
+    .badge.angenommen { background: green; color: white; }
+    .badge.abgelehnt { background: red; color: white; }
+
+    button {
+      padding: 0.4rem 0.8rem;
+      border-radius: 5px;
+      border: none;
+      margin-top: 0.5rem;
+      cursor: pointer;
+    }
+
+    .hidden { display: none; }
+
+    iframe.map {
       width: 100%;
       height: 200px;
+      border: none;
       margin-top: 0.5rem;
     }
-    button {
-      margin-right: 0.5rem;
+
+    img.preview {
+      width: 100%;
+      max-height: 200px;
+      object-fit: cover;
       margin-top: 0.5rem;
     }
-    #loginBtn { background: white; border: none; padding: 0.5rem 1rem; border-radius: 5px; cursor: pointer; }
-    #statusFilter { margin-top: 1rem; }
   </style>
 </head>
 <body>
   <header>
-    <h1>Eierhütten Admin Dashboard</h1>
-    <button id="loginBtn">Login mit Google</button>
+    <h1>Eierhütten Admin</h1>
+    <button id="authBtn">Login</button>
   </header>
-  <div class="container">
-    <label for="statusFilter">Status filtern:</label>
-    <select id="statusFilter">
-      <option value="alle">Alle</option>
-      <option value="offen">Offen</option>
-      <option value="angenommen">Angenommen</option>
-      <option value="abgelehnt">Abgelehnt</option>
-    </select>
+
+  <div class="container hidden" id="main">
+    <label>Status filtern:
+      <select id="statusFilter">
+        <option value="alle">Alle</option>
+        <option value="offen">Offen</option>
+        <option value="angenommen">Angenommen</option>
+        <option value="abgelehnt">Abgelehnt</option>
+      </select>
+    </label>
+
     <div id="entries"></div>
-  </div>  <script type="module">
+  </div>
+
+  <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-    import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-    import { getFirestore, collection, getDocs, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+    import { getFirestore, collection, getDocs, updateDoc, doc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const firebaseConfig = {
       apiKey: "AIzaSyDpLwaRpjkY3hEvZwRjqk7h-fqeChmcBqk",
@@ -93,102 +128,100 @@
     const db = getFirestore(app);
     const provider = new GoogleAuthProvider();
 
-    const loginBtn = document.getElementById('loginBtn');
-    const statusFilter = document.getElementById('statusFilter');
-    const entriesContainer = document.getElementById('entries');
-    const container = document.querySelector('.container');
+    const authBtn = document.getElementById('authBtn');
+    const main = document.getElementById('main');
+    const entries = document.getElementById('entries');
+    const filter = document.getElementById('statusFilter');
 
-    loginBtn.addEventListener('click', () => {
-      signInWithRedirect(auth, provider);
+    authBtn.addEventListener('click', () => {
+      const user = auth.currentUser;
+      if (user) {
+        signOut(auth);
+      } else {
+        signInWithPopup(auth, provider).catch(console.error);
+      }
     });
 
-    getRedirectResult(auth)
-      .then((result) => {
-        if (result?.user) {
-          console.log('Redirect login erfolgreich:', result.user.displayName);
-        }
-      })
-      .catch((error) => {
-        console.error('Redirect-Fehler:', error);
-      });
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        authBtn.textContent = `Logout (${user.displayName})`;
+        main.classList.remove('hidden');
+        loadEntries();
+      } else {
+        authBtn.textContent = 'Login mit Google';
+        main.classList.add('hidden');
+      }
+    });
 
-    function createBadge(status) {
-      const span = document.createElement('span');
-      span.className = 'badge badge-' + status;
-      span.textContent = status.charAt(0).toUpperCase() + status.slice(1);
-      return span;
-    }
-
-    async function renderEntries() {
-      entriesContainer.innerHTML = '';
-      const querySnapshot = await getDocs(collection(db, 'huetten_pending'));
-      querySnapshot.forEach((docSnapshot) => {
-        const data = docSnapshot.data();
+    async function loadEntries() {
+      entries.innerHTML = '';
+      const snapshot = await getDocs(collection(db, 'huetten_pending'));
+      snapshot.forEach(docSnap => {
+        const data = docSnap.data();
         const status = data.status || 'offen';
-        if (statusFilter.value !== 'alle' && statusFilter.value !== status) return;
+        if (filter.value !== 'alle' && filter.value !== status) return;
 
-        const entryDiv = document.createElement('div');
-        entryDiv.className = 'entry';
-        entryDiv.innerHTML = `
-          <strong>${data.name || 'Unbekannt'}</strong><br />
-          <em>${data.beschreibung || ''}</em><br />
-          ${data.strom ? 'Mit Stromversorgung ⚡️<br />' : ''}
-          Betrag: ${data.betrag?.toFixed(2) || '2.00'} € / Monat<br />
+        const card = document.createElement('div');
+        card.className = 'card';
+
+        card.innerHTML = `
+          <strong>${data.name || 'Unbekannt'}</strong><br>
+          <em>${data.beschreibung || ''}</em><br>
+          ${data.strom ? '⚡️ Stromversorgung<br>' : ''}
+          Betrag: ${data.betrag?.toFixed(2) || '2.00'} € / Monat<br>
         `;
-        entryDiv.appendChild(createBadge(status));
+
+        const badge = document.createElement('span');
+        badge.className = 'badge ' + status;
+        badge.textContent = status;
+        card.appendChild(badge);
 
         if (data.foto) {
           const img = document.createElement('img');
           img.src = data.foto;
-          img.alt = 'Foto';
-          img.style = 'width:100%;max-height:200px;object-fit:cover;margin-top:0.5rem;';
-          entryDiv.appendChild(img);
+          img.className = 'preview';
+          card.appendChild(img);
         }
 
         if (data.lat && data.lng) {
-          const iframe = document.createElement('iframe');
-          iframe.className = 'map';
-          iframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=${data.lng - 0.001},${data.lat - 0.001},${data.lng + 0.001},${data.lat + 0.001}&layer=mapnik&marker=${data.lat},${data.lng}`;
-          entryDiv.appendChild(iframe);
+          const map = document.createElement('iframe');
+          map.className = 'map';
+          map.src = `https://www.openstreetmap.org/export/embed.html?bbox=${data.lng-0.001},${data.lat-0.001},${data.lng+0.001},${data.lat+0.001}&layer=mapnik&marker=${data.lat},${data.lng}`;
+          card.appendChild(map);
         }
 
-        const acceptBtn = document.createElement('button');
-        acceptBtn.textContent = 'Annehmen';
-        acceptBtn.onclick = async () => {
-          await updateDoc(doc(db, 'huetten_pending', docSnapshot.id), { status: 'angenommen' });
-          renderEntries();
+        const accept = document.createElement('button');
+        accept.textContent = 'Annehmen';
+        accept.onclick = async () => {
+          await updateDoc(doc(db, 'huetten_pending', docSnap.id), { status: 'angenommen' });
+          loadEntries();
         };
-        entryDiv.appendChild(acceptBtn);
+        card.appendChild(accept);
 
-        const declineBtn = document.createElement('button');
-        declineBtn.textContent = 'Ablehnen';
-        declineBtn.onclick = async () => {
-          await updateDoc(doc(db, 'huetten_pending', docSnapshot.id), { status: 'abgelehnt' });
-          renderEntries();
+        const decline = document.createElement('button');
+        decline.textContent = 'Ablehnen';
+        decline.onclick = async () => {
+          await updateDoc(doc(db, 'huetten_pending', docSnap.id), { status: 'abgelehnt' });
+          loadEntries();
         };
-        entryDiv.appendChild(declineBtn);
+        card.appendChild(decline);
 
-        entriesContainer.appendChild(entryDiv);
+        entries.appendChild(card);
       });
     }
 
-    statusFilter.addEventListener('change', renderEntries);
+    filter.addEventListener('change', loadEntries);
 
-    onAuthStateChanged(auth, (user) => {
-      if (user) {
-        container.style.display = 'block';
-        loginBtn.textContent = `Logout (${user.displayName})`;
-        loginBtn.onclick = () => signOut(auth);
-        renderEntries();
-      } else {
-        container.style.display = 'none';
-        loginBtn.textContent = 'Login mit Google';
-      }
-    });
-
-    const hour = new Date().getHours();
-    if (hour >= 20 || hour < 6) {
+    // Dark mode by hour
+    if (new Date().getHours() >= 20 || new Date().getHours() < 6) {
       document.body.classList.add('dark-mode');
     }
-  </script></body>
+  </script>
+</body>
 </html>
+
+
+Das Skript wurde nun vollständig neu aufgesetzt – alle früheren Teile entfernt und durch eine klare, moderne und funktionale Version ersetzt. Nur die Firebase-Konfiguration wurde beibehalten, wie gewünscht.
+
+Falls du nun spezifische Funktionen weiter ausbauen oder weitere Features hinzufügen willst (z. B. CSV-Export, Kommentarfunktion, Mehrsprachigkeit etc.), sag einfach Bescheid!
+
