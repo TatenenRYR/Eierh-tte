@@ -1,242 +1,132 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Admin Dashboard – Eierhütten</title>
-
-  <!-- Firebase → App, Auth, Firestore, Storage -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
-
-  <!-- Leaflet für Map & Heatmap -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
-
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eierhütten Admin Panel</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
-    /* -- Grundlayout -- */
-    body { font-family:sans-serif; margin:0; background:#f4f6f9; }
-    header { display:flex; justify-content:space-between; align-items:center;
-             padding:1rem; background:#2c7be5; color:white; }
-    #controls { display:flex; gap:0.5rem; }
-    main { padding:1rem; max-width:1000px; margin:auto; }
-
-    /* -- Dark Mode -- */
-    body.dark { background:#121212; color:#ddd; }
-    body.dark header { background:#1e1e1e; }
-
-    /* -- Filter/Search -- */
-    #filterBar { display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem; }
-    #filterBar input, #filterBar select { padding:0.5rem; border-radius:5px; border:1px solid #ccc; }
-
-    /* -- Accordion & Badges -- */
-    .huette { background:white; border-radius:8px; margin-bottom:0.5rem; box-shadow:0 1px 3px rgba(0,0,0,0.1); }
-    .huette.dark { background:#1f1f1f; }
-    .huette-header { padding:1rem; display:flex; justify-content:space-between; cursor:pointer; }
-    .badge { padding:0.2rem 0.5rem; border-radius:4px; font-size:0.8rem; }
-    .badge.offen { background:#ffc107; color:#333; }
-    .badge.aktiviert { background:#2ecc71; }
-    .badge.abgelehnt { background:#e74c3c; }
-
-    .huette-body { display:none; padding:1rem; border-top:1px solid #eee; }
-    .huette-body.dark { border-top-color:#444; }
-
-    /* -- Map & Heatmap -- */
-    #map, #heatmap { height:300px; margin:1rem 0; border-radius:8px; }
-
-    /* -- Buttons & Inputs -- */
-    button { padding:0.5rem 1rem; border:none; border-radius:5px; cursor:pointer; }
-    .btn-primary { background:#2e7d32; color:white; }
-    .btn-danger { background:#c62828; color:white; }
-    .btn-secondary { background:#333; color:white; }
-    .btn-disabled { background:gray; cursor:not-allowed; }
-
-    /* -- Responsive -- */
-    @media (max-width:600px) {
-      .huette-header { flex-direction:column; align-items:flex-start; }
+    body {
+      font-family: Arial, sans-serif;
+      background: #f8f9fa;
+      margin: 0;
+      padding: 0;
     }
+    header {
+      background-color: #4CAF50;
+      color: white;
+      padding: 1rem;
+      text-align: center;
+    }
+    .container {
+      padding: 1rem;
+      max-width: 900px;
+      margin: auto;
+    }
+    .hütte {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .btn {
+      margin-right: 0.5rem;
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .btn-approve { background-color: #4CAF50; color: white; }
+    .btn-reject { background-color: #f44336; color: white; }
+    #loginBtn { margin: 1rem; }
+    .map { height: 200px; margin-top: 0.5rem; }
   </style>
 </head>
 <body>
   <header>
-    <h1>Admin Dashboard</h1>
-    <div id="controls">
-      <button id="toggleDark">🌙</button>
-      <select id="langSelect">
-        <option value="de">DE</option><option value="en">EN</option>
-      </select>
-      <button id="logoutBtn">Logout</button>
-    </div>
+    <h1>Eierhütten Admin Panel</h1>
+    <button id="loginBtn">Mit Google anmelden</button>
   </header>
+  <div class="container" id="adminPanel" style="display:none;"></div>  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.firebasestorage.app",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
+    };
+    
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+    const storage = firebase.storage();
 
-  <main>
-    <!-- Such- und Filterleiste -->
-    <div id="filterBar">
-      <input type="text" id="searchInput" placeholder="Suche Name..."/>
-      <select id="statusFilter">
-        <option value="">Alle Status</option>
-        <option value="offen">Offen</option>
-        <option value="aktiviert">Aktiviert</option>
-        <option value="abgelehnt">Abgelehnt</option>
-      </select>
-      <select id="stromFilter">
-        <option value="">Strom Versorgung</option>
-        <option value="ja">Ja</option><option value="nein">Nein</option>
-      </select>
-      <button id="exportCsv" class="btn-secondary">Export CSV</button>
-      <button id="exportJson" class="btn-secondary">Export JSON</button>
-    </div>
+    document.getElementById("loginBtn").addEventListener("click", async () => {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      try {
+        await auth.signInWithPopup(provider);
+        document.getElementById("loginBtn").style.display = "none";
+        document.getElementById("adminPanel").style.display = "block";
+        loadPendingHuts();
+      } catch (error) {
+        alert("Anmeldung fehlgeschlagen: " + error.message);
+      }
+    });
 
-    <!-- Akkordeon-Liste -->
-    <div id="huetteList"></div>
-
-    <!-- Karte & Heatmap -->
-    <div id="map"></div>
-    <div id="heatmap"></div>
-  </main>
-
-  <script>
-  // ----- Firebase Init -----
-  const firebaseConfig = {
-    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-    authDomain: "eierhuettentour.firebaseapp.com",
-    projectId: "eierhuettentour",
-    storageBucket: "eierhuettentour.firebasestorage.app",
-    messagingSenderId: "348272135205",
-    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
-    measurementId: "G-16V6K5GXDT"
-  };
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.firestore();
-  const auth = firebase.auth();
-
-  // ----- Auth & Admin-Check -----
-  async function initAuth() {
-    try {
-      const result = await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
-      const uid = result.user.uid;
-      const doc = await db.collection('admins').doc(uid).get();
-      if (!doc.exists) throw 'Kein Admin-Zugriff';
-      loadData();
-    } catch(e){
-      alert(e);
-      location.reload();
+    async function loadPendingHuts() {
+      const panel = document.getElementById("adminPanel");
+      panel.innerHTML = "<h2>Offene Anfragen</h2>";
+      const querySnapshot = await db.collection("eierhuetten").where("status", "==", "offen").get();
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        const card = document.createElement("div");
+        card.className = "hütte";
+        card.innerHTML = `
+          <h3>${data.name}</h3>
+          <p><strong>Beschreibung:</strong> ${data.beschreibung}</p>
+          <p><strong>Strom:</strong> ${data.strom}</p>
+          <p><strong>Erstellt am:</strong> ${new Date(data.erstelltAm).toLocaleString()}</p>
+          <div id="map-${doc.id}" class="map"></div>
+          ${data.bildUrl ? `<img src="${data.bildUrl}" alt="Bild" style="max-width:100%; margin-top:0.5rem;" />` : ""}
+          <button class="btn btn-approve" onclick="approveHut('${doc.id}', ${data.location.latitude}, ${data.location.longitude})">Freigeben</button>
+          <button class="btn btn-reject" onclick="rejectHut('${doc.id}')">Ablehnen</button>
+        `;
+        panel.appendChild(card);
+        setTimeout(() => initMap(`map-${doc.id}`, data.location.latitude, data.location.longitude), 200);
+      });
     }
-  }
-  document.getElementById('logoutBtn').onclick = () => auth.signOut().then(() => location.reload());
 
-  // ----- Dark Mode -----
-  const body = document.body;
-  document.getElementById('toggleDark').onclick = () => body.classList.toggle('dark');
+    function initMap(elementId, lat, lng) {
+      const map = L.map(elementId).setView([lat, lng], 15);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap-Mitwirkende"
+      }).addTo(map);
+      L.marker([lat, lng]).addTo(map);
+    }
 
-  // ----- Filter & Search -----
-  let huetten = [];
-  document.getElementById('searchInput').oninput = renderList;
-  document.getElementById('statusFilter').onchange = renderList;
-  document.getElementById('stromFilter').onchange = renderList;
+    async function approveHut(docId, lat, lng) {
+      await db.collection("eierhuetten").doc(docId).update({
+        status: "aktiviert",
+        location: new firebase.firestore.GeoPoint(lat, lng)
+      });
+      alert("Hütte freigegeben.");
+      loadPendingHuts();
+    }
 
-  // ----- Load Data & Snapshot -----
-  function loadData(){
-    db.collection('eierhuetten').onSnapshot(snap => {
-      huetten = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-      renderList();
-      renderMap();
-    });
-  }
-
-  // ----- Render Accordion List -----
-  function renderList(){
-    const list = document.getElementById('huetteList');
-    list.innerHTML = '';
-    const search = document.getElementById('searchInput').value.toLowerCase();
-    const statusF = document.getElementById('statusFilter').value;
-    const stromF  = document.getElementById('stromFilter').value;
-
-    huetten.filter(h => (!statusF||h.status===statusF)
-                    &&(!stromF||h.strom===stromF)
-                    &&h.name.toLowerCase().includes(search))
-           .forEach(h => {
-      const card = document.createElement('div');
-      card.className = 'huette'+(body.classList.contains('dark')?' dark':'');
-      card.innerHTML = `
-        <div class="huette-header">
-          <span><strong>${h.name}</strong></span>
-          <span class="badge ${h.status}">${h.status}</span>
-          <span class="badge">${h.strom}</span>
-          <button class="btn-secondary">Edit</button>
-        </div>
-        <div class="huette-body${body.classList.contains('dark')?' dark':''}">
-          <p>${h.beschreibung}</p>
-          <p>Koords: ${h.location.latitude.toFixed(5)}, ${h.location.longitude.toFixed(5)}</p>
-          ${h.bildUrl?`<img src="${h.bildUrl}" width="120"/>`:''}
-          <p>Eingereicht: ${new Date(h.erstelltAm).toLocaleString()}</p>
-          <textarea placeholder="Admin-Kommentar"></textarea><br/>
-          <button class="btn-primary" onclick="approve('${h.id}')">Freigeben</button>
-          <button class="btn-danger" onclick="reject('${h.id}')">Ablehnen</button>
-        </div>`;
-      card.querySelector('.huette-header').onclick = () => {
-        const bodyEl = card.querySelector('.huette-body');
-        bodyEl.style.display = bodyEl.style.display==='block'?'none':'block';
-      };
-      list.appendChild(card);
-    });
-  }
-
-  // ----- Karten & Heatmap -----
-  const map = L.map('map').setView([51,10],6);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-  const heat = L.heatLayer([], {radius:25}).addTo(map);
-  function renderMap(){
-    heat.setLatLngs(huetten.map(h=>[h.location.latitude,h.location.longitude]));
-  }
-
-  // ----- Aktionen -----
-  function approve(id){
-    db.collection('eierhuetten').doc(id).update({
-      status:'aktiviert', aktiviertAm:new Date().toISOString()
-    }).then(()=>logHistory(id,'aktiviert'));
-  }
-  function reject(id){
-    db.collection('eierhuetten').doc(id).update({
-      status:'abgelehnt'
-    }).then(()=>logHistory(id,'abgelehnt'));
-  }
-  function logHistory(id,action){
-    db.collection('huetten_logs').add({
-      huetteId:id, action, admin:auth.currentUser.uid, time:new Date().toISOString()
-    });
-    sendEmail(id,action);
-  }
-
-  // ----- E-Mail via Cloud Function (Stub) -----
-  function sendEmail(id, action){
-    fetch('YOUR_CLOUD_FUNCTION_URL', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id,action})
-    });
-  }
-
-  // ----- Export -----
-  document.getElementById('exportCsv').onclick = () => exportCSV(huetten);
-  document.getElementById('exportJson').onclick = () => downloadJSON(huetten);
-
-  function exportCSV(data){
-    const rows=[Object.keys(data[0])].concat(data.map(r=>Object.values(r)));
-    const csv=rows.map(r=>r.join(',')).join('\n');
-    const blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob);
-    const a=document.createElement('a'); a.href=url; a.download='export.csv'; a.click();
-  }
-  function downloadJSON(data){
-    const blob=new Blob([JSON.stringify(data)],{type:'application/json'}), url=URL.createObjectURL(blob);
-    const a=document.createElement('a'); a.href=url; a.download='export.json'; a.click();
-  }
-
-  // ----- Initialisierung -----
-  initAuth();
-  </script>
-</body>
+    async function rejectHut(docId) {
+      await db.collection("eierhuetten").doc(docId).update({
+        status: "abgelehnt"
+      });
+      alert("Hütte abgelehnt.");
+      loadPendingHuts();
+    }
+  </script></body>
 </html>
