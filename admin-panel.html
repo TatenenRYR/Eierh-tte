@@ -1,59 +1,74 @@
 <!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Eierhütten Admin Panel</title>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
     body {
       font-family: Arial, sans-serif;
-      background: #f8f9fa;
+      background: #f9f9f9;
       margin: 0;
-      padding: 0;
-    }
-    header {
-      background-color: #4CAF50;
-      color: white;
       padding: 1rem;
+    }
+    h1 {
       text-align: center;
     }
-    .container {
-      padding: 1rem;
-      max-width: 900px;
+    #login, #main, #archiv {
+      max-width: 1000px;
       margin: auto;
     }
-    .hütte {
+    .card {
       background: white;
-      border: 1px solid #ddd;
-      border-radius: 8px;
+      margin: 1rem 0;
       padding: 1rem;
-      margin-bottom: 1rem;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      border-radius: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .card h3 {
+      margin-top: 0;
+    }
+    .map {
+      height: 200px;
+      border-radius: 8px;
+      margin: 1rem 0;
     }
     .btn {
-      margin-right: 0.5rem;
       padding: 0.5rem 1rem;
       border: none;
-      border-radius: 5px;
+      margin-right: 0.5rem;
       cursor: pointer;
+      border-radius: 5px;
     }
-    .btn-approve { background-color: #4CAF50; color: white; }
-    .btn-reject { background-color: #f44336; color: white; }
-    #loginBtn { margin: 1rem; }
-    .map { height: 200px; margin-top: 0.5rem; }
+    .accept { background-color: #4caf50; color: white; }
+    .decline { background-color: #f44336; color: white; }
+    .archiv-btn { background-color: #607d8b; color: white; }
+    .toggle-view { margin-bottom: 1rem; }
+    #heatmap {
+      height: 400px;
+      margin-top: 2rem;
+    }
   </style>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
 </head>
 <body>
-  <header>
-    <h1>Eierhütten Admin Panel</h1>
+  <h1>Eierhütten Admin Panel</h1>
+  <div id="login">
     <button id="loginBtn">Mit Google anmelden</button>
-  </header>
-  <div class="container" id="adminPanel" style="display:none;"></div>  <script>
+  </div>
+  <div id="main" style="display:none">
+    <div class="toggle-view">
+      <button onclick="loadAnfragen()">Offene Anfragen</button>
+      <button onclick="loadArchiv()">Archivierte Anfragen</button>
+    </div>
+    <div id="anfragen"></div>
+    <div id="heatmap"></div>
+  </div>
+  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
       authDomain: "eierhuettentour.firebaseapp.com",
@@ -63,70 +78,88 @@
       appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
       measurementId: "G-16V6K5GXDT"
     };
-    
     firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
     const db = firebase.firestore();
-    const storage = firebase.storage();
+    const auth = firebase.auth();document.getElementById("loginBtn").addEventListener("click", async () => {
+  try {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    await auth.signInWithPopup(provider);
+    document.getElementById("login").style.display = "none";
+    document.getElementById("main").style.display = "block";
+    loadAnfragen();
+  } catch (error) {
+    alert("Login fehlgeschlagen: " + error.message);
+  }
+});
 
-    document.getElementById("loginBtn").addEventListener("click", async () => {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      try {
-        await auth.signInWithPopup(provider);
-        document.getElementById("loginBtn").style.display = "none";
-        document.getElementById("adminPanel").style.display = "block";
-        loadPendingHuts();
-      } catch (error) {
-        alert("Anmeldung fehlgeschlagen: " + error.message);
-      }
-    });
+async function loadAnfragen() {
+  const container = document.getElementById("anfragen");
+  container.innerHTML = "";
+  const snapshot = await db.collection("eierhuetten").where("status", "==", "offen").get();
+  const heatPoints = [];
 
-    async function loadPendingHuts() {
-      const panel = document.getElementById("adminPanel");
-      panel.innerHTML = "<h2>Offene Anfragen</h2>";
-      const querySnapshot = await db.collection("eierhuetten").where("status", "==", "offen").get();
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        const card = document.createElement("div");
-        card.className = "hütte";
-        card.innerHTML = `
-          <h3>${data.name}</h3>
-          <p><strong>Beschreibung:</strong> ${data.beschreibung}</p>
-          <p><strong>Strom:</strong> ${data.strom}</p>
-          <p><strong>Erstellt am:</strong> ${new Date(data.erstelltAm).toLocaleString()}</p>
-          <div id="map-${doc.id}" class="map"></div>
-          ${data.bildUrl ? `<img src="${data.bildUrl}" alt="Bild" style="max-width:100%; margin-top:0.5rem;" />` : ""}
-          <button class="btn btn-approve" onclick="approveHut('${doc.id}', ${data.location.latitude}, ${data.location.longitude})">Freigeben</button>
-          <button class="btn btn-reject" onclick="rejectHut('${doc.id}')">Ablehnen</button>
-        `;
-        panel.appendChild(card);
-        setTimeout(() => initMap(`map-${doc.id}`, data.location.latitude, data.location.longitude), 200);
-      });
-    }
+  snapshot.forEach(doc => {
+    const data = doc.data();
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <h3>${data.name}</h3>
+      <p>${data.beschreibung}</p>
+      <p><strong>Strom:</strong> ${data.strom}</p>
+      <img src="${data.bildUrl}" alt="Bild" width="100%"/>
+      <div id="map-${doc.id}" class="map"></div>
+      <button class="btn accept" onclick="freigeben('${doc.id}', ${data.location.latitude}, ${data.location.longitude})">Freigeben</button>
+      <button class="btn decline" onclick="ablehnen('${doc.id}')">Ablehnen</button>
+    `;
+    container.appendChild(card);
 
-    function initMap(elementId, lat, lng) {
-      const map = L.map(elementId).setView([lat, lng], 15);
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "&copy; OpenStreetMap-Mitwirkende"
-      }).addTo(map);
-      L.marker([lat, lng]).addTo(map);
-    }
+    const map = L.map(`map-${doc.id}`).setView([data.location.latitude, data.location.longitude], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    L.marker([data.location.latitude, data.location.longitude]).addTo(map);
 
-    async function approveHut(docId, lat, lng) {
-      await db.collection("eierhuetten").doc(docId).update({
-        status: "aktiviert",
-        location: new firebase.firestore.GeoPoint(lat, lng)
-      });
-      alert("Hütte freigegeben.");
-      loadPendingHuts();
-    }
+    heatPoints.push([data.location.latitude, data.location.longitude, 1]);
+  });
 
-    async function rejectHut(docId) {
-      await db.collection("eierhuetten").doc(docId).update({
-        status: "abgelehnt"
-      });
-      alert("Hütte abgelehnt.");
-      loadPendingHuts();
-    }
-  </script></body>
+  const heatmap = L.map('heatmap').setView([51, 10], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(heatmap);
+  L.heatLayer(heatPoints, {radius: 25}).addTo(heatmap);
+}
+
+async function freigeben(id, lat, lng) {
+  await db.collection("eierhuetten").doc(id).update({ status: "aktiviert" });
+  loadAnfragen();
+}
+
+async function ablehnen(id) {
+  await db.collection("eierhuetten").doc(id).update({ status: "abgelehnt" });
+  loadAnfragen();
+}
+
+async function loadArchiv() {
+  const container = document.getElementById("anfragen");
+  container.innerHTML = "<h2>Archivierte Anfragen</h2>";
+  const snapshot = await db.collection("eierhuetten").where("status", "==", "abgelehnt").get();
+
+  snapshot.forEach(doc => {
+    const data = doc.data();
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <h3>${data.name}</h3>
+      <p>${data.beschreibung}</p>
+      <p><strong>Strom:</strong> ${data.strom}</p>
+      <img src="${data.bildUrl}" alt="Bild" width="100%"/>
+      <div id="map-archiv-${doc.id}" class="map"></div>
+    `;
+    container.appendChild(card);
+
+    const map = L.map(`map-archiv-${doc.id}`).setView([data.location.latitude, data.location.longitude], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    L.marker([data.location.latitude, data.location.longitude]).addTo(map);
+  });
+  document.getElementById("heatmap").innerHTML = "";
+}
+
+  </script>
+</body>
 </html>
