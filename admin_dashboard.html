@@ -111,7 +111,7 @@
 
     auth.onAuthStateChanged(async user => {
       if (user) {
-        const adminDoc = await db.collection("admins").doc(user.uid).get();
+        const adminDoc = await db.collection("admin").doc(user.uid).get();
         if (!adminDoc.exists) {
           alert("Du bist kein Admin!");
           auth.signOut();
@@ -129,236 +129,56 @@
     });
 
     async function loadHuetten() {
-  const query = await db.collection("eierhuetten").orderBy("erstelltAm", "desc").get();
-  const categories = {
-    offen: [],
-    angenommen: [],
-    abgelehnt: []
-  };
+      const query = await db.collection("eierhuetten").orderBy("erstelltAm", "desc").get();
+      content.innerHTML = '';
+      query.forEach(doc => {
+        const d = doc.data();
+        const card = document.createElement("div");
+        card.className = "card";
 
-  query.forEach(doc => {
-    const d = doc.data();
-    const card = document.createElement("div");
-    card.className = "card";
+        const statusColor = d.status === "angenommen" ? "green" :
+                            d.status === "abgelehnt" ? "red" : "#f9a825";
 
-    const statusColor = d.status === "angenommen" ? "green" :
-                        d.status === "abgelehnt" ? "red" : "#f9a825";
+        card.innerHTML = `
+          <div class="status" style="color:${statusColor}">Status: ${d.status}</div>
+          <strong>${d.name}</strong><br>
+          ${d.beschreibung}<br>
+          Strom: ${d.strom}<br>
+          <a href="https://www.google.com/maps?q=${d.location.latitude},${d.location.longitude}" target="_blank">Standort anzeigen</a><br>
+          ${d.bildUrl ? `<img src="${d.bildUrl}" alt="Bild">` : ''}
+          <div class="history">${d.history ? d.history.join("<br>") : ''}</div>
+        `;
 
-    card.innerHTML = `
-      <div class="status" style="color:${statusColor}">Status: ${d.status}</div>
-      <strong contenteditable id="name-${doc.id}">${d.name}</strong><br>
-      <div contenteditable id="beschreibung-${doc.id}">${d.beschreibung}</div>
-      Strom: <select id="strom-${doc.id}">
-        <option value="Ja" ${d.strom === "Ja" ? "selected" : ""}>Ja</option>
-        <option value="Nein" ${d.strom === "Nein" ? "selected" : ""}>Nein</option>
-      </select><br>
-      Längen- / Breitengrad: 
-      <input id="lat-${doc.id}" value="${d.location?.latitude ?? ''}" size="8">,
-      <input id="lng-${doc.id}" value="${d.location?.longitude ?? ''}" size="8"><br>
-      <a href="https://www.google.com/maps?q=${d.location.latitude},${d.location.longitude}" target="_blank">Karte öffnen</a><br>
-      ${d.bildUrl ? `<img src="${d.bildUrl}" alt="Bild">` : ''}
-      <div class="history">${d.history ? d.history.join("<br>") : ''}</div>
-    `;
+        const approveBtn = document.createElement("button");
+        approveBtn.innerText = "Freigeben";
+        approveBtn.onclick = () => updateStatus(doc.id, "angenommen");
 
-    if (d.status === "offen") {
-      const approveBtn = document.createElement("button");
-      approveBtn.innerText = "Freigeben";
-      approveBtn.onclick = () => updateStatus(doc.id, "angenommen");
+        const denyBtn = document.createElement("button");
+        denyBtn.innerText = "Ablehnen";
+        denyBtn.onclick = () => updateStatus(doc.id, "abgelehnt");
 
-      const denyBtn = document.createElement("button");
-      denyBtn.innerText = "Ablehnen";
-      denyBtn.onclick = () => updateStatus(doc.id, "abgelehnt");
+        if (d.status === "offen") {
+          card.appendChild(approveBtn);
+          card.appendChild(denyBtn);
+        }
 
-      card.appendChild(approveBtn);
-      card.appendChild(denyBtn);
+        content.appendChild(card);
+      });
     }
 
-    const saveBtn = document.createElement("button");
-    saveBtn.innerText = "Änderungen speichern";
-    saveBtn.onclick = () => saveChanges(doc.id);
-    card.appendChild(saveBtn);
+    async function updateStatus(id, status) {
+      const docRef = db.collection("eierhuetten").doc(id);
+      const docSnap = await docRef.get();
+      const data = docSnap.data();
+      const user = auth.currentUser;
 
-    categories[d.status]?.push(card);
-  });
+      const logEntry = `${new Date().toLocaleString()}: ${status} von ${user.displayName}`;
+      const history = data.history || [];
+      history.push(logEntry);
 
-  content.innerHTML = "";
-
-  for (const status of ["offen", "angenommen", "abgelehnt"]) {
-    const section = document.createElement("div");
-    section.innerHTML = `<h3 style="color:#2e7d32">${status.toUpperCase()}</h3>`;
-    categories[status].forEach(c => section.appendChild(c));
-    content.appendChild(section);
-  }
+      await docRef.update({ status, history });
+      loadHuetten();
     }
-async function saveChanges(id) {
-  const name = document.getElementById(`name-${id}`).innerText.trim();
-  const beschreibung = document.getElementById(`beschreibung-${id}`).innerText.trim();
-  const strom = document.getElementById(`strom-${id}`).value;
-  const latitude = parseFloat(document.getElementById(`lat-${id}`).value);
-  const longitude = parseFloat(document.getElementById(`lng-${id}`).value);
-
-  const docRef = db.collection("eierhuetten").doc(id);
-  const docSnap = await docRef.get();
-  const data = docSnap.data();
-  const user = auth.currentUser;
-  const history = data.history || [];
-  history.push(`${new Date().toLocaleString()}: Bearbeitet von ${user.displayName}`);
-
-  await docRef.update({
-    name, beschreibung, strom,
-    location: { latitude, longitude },
-    history
-  });
-
-  alert("Änderungen gespeichert");
-  loadHuetten();
-// === Firebase Setup ===
-const firebaseConfig = {
-  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-  authDomain: "eierhuettentour.firebaseapp.com",
-  projectId: "eierhuettentour",
-  storageBucket: "eierhuettentour.appspot.com",
-  messagingSenderId: "348272135205",
-  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
-  measurementId: "G-16V6K5GXDT"
-};
-
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-const db = firebase.firestore();
-
-const content = document.getElementById("content");
-const loginBtn = document.getElementById("login");
-const logoutBtn = document.getElementById("logout");
-
-// === Auth-State überwachen ===
-auth.onAuthStateChanged(async user => {
-  if (user) {
-    // Prüfen, ob user in admins eingetragen ist
-    const adminDoc = await db.collection("admins").doc(user.uid).get();
-    if (!adminDoc.exists) {
-      content.innerHTML = "<p>Du bist kein Administrator.</p>";
-      logoutBtn.style.display = "inline-block";
-      loginBtn.style.display = "none";
-      return;
-    }
-
-    content.style.display = "block";
-    loginBtn.style.display = "none";
-    logoutBtn.style.display = "inline-block";
-    loadEierhuetten();
-  } else {
-    content.innerHTML = "<p>Bitte melde dich an.</p>";
-    loginBtn.style.display = "inline-block";
-    logoutBtn.style.display = "none";
-  }
-});
-
-loginBtn.onclick = () => {
-  const provider = new firebase.auth.GoogleAuthProvider();
-  auth.signInWithPopup(provider);
-};
-
-logoutBtn.onclick = () => {
-  auth.signOut();
-};
-
-// === Hütten-Daten laden ===
-async function loadEierhuetten() {
-  const query = await db.collection("eierhuetten").orderBy("erstelltAm", "desc").get();
-  const categories = { offen: [], angenommen: [], abgelehnt: [] };
-
-  query.forEach(doc => {
-    const d = doc.data();
-    const card = document.createElement("div");
-    card.className = "card";
-
-    const statusColor = d.status === "angenommen" ? "green" :
-                        d.status === "abgelehnt" ? "red" : "#f9a825";
-
-    card.innerHTML = `
-      <div class="status" style="color:${statusColor}">Status: ${d.status}</div>
-      <strong contenteditable id="name-${doc.id}">${d.name}</strong><br>
-      <div contenteditable id="beschreibung-${doc.id}">${d.beschreibung}</div>
-      Strom: <select id="strom-${doc.id}">
-        <option value="Ja" ${d.strom === "Ja" ? "selected" : ""}>Ja</option>
-        <option value="Nein" ${d.strom === "Nein" ? "selected" : ""}>Nein</option>
-      </select><br>
-      Längen-/Breitengrad: 
-      <input id="lat-${doc.id}" value="${d.location?.latitude ?? ''}" size="8">, 
-      <input id="lng-${doc.id}" value="${d.location?.longitude ?? ''}" size="8"><br>
-      <a href="https://www.google.com/maps?q=${d.location?.latitude ?? ''},${d.location?.longitude ?? ''}" target="_blank">Karte öffnen</a><br>
-      ${d.bildUrl ? `<img src="${d.bildUrl}" alt="Bild" style="max-width:100px;">` : ''}
-      <div class="history">${d.history ? d.history.join("<br>") : ''}</div>
-    `;
-
-    if (d.status === "offen") {
-      const approveBtn = document.createElement("button");
-      approveBtn.innerText = "Freigeben";
-      approveBtn.onclick = () => updateStatus(doc.id, "angenommen");
-
-      const denyBtn = document.createElement("button");
-      denyBtn.innerText = "Ablehnen";
-      denyBtn.onclick = () => updateStatus(doc.id, "abgelehnt");
-
-      card.appendChild(approveBtn);
-      card.appendChild(denyBtn);
-    }
-
-    const saveBtn = document.createElement("button");
-    saveBtn.innerText = "Änderungen speichern";
-    saveBtn.onclick = () => saveChanges(doc.id);
-    card.appendChild(saveBtn);
-
-    categories[d.status]?.push(card);
-  });
-
-  content.innerHTML = "";
-  for (const status of ["offen", "angenommen", "abgelehnt"]) {
-    const section = document.createElement("div");
-    section.innerHTML = `<h3>${status.toUpperCase()}</h3>`;
-    categories[status].forEach(c => section.appendChild(c));
-    content.appendChild(section);
-  }
-}
-
-// === Status ändern ===
-async function updateStatus(id, newStatus) {
-  const user = auth.currentUser;
-  const docRef = db.collection("eierhuetten").doc(id);
-  const docSnap = await docRef.get();
-  const data = docSnap.data();
-  const history = data.history || [];
-  history.push(`${new Date().toLocaleString()}: ${newStatus} von ${user.displayName}`);
-
-  await docRef.update({ status: newStatus, history });
-  loadEierhuetten();
-}
-
-// === Änderungen speichern ===
-async function saveChanges(id) {
-  const name = document.getElementById(`name-${id}`).innerText.trim();
-  const beschreibung = document.getElementById(`beschreibung-${id}`).innerText.trim();
-  const strom = document.getElementById(`strom-${id}`).value;
-  const latitude = parseFloat(document.getElementById(`lat-${id}`).value);
-  const longitude = parseFloat(document.getElementById(`lng-${id}`).value);
-
-  const docRef = db.collection("eierhuetten").doc(id);
-  const docSnap = await docRef.get();
-  const data = docSnap.data();
-  const user = auth.currentUser;
-  const history = data.history || [];
-  history.push(`${new Date().toLocaleString()}: Bearbeitet von ${user.displayName}`);
-
-  await docRef.update({
-    name, beschreibung, strom,
-    location: { latitude, longitude },
-    history
-  });
-
-  alert("Änderungen gespeichert");
-  loadEierhuetten();
-}
   </script>
 </body>
 </html>
