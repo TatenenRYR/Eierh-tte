@@ -75,22 +75,6 @@ button.delete { background: #b71c1c; }      /* Rot */
   </style>
 </head>
 <body>
-
-  <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:#00000066; justify-content:center; align-items:center;">
-  <div style="background:white; padding:1rem; border-radius:10px; max-width:400px; width:90%;">
-    <h3>Hütte bearbeiten</h3>
-    <label>Beschreibung:<br>
-      <textarea id="editBeschreibung" rows="4" style="width:100%"></textarea>
-    </label><br><br>
-    <label>
-      <input type="checkbox" id="editStrom"> Strom vorhanden
-    </label><br><br>
-    <button onclick="saveEdit()">Speichern</button>
-    <button onclick="closeModal()">Abbrechen</button>
-  </div>
-  </div>
-
-
   
   <h2>Admin-Dashboard</h2>
   <button id="logoutBtn" style="display:none">Logout</button>
@@ -104,9 +88,6 @@ button.delete { background: #b71c1c; }      /* Rot */
   <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-firestore-compat.js"></script>
 
   <script>
-
-    let currentEditId = null;
-
 
     
     const firebaseConfig = {
@@ -155,75 +136,52 @@ button.delete { background: #b71c1c; }      /* Rot */
     });
 
     async function loadHuetten() {
-      const query = await db.collection("eierhuetten").orderBy("erstelltAm", "desc").get();
-      content.innerHTML = '';
-      query.forEach(doc => {
-        const d = doc.data();
-        const card = document.createElement("div");
-        card.className = "card";
+  const query = await db.collection("eierhuetten").orderBy("erstelltAm", "desc").get();
+  content.innerHTML = '';
+  query.forEach(doc => {
+    const d = doc.data();
+    const card = document.createElement("div");
+    card.className = "card";
 
-        const statusColor = d.status === "angenommen" ? "green" :
-                            d.status === "abgelehnt" ? "red" : "#f9a825";
+    const statusColor = d.status === "angenommen" ? "green" :
+                        d.status === "abgelehnt" ? "red" : "#f9a825";
 
-        card.innerHTML = `
-          <div class="status" style="color:${statusColor}">Status: ${d.status}</div>
-          <strong>${d.name}</strong><br>
-          ${d.beschreibung}<br>
-          Strom: ${d.strom}<br>
-          <a href="https://www.google.com/maps?q=${d.location.latitude},${d.location.longitude}" target="_blank">Standort anzeigen</a><br>
-          ${d.bildUrl ? `<img src="${d.bildUrl}" alt="Bild">` : ''}
-          <div class="history">${d.history ? d.history.join("<br>") : ''}</div>
-        `;
+    card.innerHTML = `
+      <div class="status" style="color:${statusColor}">Status: ${d.status}</div>
+      <strong>${d.name}</strong><br>
+      ${d.beschreibung}<br>
+      Strom: ${d.strom}<br>
+      <a href="https://www.google.com/maps?q=${d.location.latitude},${d.location.longitude}" target="_blank">Standort anzeigen</a><br>
+      ${d.bildUrl ? `<img src="${d.bildUrl}" alt="Bild">` : ''}
+      <div class="history">${d.history ? d.history.join("<br>") : ''}</div>
+    `;
 
-        const approveBtn = document.createElement("button");
-        approveBtn.innerText = "Freigeben";
-        approveBtn.onclick = () => updateStatus(doc.id, "angenommen");
+    // Buttons
+    const approveBtn = document.createElement("button");
+    approveBtn.innerText = "Freigeben";
+    approveBtn.onclick = () => updateStatus(doc.id, "angenommen");
 
-        const denyBtn = document.createElement("button");
-        denyBtn.innerText = "Ablehnen";
-        denyBtn.onclick = () => updateStatus(doc.id, "abgelehnt");
+    const denyBtn = document.createElement("button");
+    denyBtn.innerText = "Ablehnen";
+    denyBtn.onclick = () => updateStatus(doc.id, "abgelehnt");
 
+    const editBtn = document.createElement("button");
+    editBtn.innerText = "Bearbeiten";
+    editBtn.onclick = () => openEditModal(doc.id, d.beschreibung, d.strom);
 
-        const editBtn = document.createElement("button");
-editBtn.innerText = "Bearbeiten";
-editBtn.className = "edit";
-/*editBtn.onclick = async () => {
-  const neueBeschreibung = prompt("Neue Beschreibung:", d.beschreibung);
-  const neuerStrom = confirm("Hat die Hütte Strom?") ? "ja" : "nein";
-  if (neueBeschreibung !== null) {
-    await db.collection("eierhuetten").doc(doc.id).update({
-      beschreibung: neueBeschreibung,
-      strom: neuerStrom
-    });
-    loadHuetten();
-  }
-};*/
-editBtn.onclick = () => openEditModal(doc.id, d.beschreibung, d.strom);
-const archiveBtn = document.createElement("button");
-archiveBtn.innerText = "Archivieren";
-archiveBtn.className = "archive";
-archiveBtn.onclick = () => updateStatus(doc.id, "archiviert");
-
-const deleteBtn = document.createElement("button");
-deleteBtn.innerText = "Löschen";
-deleteBtn.className = "delete";
-deleteBtn.onclick = async () => {
-  if (confirm("Eintrag wirklich löschen?")) {
-    await db.collection("eierhuetten").doc(doc.id).delete();
-    loadHuetten();
-  }
-};
-        if (d.status === "offen") {
-          card.appendChild(approveBtn);
-          card.appendChild(denyBtn);
-          card.appendChild(editBtn);
-          card.appendChild(archiveBtn);
-          card.appendChild(deleteBtn);
-        }
-
-        content.appendChild(card);
-      });
+    // Buttons nur bei Bedarf anzeigen
+    if (d.status === "offen") {
+      card.appendChild(approveBtn);
+      card.appendChild(denyBtn);
     }
+
+    if (["offen", "angenommen"].includes(d.status)) {
+      card.appendChild(editBtn);
+    }
+
+    content.appendChild(card);
+  });
+}
 
     async function updateStatus(id, status) {
       const docRef = db.collection("eierhuetten").doc(id);
@@ -239,31 +197,55 @@ deleteBtn.onclick = async () => {
       loadHuetten();
     }
 
-    function openEditModal(id, beschreibung, strom) {
+    let currentEditId = null;
+
+function openEditModal(id, beschreibung, strom) {
   currentEditId = id;
   document.getElementById('editBeschreibung').value = beschreibung;
-  document.getElementById('editStrom').checked = strom === "ja";
-  document.getElementById('editModal').style.display = "flex";
+  document.getElementById('editStrom').value = strom;
+  document.getElementById('editModal').style.display = 'block';
 }
 
-function closeModal() {
-  document.getElementById('editModal').style.display = "none";
+function closeEditModal() {
+  document.getElementById('editModal').style.display = 'none';
   currentEditId = null;
 }
 
 async function saveEdit() {
-  if (!currentEditId) return;
-  const beschreibung = document.getElementById('editBeschreibung').value;
-  const strom = document.getElementById('editStrom').checked ? "ja" : "nein";
+  const neueBeschreibung = document.getElementById('editBeschreibung').value;
+  const neuerStrom = document.getElementById('editStrom').value;
+  const user = auth.currentUser;
 
-  await db.collection("eierhuetten").doc(currentEditId).update({
-    beschreibung,
-    strom
+  if (!currentEditId) return;
+
+  const docRef = db.collection("eierhuetten").doc(currentEditId);
+  const docSnap = await docRef.get();
+  const data = docSnap.data();
+  const history = data.history || [];
+  history.push(`${new Date().toLocaleString()}: Bearbeitet von ${user.displayName}`);
+
+  await docRef.update({
+    beschreibung: neueBeschreibung,
+    strom: neuerStrom,
+    history
   });
 
-  closeModal();
+  closeEditModal();
   loadHuetten();
 }
   </script>
+  <div id="editModal" style="display:none; position:fixed; top:20%; left:50%; transform:translateX(-50%); background:white; padding:1rem; border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,0.3); z-index:999">
+  <h3>Eintrag bearbeiten</h3>
+  <textarea id="editBeschreibung" rows="4" style="width:100%;"></textarea><br>
+  <label>
+    Strom:
+    <select id="editStrom">
+      <option value="ja">Ja</option>
+      <option value="nein">Nein</option>
+    </select>
+  </label><br><br>
+  <button onclick="saveEdit()">Speichern</button>
+  <button onclick="closeEditModal()">Abbrechen</button>
+  </div>
 </body>
 </html>
