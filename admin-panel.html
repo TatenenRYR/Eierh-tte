@@ -1,41 +1,41 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Eierhütten Admin Dashboard</title>
   <style>
     body {
-      font-family: 'Segoe UI', sans-serif;
       margin: 0;
-      padding: 0;
-      background: #f5f5f5;
-      color: #333;
+      font-family: sans-serif;
+      background-color: #f9fafb;
+      color: #111827;
+    }
+    .dark-mode {
+      background-color: #111827;
+      color: #f9fafb;
     }
     header {
-      background: #2c3e50;
+      background-color: #10b981;
       color: white;
       padding: 1rem;
-      text-align: center;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
     .container {
-      max-width: 800px;
-      margin: auto;
       padding: 1rem;
+      max-width: 900px;
+      margin: auto;
     }
     .entry {
       background: white;
-      border-radius: 12px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
       padding: 1rem;
       margin-bottom: 1rem;
-    }
-    .dark-mode {
-      background-color: #121212;
-      color: #eee;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
     }
     .dark-mode .entry {
-      background: #1e1e1e;
+      background: #1f2937;
     }
     .badge {
       display: inline-block;
@@ -50,46 +50,33 @@
     .map {
       width: 100%;
       height: 200px;
-      border: none;
       margin-top: 0.5rem;
     }
     button {
-      margin: 0.5rem 0.5rem 0 0;
+      margin-right: 0.5rem;
+      margin-top: 0.5rem;
     }
-    #dashboard {
-      display: none;
-    }
-    #loginBtn {
-      margin-top: 2rem;
-    }
-    select {
-      margin-bottom: 1rem;
-    }
+    #loginBtn { background: white; border: none; padding: 0.5rem 1rem; border-radius: 5px; cursor: pointer; }
+    #statusFilter { margin-top: 1rem; }
   </style>
 </head>
 <body>
   <header>
     <h1>Eierhütten Admin Dashboard</h1>
-    <div id="userInfo"></div>
-    <button id="logoutBtn" style="display:none">Logout</button>
+    <button id="loginBtn">Login mit Google</button>
   </header>
   <div class="container">
-    <button id="loginBtn">Mit Google anmelden</button>
-    <div id="dashboard">
-      <label for="statusFilter">Status filtern:</label>
-      <select id="statusFilter">
-        <option value="alle">Alle</option>
-        <option value="offen">Offen</option>
-        <option value="angenommen">Angenommen</option>
-        <option value="abgelehnt">Abgelehnt</option>
-      </select>
-      <div id="entries"></div>
-    </div>
-  </div>
-
-  <script type="module">
+    <label for="statusFilter">Status filtern:</label>
+    <select id="statusFilter">
+      <option value="alle">Alle</option>
+      <option value="offen">Offen</option>
+      <option value="angenommen">Angenommen</option>
+      <option value="abgelehnt">Abgelehnt</option>
+    </select>
+    <div id="entries"></div>
+  </div>  <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-    import { getAuth, signInWithPopup, signOut, GoogleAuthProvider, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+    import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
     import { getFirestore, collection, getDocs, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const firebaseConfig = {
@@ -107,38 +94,23 @@
     const provider = new GoogleAuthProvider();
 
     const loginBtn = document.getElementById('loginBtn');
-    const logoutBtn = document.getElementById('logoutBtn');
-    const userInfo = document.getElementById('userInfo');
-    const dashboard = document.getElementById('dashboard');
-    const entriesContainer = document.getElementById('entries');
     const statusFilter = document.getElementById('statusFilter');
+    const entriesContainer = document.getElementById('entries');
+    const container = document.querySelector('.container');
 
-    loginBtn.onclick = async () => {
-      try {
-        await signInWithPopup(auth, provider);
-      } catch (error) {
-        alert("Login fehlgeschlagen: " + error.message);
-      }
-    };
-
-    logoutBtn.onclick = () => {
-      signOut(auth);
-    };
-
-    onAuthStateChanged(auth, (user) => {
-      if (user) {
-        loginBtn.style.display = 'none';
-        logoutBtn.style.display = 'inline';
-        userInfo.innerHTML = `Angemeldet als <strong>${user.displayName}</strong>`;
-        dashboard.style.display = 'block';
-        renderEntries();
-      } else {
-        loginBtn.style.display = 'inline';
-        logoutBtn.style.display = 'none';
-        userInfo.textContent = '';
-        dashboard.style.display = 'none';
-      }
+    loginBtn.addEventListener('click', () => {
+      signInWithRedirect(auth, provider);
     });
+
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          console.log('Redirect login erfolgreich:', result.user.displayName);
+        }
+      })
+      .catch((error) => {
+        console.error('Redirect-Fehler:', error);
+      });
 
     function createBadge(status) {
       const span = document.createElement('span');
@@ -155,30 +127,29 @@
         const status = data.status || 'offen';
         if (statusFilter.value !== 'alle' && statusFilter.value !== status) return;
 
-        const entry = document.createElement('div');
-        entry.className = 'entry';
-        entry.innerHTML = `
+        const entryDiv = document.createElement('div');
+        entryDiv.className = 'entry';
+        entryDiv.innerHTML = `
           <strong>${data.name || 'Unbekannt'}</strong><br />
           <em>${data.beschreibung || ''}</em><br />
           ${data.strom ? 'Mit Stromversorgung ⚡️<br />' : ''}
           Betrag: ${data.betrag?.toFixed(2) || '2.00'} € / Monat<br />
         `;
-
-        entry.appendChild(createBadge(status));
+        entryDiv.appendChild(createBadge(status));
 
         if (data.foto) {
           const img = document.createElement('img');
           img.src = data.foto;
           img.alt = 'Foto';
           img.style = 'width:100%;max-height:200px;object-fit:cover;margin-top:0.5rem;';
-          entry.appendChild(img);
+          entryDiv.appendChild(img);
         }
 
         if (data.lat && data.lng) {
           const iframe = document.createElement('iframe');
           iframe.className = 'map';
           iframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=${data.lng - 0.001},${data.lat - 0.001},${data.lng + 0.001},${data.lat + 0.001}&layer=mapnik&marker=${data.lat},${data.lng}`;
-          entry.appendChild(iframe);
+          entryDiv.appendChild(iframe);
         }
 
         const acceptBtn = document.createElement('button');
@@ -187,7 +158,7 @@
           await updateDoc(doc(db, 'huetten_pending', docSnapshot.id), { status: 'angenommen' });
           renderEntries();
         };
-        entry.appendChild(acceptBtn);
+        entryDiv.appendChild(acceptBtn);
 
         const declineBtn = document.createElement('button');
         declineBtn.textContent = 'Ablehnen';
@@ -195,19 +166,29 @@
           await updateDoc(doc(db, 'huetten_pending', docSnapshot.id), { status: 'abgelehnt' });
           renderEntries();
         };
-        entry.appendChild(declineBtn);
+        entryDiv.appendChild(declineBtn);
 
-        entriesContainer.appendChild(entry);
+        entriesContainer.appendChild(entryDiv);
       });
     }
 
     statusFilter.addEventListener('change', renderEntries);
 
-    // Dark Mode automatisch aktivieren
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        container.style.display = 'block';
+        loginBtn.textContent = `Logout (${user.displayName})`;
+        loginBtn.onclick = () => signOut(auth);
+        renderEntries();
+      } else {
+        container.style.display = 'none';
+        loginBtn.textContent = 'Login mit Google';
+      }
+    });
+
     const hour = new Date().getHours();
     if (hour >= 20 || hour < 6) {
       document.body.classList.add('dark-mode');
     }
-  </script>
-</body>
+  </script></body>
 </html>
