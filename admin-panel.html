@@ -2,33 +2,36 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Eierhütten Dashboard</title>
+  <title>Eierhütten Admin-Dashboard</title>
   <style>
     body {
       font-family: Arial, sans-serif;
       margin: 0;
-      padding: 0;
+      padding: 1rem;
       background-color: #f0f2f5;
       color: #333;
     }
-    header {
-      background-color: #006400;
-      color: white;
-      padding: 1rem;
-      text-align: center;
+    .dark-mode {
+      background-color: #121212;
+      color: #eee;
     }
-    .container {
-      padding: 1rem;
-    }
-    .dashboard {
-      display: none;
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
     }
     .entry {
       background: white;
       padding: 1rem;
       margin-bottom: 1rem;
       border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+    .dark-mode .entry {
+      background: #1e1e1e;
+    }
+    button {
+      margin: 0.3rem 0.5rem 0 0;
+      padding: 0.4rem 0.8rem;
     }
     .badge {
       display: inline-block;
@@ -46,151 +49,142 @@
       margin-top: 0.5rem;
     }
     #loginBtn, #logoutBtn {
-      margin: 1rem;
-      padding: 0.5rem 1rem;
-      background-color: #006400;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
+      margin-bottom: 1rem;
     }
     @media (max-width: 600px) {
       .entry {
-        padding: 0.5rem;
+        padding: 0.8rem;
       }
     }
   </style>
 </head>
 <body>
-  <header>
+  <button id="loginBtn">Login mit Google</button>
+  <button id="logoutBtn" style="display:none">Logout</button>
+  <div id="dashboard" style="display:none">
     <h1>Eierhütten Admin-Dashboard</h1>
-    <button id="loginBtn">Mit Google anmelden</button>
-    <button id="logoutBtn" style="display:none">Abmelden</button>
-  </header>
-  <div class="container">
-    <div class="dashboard">
-      <label for="statusFilter">Status filtern:</label>
-      <select id="statusFilter">
-        <option value="alle">Alle</option>
-        <option value="offen">Offen</option>
-        <option value="angenommen">Angenommen</option>
-        <option value="abgelehnt">Abgelehnt</option>
-      </select>
-      <div id="entries"></div>
-    </div>
-  </div>
-  <script type="module">
+    <label for="statusFilter">Status filtern:</label>
+    <select id="statusFilter">
+      <option value="alle">Alle</option>
+      <option value="offen">Offen</option>
+      <option value="angenommen">Angenommen</option>
+      <option value="abgelehnt">Abgelehnt</option>
+    </select>
+    <div id="entries"></div>
+  </div>  <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-    import { getFirestore, collection, getDocs, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';const firebaseConfig = {
-  apiKey: "AIzaSyDpLwaRpjkY3hEvZwRjqk7h-fqeChmcBqk",
-  authDomain: "eierhuette.firebaseapp.com",
-  projectId: "eierhuette",
-  storageBucket: "eierhuette.appspot.com",
-  messagingSenderId: "276799187287",
-  appId: "1:276799187287:web:2800de1a1ac13b50fd96f4"
-};
+    import { getFirestore, collection, getDocs, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const provider = new GoogleAuthProvider();
-
-const loginBtn = document.getElementById('loginBtn');
-const logoutBtn = document.getElementById('logoutBtn');
-const dashboard = document.querySelector('.dashboard');
-const entriesContainer = document.getElementById('entries');
-const statusFilter = document.getElementById('statusFilter');
-
-loginBtn.addEventListener('click', async () => {
-  try {
-    await signInWithPopup(auth, provider);
-  } catch (error) {
-    alert('Login fehlgeschlagen: ' + error.message);
-  }
-});
-
-logoutBtn.addEventListener('click', () => {
-  signOut(auth);
-});
-
-onAuthStateChanged(auth, user => {
-  if (user) {
-    dashboard.style.display = 'block';
-    loginBtn.style.display = 'none';
-    logoutBtn.style.display = 'inline-block';
-    renderEntries();
-  } else {
-    dashboard.style.display = 'none';
-    loginBtn.style.display = 'inline-block';
-    logoutBtn.style.display = 'none';
-  }
-});
-
-statusFilter.addEventListener('change', renderEntries);
-
-function createBadge(status) {
-  const span = document.createElement('span');
-  span.className = 'badge badge-' + status;
-  span.textContent = status.charAt(0).toUpperCase() + status.slice(1);
-  return span;
-}
-
-async function renderEntries() {
-  entriesContainer.innerHTML = '';
-  const querySnapshot = await getDocs(collection(db, 'huetten_pending'));
-  querySnapshot.forEach((docSnapshot) => {
-    const data = docSnapshot.data();
-    const status = data.status || 'offen';
-    if (statusFilter.value !== 'alle' && statusFilter.value !== status) return;
-
-    const entryDiv = document.createElement('div');
-    entryDiv.className = 'entry';
-
-    entryDiv.innerHTML = `
-      <strong>${data.name || 'Unbekannt'}</strong><br />
-      <em>${data.beschreibung || ''}</em><br />
-      ${data.strom ? 'Mit Stromversorgung ⚡️<br />' : ''}
-      Betrag: ${data.betrag?.toFixed(2) || '2.00'} € / Monat<br />
-    `;
-
-    entryDiv.appendChild(createBadge(status));
-
-    if (data.foto) {
-      const img = document.createElement('img');
-      img.src = data.foto;
-      img.alt = 'Foto';
-      img.style = 'width:100%;max-height:200px;object-fit:cover;margin-top:0.5rem;';
-      entryDiv.appendChild(img);
-    }
-
-    if (data.lat && data.lng) {
-      const iframe = document.createElement('iframe');
-      iframe.className = 'map';
-      iframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=${data.lng - 0.001},${data.lat - 0.001},${data.lng + 0.001},${data.lat + 0.001}&layer=mapnik&marker=${data.lat},${data.lng}`;
-      entryDiv.appendChild(iframe);
-    }
-
-    const acceptBtn = document.createElement('button');
-    acceptBtn.textContent = 'Annehmen';
-    acceptBtn.onclick = async () => {
-      await updateDoc(doc(db, 'huetten_pending', docSnapshot.id), { status: 'angenommen' });
-      renderEntries();
+    const firebaseConfig = {
+      apiKey: "AIzaSyDpLwaRpjkY3hEvZwRjqk7h-fqeChmcBqk",
+      authDomain: "eierhuette.firebaseapp.com",
+      projectId: "eierhuette",
+      storageBucket: "eierhuette.appspot.com",
+      messagingSenderId: "276799187287",
+      appId: "1:276799187287:web:2800de1a1ac13b50fd96f4"
     };
 
-    const declineBtn = document.createElement('button');
-    declineBtn.textContent = 'Ablehnen';
-    declineBtn.onclick = async () => {
-      await updateDoc(doc(db, 'huetten_pending', docSnapshot.id), { status: 'abgelehnt' });
-      renderEntries();
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+    const provider = new GoogleAuthProvider();
+
+    const loginBtn = document.getElementById("loginBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const dashboard = document.getElementById("dashboard");
+    const entriesContainer = document.getElementById('entries');
+    const statusFilter = document.getElementById('statusFilter');
+
+    loginBtn.onclick = () => {
+      signInWithPopup(auth, provider).catch(e => alert("Login fehlgeschlagen: " + e.message));
     };
 
-    entryDiv.appendChild(acceptBtn);
-    entryDiv.appendChild(declineBtn);
-    entriesContainer.appendChild(entryDiv);
-  });
-}
+    logoutBtn.onclick = () => {
+      signOut(auth);
+    };
 
-  </script>
-</body>
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        dashboard.style.display = "block";
+        loginBtn.style.display = "none";
+        logoutBtn.style.display = "inline-block";
+        renderEntries();
+      } else {
+        dashboard.style.display = "none";
+        loginBtn.style.display = "inline-block";
+        logoutBtn.style.display = "none";
+      }
+    });
+
+    function createBadge(status) {
+      const span = document.createElement('span');
+      span.className = 'badge badge-' + status;
+      span.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+      return span;
+    }
+
+    async function renderEntries() {
+      entriesContainer.innerHTML = '';
+      const querySnapshot = await getDocs(collection(db, 'huetten_pending'));
+      querySnapshot.forEach((docSnapshot) => {
+        const data = docSnapshot.data();
+        const status = data.status || 'offen';
+        if (statusFilter.value !== 'alle' && statusFilter.value !== status) return;
+
+        const entryDiv = document.createElement('div');
+        entryDiv.className = 'entry';
+
+        entryDiv.innerHTML = `
+          <strong>${data.name || 'Unbekannt'}</strong><br />
+          <em>${data.beschreibung || ''}</em><br />
+          ${data.strom ? 'Mit Stromversorgung ⚡️<br />' : ''}
+          Betrag: ${data.betrag?.toFixed(2) || '2.00'} € / Monat<br />
+        `;
+
+        entryDiv.appendChild(createBadge(status));
+
+        if (data.foto) {
+          const img = document.createElement('img');
+          img.src = data.foto;
+          img.alt = 'Foto';
+          img.style = 'width:100%;max-height:200px;object-fit:cover;margin-top:0.5rem;';
+          entryDiv.appendChild(img);
+        }
+
+        if (data.lat && data.lng) {
+          const iframe = document.createElement('iframe');
+          iframe.className = 'map';
+          iframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=${data.lng - 0.001},${data.lat - 0.001},${data.lng + 0.001},${data.lat + 0.001}&layer=mapnik&marker=${data.lat},${data.lng}`;
+          entryDiv.appendChild(iframe);
+        }
+
+        const acceptBtn = document.createElement('button');
+        acceptBtn.textContent = 'Annehmen';
+        acceptBtn.onclick = async () => {
+          await updateDoc(doc(db, 'huetten_pending', docSnapshot.id), { status: 'angenommen' });
+          renderEntries();
+        };
+        entryDiv.appendChild(acceptBtn);
+
+        const declineBtn = document.createElement('button');
+        declineBtn.textContent = 'Ablehnen';
+        declineBtn.onclick = async () => {
+          await updateDoc(doc(db, 'huetten_pending', docSnapshot.id), { status: 'abgelehnt' });
+          renderEntries();
+        };
+        entryDiv.appendChild(declineBtn);
+
+        entriesContainer.appendChild(entryDiv);
+      });
+    }
+
+    statusFilter.addEventListener('change', renderEntries);
+
+    // Automatischer Dark Mode
+    const hour = new Date().getHours();
+    if (hour >= 20 || hour < 6) {
+      document.body.classList.add('dark-mode');
+    }
+  </script></body>
 </html>
