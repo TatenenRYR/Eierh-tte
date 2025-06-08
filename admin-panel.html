@@ -1,86 +1,96 @@
-<!DOCTYPE html><html lang="de">
+<!DOCTYPE html>
+<html lang="de">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Eierhütten Admin-Dashboard</title>
+  <title>Eierhütten Admin Dashboard</title>
   <style>
-    :root {
-      --primary: #2e7d32;
-      --accent: #66bb6a;
-      --bg: #f4f4f4;
-      --dark-bg: #121212;
-      --dark-card: #1e1e1e;
-      --text-light: #eee;
-    }
     body {
-      margin: 0;
       font-family: 'Segoe UI', sans-serif;
-      background-color: var(--bg);
+      margin: 0;
+      padding: 0;
+      background: #f5f5f5;
       color: #333;
     }
-    .dark-mode {
-      background-color: var(--dark-bg);
-      color: var(--text-light);
-    }
     header {
-      background-color: var(--primary);
+      background: #2c3e50;
       color: white;
       padding: 1rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+      text-align: center;
     }
     .container {
+      max-width: 800px;
+      margin: auto;
       padding: 1rem;
     }
-    .card {
-      background-color: white;
+    .entry {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
       padding: 1rem;
       margin-bottom: 1rem;
-      border-radius: 10px;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
     }
-    .dark-mode .card {
-      background-color: var(--dark-card);
+    .dark-mode {
+      background-color: #121212;
+      color: #eee;
     }
-    button {
-      margin: 0.25rem;
+    .dark-mode .entry {
+      background: #1e1e1e;
     }
     .badge {
-      padding: 0.2rem 0.5rem;
+      display: inline-block;
+      padding: 0.3rem 0.6rem;
       border-radius: 5px;
       font-size: 0.75rem;
+      font-weight: bold;
     }
-    .badge-offen { background: orange; color: white; }
-    .badge-angenommen { background: green; color: white; }
-    .badge-abgelehnt { background: red; color: white; }
+    .badge-offen { background-color: orange; color: white; }
+    .badge-angenommen { background-color: green; color: white; }
+    .badge-abgelehnt { background-color: red; color: white; }
     .map {
       width: 100%;
       height: 200px;
+      border: none;
       margin-top: 0.5rem;
     }
-    .hidden { display: none; }
+    button {
+      margin: 0.5rem 0.5rem 0 0;
+    }
+    #dashboard {
+      display: none;
+    }
+    #loginBtn {
+      margin-top: 2rem;
+    }
+    select {
+      margin-bottom: 1rem;
+    }
   </style>
 </head>
 <body>
   <header>
-    <h1>Eierhütten Dashboard</h1>
-    <button id="loginBtn">Anmelden mit Google</button>
-    <button id="logoutBtn" class="hidden">Abmelden</button>
+    <h1>Eierhütten Admin Dashboard</h1>
+    <div id="userInfo"></div>
+    <button id="logoutBtn" style="display:none">Logout</button>
   </header>
-  <div class="container hidden" id="dashboard">
-    <label for="statusFilter">Status filtern:</label>
-    <select id="statusFilter">
-      <option value="alle">Alle</option>
-      <option value="offen">Offen</option>
-      <option value="angenommen">Angenommen</option>
-      <option value="abgelehnt">Abgelehnt</option>
-    </select>
-    <div id="entries"></div>
-  </div>  <script type="module">
+  <div class="container">
+    <button id="loginBtn">Mit Google anmelden</button>
+    <div id="dashboard">
+      <label for="statusFilter">Status filtern:</label>
+      <select id="statusFilter">
+        <option value="alle">Alle</option>
+        <option value="offen">Offen</option>
+        <option value="angenommen">Angenommen</option>
+        <option value="abgelehnt">Abgelehnt</option>
+      </select>
+      <div id="entries"></div>
+    </div>
+  </div>
+
+  <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-    import { getFirestore, collection, getDocs, updateDoc, doc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import { getAuth, signInWithPopup, signOut, GoogleAuthProvider, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+    import { getFirestore, collection, getDocs, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const firebaseConfig = {
       apiKey: "AIzaSyDpLwaRpjkY3hEvZwRjqk7h-fqeChmcBqk",
@@ -92,102 +102,112 @@
     };
 
     const app = initializeApp(firebaseConfig);
-    const auth = getAuth();
+    const auth = getAuth(app);
     const db = getFirestore(app);
+    const provider = new GoogleAuthProvider();
 
     const loginBtn = document.getElementById('loginBtn');
     const logoutBtn = document.getElementById('logoutBtn');
+    const userInfo = document.getElementById('userInfo');
     const dashboard = document.getElementById('dashboard');
     const entriesContainer = document.getElementById('entries');
     const statusFilter = document.getElementById('statusFilter');
 
     loginBtn.onclick = async () => {
-      const provider = new GoogleAuthProvider();
       try {
         await signInWithPopup(auth, provider);
       } catch (error) {
-        alert('Login fehlgeschlagen: ' + error.message);
+        alert("Login fehlgeschlagen: " + error.message);
       }
     };
 
-    logoutBtn.onclick = () => signOut(auth);
+    logoutBtn.onclick = () => {
+      signOut(auth);
+    };
 
-    onAuthStateChanged(auth, user => {
+    onAuthStateChanged(auth, (user) => {
       if (user) {
-        dashboard.classList.remove('hidden');
-        loginBtn.classList.add('hidden');
-        logoutBtn.classList.remove('hidden');
+        loginBtn.style.display = 'none';
+        logoutBtn.style.display = 'inline';
+        userInfo.innerHTML = `Angemeldet als <strong>${user.displayName}</strong>`;
+        dashboard.style.display = 'block';
         renderEntries();
       } else {
-        dashboard.classList.add('hidden');
-        loginBtn.classList.remove('hidden');
-        logoutBtn.classList.add('hidden');
+        loginBtn.style.display = 'inline';
+        logoutBtn.style.display = 'none';
+        userInfo.textContent = '';
+        dashboard.style.display = 'none';
       }
     });
 
     function createBadge(status) {
       const span = document.createElement('span');
       span.className = 'badge badge-' + status;
-      span.textContent = status;
+      span.textContent = status.charAt(0).toUpperCase() + status.slice(1);
       return span;
     }
 
     async function renderEntries() {
       entriesContainer.innerHTML = '';
       const querySnapshot = await getDocs(collection(db, 'huetten_pending'));
-      querySnapshot.forEach(docSnap => {
-        const data = docSnap.data();
+      querySnapshot.forEach((docSnapshot) => {
+        const data = docSnapshot.data();
         const status = data.status || 'offen';
         if (statusFilter.value !== 'alle' && statusFilter.value !== status) return;
 
-        const div = document.createElement('div');
-        div.className = 'card';
-        div.innerHTML = `
-          <h3>${data.name || 'Unbekannt'}</h3>
-          <p>${data.beschreibung || ''}</p>
-          ${data.strom ? 'Mit Stromversorgung ⚡️<br>' : ''}
-          Betrag: ${data.betrag?.toFixed(2) || '2.00'} € / Monat<br>
+        const entry = document.createElement('div');
+        entry.className = 'entry';
+        entry.innerHTML = `
+          <strong>${data.name || 'Unbekannt'}</strong><br />
+          <em>${data.beschreibung || ''}</em><br />
+          ${data.strom ? 'Mit Stromversorgung ⚡️<br />' : ''}
+          Betrag: ${data.betrag?.toFixed(2) || '2.00'} € / Monat<br />
         `;
-        div.appendChild(createBadge(status));
+
+        entry.appendChild(createBadge(status));
 
         if (data.foto) {
           const img = document.createElement('img');
           img.src = data.foto;
-          img.style = 'width: 100%; max-height: 200px; object-fit: cover; margin-top: 0.5rem';
-          div.appendChild(img);
+          img.alt = 'Foto';
+          img.style = 'width:100%;max-height:200px;object-fit:cover;margin-top:0.5rem;';
+          entry.appendChild(img);
         }
 
         if (data.lat && data.lng) {
           const iframe = document.createElement('iframe');
           iframe.className = 'map';
           iframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=${data.lng - 0.001},${data.lat - 0.001},${data.lng + 0.001},${data.lat + 0.001}&layer=mapnik&marker=${data.lat},${data.lng}`;
-          div.appendChild(iframe);
+          entry.appendChild(iframe);
         }
 
-        const accept = document.createElement('button');
-        accept.textContent = 'Annehmen';
-        accept.onclick = async () => {
-          await updateDoc(doc(db, 'huetten_pending', docSnap.id), { status: 'angenommen' });
+        const acceptBtn = document.createElement('button');
+        acceptBtn.textContent = 'Annehmen';
+        acceptBtn.onclick = async () => {
+          await updateDoc(doc(db, 'huetten_pending', docSnapshot.id), { status: 'angenommen' });
           renderEntries();
         };
+        entry.appendChild(acceptBtn);
 
-        const decline = document.createElement('button');
-        decline.textContent = 'Ablehnen';
-        decline.onclick = async () => {
-          await updateDoc(doc(db, 'huetten_pending', docSnap.id), { status: 'abgelehnt' });
+        const declineBtn = document.createElement('button');
+        declineBtn.textContent = 'Ablehnen';
+        declineBtn.onclick = async () => {
+          await updateDoc(doc(db, 'huetten_pending', docSnapshot.id), { status: 'abgelehnt' });
           renderEntries();
         };
+        entry.appendChild(declineBtn);
 
-        div.appendChild(accept);
-        div.appendChild(decline);
-        entriesContainer.appendChild(div);
+        entriesContainer.appendChild(entry);
       });
     }
 
     statusFilter.addEventListener('change', renderEntries);
 
-    if (new Date().getHours() >= 20 || new Date().getHours() < 6) {
+    // Dark Mode automatisch aktivieren
+    const hour = new Date().getHours();
+    if (hour >= 20 || hour < 6) {
       document.body.classList.add('dark-mode');
     }
-  </script></body>
+  </script>
+</body>
 </html>
