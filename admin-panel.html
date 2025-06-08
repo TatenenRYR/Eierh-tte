@@ -2,41 +2,44 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Eierhütten Fahrradtour Admin</title>
+  <title>Eierhütten Admin Dashboard</title>
   <style>
     body {
       font-family: Arial, sans-serif;
       margin: 0;
-      padding: 1rem;
-      background-color: #f5f5f5;
+      padding: 0;
+      background-color: #f0f2f5;
       color: #333;
     }
     .dark-mode {
       background-color: #121212;
       color: #eee;
     }
-    h1 {
-      font-size: 1.5rem;
+    header {
+      background-color: #4CAF50;
+      color: white;
+      padding: 1rem;
+      text-align: center;
+    }
+    .dashboard {
+      padding: 1rem;
+      max-width: 900px;
+      margin: auto;
     }
     .entry {
       background: white;
       padding: 1rem;
       margin-bottom: 1rem;
       border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
     .dark-mode .entry {
       background: #1e1e1e;
     }
     button {
-      margin-right: 0.5rem;
-      margin-top: 0.5rem;
-    }
-    #statusFilter {
-      margin-bottom: 1rem;
+      margin: 0.5rem 0.5rem 0 0;
     }
     .badge {
-      display: inline-block;
       padding: 0.3rem 0.6rem;
       border-radius: 5px;
       font-size: 0.75rem;
@@ -50,20 +53,36 @@
       height: 200px;
       margin-top: 0.5rem;
     }
+    #login {
+      max-width: 400px;
+      margin: 5rem auto;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
-  <h1>Eierhütten Admin-Seite</h1>
-  <label for="statusFilter">Status filtern:</label>
-  <select id="statusFilter">
-    <option value="alle">Alle</option>
-    <option value="offen">Offen</option>
-    <option value="angenommen">Angenommen</option>
-    <option value="abgelehnt">Abgelehnt</option>
-  </select>
-  <div id="entries"></div>  <script type="module">
+  <div id="login">
+    <h2>Admin Login</h2>
+    <button id="loginBtn">Mit Google anmelden</button>
+  </div>  <div id="app" style="display:none">
+    <header>
+      <h1>Eierhütten Admin Dashboard</h1>
+      <button id="logoutBtn">Abmelden</button>
+    </header>
+    <div class="dashboard">
+      <label for="statusFilter">Status filtern:</label>
+      <select id="statusFilter">
+        <option value="alle">Alle</option>
+        <option value="offen">Offen</option>
+        <option value="angenommen">Angenommen</option>
+        <option value="abgelehnt">Abgelehnt</option>
+      </select>
+      <div id="entries"></div>
+    </div>
+  </div>  <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
     import { getFirestore, collection, getDocs, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
     const firebaseConfig = {
       apiKey: "AIzaSyDpLwaRpjkY3hEvZwRjqk7h-fqeChmcBqk",
@@ -76,9 +95,32 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+    const auth = getAuth(app);
+    const provider = new GoogleAuthProvider();
 
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const loginDiv = document.getElementById('login');
+    const appDiv = document.getElementById('app');
     const statusFilter = document.getElementById('statusFilter');
     const entriesContainer = document.getElementById('entries');
+
+    loginBtn.onclick = () => {
+      signInWithPopup(auth, provider).catch(err => alert("Login fehlgeschlagen: " + err.message));
+    };
+
+    logoutBtn.onclick = () => signOut(auth);
+
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        loginDiv.style.display = 'none';
+        appDiv.style.display = 'block';
+        renderEntries();
+      } else {
+        loginDiv.style.display = 'block';
+        appDiv.style.display = 'none';
+      }
+    });
 
     function createBadge(status) {
       const span = document.createElement('span');
@@ -92,26 +134,24 @@
       const querySnapshot = await getDocs(collection(db, 'huetten_pending'));
       querySnapshot.forEach((docSnapshot) => {
         const data = docSnapshot.data();
-        const entryDiv = document.createElement('div');
-        entryDiv.className = 'entry';
-
         const status = data.status || 'offen';
         if (statusFilter.value !== 'alle' && statusFilter.value !== status) return;
 
+        const entryDiv = document.createElement('div');
+        entryDiv.className = 'entry';
         entryDiv.innerHTML = `
           <strong>${data.name || 'Unbekannt'}</strong><br />
           <em>${data.beschreibung || ''}</em><br />
           ${data.strom ? 'Mit Stromversorgung ⚡️<br />' : ''}
-          Betrag: ${data.betrag?.toFixed(2) || '2.00'} € / Monat<br />
+          Betrag: ${(data.betrag ?? 2).toFixed(2)} € / Monat<br />
         `;
-
         entryDiv.appendChild(createBadge(status));
 
         if (data.foto) {
           const img = document.createElement('img');
           img.src = data.foto;
           img.alt = 'Foto';
-          img.style = 'width:100%;max-height:200px;object-fit:cover;margin-top:0.5rem;';
+          img.style = 'width:100%;max-height:200px;object-fit:cover;margin-top:0.5rem';
           entryDiv.appendChild(img);
         }
 
@@ -144,12 +184,9 @@
 
     statusFilter.addEventListener('change', renderEntries);
 
-    // Automatischer Dark Mode
-    const hour = new Date().getHours();
-    if (hour >= 20 || hour < 6) {
+    // Auto-Darkmode
+    if (new Date().getHours() >= 20 || new Date().getHours() < 6) {
       document.body.classList.add('dark-mode');
     }
-
-    renderEntries();
   </script></body>
 </html>
