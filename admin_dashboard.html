@@ -129,11 +129,30 @@ button.delete { background: #b71c1c; }  /* Rot */
 
 <div id="tab-betrag" class="tab-content" style="display:none">
   <div class="card">
-    <h3>Monatlicher Betrag (Abo)</h3>
-    <label for="preisInput">Betrag in €:</label>
-    <input type="number" id="preisInput" step="0.01" min="0" style="width: 100px;">
-    <button onclick="saveBetrag()">Speichern</button>
-    <div id="preisStatus" class="history"></div>
+  <h3>💶 Monatlicher Betrag (Abo)</h3>
+  <p>Der aktuelle Betrag wird für neue Hüttenbesitzer automatisch übernommen.</p>
+
+  <p><strong>Aktueller Betrag:</strong> <span id="aktuellerBetrag">–</span> €</p>
+
+  <label for="preisInput">Neuer Betrag in €:</label>
+  <input type="number" id="preisInput" step="0.01" min="0" style="width: 100px;">
+  <button onclick="saveBetrag()">Speichern</button>
+  <div id="preisStatus" class="history"></div>
+
+  <hr>
+<hr>
+<h4>📜 Verlauf der Preisänderungen</h4>
+<div id="betragVerlauf" class="history"></div>
+
+  <h4>🔧 Weitere Einstellungen zum Abo-Modell</h4>
+
+  <label>
+    <input type="checkbox" id="kuendigungsCheckbox">
+    Hütte automatisch entfernen, wenn keine Zahlung erfolgt
+  </label>
+
+  <p>Standard-Zahlungszeitraum: <strong>monatlich im Voraus</strong></p>
+  <p>Zahlungsmethoden: <em>(Stripe, Überweisung – bald konfigurierbar)</em></p>
   </div>
 </div>
 
@@ -330,30 +349,110 @@ async function saveEdit() {
   if (target) target.style.display = 'block';
     }
 
-    async function loadBetrag() {
-  const docRef = db.collection("settings").doc("gebuehren");
-  const docSnap = await docRef.get();
-  if (docSnap.exists) {
-    const wert = docSnap.data().betrag;
-    document.getElementById("preisInput").value = wert;
+
+  coconst einstellungenRef = db.collection('settings').doc('gebuehren');
+
+async function ladeBetrag() {
+  try {
+    const doc = await einstellungenRef.get();
+    if (doc.exists) {
+      const data = doc.data();
+      const betrag = data.betrag?.toFixed(2) ?? '–';
+      const autoK = data.autoKündigung ?? false;
+
+      document.getElementById('monatlicherBetrag').textContent = betrag;
+      document.getElementById('preisInput').value = data.betrag ?? '';
+      document.getElementById('kuendigungsCheckbox').checked = autoK;
+    }
+  } catch (error) {
+    console.error("Fehler beim Laden des Betrags:", error);
   }
 }
 
 async function saveBetrag() {
-  const input = document.getElementById("preisInput");
-  const status = document.getElementById("preisStatus");
-  const neuerBetrag = parseFloat(input.value);
-  if (isNaN(neuerBetrag) || neuerBetrag < 0) {
-    status.textContent = "Ungültiger Betrag!";
+  const betrag = parseFloat(document.getElementById('preisInput').value);
+  const autoK = document.getElementById('kuendigungsCheckbox').checked;
+
+  if (isNaN(betrag)) {
+    document.getElementById('preisStatus').textContent = "❌ Bitte gültigen Betrag eingeben.";
     return;
   }
 
-  await db.collection("settings").doc("gebuehren").set({
-    monatlicherBetrag: neuerBetrag
-  });
+  try {
+    await einstellungenRef.set({
+      betrag,
+      autoKündigung: autoK,
+      aktualisiertAm: firebase.firestore.FieldValue.serverTimestamp()
+    });
 
-  status.textContent = `Gespeichert am ${new Date().toLocaleString()}`;
+    document.getElementById('preisStatus').textContent = "✅ Betrag gespeichert.";
+await db.collection('settings').doc('betragHistorie').collection('log').add({
+  betrag,
+  autoKündigung: autoK,
+  geändertAm: firebase.firestore.FieldValue.serverTimestamp()
+});
+
+    ladeBetrag();
+  } catch (error) {
+    console.error("Fehler beim Speichern:", error);
+    document.getElementById('preisStatus').textContent = "❌ Fehler beim Speichern.";
+  }
 }
+async function ladeVerlauf() {
+  const verlaufContainer = document.getElementById('betragVerlauf');
+  verlaufContainer.innerHTML = "⏳ Lade...";
+
+  try {
+    const snapshot = await db.collection('settings').doc('betragHistorie').collection('log')
+      .orderBy('geändertAm', 'desc')
+      .limit(10)
+      .get();
+
+    if (snapshot.empty) {
+      verlaufContainer.innerHTML = "Keine Änderungen vorhanden.";
+      return;
+    }
+
+    verlaufContainer.innerHTML = "<ul>" + snapshot.docs.map(doc => {
+      const d = doc.data();
+      const datum = d.geändertAm?.toDate().toLocaleString() ?? "Unbekannt";
+      return `<li>${datum}: <strong>${d.betrag.toFixed(2)} €</strong> ${d.autoKündigung ? "(Auto-Kündigung aktiviert)" : ""}</li>`;
+    }).join("") + "</ul>";
+  } catch (error) {
+    verlaufContainer.textContent = "❌ Fehler beim Laden des Verlaufs.";
+    console.error(error);
+  }
+}
+async function ladeVerlauf() {
+  const verlaufContainer = document.getElementById('betragVerlauf');
+  verlaufContainer.innerHTML = "⏳ Lade...";
+
+  try {
+    const snapshot = await db.collection('settings').doc('betragHistorie').collection('log')
+      .orderBy('geändertAm', 'desc')
+      .limit(10)
+      .get();
+
+    if (snapshot.empty) {
+      verlaufContainer.innerHTML = "Keine Änderungen vorhanden.";
+      return;
+    }
+
+    verlaufContainer.innerHTML = "<ul>" + snapshot.docs.map(doc => {
+      const d = doc.data();
+      const datum = d.geändertAm?.toDate().toLocaleString() ?? "Unbekannt";
+      return `<li>${datum}: <strong>${d.betrag.toFixed(2)} €</strong> ${d.autoKündigung ? "(Auto-Kündigung aktiviert)" : ""}</li>`;
+    }).join("") + "</ul>";
+  } catch (error) {
+    verlaufContainer.textContent = "❌ Fehler beim Laden des Verlaufs.";
+    console.error(error);
+  }
+}
+
+
+// Lade beim Start:
+    ladeVerlauf();
+ladeBetrag();
   </script>
   <div id="modalOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:#00000088; z-index:1000; justify-content:center; align-items:center;">
   <div style="background:white; padding:1rem; border-radius:10px; max-width:300px; box-shadow:0 0 10px rgba(0,0,0,0.3);">
