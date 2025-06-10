@@ -1,0 +1,148 @@
+<!DOCTYPE html><html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mein Eierhütten-Dashboard</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+  <style>
+    body { font-family: Arial; margin: 20px; }
+    #userInfo, #addHutForm, #myHuts, #stats { display: none; margin-top: 20px; }
+    .hut-box { border: 1px solid #ccc; padding: 10px; margin-top: 10px; }
+    .hidden { display: none; }
+    button { margin-top: 10px; }
+  </style>
+</head>
+<body><h1>Willkommen im Eierhütten-Dashboard</h1>
+<button id="loginBtn">Mit Google anmelden</button>
+<button id="logoutBtn" class="hidden">Abmelden</button><div id="userInfo">
+  <h3>Hallo, <span id="username"></span></h3>
+</div><div id="addHutForm">
+  <h2>Neue Hütte beantragen</h2>
+  <input type="text" id="beschreibung" placeholder="Beschreibung" required><br>
+  <label><input type="checkbox" id="strom"> Strom vorhanden</label><br>
+  <button onclick="submitHut()">Absenden</button>
+  <p id="submitStatus"></p>
+</div><div id="myHuts">
+  <h2>Meine Hütten</h2>
+  <div id="hutList"></div>
+</div><div id="stats">
+  <h2>Meine Statistiken</h2>
+  <p id="userStats">Lade ...</p>
+</div><script>
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.firebasestorage.app",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+  measurementId: "G-16V6K5GXDT"
+};
+
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+
+  const loginBtn = document.getElementById("loginBtn");
+  const logoutBtn = document.getElementById("logoutBtn");
+  const userInfo = document.getElementById("userInfo");
+  const usernameSpan = document.getElementById("username");
+  const addHutForm = document.getElementById("addHutForm");
+  const myHuts = document.getElementById("myHuts");
+  const hutList = document.getElementById("hutList");
+  const stats = document.getElementById("stats");
+
+  let currentUser;
+
+  loginBtn.onclick = () => {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider);
+  };
+
+  logoutBtn.onclick = () => {
+    auth.signOut();
+  };
+
+  auth.onAuthStateChanged(user => {
+    if (user) {
+      currentUser = user;
+      loginBtn.classList.add("hidden");
+      logoutBtn.classList.remove("hidden");
+      userInfo.style.display = "block";
+      usernameSpan.textContent = user.displayName;
+      addHutForm.style.display = "block";
+      myHuts.style.display = "block";
+      stats.style.display = "block";
+      loadMyHuts();
+      loadStats();
+    } else {
+      currentUser = null;
+      loginBtn.classList.remove("hidden");
+      logoutBtn.classList.add("hidden");
+      userInfo.style.display = "none";
+      addHutForm.style.display = "none";
+      myHuts.style.display = "none";
+      stats.style.display = "none";
+    }
+  });
+
+  function submitHut() {
+    const beschreibung = document.getElementById("beschreibung").value;
+    const strom = document.getElementById("strom").checked;
+
+    db.collection("eierhuetten").add({
+      uid: currentUser.uid,
+      beschreibung,
+      strom,
+      status: "offen",
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    }).then(() => {
+      document.getElementById("submitStatus").textContent = "Antrag eingereicht!";
+      document.getElementById("beschreibung").value = "";
+      document.getElementById("strom").checked = false;
+      loadMyHuts();
+    });
+  }
+
+  function loadMyHuts() {
+    hutList.innerHTML = "";
+    db.collection("eierhuetten")
+      .where("uid", "==", currentUser.uid)
+      .get().then(snapshot => {
+        snapshot.forEach(doc => {
+          const d = doc.data();
+          const div = document.createElement("div");
+          div.className = "hut-box";
+          div.innerHTML = `<b>${d.beschreibung}</b><br>
+            Strom: ${d.strom ? "Ja" : "Nein"}<br>
+            Status: ${d.status}<br>
+            <button onclick="requestDelete('${doc.id}')">Löschen</button>`;
+          hutList.appendChild(div);
+        });
+      });
+  }
+
+  function requestDelete(id) {
+    if (confirm("Möchtest du diese Hütte wirklich löschen?")) {
+      db.collection("eierhuetten").doc(id).delete().then(() => loadMyHuts());
+    }
+  }
+
+  function loadStats() {
+    db.collection("users").doc(currentUser.uid).get().then(doc => {
+      const data = doc.data();
+      if (data && data.statistik) {
+        const s = data.statistik;
+        document.getElementById("userStats").innerText =
+          `Gefahrene Kilometer: ${s.km_gefahren || 0}\n` +
+          `Eigene Hütten: ${s.anzahl_huetten || 0}`;
+      } else {
+        document.getElementById("userStats").innerText = "Noch keine Daten.";
+      }
+    });
+  }
+</script></body>
+</html>
