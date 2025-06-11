@@ -1,68 +1,39 @@
 <!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <title>Meine Eierhütten – Dashboard</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mein Hütten-Dashboard</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    body {
-      font-family: sans-serif;
-      background: #f5f5f5;
-      margin: 0;
-      padding: 0;
-    }
-    header {
-      background: #4caf50;
-      color: white;
-      padding: 1rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    #map {
-      height: 300px;
-      border-radius: 1rem;
-      margin: 1rem 0;
-    }
-    #dashboard {
-      display: none;
-      padding: 1rem;
-    }
-    .hidden {
-      display: none;
-    }
-    .card {
-      background: white;
-      padding: 1rem;
-      border-radius: 0.75rem;
-      margin-bottom: 1rem;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
+    #map { height: 300px; }
   </style>
 </head>
-<body>
-  <header>
-    <h1>Mein Dashboard</h1>
-    <button onclick="logout()">Logout</button>
-  </header>  <div id="authMessage" class="card">Bitte melde dich an, um das Dashboard zu nutzen.</div>  <div id="dashboard">
-    <div class="card">
-      <h2>Hütte einreichen</h2>
-      <input type="text" id="name" placeholder="Name der Hütte" /><br><br>
-      <textarea id="beschreibung" placeholder="Beschreibung"></textarea><br><br>
-      <input type="text" id="searchInput" placeholder="Ort suchen..." list="locationSuggestions" />
-      <datalist id="locationSuggestions"></datalist><br><br>
-      <div id="map"></div>
-      <button onclick="submitHuette()">Einreichen</button>
+<body class="bg-gray-100 min-h-screen">
+  <nav class="bg-green-600 p-4 flex justify-between text-white">
+    <h1 class="text-xl font-bold">Eierhütten Dashboard</h1>
+    <div id="auth-controls">
+      <button id="login-btn" class="bg-white text-green-600 px-4 py-1 rounded">Login</button>
     </div>
-    <div class="card">
-      <h2>Meine eingereichten Hütten</h2>
-      <div id="meineHuetten"></div>
-    </div>
-  </div>  <script>
+  </nav>  <main class="p-4" id="content" style="display: none">
+    <section class="mb-4">
+      <h2 class="text-xl font-semibold">Neue Hütte einreichen</h2>
+      <input type="text" id="name" placeholder="Name der Hütte" class="block w-full mb-2 p-2 border rounded" />
+      <input type="text" id="beschreibung" placeholder="Beschreibung" class="block w-full mb-2 p-2 border rounded" />
+      <input type="text" id="ort" placeholder="Ort suchen..." class="block w-full mb-2 p-2 border rounded" />
+      <div id="map" class="mb-2"></div>
+      <button id="submit-huette" class="bg-green-600 text-white px-4 py-2 rounded">Einreichen</button>
+    </section><section class="mb-4">
+  <h2 class="text-xl font-semibold">Meine Hütten</h2>
+  <div id="huetten-liste"></div>
+</section>
+
+  </main>  <div id="not-logged-in" class="text-center mt-10 text-gray-700">Bitte einloggen, um das Dashboard zu verwenden.</div>  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
       authDomain: "eierhuettentour.firebaseapp.com",
@@ -72,86 +43,90 @@
       appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
       measurementId: "G-16V6K5GXDT"
     };
-
     firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
     const auth = firebase.auth();
+    const db = firebase.firestore();
 
-    let map, marker;
-    function initMap(lat = 51.1657, lng = 10.4515) {
-      map = L.map('map').setView([lat, lng], 6);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(map);
+    const loginBtn = document.getElementById("login-btn");
+    const authControls = document.getElementById("auth-controls");
+    const content = document.getElementById("content");
+    const notLoggedIn = document.getElementById("not-logged-in");
 
-      marker = L.marker([lat, lng], { draggable: true }).addTo(map);
-    }
-
-    function loadLocationSuggestions() {
-      const list = document.getElementById("locationSuggestions");
-      db.collection("eierhuetten").where("status", "==", "angenommen").get().then(snapshot => {
-        list.innerHTML = "";
-        snapshot.forEach(doc => {
-          const data = doc.data();
-          const opt = document.createElement("option");
-          opt.value = data.name;
-          list.appendChild(opt);
-        });
-      });
-    }
-
-    function submitHuette() {
-      const name = document.getElementById("name").value;
-      const beschreibung = document.getElementById("beschreibung").value;
-      const pos = marker.getLatLng();
-
-      const data = {
-        name,
-        beschreibung,
-        lat: pos.lat,
-        lng: pos.lng,
-        status: "offen",
-        userId: auth.currentUser.uid,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-      };
-
-      db.collection("eierhuetten").add(data).then(() => {
-        alert("Hütte eingereicht und wartet auf Freigabe.");
-        document.getElementById("name").value = "";
-        document.getElementById("beschreibung").value = "";
-        loadMeineHuetten();
-      });
-    }
-
-    function loadMeineHuetten() {
-      const container = document.getElementById("meineHuetten");
-      container.innerHTML = "Lade...";
-      db.collection("eierhuetten").where("userId", "==", auth.currentUser.uid).get().then(snapshot => {
-        container.innerHTML = "";
-        snapshot.forEach(doc => {
-          const d = doc.data();
-          const div = document.createElement("div");
-          div.innerHTML = `<strong>${d.name}</strong><br>Status: ${d.status}<br><small>${d.beschreibung || "Keine Beschreibung"}</small>`;
-          container.appendChild(div);
-        });
-      });
-    }
-
-    function logout() {
-      auth.signOut().then(() => location.reload());
-    }
+    loginBtn.onclick = () => {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      auth.signInWithPopup(provider);
+    };
 
     auth.onAuthStateChanged(user => {
       if (user) {
-        document.getElementById("authMessage").style.display = "none";
-        document.getElementById("dashboard").style.display = "block";
-        initMap();
-        loadLocationSuggestions();
-        loadMeineHuetten();
+        content.style.display = "block";
+        notLoggedIn.style.display = "none";
+        authControls.innerHTML = `
+          <span>${user.displayName}</span>
+          <button id="logout-btn" class="bg-white text-green-600 px-4 py-1 rounded ml-2">Logout</button>
+        `;
+        document.getElementById("logout-btn").onclick = () => auth.signOut();
+        ladeMeineHuetten(user.uid);
       } else {
-        document.getElementById("authMessage").style.display = "block";
-        document.getElementById("dashboard").style.display = "none";
+        content.style.display = "none";
+        notLoggedIn.style.display = "block";
+        authControls.innerHTML = '<button id="login-btn" class="bg-white text-green-600 px-4 py-1 rounded">Login</button>';
+        document.getElementById("login-btn").onclick = () => {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          auth.signInWithPopup(provider);
+        };
       }
     });
+
+    let map = L.map('map').setView([51.1657, 10.4515], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    let marker = null;
+    map.on('click', function(e) {
+      if (marker) map.removeLayer(marker);
+      marker = L.marker(e.latlng).addTo(map);
+    });
+
+    document.getElementById("submit-huette").onclick = async () => {
+      const name = document.getElementById("name").value.trim();
+      const beschreibung = document.getElementById("beschreibung").value.trim();
+      const ort = document.getElementById("ort").value.trim();
+      const user = auth.currentUser;
+      if (!user || !name || !beschreibung || !marker) return;
+
+      await db.collection("eierhuetten").add({
+        name,
+        beschreibung,
+        ort,
+        uid: user.uid,
+        status: "offen",
+        position: marker.getLatLng(),
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      document.getElementById("name").value = "";
+      document.getElementById("beschreibung").value = "";
+      document.getElementById("ort").value = "";
+      if (marker) map.removeLayer(marker);
+      ladeMeineHuetten(user.uid);
+    };
+
+    async function ladeMeineHuetten(uid) {
+      const huettenDiv = document.getElementById("huetten-liste");
+      const snapshot = await db.collection("eierhuetten").where("uid", "==", uid).get();
+      huettenDiv.innerHTML = "";
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        huettenDiv.innerHTML += `
+          <div class="bg-white p-4 mb-2 shadow rounded">
+            <div class="font-semibold">${d.name}</div>
+            <div class="text-sm text-gray-700 mb-1">${d.beschreibung}</div>
+            <div class="text-sm text-gray-500">Status: ${d.status}</div>
+          </div>
+        `;
+      });
+    }
   </script></body>
 </html>
