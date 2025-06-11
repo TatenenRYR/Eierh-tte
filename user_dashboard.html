@@ -2,34 +2,41 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Mein Hüttendashboard</title>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
+  <title>Meine Eierhütte – Dashboard</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f4f4f4; }
+    header { background: #4CAF50; color: white; padding: 1rem; display: flex; justify-content: space-between; align-items: center; }
+    main { padding: 1rem; }
+    .card { background: white; padding: 1rem; margin-bottom: 1rem; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+    #map { height: 300px; border-radius: 8px; margin-top: 1rem; }
+    .hidden { display: none; }
+    input, button, select { padding: 0.5rem; margin: 0.25rem 0; border-radius: 4px; border: 1px solid #ccc; }
+  </style>
 </head>
-<body class="bg-gray-100">
-  <nav class="bg-white shadow p-4 flex justify-between">
-    <span class="font-bold">Mein Dashboard</span>
-    <div id="user-section"></div>
-  </nav>  <main class="p-4 max-w-3xl mx-auto">
-    <h1 class="text-2xl font-bold mb-4">Meine Eierhütten</h1>
-    <div id="huetten-list" class="space-y-4"></div><h2 class="text-xl font-semibold mt-8">Neue Hütte beantragen</h2>
-<form id="new-huette-form" class="bg-white p-4 rounded shadow space-y-4">
-  <input type="text" id="beschreibung" placeholder="Beschreibung" class="w-full border p-2 rounded" required>
-  <input type="text" id="strom" placeholder="Stromversorgung (Ja/Nein)" class="w-full border p-2 rounded">
-  <input type="file" id="foto" class="w-full">
-  <button class="bg-blue-500 text-white px-4 py-2 rounded" type="submit">Antrag stellen</button>
-</form>
-
-<div class="mt-10">
-  <label class="inline-flex items-center">
-    <input type="checkbox" id="debugToggle" class="form-checkbox">
-    <span class="ml-2">Konsole anzeigen (Debug-Modus)</span>
-  </label>
-</div>
-
+<body>
+  <header>
+    <h1>Meine Eierhütte</h1>
+    <div>
+      <span id="username"></span>
+      <button id="logoutBtn">Logout</button>
+    </div>
+  </header>  <main>
+    <div class="card">
+      <h2>Neue Hütte eintragen</h2>
+      <input type="text" id="huettenName" placeholder="Name der Hütte" required />
+      <input type="text" id="ortName" placeholder="Ort suchen und übernehmen" />
+      <button onclick="searchOrt()">Ort übernehmen</button>
+      <div id="map"></div>
+      <input type="number" id="lat" placeholder="Breitengrad" step="any" />
+      <input type="number" id="lng" placeholder="Längengrad" step="any" />
+      <button onclick="speichereHütte()">Speichern</button>
+    </div>
   </main>  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
@@ -40,97 +47,87 @@
       appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
       measurementId: "G-16V6K5GXDT"
     };
-
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
     const db = firebase.firestore();
-    const storage = firebase.storage();
 
-    const userSection = document.getElementById("user-section");
-    const huettenList = document.getElementById("huetten-list");
-    const form = document.getElementById("new-huette-form");
-    const debugToggle = document.getElementById("debugToggle");
+    let user, map, marker;
 
-    let currentUser = null;
-
-    auth.onAuthStateChanged(async user => {
-      if (user) {
-        currentUser = user;
-        userSection.innerHTML = `
-          <span>${user.displayName}</span>
-          <button class="ml-4 text-red-500" onclick="logout()">Logout</button>`;
-        loadHuetten();
-        loadDebugSetting();
+    auth.onAuthStateChanged(u => {
+      if (u) {
+        user = u;
+        document.getElementById('username').innerText = u.displayName;
+        initMap();
       } else {
-        const provider = new firebase.auth.GoogleAuthProvider();
-        auth.signInWithPopup(provider).catch(console.error);
+        window.location.href = '/login.html';
       }
     });
 
-    function logout() {
-      auth.signOut().then(() => location.reload());
-    }
+    document.getElementById("logoutBtn").onclick = () => {
+      auth.signOut();
+    };
 
-    async function loadHuetten() {
-      const snapshot = await db.collection("eierhuetten").where("owner", "==", currentUser.uid).get();
-      huettenList.innerHTML = "";
-      snapshot.forEach(doc => {
-        const d = doc.data();
-        huettenList.innerHTML += `
-          <div class="bg-white p-4 rounded shadow">
-            <p><strong>Beschreibung:</strong> ${d.beschreibung}</p>
-            <p><strong>Strom:</strong> ${d.strom}</p>
-            <p><strong>Status:</strong> ${d.status}</p>
-            <button class="text-red-500 mt-2" onclick="deleteHuette('${doc.id}')">Löschen</button>
-          </div>`;
+    function initMap() {
+      map = L.map('map').setView([51, 10], 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+      marker = L.marker([51, 10], { draggable: true }).addTo(map);
+      marker.on('dragend', function (e) {
+        const pos = marker.getLatLng();
+        document.getElementById('lat').value = pos.lat;
+        document.getElementById('lng').value = pos.lng;
+      });
+
+      map.on('click', function (e) {
+        marker.setLatLng(e.latlng);
+        document.getElementById('lat').value = e.latlng.lat;
+        document.getElementById('lng').value = e.latlng.lng;
       });
     }
 
-    async function deleteHuette(id) {
-      if (confirm("Hütte wirklich löschen?")) {
-        await db.collection("eierhuetten").doc(id).delete();
-        loadHuetten();
-      }
-    }
+    async function speichereHütte() {
+      const name = document.getElementById('huettenName').value;
+      const lat = parseFloat(document.getElementById('lat').value);
+      const lng = parseFloat(document.getElementById('lng').value);
 
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      const beschreibung = document.getElementById("beschreibung").value;
-      const strom = document.getElementById("strom").value;
-      const fotoFile = document.getElementById("foto").files[0];
-      let fotoUrl = "";
-
-      if (fotoFile) {
-        const ref = storage.ref(`huetten/${currentUser.uid}_${Date.now()}`);
-        await ref.put(fotoFile);
-        fotoUrl = await ref.getDownloadURL();
+      if (!name || isNaN(lat) || isNaN(lng)) {
+        alert("Bitte alle Felder korrekt ausfüllen.");
+        return;
       }
 
       await db.collection("eierhuetten").add({
-        beschreibung,
-        strom,
+        name,
+        lat,
+        lng,
         status: "offen",
-        owner: currentUser.uid,
-        foto: fotoUrl,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        userId: user.uid,
+        userName: user.displayName,
+        erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+        monatlicherBetrag: 2.00
       });
-      form.reset();
-      loadHuetten();
-      alert("Antrag eingereicht. Wird von Admin geprüft.");
-    };
 
-    async function loadDebugSetting() {
-      const doc = await db.collection("settings").doc(currentUser.uid).get();
-      if (doc.exists && doc.data().debug) {
-        debugToggle.checked = true;
-        console.log("Debug-Modus aktiv");
-      }
+      alert("Hütte gespeichert! Sie muss noch vom Admin freigegeben werden.");
     }
 
-    debugToggle.onchange = async () => {
-      await db.collection("settings").doc(currentUser.uid).set({
-        debug: debugToggle.checked
-      }, { merge: true });
+    async function searchOrt() {
+      const ort = document.getElementById('ortName').value;
+      if (!ort) return;
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(ort)}`);
+        const data = await res.json();
+        if (data.length > 0) {
+          const { lat, lon } = data[0];
+          map.setView([lat, lon], 14);
+          marker.setLatLng([lat, lon]);
+          document.getElementById('lat').value = lat;
+          document.getElementById('lng').value = lon;
+        } else {
+          alert("Ort nicht gefunden");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Fehler bei der Ortssuche");
+      }
     }
   </script></body>
 </html>
