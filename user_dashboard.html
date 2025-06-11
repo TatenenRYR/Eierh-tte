@@ -1,167 +1,141 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <title>User Dashboard – Eierhütten</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mein Hütten-Dashboard</title>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
-  <link href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" rel="stylesheet">
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    body { font-family: sans-serif; margin: 0; background: #f8f9fa; }
-    header { background: #28a745; color: white; padding: 1rem; text-align: center; }
-    #logoutBtn { float: right; background: white; color: #28a745; border: none; padding: 0.5rem; cursor: pointer; }
-    #dashboard { padding: 1rem; display: none; }
-    .card { background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 1rem; margin-bottom: 1rem; }
-    #map { height: 300px; margin-top: 1rem; border-radius: 8px; }
-    input, textarea, button, select {
-      display: block; width: 100%; padding: 0.5rem; margin-bottom: 0.5rem; border: 1px solid #ccc; border-radius: 4px;
-    }
+    #map { height: 300px; }
   </style>
 </head>
-<body>
+<body class="bg-gray-100 min-h-screen">
+  <nav class="bg-green-600 p-4 flex justify-between text-white">
+    <h1 class="text-xl font-bold">Eierhütten Dashboard</h1>
+    <div id="auth-controls">
+      <button id="login-btn" class="bg-white text-green-600 px-4 py-1 rounded">Login</button>
+    </div>
+  </nav>
 
-<header>
-  Eierhütten – Benutzer-Dashboard
-  <button id="logoutBtn">Logout</button>
-</header>
+  <main class="p-4" id="content" style="display: none">
+    <section class="mb-4">
+      <h2 class="text-xl font-semibold">Neue Hütte einreichen</h2>
+      <input type="text" id="name" placeholder="Name der Hütte" class="block w-full mb-2 p-2 border rounded" />
+      <input type="text" id="beschreibung" placeholder="Beschreibung" class="block w-full mb-2 p-2 border rounded" />
+      <input type="text" id="ort" placeholder="Ort suchen..." class="block w-full mb-2 p-2 border rounded" />
+      <div id="map" class="mb-2"></div>
+      <button id="submit-huette" class="bg-green-600 text-white px-4 py-2 rounded">Einreichen</button>
+    </section>
 
-<div id="loginPrompt" style="padding:2rem; text-align:center;">
-  <button onclick="signInWithGoogle()">Mit Google anmelden</button>
-</div>
+    <section class="mb-4">
+      <h2 class="text-xl font-semibold">Meine Hütten</h2>
+      <div id="huetten-liste"></div>
+    </section>
+  </main>
 
-<div id="dashboard">
-  <div class="card">
-    <h3>Neue Hütte einreichen</h3>
-    <input id="hName" placeholder="Name der Hütte">
-    <textarea id="hDescription" placeholder="Beschreibung"></textarea>
-    <input id="hLat" placeholder="Latitude">
-    <input id="hLng" placeholder="Longitude">
-    <button onclick="submitHut()">Einreichen</button>
-  </div>
+  <div id="not-logged-in" class="text-center mt-10 text-gray-700">Bitte einloggen, um das Dashboard zu verwenden.</div>
 
-  <div class="card">
-    <h3>Aktueller Standort & Karte</h3>
-    <div id="map"></div>
-    <input id="search" placeholder="Ort suchen..." oninput="searchPlaces(this.value)">
-    <div id="suggestions"></div>
-  </div>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.firebasestorage.app",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
 
-  <div class="card">
-    <h3>Meine Hütten</h3>
-    <div id="myHuts"></div>
-  </div>
-</div>
+    const loginBtn = document.getElementById("login-btn");
+    const authControls = document.getElementById("auth-controls");
+    const content = document.getElementById("content");
+    const notLoggedIn = document.getElementById("not-logged-in");
 
-<script>
-  const firebaseConfig = {
-    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-    authDomain: "eierhuettentour.firebaseapp.com",
-    projectId: "eierhuettentour",
-    storageBucket: "eierhuettentour.firebasestorage.app",
-    messagingSenderId: "348272135205",
-    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
-    measurementId: "G-16V6K5GXDT"
-  };
+    loginBtn.onclick = () => {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      auth.signInWithPopup(provider);
+    };
 
-  firebase.initializeApp(firebaseConfig);
-  const auth = firebase.auth();
-  const db = firebase.firestore();
-
-  let map;
-  let user;
-
-  auth.onAuthStateChanged(u => {
-    if (u) {
-      user = u;
-      document.getElementById('loginPrompt').style.display = 'none';
-      document.getElementById('dashboard').style.display = 'block';
-      initMap();
-      loadUserHuts();
-    } else {
-      document.getElementById('dashboard').style.display = 'none';
-      document.getElementById('loginPrompt').style.display = 'block';
-    }
-  });
-
-  function signInWithGoogle() {
-    const provider = new firebase.auth.GoogleAuthProvider();
-    auth.signInWithPopup(provider);
-  }
-
-  document.getElementById("logoutBtn").addEventListener("click", () => {
-    auth.signOut();
-  });
-
-  function initMap() {
-    map = L.map('map').setView([51.5, 10], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-    navigator.geolocation.getCurrentPosition(pos => {
-      const { latitude, longitude } = pos.coords;
-      L.marker([latitude, longitude]).addTo(map).bindPopup("Dein Standort").openPopup();
-      map.setView([latitude, longitude], 13);
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        content.style.display = "block";
+        notLoggedIn.style.display = "none";
+        authControls.innerHTML = `
+          <span>${user.displayName}</span>
+          <button id="logout-btn" class="bg-white text-green-600 px-4 py-1 rounded ml-2">Logout</button>
+        `;
+        document.getElementById("logout-btn").onclick = () => auth.signOut();
+        ladeMeineHuetten(user.uid);
+      } else {
+        content.style.display = "none";
+        notLoggedIn.style.display = "block";
+        authControls.innerHTML = '<button id="login-btn" class="bg-white text-green-600 px-4 py-1 rounded">Login</button>';
+        document.getElementById("login-btn").onclick = () => {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          auth.signInWithPopup(provider);
+        };
+      }
     });
-  }
 
-  function submitHut() {
-    const name = document.getElementById("hName").value;
-    const desc = document.getElementById("hDescription").value;
-    const lat = parseFloat(document.getElementById("hLat").value);
-    const lng = parseFloat(document.getElementById("hLng").value);
+    let map = L.map('map').setView([51.1657, 10.4515], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
 
-    if (!name || isNaN(lat) || isNaN(lng)) return alert("Bitte gültige Daten eingeben.");
-
-    db.collection("eierhuetten").add({
-      name,
-      description: desc,
-      lat,
-      lng,
-      status: "offen",
-      user: user.uid,
-      timestamp: firebase.firestore.FieldValue.serverTimestamp()
-    }).then(() => {
-      alert("Eingereicht! Nach Admin-Freigabe sichtbar.");
-      loadUserHuts();
+    let marker = null;
+    map.on('click', function(e) {
+      if (marker) map.removeLayer(marker);
+      marker = L.marker(e.latlng).addTo(map);
     });
-  }
 
-  function loadUserHuts() {
-    db.collection("eierhuetten").where("user", "==", user.uid).get().then(snapshot => {
-      const container = document.getElementById("myHuts");
-      container.innerHTML = "";
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        const card = document.createElement("div");
-        card.innerHTML = `<b>${data.name}</b> – Status: ${data.status} <br><small>${data.description || ''}</small>`;
-        container.appendChild(card);
+    document.getElementById("submit-huette").onclick = async () => {
+      const name = document.getElementById("name").value.trim();
+      const beschreibung = document.getElementById("beschreibung").value.trim();
+      const ort = document.getElementById("ort").value.trim();
+      const user = auth.currentUser;
+      if (!user || !name || !beschreibung || !marker) return;
+
+      await db.collection("eierhuetten").add({
+        name,
+        beschreibung,
+        ort,
+        uid: user.uid,
+        status: "offen",
+        position: marker.getLatLng(),
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
-    });
-  }
 
-  function searchPlaces(query) {
-    if (query.length < 2) return document.getElementById("suggestions").innerHTML = "";
-    db.collection("eierhuetten").orderBy("name").startAt(query).endAt(query + "\uf8ff").get().then(snapshot => {
-      const suggestions = document.getElementById("suggestions");
-      suggestions.innerHTML = "";
+      document.getElementById("name").value = "";
+      document.getElementById("beschreibung").value = "";
+      document.getElementById("ort").value = "";
+      if (marker) map.removeLayer(marker);
+      ladeMeineHuetten(user.uid);
+    };
+
+    async function ladeMeineHuetten(uid) {
+      const huettenDiv = document.getElementById("huetten-liste");
+      const snapshot = await db.collection("eierhuetten").where("uid", "==", uid).get();
+      huettenDiv.innerHTML = "";
       snapshot.forEach(doc => {
         const d = doc.data();
-        const div = document.createElement("div");
-        div.textContent = d.name;
-        div.style.cursor = "pointer";
-        div.onclick = () => {
-          document.getElementById("hName").value = d.name;
-          document.getElementById("hLat").value = d.lat;
-          document.getElementById("hLng").value = d.lng;
-          map.setView([d.lat, d.lng], 15);
-        };
-        suggestions.appendChild(div);
+        huettenDiv.innerHTML += `
+          <div class="bg-white p-4 mb-2 shadow rounded">
+            <div class="font-semibold">${d.name}</div>
+            <div class="text-sm text-gray-700 mb-1">${d.beschreibung}</div>
+            <div class="text-sm text-gray-500">Status: ${d.status}</div>
+          </div>
+        `;
       });
-    });
-  }
-</script>
-
+    }
+  </script>
 </body>
 </html>
