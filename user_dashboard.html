@@ -2,121 +2,198 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Meine Eierhütten</title>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <title>Meine Hütte – Dashboard</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
   <style>
-    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f0f4f8; }
-    header, main { padding: 20px; }
-    header { background: #4CAF50; color: white; display: flex; justify-content: space-between; align-items: center; }
-    .card { background: white; padding: 20px; margin-bottom: 20px; border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
-    #map { height: 300px; border-radius: 12px; margin-bottom: 10px; }
-    label { display: block; margin-top: 10px; }
-    input, textarea, button { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ccc; margin-top: 5px; }
-    button { background: #4CAF50; color: white; cursor: pointer; margin-top: 15px; }
-    button.edit { background: #0277bd; }
-    button.delete { background: #b71c1c; }
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      background: #f7f7f7;
+    }
+    header {
+      background: #2a7f62;
+      color: white;
+      padding: 1rem;
+      text-align: center;
+    }
+    #main {
+      max-width: 800px;
+      margin: 1rem auto;
+      padding: 1rem;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    #map { height: 300px; margin-top: 1rem; }
+    input, textarea, button {
+      display: block;
+      width: 100%;
+      margin: 0.5rem 0;
+      padding: 0.5rem;
+      font-size: 1rem;
+    }
+    .hut-entry {
+      border: 1px solid #ccc;
+      padding: 0.5rem;
+      margin-top: 0.5rem;
+      border-radius: 6px;
+      background: #fafafa;
+    }
+    .status {
+      font-size: 0.9rem;
+      color: #777;
+    }
   </style>
 </head>
 <body>
-<header>
-  <h2>Meine Eierhütten</h2>
-  <button id="logoutBtn">Logout</button>
-</header>
-<main>
-  <div class="card">
-    <h3>Neue Hütte einreichen</h3>
-    <label for="hutName">Name der Hütte *</label>
-    <input id="hutName" type="text" placeholder="z.B. Bergblick" required /><label for="description">Beschreibung *</label>
-<textarea id="description" rows="4" placeholder="Kurze Beschreibung..." required></textarea>
+  <header>
+    <h1>Meine Hütte – Dashboard</h1>
+    <button id="loginBtn">Login mit Google</button>
+    <button id="logoutBtn" style="display:none">Logout</button>
+  </header>
+  <div id="main" style="display:none">
+    <h2>Hütte eintragen oder bearbeiten</h2>
+    <input id="name" placeholder="Hüttenname" />
+    <textarea id="beschreibung" placeholder="Beschreibung"></textarea>
+    <input id="ortssuche" placeholder="Ort suchen (nur eingetragene Orte)" />
+    <div id="map"></div>
+    <button onclick="saveHut()">Speichern</button><h2>Meine Einträge</h2>
+<div id="hutList"></div>
 
-<label for="locationSearch">Ort suchen</label>
-<input id="locationSearch" type="text" placeholder="Ort, Adresse..." />
-<button onclick="searchOrt()">Ort übernehmen</button>
-
-<div id="map"></div>
-
-<button id="submitHut">Einreichen</button>
-
-  </div>  <div class="card">
-    <h3>Meine eingereichten Hütten</h3>
-    <div id="userHuts">Lade...</div>
   </div>
-</main><script>
-  // Firebase config
-  const firebaseConfig = { apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro", authDomain: "eierhuettentour.firebaseapp.com", projectId: "eierhuettentour", storageBucket: "eierhuettentour.firebasestorage.app", messagingSenderId: "348272135205", appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc" };
-  firebase.initializeApp(firebaseConfig);
-  const auth = firebase.auth();
-  const db = firebase.firestore();
+  <div id="notLoggedIn" style="text-align:center; padding:2rem;">
+    <p>Bitte logge dich ein, um dein Dashboard zu benutzen.</p>
+  </div>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.appspot.com",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();let currentUser = null;
+let currentLatLng = { lat: 51, lng: 10 };
 
-  let currentUser, map, marker;
+const map = L.map('map').setView([51, 10], 6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+const marker = L.marker([51, 10], { draggable: true }).addTo(map);
+marker.on('move', e => currentLatLng = e.latlng);
 
-  auth.onAuthStateChanged(user => {
-    if (user) {
-      currentUser = user;
-      loadUserHuts();
-      initMap();
-    } else {
-      firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
+document.getElementById('ortssuche').addEventListener('input', async (e) => {
+  const query = e.target.value.trim();
+  if (query.length > 3) {
+    const snapshot = await db.collection('eierhuetten').where('name', '>=', query).where('name', '<=', query + '\uf8ff').get();
+    if (!snapshot.empty) {
+      const doc = snapshot.docs[0].data();
+      const lat = doc.lat;
+      const lng = doc.lng;
+      map.setView([lat, lng], 14);
+      marker.setLatLng([lat, lng]);
+      currentLatLng = { lat, lng };
     }
+  }
+});
+
+function saveHut() {
+  const name = document.getElementById('name').value;
+  const beschreibung = document.getElementById('beschreibung').value;
+  if (!name || !beschreibung) return alert('Bitte Name und Beschreibung angeben');
+
+  db.collection('eierhuetten').add({
+    name,
+    beschreibung,
+    lat: currentLatLng.lat,
+    lng: currentLatLng.lng,
+    status: 'offen',
+    user: currentUser.uid,
+    userEmail: currentUser.email
+  }).then(() => {
+    alert('Gespeichert');
+    loadEntries();
   });
+}
 
-  document.getElementById('logoutBtn').onclick = () => auth.signOut();
+function loadEntries() {
+  db.collection('eierhuetten').where('user', '==', currentUser.uid).get()
+    .then(snapshot => {
+      const container = document.getElementById('hutList');
+      container.innerHTML = '';
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const div = document.createElement('div');
+        div.className = 'hut-entry';
+        div.innerHTML = `
+          <strong>${data.name}</strong>
+          <p>${data.beschreibung}</p>
+          <div class="status">Status: ${data.status}</div>
+          <button onclick="editHut('${doc.id}', '${data.name}', '${data.beschreibung}')">Bearbeiten</button>
+          <button onclick="deleteHut('${doc.id}')">Löschen</button>
+        `;
+        container.appendChild(div);
+      });
+    });
+}
 
-  function initMap() {
-    map = L.map('map').setView([51.1657, 10.4515], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    marker = L.marker([51.1657, 10.4515], { draggable: true }).addTo(map);
-    marker.on('dragend', () => {});
-  }
-
-  async function searchOrt() {
-    const q = document.getElementById('locationSearch').value;
-    if (!q) return;
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}`);
-    const data = await res.json();
-    if (data.length) {
-      const { lat, lon } = data[0];
-      map.setView([lat, lon], 14);
-      marker.setLatLng([lat, lon]);
-    } else alert('Ort nicht gefunden');
-  }
-
-  document.getElementById('submitHut').onclick = async () => {
-    const name = document.getElementById('hutName').value.trim();
-    const desc = document.getElementById('description').value.trim();
-    const pos = marker.getLatLng();
-    if (!name || !desc) return alert('Bitte Name und Beschreibung ausfüllen');
-    await db.collection('eierhuetten').add({ name, beschreibung: desc, standort: new firebase.firestore.GeoPoint(pos.lat,pos.lng), userId: currentUser.uid, status: 'offen', timestamp: firebase.firestore.FieldValue.serverTimestamp() });
-    loadUserHuts();
-  };
-
-  async function loadUserHuts() {
-    const snap = await db.collection('eierhuetten').where('userId','==',currentUser.uid).get();
-    const container = document.getElementById('userHuts'); container.innerHTML = '';
-    snap.forEach(doc => {
-      const d = doc.data();
-      const div = document.createElement('div'); div.className='card';
-      div.innerHTML = `
-        <strong>${d.name}</strong> <small>(${d.status})</small><br>
-        ${d.beschreibung}<br>
-        <button class='edit' onclick="editHut('${doc.id}','${d.name}','${d.beschreibung}')">Bearbeiten</button>
-        <button class='delete' onclick="deleteHut('${doc.id}')">Löschen</button>
-      `;
-      container.appendChild(div);
+function editHut(id, name, beschreibung) {
+  document.getElementById('name').value = name;
+  document.getElementById('beschreibung').value = beschreibung;
+  document.querySelector('button[onclick="saveHut()"]').onclick = () => {
+    const newName = document.getElementById('name').value;
+    const newDesc = document.getElementById('beschreibung').value;
+    db.collection('eierhuetten').doc(id).update({
+      name: newName,
+      beschreibung: newDesc,
+      lat: currentLatLng.lat,
+      lng: currentLatLng.lng,
+      status: 'überarbeitet'
+    }).then(() => {
+      alert('Aktualisiert');
+      loadEntries();
     });
   }
+}
 
-  function editHut(id,name,desc) {
-    const n = prompt('Neuer Name:',name); const d = prompt('Neue Beschreibung:',desc);
-    if (n&&d) db.collection('eierhuetten').doc(id).update({ name:n, beschreibung:d, status:'überarbeitet' }).then(loadUserHuts);
+function deleteHut(id) {
+  if (confirm('Wirklich löschen?')) {
+    db.collection('eierhuetten').doc(id).delete().then(loadEntries);
   }
+}
 
-  function deleteHut(id) {
-    if(confirm('Löschen?')) db.collection('eierhuetten').doc(id).delete().then(loadUserHuts);
+auth.onAuthStateChanged(user => {
+  if (user) {
+    currentUser = user;
+    document.getElementById('main').style.display = 'block';
+    document.getElementById('notLoggedIn').style.display = 'none';
+    document.getElementById('loginBtn').style.display = 'none';
+    document.getElementById('logoutBtn').style.display = 'inline';
+    loadEntries();
+  } else {
+    currentUser = null;
+    document.getElementById('main').style.display = 'none';
+    document.getElementById('notLoggedIn').style.display = 'block';
+    document.getElementById('loginBtn').style.display = 'inline';
+    document.getElementById('logoutBtn').style.display = 'none';
   }
-</script></body>
+});
+
+document.getElementById('loginBtn').onclick = () => {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider);
+};
+document.getElementById('logoutBtn').onclick = () => auth.signOut();
+
+  </script>
+</body>
 </html>
