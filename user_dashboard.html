@@ -1,93 +1,57 @@
 <!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mein Eierhütten-Dashboard</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>User Dashboard – Eierhütten</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <style>
     body {
-      font-family: Arial, sans-serif;
-      background: #f5f5f5;
-      margin: 0;
-      padding: 0;
+      background-color: #f8f9fa;
     }
-    header {
-      background: #79b265;
-      color: white;
-      padding: 1rem;
-      text-align: center;
-      font-size: 1.5rem;
+    .navbar {
+      margin-bottom: 20px;
     }
-    main {
-      padding: 1rem;
-      max-width: 900px;
-      margin: auto;
+    .card {
+      margin-bottom: 20px;
     }
-    section {
-      background: white;
-      padding: 1rem;
-      margin-bottom: 1rem;
-      border-radius: 8px;
-      box-shadow: 0 0 5px rgba(0,0,0,0.1);
-    }
-    h2 {
-      margin-top: 0;
-    }
-    label {
-      display: block;
-      margin: 0.5rem 0 0.2rem;
-    }
-    input, textarea {
+    #map, .mini-map {
+      height: 300px;
       width: 100%;
-      padding: 0.5rem;
-      margin-bottom: 1rem;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-    }
-    #map { height: 250px; margin-bottom: 1rem; }
-    .hut-card {
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      padding: 1rem;
-      margin-bottom: 1rem;
-      background: #fafafa;
     }
     .mini-map {
       height: 150px;
-      margin-top: 0.5rem;
-      border-radius: 4px;
-    }
-    details summary {
-      cursor: pointer;
-      font-weight: bold;
+      pointer-events: none;
     }
   </style>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
 </head>
 <body>
-  <header>Mein Eierhütten-Dashboard</header>
-  <main>
-    <section>
-      <h2>Neue Eierhütte einreichen</h2>
-      <form id="hutForm">
-        <label for="title">Titel</label>
-        <input type="text" id="title" required><label for="desc">Beschreibung</label>
-    <textarea id="desc"></textarea>
+  <nav class="navbar navbar-expand-lg navbar-dark bg-success">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="#">Eierhütten Dashboard</a>
+      <div class="d-flex">
+        <button id="loginBtn" class="btn btn-light me-2">Login</button>
+        <button id="logoutBtn" class="btn btn-outline-light d-none">Logout</button>
+      </div>
+    </div>
+  </nav>  <div class="container" id="dashboard" style="display:none">
+    <h3>Meine Eierhütten</h3>
+    <div id="myHuts" class="row"></div><hr />
+<h3>Neue Eierhütte einreichen</h3>
+<form id="submitHutForm">
+  <div class="mb-3">
+    <label class="form-label">Name der Hütte</label>
+    <input type="text" id="hutName" class="form-control" required />
+  </div>
+  <div id="map"></div>
+  <button class="btn btn-success mt-3" type="submit">Einreichen</button>
+</form>
 
-    <label for="abo">Abo-Modell (€ / Monat)</label>
-    <input type="number" id="abo" step="0.01" min="0" required>
-
-    <div id="map"></div>
-
-    <button type="submit">Einreichen</button>
-  </form>
-</section>
-
-<section>
-  <h2>Meine Eierhütten</h2>
-  <div id="myHuts"></div>
-</section>
-
-  </main>  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script>
+  </div>  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
       authDomain: "eierhuettentour.firebaseapp.com",
@@ -97,82 +61,113 @@
       appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
     };
     firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
     const auth = firebase.auth();
+    const db = firebase.firestore();
 
-    let lat = 0, lng = 0;
-    let map, marker;
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const dashboard = document.getElementById('dashboard');
+    let map, marker, currentUser;
+
+    loginBtn.addEventListener('click', () => {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      auth.signInWithPopup(provider);
+    });
+
+    logoutBtn.addEventListener('click', () => {
+      auth.signOut();
+    });
+
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        currentUser = user;
+        loginBtn.classList.add('d-none');
+        logoutBtn.classList.remove('d-none');
+        dashboard.style.display = 'block';
+        initMap();
+        loadMyHuts();
+      } else {
+        currentUser = null;
+        loginBtn.classList.remove('d-none');
+        logoutBtn.classList.add('d-none');
+        dashboard.style.display = 'none';
+      }
+    });
 
     function initMap() {
-      map = L.map('map').setView([51, 10], 6);
+      map = L.map('map').setView([51.1657, 10.4515], 6);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap'
+        attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
-      marker = L.marker([51, 10], { draggable: true }).addTo(map);
-      marker.on('dragend', () => {
-        const pos = marker.getLatLng();
-        lat = pos.lat;
-        lng = pos.lng;
-      });
-      map.on('click', e => {
+      marker = L.marker([51.1657, 10.4515], { draggable: true }).addTo(map);
+
+      map.on('click', function(e) {
         marker.setLatLng(e.latlng);
-        lat = e.latlng.lat;
-        lng = e.latlng.lng;
       });
     }
 
-    async function loadHuts(uid) {
-      const list = document.getElementById('myHuts');
-      list.innerHTML = '';
-      const query = await db.collection('eierhuetten_antraege').where('uid', '==', uid).get();
-      query.forEach(doc => {
-        const d = doc.data();
-        const card = document.createElement('div');
-        card.className = 'hut-card';
-        card.innerHTML = `
-          <strong>${d.title}</strong><br>
-          ${d.desc || ''}<br>
-          <small>Status: ${d.status || 'offen'}</small>
-          <div id="miniMap${doc.id}" class="mini-map"></div>
-          <details><summary>Verlauf</summary><pre>${(d.history || []).map(h => `${h.timestamp} - ${h.action}`).join('\n')}</pre></details>`;
-    list.appendChild(card);
-    const mini = L.map(`miniMap${doc.id}`, { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, touchZoom: false });
-    mini.setView([d.lat, d.lng], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mini);
-    L.marker([d.lat, d.lng]).addTo(mini);
-  });
-}
+    document.getElementById('submitHutForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('hutName').value;
+      const coords = marker.getLatLng();
 
-document.getElementById('hutForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const title = document.getElementById('title').value;
-  const desc = document.getElementById('desc').value;
-  const abo = parseFloat(document.getElementById('abo').value);
-  const user = auth.currentUser;
-  if (!user) return alert("Nicht eingeloggt");
-  await db.collection('eierhuetten_antraege').add({
-    uid: user.uid,
-    title,
-    desc,
-    abo,
-    lat,
-    lng,
-    status: 'offen',
-    history: [{ timestamp: new Date().toISOString(), action: 'Eintrag erstellt' }]
-  });
-  alert('Eingereicht!');
-  loadHuts(user.uid);
-});
+      await db.collection('eierhuetten_antraege').add({
+        name,
+        userId: currentUser.uid,
+        status: 'offen',
+        lat: coords.lat,
+        lng: coords.lng,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
 
-auth.onAuthStateChanged(user => {
-  if (user) {
-    initMap();
-    loadHuts(user.uid);
-  } else {
-    alert('Bitte anmelden, um Eierhütten zu verwalten.');
-  }
-});
+      alert("Eierhütte eingereicht!");
+      document.getElementById('submitHutForm').reset();
+      marker.setLatLng([51.1657, 10.4515]);
+      map.setView([51.1657, 10.4515], 6);
+      loadMyHuts();
+    });
 
-  </script>
-</body>
+    async function loadMyHuts() {
+      const snapshot = await db.collection('eierhuetten_antraege')
+        .where('userId', '==', currentUser.uid)
+        .orderBy('timestamp', 'desc').get();
+
+      const container = document.getElementById('myHuts');
+      container.innerHTML = '';
+
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const div = document.createElement('div');
+        div.className = 'col-md-6';
+        div.innerHTML = `
+          <div class="card">
+            <div class="card-body">
+              <h5 class="card-title">${data.name}</h5>
+              <p>Status: <strong>${data.status}</strong></p>
+              <div id="mini-map-${doc.id}" class="mini-map"></div>
+            </div>
+          </div>
+        `;
+        container.appendChild(div);
+
+        setTimeout(() => {
+          const miniMap = L.map(`mini-map-${doc.id}`, {
+            zoomControl: false,
+            dragging: false,
+            scrollWheelZoom: false,
+            doubleClickZoom: false,
+            boxZoom: false,
+            keyboard: false,
+            tap: false
+          }).setView([data.lat, data.lng], 14);
+
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: ''
+          }).addTo(miniMap);
+
+          L.marker([data.lat, data.lng]).addTo(miniMap);
+        }, 100);
+      });
+    }
+  </script></body>
 </html>
