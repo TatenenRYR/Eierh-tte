@@ -1,111 +1,89 @@
 <!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
   <title>Meine Eierhütten</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-storage-compat.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
-    body {
-      font-family: sans-serif;
-      margin: 0;
-      padding: 1rem;
-      background: #f5f5f5;
-    }
-    .card {
-      background: white;
-      padding: 1rem;
-      margin-bottom: 1rem;
-      border-radius: 8px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
-    }
-    .status {
-      font-weight: bold;
-      margin-bottom: 0.5rem;
-    }
-    .map-container {
-      height: 200px;
-    }
+    body { font-family: sans-serif; margin: 0; padding: 0; background: #f0f0f0; }
+    header { background: #4caf50; color: white; padding: 1em; text-align: center; }
+    .content { padding: 1em; max-width: 800px; margin: auto; }
+    .card { background: white; margin: 1em 0; padding: 1em; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    img { max-width: 100%; height: auto; border-radius: 10px; margin-top: 0.5em; }
+    .status { font-weight: bold; margin-bottom: 0.5em; }
+    .map { height: 200px; margin-top: 0.5em; border-radius: 8px; }
   </style>
 </head>
 <body>
-  <h1>Meine Eierhütten</h1>
-  <div id="meineHuettenContent">Wird geladen...</div>  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js";
-    import { getFirestore, collection, query, where, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js";
-    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-auth.js";
-
+  <header>
+    <h1>Meine Eierhütten</h1>
+    <div id="user-info"></div>
+  </header>
+  <div class="content" id="content">
+    <p>Lade deine eingereichten Eierhütten...</p>
+  </div>
+  <script>
     const firebaseConfig = {
-      apiKey: "DEIN_API_KEY",
-      authDomain: "DEIN_PROJECT.firebaseapp.com",
-      projectId: "DEIN_PROJECT",
-      storageBucket: "DEIN_PROJECT.appspot.com",
-      messagingSenderId: "",
-      appId: ""
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.appspot.com",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
     };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const auth = firebase.auth();auth.onAuthStateChanged(user => {
+  const content = document.getElementById("content");
+  const userInfo = document.getElementById("user-info");
+  if (!user) {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider);
+  } else {
+    userInfo.textContent = `Angemeldet als ${user.displayName}`;
+    loadMyHuetten(user.uid);
+  }
+});
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const auth = getAuth(app);
+async function loadMyHuetten(uid) {
+  const content = document.getElementById("content");
+  content.innerHTML = "";
+  const query = await db.collection("eierhuetten").where("userId", "==", uid).orderBy("erstelltAm", "desc").get();
+  if (query.empty) {
+    content.innerHTML = "<p>Du hast noch keine Hütten eingereicht.</p>";
+    return;
+  }
+  query.forEach(doc => {
+    const d = doc.data();
+    const card = document.createElement("div");
+    card.className = "card";
+    const statusColor = d.status === "angenommen" ? "green" : d.status === "abgelehnt" ? "red" : "#f9a825";
 
-    async function loadMeineHuetten(user) {
-      const huettenRef = collection(db, "eierhuetten");
-      const q = query(huettenRef, where("erstelltVon", "==", user.uid), orderBy("erstelltAm", "desc"));
-      const querySnapshot = await getDocs(q);
+    const mapId = `map-${doc.id}`;
+    card.innerHTML = `
+      <div class="status" style="color:${statusColor}">Status: ${d.status}</div>
+      <strong>${d.name}</strong><br>
+      ${d.beschreibung}<br>
+      Strom: ${d.strom}<br>
+      <a href="https://www.google.com/maps?q=${d.location.latitude},${d.location.longitude}" target="_blank">Standort in Google Maps</a><br>
+      ${d.bildUrl ? `<img src="${d.bildUrl}" alt="Bild">` : ""}
+      <div id="${mapId}" class="map"></div>
+    `;
 
-      const content = document.getElementById("meineHuettenContent");
-      content.innerHTML = '';
+    content.appendChild(card);
+    const map = L.map(mapId).setView([d.location.latitude, d.location.longitude], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+    }).addTo(map);
+    L.marker([d.location.latitude, d.location.longitude]).addTo(map);
+  });
+}
 
-      if (querySnapshot.empty) {
-        content.innerHTML = "<p>Du hast noch keine Eierhütten eingereicht.</p>";
-        return;
-      }
-
-      querySnapshot.forEach(doc => {
-        const d = doc.data();
-        const card = document.createElement("div");
-        card.className = "card";
-
-        const statusColor = d.status === "angenommen" ? "green" :
-                            d.status === "abgelehnt" ? "red" : "#f9a825";
-
-        card.innerHTML = `
-          <div class="status" style="color:${statusColor}">Status: ${d.status}</div>
-          <strong>${d.name}</strong><br>
-          ${d.beschreibung}<br>
-          Strom: ${d.strom}<br>
-          <a href="https://www.google.com/maps?q=${d.location.latitude},${d.location.longitude}" target="_blank">Standort auf Google Maps</a><br>
-          ${d.bildUrl ? `<img src="${d.bildUrl}" alt="Bild" style="max-width:200px">` : ''}
-          <div class="map-container" id="map-${doc.id}"></div>
-        `;
-
-        content.appendChild(card);
-
-        // Mini-Karte anzeigen
-        if (d.location?.latitude && d.location?.longitude) {
-          setTimeout(() => {
-            const map = L.map(`map-${doc.id}`, {
-              center: [d.location.latitude, d.location.longitude],
-              zoom: 14,
-              zoomControl: false,
-              dragging: false,
-              scrollWheelZoom: false
-            });
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-              attribution: '&copy; OpenStreetMap'
-            }).addTo(map);
-            L.marker([d.location.latitude, d.location.longitude]).addTo(map);
-          }, 100);
-        }
-      });
-    }
-
-    onAuthStateChanged(auth, user => {
-      if (user) {
-        loadMeineHuetten(user);
-      } else {
-        document.getElementById("meineHuettenContent").innerHTML = "Bitte einloggen, um deine Hütten zu sehen.";
-      }
-    });
-  </script></body>
+  </script>
+</body>
 </html>
