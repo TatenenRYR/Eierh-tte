@@ -1,168 +1,136 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Eierhütten – Mein Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eierhütten Dashboard</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
-    body { font-family: sans-serif; background: #f9f9f9; margin: 0; padding: 0; }
-    header { background: #4CAF50; color: white; padding: 1rem; text-align: center; }
-    main { max-width: 800px; margin: auto; padding: 1rem; }
-    form, .antrag { background: #fff; padding: 1rem; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 2rem; }
-    input, textarea, select { width: 100%; padding: 8px; margin-bottom: 10px; border-radius: 6px; border: 1px solid #ccc; }
-    button { background-color: #4CAF50; color: white; padding: 10px; border: none; border-radius: 6px; cursor: pointer; }
-    .miniMap { height: 150px; margin: 10px 0; border-radius: 8px; }
-    .status { padding: 2px 6px; border-radius: 4px; font-weight: bold; text-transform: capitalize; }
-    .status.offen { background: orange; color: white; }
-    .status.angenommen { background: green; color: white; }
-    .status.abgelehnt { background: red; color: white; }
-    .loeschenBtn { background-color: crimson; color: white; padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer; }
+    body { font-family: sans-serif; margin: 2rem; }
+    #karte { height: 300px; margin-top: 1rem; }
+    .huette { border: 1px solid #ccc; padding: 1rem; margin-bottom: 1rem; border-radius: 8px; }
   </style>
 </head>
 <body>
-  <header><h1>Meine Eierhütten</h1></header>
-  <main>
-    <form id="huettenForm">
-      <h2>Neue Hütte einreichen</h2>
-      <input type="text" id="name" placeholder="Name der Hütte" required>
-      <textarea id="beschreibung" placeholder="Beschreibung" required></textarea>
-      <select id="strom">
-        <option value="">Stromversorgung?</option>
-        <option value="ja">Ja</option>
-        <option value="nein">Nein</option>
-      </select>
-      <input type="number" id="preis" placeholder="Preis pro Produkt (EUR)">
-      <input type="text" id="extras" placeholder="Besonderheiten (z. B. Bio, vegan)">
-      <input type="file" id="bild">
-      <p><strong>Standort wählen:</strong></p>
-      <div id="map" style="height: 200px; margin-bottom: 10px; border-radius: 8px;"></div>
-      <button type="submit">Hütte einreichen</button>
-      <p id="meldung" style="color:green;"></p>
-    </form>
-    <div id="antragListe"></div>
-  </main>
-  <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js" type="module"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js" type="module"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-auth.js" type="module"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-storage.js" type="module"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js";
-    import { getFirestore, collection, addDoc, query, where, onSnapshot, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js";
-    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-auth.js";
-    import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-storage.js";
-
+  <h1>Meine Eierhütten</h1>  <form id="huettenFormular">
+    <label>Name: <input id="name" required></label><br>
+    <label>Beschreibung: <textarea id="beschreibung"></textarea></label><br>
+    <label>Breite (lat): <input id="latitude" type="number" step="any" required></label><br>
+    <label>Länge (lng): <input id="longitude" type="number" step="any" required></label><br>
+    <label><input type="checkbox" id="stromCheckbox"> Strom vorhanden</label><br>
+    <label>Bild: <input type="file" id="bild" accept="image/*"></label><br>
+    <button type="submit">Hütte einreichen</button>
+  </form>  <div id="karte"></div>
+  <h2>Meine eingereichten Hütten</h2>
+  <div id="huettenListe"></div>  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
       authDomain: "eierhuettentour.firebaseapp.com",
       projectId: "eierhuettentour",
       storageBucket: "eierhuettentour.appspot.com",
       messagingSenderId: "348272135205",
-      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
     };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const auth = getAuth(app);
-    const storage = getStorage(app);
+    let map;
 
-    let selectedCoords = null;
-    const map = L.map("map").setView([51, 10], 6);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
-    let marker = null;
-    map.on("click", e => {
-      selectedCoords = e.latlng;
-      if (marker) marker.setLatLng(selectedCoords);
-      else marker = L.marker(selectedCoords).addTo(map);
-    });
+    firebase.auth().onAuthStateChanged((user) => {
+      if (user) {
+        ladeEigeneAntraege();
+        document.getElementById('huettenFormular').addEventListener('submit', async (e) => {
+          e.preventDefault();
 
-    const form = document.getElementById("huettenForm");
-    const antragListe = document.getElementById("antragListe");
-    const meldung = document.getElementById("meldung");
-    let currentUser = null;
+          const name = document.getElementById('name').value.trim();
+          const beschreibung = document.getElementById('beschreibung').value.trim();
+          const lat = parseFloat(document.getElementById('latitude').value);
+          const lng = parseFloat(document.getElementById('longitude').value);
+          const strom = document.getElementById('stromCheckbox').checked;
+          const bildInput = document.getElementById('bild');
 
-    onAuthStateChanged(auth, user => {
-      if (!user) return alert("Bitte zuerst einloggen!");
-      currentUser = user;
-      ladeAntraege(user.uid);
-    });
+          if (!name || isNaN(lat) || isNaN(lng)) {
+            alert("Bitte Name und gültige Koordinaten eingeben.");
+            return;
+          }
 
-    form.addEventListener("submit", async e => {
-      e.preventDefault();
-      if (!selectedCoords) return alert("Bitte Standort auf der Karte wählen!");
+          let bildUrl = null;
 
-      const name = document.getElementById("name").value.trim();
-      const beschreibung = document.getElementById("beschreibung").value.trim();
-      const strom = document.getElementById("strom").value;
-      const preis = parseFloat(document.getElementById("preis").value);
-      const extras = document.getElementById("extras").value.trim();
-      const bildDatei = document.getElementById("bild").files[0];
-      let bildUrl = null;
+          try {
+            if (bildInput.files.length > 0) {
+              const file = bildInput.files[0];
+              const storageRef = firebase.storage().ref();
+              const fileRef = storageRef.child(`huetten_bilder/${Date.now()}_${file.name}`);
+              await fileRef.put(file);
+              bildUrl = await fileRef.getDownloadURL();
+            }
 
-      if (bildDatei) {
-        const bildRef = ref(storage, "huetten_bilder/" + Date.now() + "_" + bildDatei.name);
-        const uploadTask = uploadBytesResumable(bildRef, bildDatei);
-        uploadTask.on('state_changed', null, null, async () => {
-          bildUrl = await getDownloadURL(uploadTask.snapshot.ref);
-          speichereEintrag(name, beschreibung, strom, preis, extras, bildUrl);
+            const daten = {
+              name,
+              beschreibung,
+              lat,
+              lng,
+              strom,
+              bildUrl,
+              status: 'offen',
+              erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+              benutzerId: user.uid
+            };
+
+            await db.collection('eierhuetten_antraege').add(daten);
+            alert("Hütte erfolgreich eingereicht!");
+            document.getElementById('huettenFormular').reset();
+            ladeEigeneAntraege();
+          } catch (error) {
+            console.error("Fehler beim Einreichen:", error);
+            alert("Fehler beim Einreichen.");
+          }
         });
-      } else {
-        speichereEintrag(name, beschreibung, strom, preis, extras, null);
       }
     });
 
-    async function speichereEintrag(name, beschreibung, strom, preis, extras, bildUrl) {
-      await addDoc(collection(db, "eierhuetten_antraege"), {
-        name, beschreibung, strom, preis, extras, bildUrl,
-        standort: selectedCoords,
-        userId: currentUser.uid,
-        status: "offen",
-        timestamp: Date.now()
-      });
-      form.reset();
-      meldung.textContent = "Hütte erfolgreich eingereicht!";
-      setTimeout(() => meldung.textContent = "", 4000);
-      if (marker) map.removeLayer(marker);
-      selectedCoords = null;
-    }
+    function ladeEigeneAntraege() {
+      const user = firebase.auth().currentUser;
+      if (!user) return;
 
-    function ladeAntraege(uid) {
-      const q = query(collection(db, "eierhuetten_antraege"), where("userId", "==", uid));
-      onSnapshot(q, snapshot => {
-        antragListe.innerHTML = "";
-        snapshot.forEach(docSnap => {
-          const data = docSnap.data();
-          const id = docSnap.id;
-          const div = document.createElement("div");
-          div.className = "antrag";
-          div.innerHTML = `
-            <h3>${data.name}</h3>
-            <p><strong>Status:</strong> <span class="status ${data.status}">${data.status}</span></p>
-            <p>${data.beschreibung}</p>
-            ${data.bildUrl ? `<img src="${data.bildUrl}" style="max-width:100%; border-radius:8px;">` : ""}
-            <p><strong>Strom:</strong> ${data.strom ?? ""}</p>
-            <p><strong>Preis:</strong> ${data.preis ? data.preis.toFixed(2) + " €" : "-"}</p>
-            <p><strong>Extras:</strong> ${data.extras ?? "-"}</p>
-            <div id="map-${id}" class="miniMap"></div>
-            ${data.status === "offen" ? `<button class="loeschenBtn" data-id="${id}">Zurückziehen</button>` : ""}
-          `;
-          antragListe.appendChild(div);
+      db.collection('eierhuetten_antraege')
+        .where('benutzerId', '==', user.uid)
+        .orderBy('erstelltAm', 'desc')
+        .get()
+        .then(snapshot => {
+          const liste = document.getElementById('huettenListe');
+          liste.innerHTML = '';
 
-          if (data.standort) {
-            const map2 = L.map(`map-${id}`).setView([data.standort.lat, data.standort.lng], 13);
-            L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map2);
-            L.marker([data.standort.lat, data.standort.lng]).addTo(map2);
+          if (!map) {
+            map = L.map('karte').setView([51, 10], 6);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              attribution: '© OpenStreetMap-Mitwirkende'
+            }).addTo(map);
           }
 
-          div.querySelectorAll(".loeschenBtn").forEach(btn => {
-            btn.addEventListener("click", async () => {
-              if (confirm("Antrag wirklich löschen?")) await deleteDoc(doc(db, "eierhuetten_antraege", btn.dataset.id));
-            });
+          snapshot.forEach(doc => {
+            const daten = doc.data();
+            const div = document.createElement('div');
+            div.className = 'huette';
+            div.innerHTML = `
+              <strong>${daten.name}</strong><br>
+              ${daten.beschreibung || ''}<br>
+              Strom: ${daten.strom ? 'Ja' : 'Nein'}<br>
+              Status: ${daten.status}<br>
+              ${daten.bildUrl ? `<img src="${daten.bildUrl}" width="200" />` : ''}
+            `;
+            liste.appendChild(div);
+
+            L.marker([daten.lat, daten.lng])
+              .addTo(map)
+              .bindPopup(daten.name);
           });
         });
-      });
     }
-  </script>
-</body>
+  </script></body>
 </html>
