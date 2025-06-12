@@ -1,47 +1,64 @@
 <!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Eierhütten Anmeldung</title>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eierhütten-Dashboard</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
     body {
-      font-family: Arial, sans-serif;
+      font-family: sans-serif;
       margin: 0;
       padding: 0;
+      background: #f0f0f0;
     }
-    #map {
-      height: 300px;
-      margin: 1rem 0;
+    header {
+      background: #4caf50;
+      color: white;
+      padding: 1rem;
+      text-align: center;
     }
-    .container {
+    main {
       padding: 1rem;
     }
+    .hidden {
+      display: none;
+    }
+    #map, .mini-map {
+      height: 300px;
+    }
+    .mini-map {
+      height: 150px;
+      margin-bottom: 1rem;
+    }
+    .hütte {
+      background: white;
+      border-radius: 8px;
+      padding: 1rem;
+      margin: 1rem 0;
+      box-shadow: 0 0 4px rgba(0, 0, 0, 0.1);
+    }
     input, button {
-      margin: 0.5rem 0;
       padding: 0.5rem;
+      margin: 0.5rem 0;
       width: 100%;
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>Eierhütten Anmeldung</h1>
-    <button onclick="signInWithGoogle()">Mit Google anmelden</button>
-    <div id="form" style="display:none">
-      <input type="text" id="name" placeholder="Name der Hütte">
-      <input type="text" id="adresse" placeholder="Adresse">
-      <input type="text" id="search" placeholder="Ort suchen">
-      <div id="map"></div>
-      <input type="text" id="lat" placeholder="Breitengrad" readonly>
-      <input type="text" id="lng" placeholder="Längengrad" readonly>
-      <button onclick="submitHuette()">Einreichen</button>
-    </div>
-  </div>  <script>
+  <header>
+    <h1>Eierhütten Dashboard</h1>
+    <button id="login">Login mit Google</button>
+    <button id="logout" class="hidden">Logout</button>
+  </header>
+  <main id="app" class="hidden">
+    <h2>Neue Eierhütte einreichen</h2>
+    <input type="text" id="name" placeholder="Name der Hütte" />
+    <input type="text" id="adresse" placeholder="Adresse suchen" />
+    <div id="map"></div>
+    <button id="submit">Einreichen</button><h2>Meine Eierhütten</h2>
+<div id="meineHuetten"></div>
+
+  </main>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
       authDomain: "eierhuettentour.firebaseapp.com",
@@ -51,63 +68,114 @@
       appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
       measurementId: "G-16V6K5GXDT"
     };
-
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
     const db = firebase.firestore();
 
-    function signInWithGoogle() {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      auth.signInWithPopup(provider).then(result => {
-        document.getElementById("form").style.display = "block";
-      });
-    }
+    const loginBtn = document.getElementById('login');
+    const logoutBtn = document.getElementById('logout');
+    const app = document.getElementById('app');
+    const submitBtn = document.getElementById('submit');
+    const nameInput = document.getElementById('name');
+    const adresseInput = document.getElementById('adresse');
+    const meineHuetten = document.getElementById('meineHuetten');
 
-    function submitHuette() {
-      const name = document.getElementById("name").value;
-      const adresse = document.getElementById("adresse").value;
-      const lat = parseFloat(document.getElementById("lat").value);
-      const lng = parseFloat(document.getElementById("lng").value);
+    let currentUser = null;
+    let selectedCoords = null;
+    let map = L.map('map').setView([51, 10], 6);
+    let marker = null;
 
-      db.collection("eierhuetten_antraege").add({
-        name,
-        adresse,
-        position: new firebase.firestore.GeoPoint(lat, lng),
-        status: "offen",
-        erstelltAm: new Date()
-      }).then(() => {
-        alert("Eierhütte eingereicht!");
-      });
-    }
-
-    let map = L.map('map').setView([51.1657, 10.4515], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap'
+      maxZoom: 19
     }).addTo(map);
 
-    let marker = L.marker([51.1657, 10.4515], {draggable: false}).addTo(map);
-
-    map.on('click', function(e) {
-      const { lat, lng } = e.latlng;
-      marker.setLatLng([lat, lng]);
-      document.getElementById("lat").value = lat;
-      document.getElementById("lng").value = lng;
-    });
-
-    // Standortsuche
-    document.getElementById("search").addEventListener("change", async function () {
-      const query = this.value;
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
-      const results = await response.json();
-      if (results.length > 0) {
-        const { lat, lon } = results[0];
-        map.setView([lat, lon], 15);
-        marker.setLatLng([lat, lon]);
-        document.getElementById("lat").value = lat;
-        document.getElementById("lng").value = lon;
+    map.on('click', function (e) {
+      selectedCoords = e.latlng;
+      if (marker) {
+        marker.setLatLng(e.latlng);
       } else {
-        alert("Ort nicht gefunden.");
+        marker = L.marker(e.latlng).addTo(map);
       }
     });
+
+    adresseInput.addEventListener('change', async () => {
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${adresseInput.value}`);
+      const data = await response.json();
+      if (data[0]) {
+        const { lat, lon } = data[0];
+        map.setView([lat, lon], 15);
+      }
+    });
+
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        currentUser = user;
+        app.classList.remove('hidden');
+        loginBtn.classList.add('hidden');
+        logoutBtn.classList.remove('hidden');
+        ladeHuetten();
+      } else {
+        currentUser = null;
+        app.classList.add('hidden');
+        loginBtn.classList.remove('hidden');
+        logoutBtn.classList.add('hidden');
+      }
+    });
+
+    loginBtn.onclick = () => {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      auth.signInWithPopup(provider);
+    };
+
+    logoutBtn.onclick = () => {
+      auth.signOut();
+    };
+
+    submitBtn.onclick = async () => {
+      if (!selectedCoords || !nameInput.value) return alert('Bitte Name und Standort angeben.');
+      await db.collection('eierhuetten_antraege').add({
+        name: nameInput.value,
+        lat: selectedCoords.lat,
+        lng: selectedCoords.lng,
+        user: currentUser.uid,
+        status: 'offen',
+        erstellt: new Date()
+      });
+      nameInput.value = '';
+      adresseInput.value = '';
+      marker?.remove();
+      marker = null;
+      ladeHuetten();
+    };
+
+    async function ladeHuetten() {
+      meineHuetten.innerHTML = '';
+      const snap = await db.collection('eierhuetten_antraege').where('user', '==', currentUser.uid).get();
+      snap.forEach(doc => {
+        const data = doc.data();
+        const div = document.createElement('div');
+        div.className = 'hütte';
+        div.innerHTML = `
+          <h3>${data.name}</h3>
+          <p>Status: ${data.status}</p>
+          <div id="mini-${doc.id}" class="mini-map"></div>
+        `;
+        meineHuetten.appendChild(div);
+        const miniMap = L.map(`mini-${doc.id}`, {
+          zoomControl: false,
+          dragging: false,
+          scrollWheelZoom: false,
+          doubleClickZoom: false,
+          boxZoom: false,
+          keyboard: false,
+          tap: false,
+          touchZoom: false,
+        }).setView([data.lat, data.lng], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19
+        }).addTo(miniMap);
+        L.marker([data.lat, data.lng]).addTo(miniMap);
+      });
+    }
   </script></body>
 </html>
