@@ -1,183 +1,121 @@
-<!DOCTYPE html><html lang="de">
+<!DOCTYPE html>
+<html lang="de">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Meine Eierhütten</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <title>Eierhütten Dashboard</title>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    body {
-      font-family: system-ui, sans-serif;
-      background: #f9f9f9;
-      margin: 0;
-      padding: 0;
-    }
-    header {
-      background: #388e3c;
-      color: white;
-      padding: 1rem;
-      text-align: center;
-      font-size: 1.4rem;
-    }
-    main {
-      padding: 1rem;
-      max-width: 800px;
-      margin: auto;
-    }
-    .card {
-      background: white;
-      border-radius: 10px;
-      padding: 1rem;
-      margin-bottom: 1rem;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
-    }
-    .status {
-      font-weight: bold;
-      color: #2e7d32;
-      margin-bottom: 0.5rem;
-    }
-    .button {
-      background: #2e7d32;
-      color: white;
-      padding: 0.5rem 1rem;
-      border: none;
-      border-radius: 6px;
-      margin-top: 0.5rem;
-      cursor: pointer;
-    }
-    .button.logout {
-      background: #d32f2f;
-    }
-    .map {
-      height: 200px;
-      margin-top: 1rem;
-      border-radius: 8px;
-    }
+    body { font-family: sans-serif; margin: 0; background: #f0f0f0; }
+    header { background: #4CAF50; color: white; padding: 1em; text-align: center; }
+    #login, #dashboard { display: none; }
+    .card { background: white; border-radius: 8px; margin: 1em auto; padding: 1em; width: 90%; max-width: 600px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .map { height: 200px; margin-top: 1em; }
+    .button { background: #4CAF50; color: white; padding: 0.5em 1em; border: none; border-radius: 4px; cursor: pointer; }
+    .button:hover { background: #45a049; }
   </style>
 </head>
 <body>
   <header>
-    <div>Meine Eierhütten</div>
-    <button id="logoutBtn" class="button logout" style="display:none">Logout</button>
-  </header>  <main>
-    <section id="loginSection" class="card">
-      <h2>Login</h2>
-      <p>Bitte mit Google anmelden:</p>
-      <button id="loginBtn" class="button">Mit Google anmelden</button>
-    </section><section id="dashboardSection" class="card" style="display:none">
-  <h2>Willkommen, <span id="userEmail"></span></h2>
-  <h3>Neue Hütte einreichen</h3>
-  <input id="titel" placeholder="Name der Hütte" /><br />
-  <textarea id="beschreibung" placeholder="Beschreibung..."></textarea><br />
-  <label><input type="checkbox" id="abo" /> Monatliches Abo (2,00 €)</label><br />
-  <div id="map" class="map"></div>
-  <button class="button" onclick="einreichen()">Einreichen</button>
-</section>
+    <h1>Eierhütten Dashboard</h1>
+    <button id="logoutBtn" class="button" style="display:none">Logout</button>
+  </header>
 
-<section id="huettenList"></section>
+  <div id="login" class="card">
+    <h2>Login</h2>
+    <button id="loginBtn" class="button">Mit Google einloggen</button>
+  </div>
 
-  </main>  <script>
+  <div id="dashboard">
+    <div class="card" id="welcome"></div>
+    <div id="hüttenContainer"></div>
+  </div>
+
+  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
       authDomain: "eierhuettentour.firebaseapp.com",
       projectId: "eierhuettentour",
-      storageBucket: "eierhuettentour.appspot.com",
+      storageBucket: "eierhuettentour.firebasestorage.app",
       messagingSenderId: "348272135205",
-      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
     };
+
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
     const db = firebase.firestore();
 
-    const loginBtn = document.getElementById('loginBtn');
-    const logoutBtn = document.getElementById('logoutBtn');
-    const loginSection = document.getElementById('loginSection');
-    const dashboardSection = document.getElementById('dashboardSection');
-    const userEmail = document.getElementById('userEmail');
-    const huettenList = document.getElementById('huettenList');
+    const loginBtn = document.getElementById("loginBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const loginDiv = document.getElementById("login");
+    const dashboard = document.getElementById("dashboard");
+    const welcome = document.getElementById("welcome");
+    const hüttenContainer = document.getElementById("hüttenContainer");
 
-    let user = null;
-    let marker = null;
-    let lat = 0, lng = 0;
-
-    const map = L.map('map').setView([51, 10], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    map.on('click', function(e) {
-      lat = e.latlng.lat;
-      lng = e.latlng.lng;
-      if (marker) map.removeLayer(marker);
-      marker = L.marker([lat, lng]).addTo(map);
+    loginBtn.addEventListener("click", () => {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      auth.signInWithPopup(provider);
     });
 
-    auth.onAuthStateChanged(u => {
-      if (u) {
-        user = u;
-        userEmail.textContent = user.email;
-        loginSection.style.display = 'none';
-        dashboardSection.style.display = 'block';
-        logoutBtn.style.display = 'inline-block';
-        ladeHuetten();
+    logoutBtn.addEventListener("click", () => {
+      auth.signOut();
+    });
+
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        loginDiv.style.display = "none";
+        dashboard.style.display = "block";
+        logoutBtn.style.display = "inline-block";
+        welcome.innerHTML = `<h2>Willkommen, ${user.displayName}</h2>`;
+        ladeEierhütten(user.uid);
       } else {
-        user = null;
-        loginSection.style.display = 'block';
-        dashboardSection.style.display = 'none';
-        logoutBtn.style.display = 'none';
+        loginDiv.style.display = "block";
+        dashboard.style.display = "none";
+        logoutBtn.style.display = "none";
       }
     });
 
-    loginBtn.onclick = () => {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      auth.signInWithPopup(provider);
-    };
-    logoutBtn.onclick = () => auth.signOut();
-
-    async function einreichen() {
-      const titel = document.getElementById('titel').value;
-      const beschreibung = document.getElementById('beschreibung').value;
-      const abo = document.getElementById('abo').checked;
-      if (!titel || lat === 0 || lng === 0) return alert("Bitte Titel und Standort angeben.");
-      await db.collection("eierhuetten_antraege").add({
-        uid: user.uid,
-        email: user.email,
-        titel,
-        beschreibung,
-        lat,
-        lng,
-        abo: abo ? 2.00 : 0,
-        status: "offen",
-        erstellt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      alert("Hütte eingereicht.");
-      ladeHuetten();
+    function ladeEierhütten(userId) {
+      db.collection("eierhuetten_antraege")
+        .where("erstellerId", "==", userId)
+        .get()
+        .then(snapshot => {
+          hüttenContainer.innerHTML = "";
+          snapshot.forEach(doc => {
+            const daten = doc.data();
+            const karteId = `map-${doc.id}`;
+            const div = document.createElement("div");
+            div.className = "card";
+            div.innerHTML = `
+              <h3>${daten.name || "Unbenannte Hütte"}</h3>
+              <p>Status: ${daten.status || "unbekannt"}</p>
+              <div id="${karteId}" class="map"></div>
+            `;
+            hüttenContainer.appendChild(div);
+            if (daten.position && daten.position.lat && daten.position.lng) {
+              setTimeout(() => {
+                const map = L.map(karteId, {
+                  dragging: false,
+                  touchZoom: false,
+                  scrollWheelZoom: false,
+                  doubleClickZoom: false,
+                  boxZoom: false,
+                  keyboard: false,
+                  zoomControl: false,
+                  attributionControl: false
+                }).setView([daten.position.lat, daten.position.lng], 14);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+                L.marker([daten.position.lat, daten.position.lng]).addTo(map);
+              }, 100);
+            }
+          });
+        });
     }
-
-    async function ladeHuetten() {
-      huettenList.innerHTML = "";
-      const snap = await db.collection("eierhuetten_antraege").where("uid", "==", user.uid).get();
-      snap.forEach(doc => {
-        const d = doc.data();
-        const div = document.createElement('div');
-        div.className = 'card';
-        div.innerHTML = `
-          <div class="status">Status: ${d.status}</div>
-          <strong>${d.titel}</strong><br />
-          ${d.beschreibung}<br />
-          Abo: ${d.abo.toFixed(2)} €<br />
-          <div id="map-${doc.id}" class="map"></div>
-        `;
-        huettenList.appendChild(div);
-        setTimeout(() => {
-          const miniMap = L.map(`map-${doc.id}`, {
-            zoomControl: false, attributionControl: false, dragging: false,
-            scrollWheelZoom: false, doubleClickZoom: false
-          }).setView([d.lat, d.lng], 14);
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(miniMap);
-          L.marker([d.lat, d.lng]).addTo(miniMap);
-        }, 100);
-      });
-    }
-  </script></body>
+  </script>
+</body>
 </html>
