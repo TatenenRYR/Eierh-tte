@@ -2,135 +2,126 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Eierhütten Dashboard</title>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <title>Meine Eierhütten</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
   <style>
-    body { font-family: sans-serif; margin: 2rem; }
-    #karte { height: 300px; margin-top: 1rem; }
-    .huette { border: 1px solid #ccc; padding: 1rem; margin-bottom: 1rem; border-radius: 8px; }
+    body { font-family: sans-serif; margin: 2em; background: #f4f4f4; }
+    .card { background: white; padding: 1em; margin-bottom: 1em; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    input, button, textarea { display: block; margin: 0.5em 0; padding: 0.5em; width: 100%; max-width: 400px; }
+    img.preview { max-width: 200px; display: block; margin-top: 0.5em; }
+    #huettenListe img { max-width: 100px; }
   </style>
 </head>
 <body>
-  <h1>Meine Eierhütten</h1>  <form id="huettenFormular">
-    <label>Name: <input id="name" required></label><br>
-    <label>Beschreibung: <textarea id="beschreibung"></textarea></label><br>
-    <label>Breite (lat): <input id="latitude" type="number" step="any" required></label><br>
-    <label>Länge (lng): <input id="longitude" type="number" step="any" required></label><br>
-    <label><input type="checkbox" id="stromCheckbox"> Strom vorhanden</label><br>
-    <label>Bild: <input type="file" id="bild" accept="image/*"></label><br>
-    <button type="submit">Hütte einreichen</button>
-  </form>  <div id="karte"></div>
-  <h2>Meine eingereichten Hütten</h2>
-  <div id="huettenListe"></div>  <script>
+  <h1>Meine eingereichten Eierhütten</h1>
+  <div id="authStatus">Bitte warten...</div>  <div id="formBereich" style="display:none">
+    <h2>Hütte einreichen</h2>
+    <form id="huetteForm">
+      <input type="text" id="name" placeholder="Name der Hütte" required>
+      <textarea id="beschreibung" placeholder="Beschreibung"></textarea>
+      <input type="file" id="bild">
+      <button type="submit">Hütte einreichen</button>
+    </form>
+    <div id="vorschau"></div><h2>Meine Hütten</h2>
+<div id="huettenListe"></div>
+
+  </div>  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
       authDomain: "eierhuettentour.firebaseapp.com",
       projectId: "eierhuettentour",
       storageBucket: "eierhuettentour.appspot.com",
       messagingSenderId: "348272135205",
-      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
-      measurementId: "G-16V6K5GXDT"
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
     };
+    
     firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
     const db = firebase.firestore();
+    const storage = firebase.storage();
 
-    let map;
+    auth.onAuthStateChanged(user => {
+      const authStatus = document.getElementById('authStatus');
+      const formBereich = document.getElementById('formBereich');
 
-    firebase.auth().onAuthStateChanged((user) => {
       if (user) {
-        ladeEigeneAntraege();
-        document.getElementById('huettenFormular').addEventListener('submit', async (e) => {
-          e.preventDefault();
-
-          const name = document.getElementById('name').value.trim();
-          const beschreibung = document.getElementById('beschreibung').value.trim();
-          const lat = parseFloat(document.getElementById('latitude').value);
-          const lng = parseFloat(document.getElementById('longitude').value);
-          const strom = document.getElementById('stromCheckbox').checked;
-          const bildInput = document.getElementById('bild');
-
-          if (!name || isNaN(lat) || isNaN(lng)) {
-            alert("Bitte Name und gültige Koordinaten eingeben.");
-            return;
-          }
-
-          let bildUrl = null;
-
-          try {
-            if (bildInput.files.length > 0) {
-              const file = bildInput.files[0];
-              const storageRef = firebase.storage().ref();
-              const fileRef = storageRef.child(`huetten_bilder/${Date.now()}_${file.name}`);
-              await fileRef.put(file);
-              bildUrl = await fileRef.getDownloadURL();
-            }
-
-            const daten = {
-              name,
-              beschreibung,
-              lat,
-              lng,
-              strom,
-              bildUrl,
-              status: 'offen',
-              erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
-              benutzerId: user.uid
-            };
-
-            await db.collection('eierhuetten_antraege').add(daten);
-            alert("Hütte erfolgreich eingereicht!");
-            document.getElementById('huettenFormular').reset();
-            ladeEigeneAntraege();
-          } catch (error) {
-            console.error("Fehler beim Einreichen:", error);
-            alert("Fehler beim Einreichen.");
-          }
-        });
+        authStatus.textContent = `Angemeldet als ${user.email}`;
+        formBereich.style.display = 'block';
+        ladeHuetten(user.uid);
+      } else {
+        authStatus.innerHTML = `<button onclick="auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())">Mit Google anmelden</button>`;
+        formBereich.style.display = 'none';
       }
     });
 
-    function ladeEigeneAntraege() {
-      const user = firebase.auth().currentUser;
+    document.getElementById('bild').addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          document.getElementById('vorschau').innerHTML = `<img src="${reader.result}" class="preview">`;
+        }
+        reader.readAsDataURL(file);
+      }
+    });
+
+    document.getElementById('huetteForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const user = auth.currentUser;
       if (!user) return;
 
-      db.collection('eierhuetten_antraege')
-        .where('benutzerId', '==', user.uid)
-        .orderBy('erstelltAm', 'desc')
-        .get()
-        .then(snapshot => {
-          const liste = document.getElementById('huettenListe');
-          liste.innerHTML = '';
+      const name = document.getElementById('name').value.trim();
+      const beschreibung = document.getElementById('beschreibung').value.trim();
+      const bildDatei = document.getElementById('bild').files[0];
 
-          if (!map) {
-            map = L.map('karte').setView([51, 10], 6);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-              attribution: '© OpenStreetMap-Mitwirkende'
-            }).addTo(map);
-          }
+      const eintrag = {
+        name,
+        beschreibung,
+        userId: user.uid,
+        email: user.email,
+        status: 'offen',
+        erstellt: firebase.firestore.FieldValue.serverTimestamp(),
+        bildUrl: ''
+      };
 
-          snapshot.forEach(doc => {
-            const daten = doc.data();
-            const div = document.createElement('div');
-            div.className = 'huette';
-            div.innerHTML = `
-              <strong>${daten.name}</strong><br>
-              ${daten.beschreibung || ''}<br>
-              Strom: ${daten.strom ? 'Ja' : 'Nein'}<br>
-              Status: ${daten.status}<br>
-              ${daten.bildUrl ? `<img src="${daten.bildUrl}" width="200" />` : ''}
-            `;
-            liste.appendChild(div);
+      const docRef = await db.collection('eierhuetten_antraege').add(eintrag);
 
-            L.marker([daten.lat, daten.lng])
-              .addTo(map)
-              .bindPopup(daten.name);
-          });
-        });
+      if (bildDatei) {
+        const storageRef = storage.ref(`huetten_bilder/${docRef.id}`);
+        await storageRef.put(bildDatei);
+        const url = await storageRef.getDownloadURL();
+        await docRef.update({ bildUrl: url });
+      }
+
+      alert('Hütte erfolgreich eingereicht.');
+      document.getElementById('huetteForm').reset();
+      document.getElementById('vorschau').innerHTML = '';
+      ladeHuetten(user.uid);
+    });
+
+    async function ladeHuetten(userId) {
+      const container = document.getElementById('huettenListe');
+      container.innerHTML = '';
+      const snap = await db.collection('eierhuetten_antraege')
+        .where('userId', '==', userId)
+        .orderBy('erstellt', 'desc')
+        .get();
+
+      snap.forEach(doc => {
+        const data = doc.data();
+        const div = document.createElement('div');
+        div.className = 'card';
+        div.innerHTML = `
+          <strong>${data.name}</strong><br>
+          <em>${data.beschreibung || ''}</em><br>
+          Status: <b>${data.status}</b><br>
+          ${data.bildUrl ? `<img src="${data.bildUrl}">` : ''}
+        `;
+        container.appendChild(div);
+      });
     }
   </script></body>
 </html>
