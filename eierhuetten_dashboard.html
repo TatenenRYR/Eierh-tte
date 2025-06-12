@@ -1,262 +1,135 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Eierhütten – Mein Dashboard</title>
-
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-
-  <style>
+  <title>Eierhütten Dashboard</title>  <!-- Leaflet CSS -->  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />  <style>
     body {
-      font-family: sans-serif;
-      background: #f9f9f9;
       margin: 0;
-      padding: 0;
+      font-family: Arial, sans-serif;
+      background: #eef2f3;
+      color: #333;
     }
+
     header {
-      background: #4CAF50;
+      background: #3e8e41;
       color: white;
-      padding: 1rem;
+      padding: 1.5rem;
       text-align: center;
+      font-size: 1.5rem;
     }
+
     main {
-      max-width: 800px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 2rem;
+      padding: 2rem;
+      max-width: 1000px;
       margin: auto;
-      padding: 1rem;
     }
-    form {
-      background: #fff;
-      padding: 1rem;
-      border-radius: 10px;
-      margin-bottom: 2rem;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+
+    section {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 12px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
     }
-    form input, form textarea {
+
+    h2 {
+      margin-top: 0;
+      color: #2e7031;
+    }
+
+    label {
+      display: block;
+      margin-top: 1rem;
+      font-weight: bold;
+    }
+
+    input, textarea, button {
       width: 100%;
-      padding: 8px;
-      margin-bottom: 10px;
+      padding: 10px;
+      margin-top: 0.5rem;
       border-radius: 6px;
       border: 1px solid #ccc;
+      font-size: 1rem;
     }
-    form button {
-      background-color: #4CAF50;
+
+    button {
+      background: #3e8e41;
       color: white;
-      padding: 10px;
       border: none;
-      border-radius: 6px;
       cursor: pointer;
-      width: 100%;
+      margin-top: 1.5rem;
     }
-    .antrag {
-      background: #fff;
-      padding: 1rem;
-      border-radius: 10px;
-      margin-bottom: 1rem;
-      box-shadow: 0 1px 5px rgba(0,0,0,0.1);
+
+    .dashboard-entry {
+      border-top: 1px solid #ddd;
+      margin-top: 1rem;
+      padding-top: 1rem;
     }
-    .miniMap {
-      height: 150px;
-      margin: 10px 0;
-      border-radius: 8px;
-    }
+
     .status {
-      padding: 2px 6px;
-      border-radius: 4px;
       font-weight: bold;
       text-transform: capitalize;
     }
-    .status.offen { background: orange; color: white; }
-    .status.angenommen { background: green; color: white; }
-    .status.abgelehnt { background: red; color: white; }
-    .loeschenBtn {
-      background-color: crimson;
-      color: white;
-      padding: 6px 12px;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      margin-top: 0.5rem;
+
+    .map {
+      height: 160px;
+      border-radius: 10px;
+      margin-top: 1rem;
     }
-  </style>
-</head>
+
+    @media (min-width: 768px) {
+      main {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+  </style></head>
 <body>
-
   <header>
-    <h1>Meine Eierhütten</h1>
-  </header>
-
-  <main>
-    <!-- Einreichungsformular -->
-    <form id="huettenForm">
+    Eierhütten Benutzer-Dashboard
+  </header>  <main>
+    <section id="form-section">
       <h2>Neue Hütte einreichen</h2>
-      <input type="text" id="name" name="name" placeholder="Name der Hütte" required />
-      <textarea id="beschreibung" name="beschreibung" placeholder="Beschreibung" required></textarea>
-      <input type="file" id="bild" name="bild" accept="image/*" />
-      <p><strong>Standort wählen:</strong></p>
-      <div id="map" style="height: 200px; margin-bottom: 10px; border-radius: 8px;"></div>
-      <button type="submit">Hütte einreichen</button>
-    </form>
+      <form id="hut-form">
+        <label for="name">Name der Hütte</label>
+        <input type="text" id="name" required><label for="beschreibung">Beschreibung</label>
+    <textarea id="beschreibung" rows="3" required></textarea>
 
-    <!-- Liste aller eigenen Anträge -->
-    <div id="antragListe"></div>
-  </main>
+    <label for="bild">Bild hochladen</label>
+    <input type="file" id="bild" accept="image/*">
 
-  <!-- Firebase & Leaflet SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js" type="module"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js" type="module"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-auth.js" type="module"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-storage.js" type="module"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <label>Standort wählen</label>
+    <div id="map" class="map"></div>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js";
-    import {
-      getFirestore, collection, addDoc,
-      query, where, onSnapshot,
-      deleteDoc, doc
-    } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js";
-    import {
-      getAuth, onAuthStateChanged
-    } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-auth.js";
-    import {
-      getStorage, ref, uploadBytes, getDownloadURL
-    } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-storage.js";
+    <button type="submit">Einreichen</button>
+  </form>
+</section>
 
-    // Deine Firebase-Konfiguration
-    const firebaseConfig = {
-      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-      authDomain: "eierhuettentour.firebaseapp.com",
-      projectId: "eierhuettentour",
-      storageBucket: "eierhuettentour.appspot.com",
-      messagingSenderId: "348272135205",
-      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
-    };
+<section id="entries-section">
+  <h2>Meine Anträge</h2>
+  <div id="entry-list">Lade deine Anträge...</div>
+</section>
 
-    const app     = initializeApp(firebaseConfig);
-    const db      = getFirestore(app);
-    const auth    = getAuth(app);
-    const storage = getStorage(app);
-
+  </main>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script>
+    // Placeholder until Firebase Integration is added
+    const map = L.map('map').setView([51, 10], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    let selectedMarker = null;
     let selectedCoords = null;
 
-    // Leaflet-Map initialisieren
-    const map = L.map("map").setView([51, 10], 6);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
-    let marker = null;
-    map.on("click", e => {
+    map.on('click', function(e) {
       selectedCoords = e.latlng;
-      if (marker) marker.setLatLng(selectedCoords);
-      else marker = L.marker(selectedCoords).addTo(map);
-    });
-
-    const form = document.getElementById("huettenForm");
-    const antragListe = document.getElementById("antragListe");
-    let currentUser = null;
-
-    // Auth-State
-    onAuthStateChanged(auth, user => {
-      if (!user) {
-        alert("Bitte melde dich zunächst an!");
-        return;
+      if (selectedMarker) {
+        selectedMarker.setLatLng(selectedCoords);
+      } else {
+        selectedMarker = L.marker(selectedCoords).addTo(map);
       }
-      currentUser = user;
-      ladeAntraege();
     });
 
-    // Formular-Submit
-    form.addEventListener("submit", async e => {
+    document.getElementById('hut-form').addEventListener('submit', function(e) {
       e.preventDefault();
-      if (!selectedCoords) {
-        alert("Bitte wähle einen Standort auf der Karte!");
-        return;
-      }
-
-      const name        = document.getElementById("name").value.trim();
-      const beschreibung= document.getElementById("beschreibung").value.trim();
-      const bildDatei   = document.getElementById("bild").files[0];
-
-      let bildUrl = null;
-      if (bildDatei) {
-        const bildRef = ref(storage, `huetten_bilder/${Date.now()}_${bildDatei.name}`);
-        await uploadBytes(bildRef, bildDatei);
-        bildUrl = await getDownloadURL(bildRef);
-      }
-
-      // In Firestore speichern
-      await addDoc(collection(db, "eierhuetten_antraege"), {
-        name,
-        beschreibung,
-        bildUrl,
-        standort: selectedCoords,
-        userId: currentUser.uid,
-        status: "offen",
-        timestamp: Date.now()
-      });
-
-      form.reset();
-      if (marker) map.removeLayer(marker);
-      selectedCoords = null;
+      alert("Diese Funktion wird bald verfügbar sein.");
     });
-
-    // Lade und zeige eigene Anträge
-    function ladeAntraege() {
-      const q = query(
-        collection(db, "eierhuetten_antraege"),
-        where("userId", "==", currentUser.uid)
-      );
-
-      onSnapshot(q, snapshot => {
-        antragListe.innerHTML = "";
-        snapshot.forEach(docSnap => {
-          const data = docSnap.data();
-          const id   = docSnap.id;
-          const div  = document.createElement("div");
-          div.className = "antrag";
-          div.innerHTML = `
-            <h3>${data.name || "Unbenannte Hütte"}</h3>
-            <p><strong>Status:</strong> <span class="status ${data.status}">${data.status}</span></p>
-            <p>${data.beschreibung || ""}</p>
-            ${data.bildUrl ? `<img src="${data.bildUrl}" style="max-width:100%; margin:8px 0; border-radius:8px;">` : ""}
-            <div id="map-${id}" class="miniMap"></div>
-            ${data.status === "offen" ? `<button class="loeschenBtn" data-id="${id}">Zurückziehen</button>` : ""}
-          `;
-          antragListe.appendChild(div);
-
-          // Nicht-interaktive Mini-Karte
-          if (data.standort) {
-            const miniMap = L.map(`map-${id}`, {
-              center: [data.standort.lat, data.standort.lng],
-              zoom: 13,
-              zoomControl: false,
-              dragging: false,
-              scrollWheelZoom: false,
-              doubleClickZoom: false,
-              boxZoom: false,
-              keyboard: false,
-              tap: false,
-              touchZoom: false,
-              attributionControl: false
-            });
-            L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-              interactive: false
-            }).addTo(miniMap);
-            L.marker([data.standort.lat, data.standort.lng], { interactive: false })
-             .addTo(miniMap);
-          }
-
-          // Löschen-Button
-          div.querySelectorAll(".loeschenBtn").forEach(btn => {
-            btn.addEventListener("click", async () => {
-              if (confirm("Möchtest du diesen Antrag wirklich zurückziehen?")) {
-                await deleteDoc(doc(db, "eierhuetten_antraege", btn.dataset.id));
-              }
-            });
-          });
-        });
-      });
-    }
-  </script>
-</body>
+  </script></body>
 </html>
