@@ -3,46 +3,45 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Meine Eierhütten</title>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js"></script>
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0;
-      padding: 20px;
-    }
-    .card {
-      border: 1px solid #ccc;
-      padding: 15px;
-      margin-bottom: 15px;
-      border-radius: 8px;
-      background: #f9f9f9;
-    }
-    .status {
-      font-weight: bold;
-    }
-    img {
-      max-width: 100%;
-      height: auto;
-      margin-top: 10px;
-    }
-    #map {
-      height: 300px;
-      margin-top: 10px;
-    }
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f2f2f2; }
+    header { background: #4caf50; color: white; padding: 1rem; text-align: center; }
+    main { max-width: 800px; margin: auto; padding: 1rem; }
+    .hidden { display: none; }
+    .card { background: white; padding: 1rem; margin-bottom: 1rem; border-radius: 8px; box-shadow: 0 0 5px rgba(0,0,0,0.1); }
+    #map { height: 300px; margin-bottom: 1rem; }
+    .mini-map { height: 150px; margin-top: 0.5rem; pointer-events: none; }
+    input, textarea, button { width: 100%; padding: 0.5rem; margin-bottom: 0.5rem; }
+    button { background: #2a9d8f; color: white; border: none; border-radius: 5px; cursor: pointer; }
+    button.logout { background: #d62828; }
   </style>
 </head>
 <body>
-  <h1>Meine Eierhütten</h1>
-  <div id="login"></div>
-  <div id="content"></div>  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
-    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
-    import { getFirestore, collection, query, where, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
+  <header>
+    <h1>Meine Eierhütten</h1>
+    <div id="auth-controls">
+      <button id="loginBtn">Mit Google anmelden</button>
+      <button id="logoutBtn" class="hidden logout">Abmelden</button>
+    </div>
+  </header>
+  <main>
+    <!-- Formular zum Einreichen -->
+    <section id="submit-section" class="card hidden">
+      <h2>Neue Eierhütte einreichen</h2>
+      <input id="hut-name" type="text" placeholder="Name der Hütte" required />
+      <textarea id="hut-desc" placeholder="Beschreibung"></textarea>
+      <div id="map"></div>
+      <input id="hut-lat" type="hidden" />
+      <input id="hut-lng" type="hidden" />
+      <button id="submitBtn">Einreichen</button>
+    </section><!-- Liste der eigenen Hütten -->
+<section id="list-section" class="card hidden">
+  <h2>Meine eingereichten Hütten</h2>
+  <div id="huts-list"></div>
+</section>
 
+  </main>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
       authDomain: "eierhuettentour.firebaseapp.com",
@@ -51,69 +50,101 @@
       messagingSenderId: "348272135205",
       appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
     };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
 
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth();
-    const db = getFirestore(app);
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const submitSection = document.getElementById('submit-section');
+    const listSection = document.getElementById('list-section');
+    const submitBtn = document.getElementById('submitBtn');
+    const hutsList = document.getElementById('huts-list');
 
-    const loginDiv = document.getElementById("login");
-    const contentDiv = document.getElementById("content");
+    let map, marker;
 
-    function showLogin() {
-      const btn = document.createElement("button");
-      btn.textContent = "Mit Google anmelden";
-      btn.onclick = async () => {
-        try {
-          const provider = new GoogleAuthProvider();
-          await signInWithPopup(auth, provider);
-        } catch (err) {
-          alert("Fehler beim Anmelden: " + err.message);
-        }
-      };
-      loginDiv.appendChild(btn);
-    }
-
-    async function loadHuetten(userId) {
-      const huettenRef = collection(db, "eierhuetten");
-      const q = query(huettenRef, where("uid", "==", userId), orderBy("erstelltAm", "desc"));
-      const snapshot = await getDocs(q);
-      contentDiv.innerHTML = "";
-
-      snapshot.forEach(doc => {
-        const d = doc.data();
-        const card = document.createElement("div");
-        card.className = "card";
-
-        const statusColor = d.status === "angenommen" ? "green" :
-                            d.status === "abgelehnt" ? "red" : "#f9a825";
-
-        card.innerHTML = `
-          <div class="status" style="color:${statusColor}">Status: ${d.status}</div>
-          <strong>${d.name}</strong><br>
-          ${d.beschreibung}<br>
-          Strom: ${d.strom}<br>
-          <a href="https://www.google.com/maps?q=${d.location.latitude},${d.location.longitude}" target="_blank">Standort anzeigen</a><br>
-          ${d.bildUrl ? `<img src="${d.bildUrl}" alt="Bild">` : ''}
-          <div id="map-${doc.id}" style="height:200px;margin-top:10px;"></div>
-        `;
-
-        contentDiv.appendChild(card);
-
-        const map = L.map(`map-${doc.id}`).setView([d.location.latitude, d.location.longitude], 15);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; OpenStreetMap-Mitwirkende'
-        }).addTo(map);
-        L.marker([d.location.latitude, d.location.longitude]).addTo(map);
+    // Leaflet-Karte initialisieren
+    function initMap() {
+      map = L.map('map').setView([51.1657, 10.4515], 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      marker = L.marker([51.1657, 10.4515], { draggable: true }).addTo(map);
+      marker.on('dragend', e => updateLatLng(e.target.getLatLng()));
+      map.on('click', e => {
+        marker.setLatLng(e.latlng);
+        updateLatLng(e.latlng);
       });
+      updateLatLng(marker.getLatLng());
     }
 
-    onAuthStateChanged(auth, user => {
+    function updateLatLng(latlng) {
+      document.getElementById('hut-lat').value = latlng.lat;
+      document.getElementById('hut-lng').value = latlng.lng;
+    }
+
+    // Auth State
+    auth.onAuthStateChanged(user => {
       if (user) {
-        loginDiv.innerHTML = `<p>Angemeldet als ${user.displayName}</p>`;
-        loadHuetten(user.uid);
+        loginBtn.classList.add('hidden');
+        logoutBtn.classList.remove('hidden');
+        submitSection.classList.remove('hidden');
+        listSection.classList.remove('hidden');
+        if (!map) initMap();
+        loadHuts(user.uid);
       } else {
-        showLogin();
+        loginBtn.classList.remove('hidden');
+        logoutBtn.classList.add('hidden');
+        submitSection.classList.add('hidden');
+        listSection.classList.add('hidden');
       }
     });
+
+    loginBtn.onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    logoutBtn.onclick = () => auth.signOut();
+
+    // Hütte einreichen
+    submitBtn.onclick = async () => {
+      const name = document.getElementById('hut-name').value;
+      const desc = document.getElementById('hut-desc').value;
+      const lat = parseFloat(document.getElementById('hut-lat').value);
+      const lng = parseFloat(document.getElementById('hut-lng').value);
+      const user = auth.currentUser;
+      if (!name || isNaN(lat) || isNaN(lng)) return alert('Bitte alle Felder ausfüllen.');
+      await db.collection('eierhuetten').add({
+        userId: user.uid,
+        name, beschreibung: desc, location: { latitude: lat, longitude: lng },
+        status: 'offen', erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      document.getElementById('hut-name').value = '';
+      document.getElementById('hut-desc').value = '';
+      marker.setLatLng([51.1657, 10.4515]);
+      map.setView([51.1657, 10.4515], 6);
+      loadHuts(user.uid);
+    };
+
+    // Hütten laden
+    async function loadHuts(uid) {
+      hutsList.innerHTML = '';
+      const snapshot = await db.collection('eierhuetten').where('userId', '==', uid).orderBy('erstelltAm', 'desc').get();
+      if (snapshot.empty) hutsList.innerHTML = '<p>Du hast noch keine Hütten eingereicht.</p>';
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        const card = document.createElement('div');
+        card.className = 'card';
+        const mapId = 'mini-' + doc.id;
+        card.innerHTML = `
+          <h3>${d.name}</h3>
+          <p>${d.beschreibung || ''}</p>
+          <p>Status: <strong>${d.status}</strong></p>
+          <div id="${mapId}" class="mini-map"></div>
+        `;
+        hutsList.appendChild(card);
+        // Mini-Karte
+        setTimeout(() => {
+          const m = L.map(mapId, { zoomControl: false, dragging: false, scrollWheelZoom: false }).setView([d.location.latitude, d.location.longitude], 14);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
+          L.marker([d.location.latitude, d.location.longitude]).addTo(m);
+        }, 100);
+      });
+    }
   </script></body>
 </html>
