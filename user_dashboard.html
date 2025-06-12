@@ -2,177 +2,171 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mein Eierhütten-Dashboard</title>
+  <title>Meine Eierhütten</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f5f5f5;
-      margin: 0;
-      padding: 0;
-    }
-    header {
-      background: #79b265;
-      color: white;
-      padding: 1rem;
-      text-align: center;
-      font-size: 1.5rem;
-    }
-    main {
-      padding: 1rem;
-      max-width: 900px;
-      margin: auto;
-    }
-    section {
-      background: white;
-      padding: 1rem;
-      margin-bottom: 1rem;
-      border-radius: 8px;
-      box-shadow: 0 0 5px rgba(0,0,0,0.1);
-    }
-    h2 {
-      margin-top: 0;
-    }
-    label {
-      display: block;
-      margin: 0.5rem 0 0.2rem;
-    }
-    input, textarea {
-      width: 100%;
-      padding: 0.5rem;
-      margin-bottom: 1rem;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-    }
-    #map { height: 250px; margin-bottom: 1rem; }
-    .hut-card {
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      padding: 1rem;
-      margin-bottom: 1rem;
-      background: #fafafa;
-    }
-    .mini-map {
-      height: 150px;
-      margin-top: 0.5rem;
-      border-radius: 4px;
-    }
-    details summary {
-      cursor: pointer;
-      font-weight: bold;
-    }
+    body { font-family: sans-serif; margin: 0; background: #f0f0f0; }
+    header { background: #4CAF50; color: white; padding: 1rem; text-align: center; }
+    #loginSection, #dashboardSection, .card { background: white; border-radius: 10px; margin: 1rem auto; padding: 1rem; max-width: 800px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+    .map, .mini-map { height: 200px; width: 100%; border-radius: 8px; margin-top: 0.5rem; }
+    .button { background: #4CAF50; color: white; padding: 0.5rem 1rem; border: none; border-radius: 6px; margin-top: 0.5rem; cursor: pointer; }
+    .logout { background: #d32f2f; }
+    .edit { background: #0288d1; margin-right: 0.5rem; }
+    .cancel { background: #e53935; }
   </style>
 </head>
 <body>
-  <header>Mein Eierhütten-Dashboard</header>
-  <main>
-    <section>
-      <h2>Neue Eierhütte einreichen</h2>
-      <form id="hutForm">
-        <label for="title">Titel</label>
-        <input type="text" id="title" required><label for="desc">Beschreibung</label>
-    <textarea id="desc"></textarea>
-
-    <label for="abo">Abo-Modell (€ / Monat)</label>
-    <input type="number" id="abo" step="0.01" min="0" required>
-
-    <div id="map"></div>
-
-    <button type="submit">Einreichen</button>
-  </form>
+  <header>
+    <h1>Meine Eierhütten</h1>
+    <button id="logoutBtn" class="button logout" style="display:none">Logout</button>
+  </header>  <main>
+    <section id="loginSection">
+      <h2>Login</h2>
+      <p>Bitte mit Google anmelden:</p>
+      <button id="loginBtn" class="button">Mit Google anmelden</button>
+    </section><section id="dashboardSection" style="display:none">
+  <h2>Willkommen, <span id="userEmail"></span></h2>
+  <h3>Neue Hütte einreichen</h3>
+  <input id="titel" placeholder="Name der Hütte" /><br />
+  <textarea id="beschreibung" placeholder="Beschreibung..."></textarea><br />
+  <label><input type="checkbox" id="abo" /> Monatliches Abo (2,00 €)</label><br />
+  <div id="map" class="map"></div>
+  <button class="button" onclick="einreichen()">Einreichen</button>
 </section>
 
-<section>
-  <h2>Meine Eierhütten</h2>
-  <div id="myHuts"></div>
-</section>
+<section id="huettenList"></section>
 
-  </main>  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script>
+  </main>  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
       authDomain: "eierhuettentour.firebaseapp.com",
       projectId: "eierhuettentour",
-      storageBucket: "eierhuettentour.firebasestorage.app",
+      storageBucket: "eierhuettentour.appspot.com",
       messagingSenderId: "348272135205",
       appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
     };
     firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
     const auth = firebase.auth();
+    const db = firebase.firestore();
 
-    let lat = 0, lng = 0;
-    let map, marker;
+    let user = null, lat = 0, lng = 0, marker = null;
 
-    function initMap() {
-      map = L.map('map').setView([51, 10], 6);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap'
-      }).addTo(map);
-      marker = L.marker([51, 10], { draggable: true }).addTo(map);
-      marker.on('dragend', () => {
-        const pos = marker.getLatLng();
-        lat = pos.lat;
-        lng = pos.lng;
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const loginSection = document.getElementById('loginSection');
+    const dashboardSection = document.getElementById('dashboardSection');
+    const userEmail = document.getElementById('userEmail');
+    const huettenList = document.getElementById('huettenList');
+
+    const map = L.map('map').setView([51, 10], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    map.on('click', e => {
+      lat = e.latlng.lat;
+      lng = e.latlng.lng;
+      if (marker) marker.setLatLng([lat, lng]);
+      else marker = L.marker([lat, lng]).addTo(map);
+    });
+
+    auth.onAuthStateChanged(u => {
+      if (u) {
+        user = u;
+        userEmail.textContent = user.email;
+        loginSection.style.display = 'none';
+        dashboardSection.style.display = 'block';
+        logoutBtn.style.display = 'inline-block';
+        ladeHuetten();
+      } else {
+        user = null;
+        loginSection.style.display = 'block';
+        dashboardSection.style.display = 'none';
+        logoutBtn.style.display = 'none';
+      }
+    });
+
+    loginBtn.onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    logoutBtn.onclick = () => auth.signOut();
+
+    async function einreichen() {
+      const titel = document.getElementById('titel').value;
+      const beschreibung = document.getElementById('beschreibung').value;
+      const abo = document.getElementById('abo').checked;
+      if (!titel || lat === 0 || lng === 0) return alert("Bitte Titel und Standort angeben.");
+      await db.collection("eierhuetten_antraege").add({
+        uid: user.uid, email: user.email, titel, beschreibung,
+        lat, lng, abo: abo ? 2.00 : 0, status: "offen",
+        erstellt: firebase.firestore.FieldValue.serverTimestamp()
       });
-      map.on('click', e => {
-        marker.setLatLng(e.latlng);
-        lat = e.latlng.lat;
-        lng = e.latlng.lng;
+      alert("Hütte eingereicht.");
+      ladeHuetten();
+    }
+
+    async function ladeHuetten() {
+      huettenList.innerHTML = "";
+      const snap = await db.collection("eierhuetten_antraege").where("uid", "==", user.uid).get();
+      snap.forEach(doc => {
+        const d = doc.data();
+        const div = document.createElement('div');
+        div.className = 'card';
+        div.innerHTML = `
+          <div class="status">Status: ${d.status}</div>
+          <strong>${d.titel}</strong><br />
+          ${d.beschreibung}<br />
+          Abo: ${d.abo.toFixed(2)} €<br />
+          <div id="map-${doc.id}" class="mini-map"></div>
+          <button class="button edit" onclick="bearbeiten('${doc.id}', '${d.titel}', '${d.beschreibung}', ${d.lat}, ${d.lng}, ${d.abo})">Bearbeiten</button>
+          <button class="button cancel" onclick="aboKündigen('${doc.id}')">Abo kündigen</button>
+        `;
+        huettenList.appendChild(div);
+        setTimeout(() => {
+          const miniMap = L.map(`map-${doc.id}`, {
+            zoomControl: false, attributionControl: false, dragging: false,
+            scrollWheelZoom: false, doubleClickZoom: false
+          }).setView([d.lat, d.lng], 14);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(miniMap);
+          L.marker([d.lat, d.lng]).addTo(miniMap);
+        }, 100);
       });
     }
 
-    async function loadHuts(uid) {
-      const list = document.getElementById('myHuts');
-      list.innerHTML = '';
-      const query = await db.collection('eierhuetten_antraege').where('uid', '==', uid).get();
-      query.forEach(doc => {
-        const d = doc.data();
-        const card = document.createElement('div');
-        card.className = 'hut-card';
-        card.innerHTML = `
-          <strong>${d.title}</strong><br>
-          ${d.desc || ''}<br>
-          <small>Status: ${d.status || 'offen'}</small>
-          <div id="miniMap${doc.id}" class="mini-map"></div>
-          <details><summary>Verlauf</summary><pre>${(d.history || []).map(h => `${h.timestamp} - ${h.action}`).join('\n')}</pre></details>`;
-    list.appendChild(card);
-    const mini = L.map(`miniMap${doc.id}`, { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, touchZoom: false });
-    mini.setView([d.lat, d.lng], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mini);
-    L.marker([d.lat, d.lng]).addTo(mini);
-  });
-}
+    async function bearbeiten(id, titel, beschreibung, latOld, lngOld, aboOld) {
+      const neuTitel = prompt("Titel bearbeiten:", titel);
+      const neuBeschr = prompt("Beschreibung bearbeiten:", beschreibung);
+      const neuAbo = confirm("Abo behalten?") ? aboOld : 0;
+      const neuePos = confirm("Standort ändern?");
+      let neuLat = latOld, neuLng = lngOld;
+      if (neuePos) {
+        alert("Bitte Standort auf Hauptkarte klicken und dann erneut bestätigen.");
+        map.once('click', async (e) => {
+          neuLat = e.latlng.lat;
+          neuLng = e.latlng.lng;
+          await db.collection("eierhuetten_antraege").doc(id).update({
+            titel: neuTitel, beschreibung: neuBeschr,
+            lat: neuLat, lng: neuLng, abo: neuAbo,
+            status: "überarbeitet"
+          });
+          ladeHuetten();
+        });
+      } else {
+        await db.collection("eierhuetten_antraege").doc(id).update({
+          titel: neuTitel, beschreibung: neuBeschr,
+          lat: neuLat, lng: neuLng, abo: neuAbo,
+          status: "überarbeitet"
+        });
+        ladeHuetten();
+      }
+    }
 
-document.getElementById('hutForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const title = document.getElementById('title').value;
-  const desc = document.getElementById('desc').value;
-  const abo = parseFloat(document.getElementById('abo').value);
-  const user = auth.currentUser;
-  if (!user) return alert("Nicht eingeloggt");
-  await db.collection('eierhuetten_antraege').add({
-    uid: user.uid,
-    title,
-    desc,
-    abo,
-    lat,
-    lng,
-    status: 'offen',
-    history: [{ timestamp: new Date().toISOString(), action: 'Eintrag erstellt' }]
-  });
-  alert('Eingereicht!');
-  loadHuts(user.uid);
-});
-
-auth.onAuthStateChanged(user => {
-  if (user) {
-    initMap();
-    loadHuts(user.uid);
-  } else {
-    alert('Bitte anmelden, um Eierhütten zu verwalten.');
-  }
-});
-
-  </script>
-</body>
+    async function aboKündigen(id) {
+      if (!confirm("Abo wirklich kündigen?")) return;
+      await db.collection("eierhuetten_antraege").doc(id).update({
+        abo: 0,
+        status: "kündigung angefragt"
+      });
+      ladeHuetten();
+    }
+  </script></body>
 </html>
