@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Meine Eierhütten</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
@@ -13,16 +13,13 @@
     .card { background: white; padding: 1rem; margin-bottom: 1rem; border-radius: 8px; box-shadow: 0 0 5px rgba(0,0,0,0.1); }
     #map { height: 300px; margin-bottom: 1rem; }
     .mini-map { height: 150px; margin-top: 0.5rem; pointer-events: none; }
-    input, textarea, button { width: 100%; padding: 0.5rem; margin-bottom: 0.5rem; }
+    input, textarea, button, select { width: 100%; padding: 0.5rem; margin-bottom: 0.5rem; }
     button { background: #2a9d8f; color: white; border: none; border-radius: 5px; cursor: pointer; }
     button.logout { background: #d62828; }
- #successMsg.hidden {
-  opacity: 0;
-  pointer-events: none;
-}
-#successMsg {
-  opacity: 1;
-}
+    #successMsg.hidden { opacity: 0; pointer-events: none; }
+    #successMsg { opacity: 1; transition: opacity 0.3s ease; }
+    #confirmModal { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
+    #confirmModal.show { display: flex; }
   </style>
 </head>
 <body>
@@ -33,35 +30,50 @@
       <button id="logoutBtn" class="hidden logout">Abmelden</button>
     </div>
   </header>
-  
-<main>
-  <!-- Formular zum Einreichen -->
-  <section id="submit-section" class="card hidden">
-    <h2>Neue Eierhütte einreichen</h2>
-    <input id="hut-name" type="text" placeholder="Name der Hütte" required />
-    <textarea id="hut-desc" placeholder="Beschreibung"></textarea>
-    <select id="hut-strom">
-      <option value="Ja">Stromanschluss: Ja</option>
-      <option value="Nein">Stromanschluss: Nein</option>
-    </select>
-    <div id="map"></div>
-    <input id="hut-lat" type="hidden" />
-    <input id="hut-lng" type="hidden" />
-    <button id="submitBtn">Einreichen</button>
-  </section>
 
-  <!-- Liste der eigenen Hütten -->
-  <section id="list-section" class="card hidden">
-    <h2>Meine eingereichten Hütten</h2>
-    <div id="huts-list"></div>
-  </section>
-</main>
+  <main>
+    <section id="submit-section" class="card hidden">
+      <h2>Neue Eierhütte einreichen</h2>
+      <input id="hut-name" type="text" placeholder="Name der Hütte" required />
+      <textarea id="hut-desc" placeholder="Beschreibung"></textarea>
+      <select id="hut-strom">
+        <option value="Ja">Stromanschluss: Ja</option>
+        <option value="Nein">Stromanschluss: Nein</option>
+      </select>
+      <div id="map"></div>
+      <input id="hut-lat" type="hidden" />
+      <input id="hut-lng" type="hidden" />
+      <button id="submitBtn">Einreichen</button>
+    </section>
+
+    <section id="list-section" class="card hidden">
+      <h2>Meine eingereichten Hütten</h2>
+      <div id="huts-list"></div>
+    </section>
+  </main>
+
+  <!-- Erfolgsnachricht -->
+  <div id="successMsg" class="hidden" style="position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #4caf50; color: white; padding: 1rem 1.5rem; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); z-index: 1001; font-weight: bold;">
+    🎉 Deine Eierhütte wurde erfolgreich eingereicht!
+  </div>
+
+  <!-- Bestätigungs-Popup -->
+  <div id="confirmModal">
+    <div style="background: white; padding: 2rem; border-radius: 10px; max-width: 400px; width: 90%;">
+      <h2>Eintrag bestätigen</h2>
+      <p id="confirmText"></p>
+      <button id="confirmYes" style="margin-top: 1rem;">Einreichen</button>
+      <button id="confirmNo" style="margin-top: 0.5rem; background: #ccc;">Abbrechen</button>
+    </div>
+  </div>
 
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
   <script>
+    // Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
       authDomain: "eierhuettentour.firebaseapp.com",
@@ -80,19 +92,18 @@
     const listSection = document.getElementById('list-section');
     const submitBtn = document.getElementById('submitBtn');
     const hutsList = document.getElementById('huts-list');
+    const confirmModal = document.getElementById('confirmModal');
+    const confirmText = document.getElementById('confirmText');
+    const successMsg = document.getElementById('successMsg');
 
     let map, marker;
 
-    // Leaflet-Karte initialisieren
     function initMap() {
       map = L.map('map').setView([51.1657, 10.4515], 6);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
       marker = L.marker([51.1657, 10.4515], { draggable: true }).addTo(map);
       marker.on('dragend', e => updateLatLng(e.target.getLatLng()));
-      map.on('click', e => {
-        marker.setLatLng(e.latlng);
-        updateLatLng(e.latlng);
-      });
+      map.on('click', e => { marker.setLatLng(e.latlng); updateLatLng(e.latlng); });
       updateLatLng(marker.getLatLng());
     }
 
@@ -101,7 +112,6 @@
       document.getElementById('hut-lng').value = latlng.lng;
     }
 
-    // Auth State
     auth.onAuthStateChanged(user => {
       if (user) {
         loginBtn.classList.add('hidden');
@@ -118,69 +128,69 @@
       }
     });
 
-    loginBtn.onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    loginBtn.onclick = () => {
+      auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())
+        .catch(e => alert("Anmeldung fehlgeschlagen: " + e.message));
+    };
     logoutBtn.onclick = () => auth.signOut();
 
-submitBtn.onclick = () => {
-  const name = document.getElementById('hut-name').value;
-  const desc = document.getElementById('hut-desc').value;
-  const lat = parseFloat(document.getElementById('hut-lat').value);
-  const lng = parseFloat(document.getElementById('hut-lng').value);
+    submitBtn.onclick = () => {
+      const name = document.getElementById('hut-name').value;
+      const desc = document.getElementById('hut-desc').value;
+      const strom = document.getElementById('hut-strom').value;
+      const lat = parseFloat(document.getElementById('hut-lat').value);
+      const lng = parseFloat(document.getElementById('hut-lng').value);
 
-  if (!name || isNaN(lat) || isNaN(lng)) {
-    alert('Bitte alle Felder ausfüllen.');
-    return;
-  }
+      if (!name || isNaN(lat) || isNaN(lng)) return alert("Bitte alle Felder ausfüllen.");
 
-  document.getElementById('confirmText').innerHTML = `
-    <strong>Name:</strong> ${name}<br>
-    <strong>Beschreibung:</strong> ${desc}<br>
-    <strong>Koordinaten:</strong> ${lat.toFixed(5)}, ${lng.toFixed(5)}
-  `;
-  document.getElementById('confirmModal').classList.remove('hidden');
-};
+      confirmText.innerHTML = `
+        <strong>Name:</strong> ${name}<br>
+        <strong>Beschreibung:</strong> ${desc}<br>
+        <strong>Stromanschluss:</strong> ${strom}<br>
+        <strong>Koordinaten:</strong> ${lat.toFixed(5)}, ${lng.toFixed(5)}
+      `;
+      confirmModal.classList.add('show');
+    };
 
-// Modal bestätigen oder abbrechen
-document.getElementById('confirmYes').onclick = async () => {
-  const name = document.getElementById('hut-name').value;
-  const desc = document.getElementById('hut-desc').value;
-  const lat = parseFloat(document.getElementById('hut-lat').value);
-  const lng = parseFloat(document.getElementById('hut-lng').value);
-  const user = auth.currentUser;
+    document.getElementById('confirmYes').onclick = async () => {
+      const user = auth.currentUser;
+      const name = document.getElementById('hut-name').value;
+      const desc = document.getElementById('hut-desc').value;
+      const strom = document.getElementById('hut-strom').value;
+      const lat = parseFloat(document.getElementById('hut-lat').value);
+      const lng = parseFloat(document.getElementById('hut-lng').value);
 
-  await db.collection('eierhuetten').add({
-    userId: user.uid,
-    name, beschreibung: desc, location: { latitude: lat, longitude: lng },
-    status: 'offen', erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
-  });
+      await db.collection('eierhuetten').add({
+        userId: user.uid,
+        name,
+        beschreibung: desc,
+        stromanschluss: strom,
+        location: { latitude: lat, longitude: lng },
+        status: 'offen',
+        erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
+      });
 
-  document.getElementById('confirmModal').classList.add('hidden');
+      confirmModal.classList.remove('show');
+      document.getElementById('hut-name').value = '';
+      document.getElementById('hut-desc').value = '';
+      marker.setLatLng([51.1657, 10.4515]);
+      map.setView([51.1657, 10.4515], 6);
+      loadHuts(user.uid);
+      successMsg.classList.remove('hidden');
+      setTimeout(() => successMsg.classList.add('hidden'), 3000);
+    };
 
-  // Formular zurücksetzen
-  document.getElementById('hut-name').value = '';
-  document.getElementById('hut-desc').value = '';
-  marker.setLatLng([51.1657, 10.4515]);
-  map.setView([51.1657, 10.4515], 6);
+    document.getElementById('confirmNo').onclick = () => {
+      confirmModal.classList.remove('show');
+    };
 
-  loadHuts(user.uid);
-
-  // Erfolgsmeldung anzeigen (falls eingebaut)
-  const successMsg = document.getElementById('successMsg');
-  if (successMsg) {
-    successMsg.classList.remove('hidden');
-    setTimeout(() => successMsg.classList.add('hidden'), 3000);
-  }
-};
-
-document.getElementById('confirmNo').onclick = () => {
-  document.getElementById('confirmModal').classList.add('hidden');
-};
-
-    // Hütten laden
     async function loadHuts(uid) {
       hutsList.innerHTML = '';
       const snapshot = await db.collection('eierhuetten').where('userId', '==', uid).orderBy('erstelltAm', 'desc').get();
-      if (snapshot.empty) hutsList.innerHTML = '<p>Du hast noch keine Hütten eingereicht.</p>';
+      if (snapshot.empty) {
+        hutsList.innerHTML = '<p>Du hast noch keine Hütten eingereicht.</p>';
+        return;
+      }
       snapshot.forEach(doc => {
         const d = doc.data();
         const card = document.createElement('div');
@@ -189,11 +199,11 @@ document.getElementById('confirmNo').onclick = () => {
         card.innerHTML = `
           <h3>${d.name}</h3>
           <p>${d.beschreibung || ''}</p>
+          <p>Strom: ${d.stromanschluss}</p>
           <p>Status: <strong>${d.status}</strong></p>
           <div id="${mapId}" class="mini-map"></div>
         `;
         hutsList.appendChild(card);
-        // Mini-Karte
         setTimeout(() => {
           const m = L.map(mapId, { zoomControl: false, dragging: false, scrollWheelZoom: false }).setView([d.location.latitude, d.location.longitude], 14);
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
@@ -202,40 +212,5 @@ document.getElementById('confirmNo').onclick = () => {
       });
     }
   </script>
-    <!-- Erfolgsnachricht -->
-<div id="successMsg" class="hidden" style="
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: #4caf50;
-  color: white;
-  padding: 1rem 1.5rem;
-  border-radius: 6px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-  z-index: 1001;
-  font-weight: bold;
-  transition: opacity 0.3s ease;
-">
-  🎉 Deine Eierhütte wurde erfolgreich eingereicht!
-</div>
-<!-- Bestätigungs-Popup -->
-<div id="confirmModal" class="hidden" style="
-  position: fixed;
-  top: 0; left: 0;
-  width: 100vw; height: 100vh;
-  background: rgba(0,0,0,0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-">
-  <div style="background: white; padding: 2rem; border-radius: 10px; max-width: 400px; width: 90%;">
-    <h2>Eintrag bestätigen</h2>
-    <p id="confirmText"></p>
-    <button id="confirmYes" style="margin-top: 1rem;">Einreichen</button>
-    <button id="confirmNo" style="margin-top: 0.5rem; background: #ccc;">Abbrechen</button>
-  </div>
-</div>
 </body>
 </html>
