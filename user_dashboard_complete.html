@@ -36,6 +36,7 @@
       <h2>Neue Eierhütte einreichen</h2>
       <input id="hut-name" type="text" placeholder="Name der Hütte" required />
       <textarea id="hut-desc" placeholder="Beschreibung"></textarea>
+      <input type="file" id="hut-image" accept="image/*" />
       <select id="hut-strom">
         <option value="Ja">Stromanschluss: Ja</option>
         <option value="Nein">Stromanschluss: Nein</option>
@@ -117,6 +118,7 @@
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
     const db = firebase.firestore();
+    const storage = firebase.storage();
 
     function debug(msg) {
   const box = document.getElementById('debugBox');
@@ -191,7 +193,44 @@
       `;
       confirmModal.classList.add('show');
     };
+    document.getElementById('confirmYes').onclick = async () => {
+  const user = auth.currentUser;
+  const name = document.getElementById('hut-name').value;
+  const desc = document.getElementById('hut-desc').value;
+  const strom = document.getElementById('hut-strom').value;
+  const lat = parseFloat(document.getElementById('hut-lat').value);
+  const lng = parseFloat(document.getElementById('hut-lng').value);
+  const imageFile = document.getElementById('hut-image').files[0];
 
+  let imageUrl = '';
+  if (imageFile) {
+    const imageRef = storage.ref(`hüttenbilder/${Date.now()}_${imageFile.name}`);
+    const snapshot = await imageRef.put(imageFile);
+    imageUrl = await snapshot.ref.getDownloadURL();
+  }
+
+  await db.collection('eierhuetten').add({
+    userId: user.uid,
+    name,
+    beschreibung: desc,
+    strom: strom,
+    location: { latitude: lat, longitude: lng },
+    bildUrl: imageUrl,
+    status: 'offen',
+    erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  confirmModal.classList.remove('show');
+  document.getElementById('hut-name').value = '';
+  document.getElementById('hut-desc').value = '';
+  document.getElementById('hut-image').value = '';
+  marker.setLatLng([51.1657, 10.4515]);
+  map.setView([51.1657, 10.4515], 6);
+  loadHuts(user.uid);
+  successMsg.classList.remove('hidden');
+  setTimeout(() => successMsg.classList.add('hidden'), 3000);
+};
+/*
     document.getElementById('confirmYes').onclick = async () => {
       const user = auth.currentUser;
       const name = document.getElementById('hut-name').value;
@@ -219,7 +258,7 @@
       successMsg.classList.remove('hidden');
       setTimeout(() => successMsg.classList.add('hidden'), 3000);
     };
-
+*/
     document.getElementById('confirmNo').onclick = () => {
       confirmModal.classList.remove('show');
     };
@@ -250,13 +289,21 @@
       card.className = 'card';
       const mapId = 'mini-' + doc.id;
 
-      card.innerHTML = `
+     /* card.innerHTML = `
         <h3>${d.name || 'Ohne Namen'}</h3>
         <p>${d.beschreibung || ''}</p>
         <p>Status: <strong>${d.status || 'offen'}</strong></p>
         <p>Strom: ${d.strom || 'Unbekannt'}</p>
         <div id="${mapId}" class="mini-map"></div>
-      `;
+      `;*/
+      card.innerHTML = `
+  <h3>${d.name || 'Ohne Namen'}</h3>
+  ${d.bildUrl ? `<img src="${d.bildUrl}" alt="Bild der Hütte" style="width: 100%; border-radius: 8px; margin-bottom: 0.5rem;" />` : ''}
+  <p>${d.beschreibung || ''}</p>
+  <p>Status: <strong>${d.status || 'offen'}</strong></p>
+  <p>Strom: ${d.strom || 'Unbekannt'}</p>
+  <div id="${mapId}" class="mini-map"></div>
+`;
       const editBtn = document.createElement("button");
 editBtn.innerText = "Bearbeiten";
 editBtn.onclick = () => openEditModal(doc.id, d.name, d.beschreibung || '', d.strom || 'Nein');
