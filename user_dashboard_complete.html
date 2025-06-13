@@ -33,7 +33,7 @@
       <button id="logoutBtn" class="hidden logout">Abmelden</button>
     </div>
   </header>
-  <main>
+  
 <main>
   <!-- Formular zum Einreichen -->
   <section id="submit-section" class="card hidden">
@@ -124,46 +124,56 @@
 submitBtn.onclick = () => {
   const name = document.getElementById('hut-name').value;
   const desc = document.getElementById('hut-desc').value;
-  const strom = document.getElementById('hut-strom').value;
   const lat = parseFloat(document.getElementById('hut-lat').value);
   const lng = parseFloat(document.getElementById('hut-lng').value);
-  
-  if (!name || isNaN(lat) || isNaN(lng)) return alert('Bitte alle Felder ausfüllen.');
 
-  // Werte im Modal anzeigen
-  document.getElementById('confirmName').textContent = name;
-  document.getElementById('confirmDesc').textContent = desc || '—';
-  document.getElementById('confirmStrom').textContent = strom;
-  document.getElementById('confirmCoords').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  if (!name || isNaN(lat) || isNaN(lng)) {
+    alert('Bitte alle Felder ausfüllen.');
+    return;
+  }
+
+  document.getElementById('confirmText').innerHTML = `
+    <strong>Name:</strong> ${name}<br>
+    <strong>Beschreibung:</strong> ${desc}<br>
+    <strong>Koordinaten:</strong> ${lat.toFixed(5)}, ${lng.toFixed(5)}
+  `;
   document.getElementById('confirmModal').classList.remove('hidden');
+};
 
-  // Einreichung bei Bestätigung
-  document.getElementById('confirmSubmitBtn').onclick = async () => {
-    const user = auth.currentUser;
-    await db.collection('eierhuetten').add({
-      userId: user.uid,
-      name,
-      beschreibung: desc,
-      strom,
-      location: { latitude: lat, longitude: lng },
-      status: 'offen',
-      history: [`Eingereicht am ${new Date().toLocaleString()}`],
-      erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
-    });
+// Modal bestätigen oder abbrechen
+document.getElementById('confirmYes').onclick = async () => {
+  const name = document.getElementById('hut-name').value;
+  const desc = document.getElementById('hut-desc').value;
+  const lat = parseFloat(document.getElementById('hut-lat').value);
+  const lng = parseFloat(document.getElementById('hut-lng').value);
+  const user = auth.currentUser;
 
-    // Reset + Feedback
-    document.getElementById('hut-name').value = '';
-    document.getElementById('hut-desc').value = '';
-    document.getElementById('confirmModal').classList.add('hidden');
-    marker.setLatLng([51.1657, 10.4515]);
-    map.setView([51.1657, 10.4515], 6);
-    loadHuts(user.uid);
-    const successMsg = document.getElementById('successMsg');
-successMsg.classList.remove('hidden');
-setTimeout(() => {
-  successMsg.classList.add('hidden');
-}, 3000);
-  };
+  await db.collection('eierhuetten').add({
+    userId: user.uid,
+    name, beschreibung: desc, location: { latitude: lat, longitude: lng },
+    status: 'offen', erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  document.getElementById('confirmModal').classList.add('hidden');
+
+  // Formular zurücksetzen
+  document.getElementById('hut-name').value = '';
+  document.getElementById('hut-desc').value = '';
+  marker.setLatLng([51.1657, 10.4515]);
+  map.setView([51.1657, 10.4515], 6);
+
+  loadHuts(user.uid);
+
+  // Erfolgsmeldung anzeigen (falls eingebaut)
+  const successMsg = document.getElementById('successMsg');
+  if (successMsg) {
+    successMsg.classList.remove('hidden');
+    setTimeout(() => successMsg.classList.add('hidden'), 3000);
+  }
+};
+
+document.getElementById('confirmNo').onclick = () => {
+  document.getElementById('confirmModal').classList.add('hidden');
 };
 
     // Hütten laden
@@ -209,20 +219,22 @@ setTimeout(() => {
 ">
   🎉 Deine Eierhütte wurde erfolgreich eingereicht!
 </div>
-    <!-- Bestätigungs-Popup -->
+<!-- Bestätigungs-Popup -->
 <div id="confirmModal" class="hidden" style="
-  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   z-index: 1000;
 ">
-  <div style="background: white; padding: 1.5rem; border-radius: 8px; max-width: 90%; width: 400px;">
-    <h3>Eintrag bestätigen</h3>
-    <p><strong>Name:</strong> <span id="confirmName"></span></p>
-    <p><strong>Beschreibung:</strong> <span id="confirmDesc"></span></p>
-    <p><strong>Strom:</strong> <span id="confirmStrom"></span></p>
-    <p><strong>Koordinaten:</strong> <span id="confirmCoords"></span></p>
-    <button id="confirmSubmitBtn">Jetzt einreichen</button>
-    <button onclick="document.getElementById('confirmModal').classList.add('hidden')">Abbrechen</button>
+  <div style="background: white; padding: 2rem; border-radius: 10px; max-width: 400px; width: 90%;">
+    <h2>Eintrag bestätigen</h2>
+    <p id="confirmText"></p>
+    <button id="confirmYes" style="margin-top: 1rem;">Einreichen</button>
+    <button id="confirmNo" style="margin-top: 0.5rem; background: #ccc;">Abbrechen</button>
   </div>
 </div>
 </body>
