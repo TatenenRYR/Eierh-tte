@@ -16,6 +16,13 @@
     input, textarea, button { width: 100%; padding: 0.5rem; margin-bottom: 0.5rem; }
     button { background: #2a9d8f; color: white; border: none; border-radius: 5px; cursor: pointer; }
     button.logout { background: #d62828; }
+ #successMsg.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+#successMsg {
+  opacity: 1;
+}
   </style>
 </head>
 <body>
@@ -114,33 +121,49 @@
     loginBtn.onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
     logoutBtn.onclick = () => auth.signOut();
 
-    // Hütte einreichen
-    submitBtn.onclick = async () => {
+submitBtn.onclick = () => {
   const name = document.getElementById('hut-name').value;
   const desc = document.getElementById('hut-desc').value;
   const strom = document.getElementById('hut-strom').value;
   const lat = parseFloat(document.getElementById('hut-lat').value);
   const lng = parseFloat(document.getElementById('hut-lng').value);
-  const user = auth.currentUser;
+  
   if (!name || isNaN(lat) || isNaN(lng)) return alert('Bitte alle Felder ausfüllen.');
 
-  await db.collection('eierhuetten').add({
-    userId: user.uid,
-    name,
-    beschreibung: desc,
-    strom: strom,
-    location: { latitude: lat, longitude: lng },
-    status: 'offen',
-    history: [`Eingereicht am ${new Date().toLocaleString()}`],
-    erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
-  });
+  // Werte im Modal anzeigen
+  document.getElementById('confirmName').textContent = name;
+  document.getElementById('confirmDesc').textContent = desc || '—';
+  document.getElementById('confirmStrom').textContent = strom;
+  document.getElementById('confirmCoords').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  document.getElementById('confirmModal').classList.remove('hidden');
 
-  // Reset
-  document.getElementById('hut-name').value = '';
-  document.getElementById('hut-desc').value = '';
-  marker.setLatLng([51.1657, 10.4515]);
-  map.setView([51.1657, 10.4515], 6);
-  loadHuts(user.uid);
+  // Einreichung bei Bestätigung
+  document.getElementById('confirmSubmitBtn').onclick = async () => {
+    const user = auth.currentUser;
+    await db.collection('eierhuetten').add({
+      userId: user.uid,
+      name,
+      beschreibung: desc,
+      strom,
+      location: { latitude: lat, longitude: lng },
+      status: 'offen',
+      history: [`Eingereicht am ${new Date().toLocaleString()}`],
+      erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Reset + Feedback
+    document.getElementById('hut-name').value = '';
+    document.getElementById('hut-desc').value = '';
+    document.getElementById('confirmModal').classList.add('hidden');
+    marker.setLatLng([51.1657, 10.4515]);
+    map.setView([51.1657, 10.4515], 6);
+    loadHuts(user.uid);
+    const successMsg = document.getElementById('successMsg');
+successMsg.classList.remove('hidden');
+setTimeout(() => {
+  successMsg.classList.add('hidden');
+}, 3000);
+  };
 };
 
     // Hütten laden
@@ -169,5 +192,38 @@
       });
     }
   </script>
+    <!-- Erfolgsnachricht -->
+<div id="successMsg" class="hidden" style="
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #4caf50;
+  color: white;
+  padding: 1rem 1.5rem;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  z-index: 1001;
+  font-weight: bold;
+  transition: opacity 0.3s ease;
+">
+  🎉 Deine Eierhütte wurde erfolgreich eingereicht!
+</div>
+    <!-- Bestätigungs-Popup -->
+<div id="confirmModal" class="hidden" style="
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+">
+  <div style="background: white; padding: 1.5rem; border-radius: 8px; max-width: 90%; width: 400px;">
+    <h3>Eintrag bestätigen</h3>
+    <p><strong>Name:</strong> <span id="confirmName"></span></p>
+    <p><strong>Beschreibung:</strong> <span id="confirmDesc"></span></p>
+    <p><strong>Strom:</strong> <span id="confirmStrom"></span></p>
+    <p><strong>Koordinaten:</strong> <span id="confirmCoords"></span></p>
+    <button id="confirmSubmitBtn">Jetzt einreichen</button>
+    <button onclick="document.getElementById('confirmModal').classList.add('hidden')">Abbrechen</button>
+  </div>
+</div>
 </body>
 </html>
