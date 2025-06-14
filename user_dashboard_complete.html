@@ -193,42 +193,50 @@
       `;
       confirmModal.classList.add('show');
     };
-    document.getElementById('confirmYes').onclick = async () => {
+document.getElementById('confirmYes').onclick = async () => {
   const user = auth.currentUser;
   const name = document.getElementById('hut-name').value;
   const desc = document.getElementById('hut-desc').value;
   const strom = document.getElementById('hut-strom').value;
   const lat = parseFloat(document.getElementById('hut-lat').value);
   const lng = parseFloat(document.getElementById('hut-lng').value);
-  const imageFile = document.getElementById('hut-image').files[0];
+  const fileInput = document.getElementById('hut-image'); // du musst ein input type="file" haben
+  const imageFile = fileInput?.files?.[0];
+  
+  let imageUrl = null;
 
-  let imageUrl = '';
-  if (imageFile) {
-    const imageRef = storage.ref(`hüttenbilder/${Date.now()}_${imageFile.name}`);
-    const snapshot = await imageRef.put(imageFile);
-    imageUrl = await snapshot.ref.getDownloadURL();
+  try {
+    if (imageFile) {
+      const storageRef = firebase.storage().ref();
+      const imageRef = storageRef.child(`hüttenbilder/${Date.now()}_${imageFile.name}`);
+      const snapshot = await imageRef.put(imageFile);
+      imageUrl = await snapshot.ref.getDownloadURL();
+    }
+
+    await db.collection('eierhuetten').add({
+      userId: user.uid,
+      name,
+      beschreibung: desc,
+      strom,
+      location: { latitude: lat, longitude: lng },
+      status: 'offen',
+      erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+      bildUrl: imageUrl || null
+    });
+
+    confirmModal.classList.remove('show');
+    document.getElementById('hut-name').value = '';
+    document.getElementById('hut-desc').value = '';
+    fileInput.value = '';
+    marker.setLatLng([51.1657, 10.4515]);
+    map.setView([51.1657, 10.4515], 6);
+    loadHuts(user.uid);
+    successMsg.classList.remove('hidden');
+    setTimeout(() => successMsg.classList.add('hidden'), 3000);
+  } catch (err) {
+    debug("Fehler beim Speichern: " + err.message);
+    alert("Fehler beim Hochladen/Speichern: " + err.message);
   }
-
-  await db.collection('eierhuetten').add({
-    userId: user.uid,
-    name,
-    beschreibung: desc,
-    strom: strom,
-    location: { latitude: lat, longitude: lng },
-    bildUrl: imageUrl,
-    status: 'offen',
-    erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
-  });
-
-  confirmModal.classList.remove('show');
-  document.getElementById('hut-name').value = '';
-  document.getElementById('hut-desc').value = '';
-  document.getElementById('hut-image').value = '';
-  marker.setLatLng([51.1657, 10.4515]);
-  map.setView([51.1657, 10.4515], 6);
-  loadHuts(user.uid);
-  successMsg.classList.remove('hidden');
-  setTimeout(() => successMsg.classList.add('hidden'), 3000);
 };
 /*
     document.getElementById('confirmYes').onclick = async () => {
