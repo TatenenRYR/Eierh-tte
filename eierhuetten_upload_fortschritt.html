@@ -1,120 +1,141 @@
 <!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Eierhütten Setup-Chat</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eierhütten Setup Chat</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     body {
-      background-color: #1e1e2f;
+      background: #1a1a1a;
       color: #eee;
-      font-family: 'Segoe UI', sans-serif;
+      font-family: sans-serif;
       margin: 0;
       padding: 0;
-    }
-    header {
-      background: #2c2c3d;
-      padding: 1rem;
-      text-align: center;
-      color: #fff;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
     }
     #chat {
-      max-width: 600px;
-      margin: 2rem auto;
-      background: #2a2a40;
+      flex: 1;
+      overflow-y: auto;
       padding: 1rem;
-      border-radius: 10px;
-      box-shadow: 0 0 10px #0004;
+      display: flex;
+      flex-direction: column;
     }
     .message {
-      padding: 0.75rem;
-      margin: 0.5rem 0;
-      border-radius: 10px;
+      margin-bottom: 1rem;
+      max-width: 80%;
     }
     .bot {
-      background: #3a3a5a;
       align-self: flex-start;
+      background: #2a2a2a;
+      padding: 0.75rem 1rem;
+      border-radius: 1rem 1rem 1rem 0;
     }
     .user {
+      align-self: flex-end;
+      background: #4caf50;
+      padding: 0.75rem 1rem;
+      border-radius: 1rem 1rem 0 1rem;
+    }
+    #inputArea {
+      display: flex;
+      padding: 1rem;
+      background: #121212;
+    }
+    #userInput {
+      flex: 1;
+      padding: 0.5rem;
+      border: none;
+      border-radius: 5px;
+    }
+    #sendBtn {
+      margin-left: 0.5rem;
+      padding: 0.5rem 1rem;
       background: #4caf50;
       color: white;
-      align-self: flex-end;
+      border: none;
+      border-radius: 5px;
     }
     #map {
-      height: 300px;
+      height: 200px;
       margin: 1rem 0;
-      border-radius: 10px;
-      overflow: hidden;
     }
-    .chat-avatar {
-      width: 60px;
-      height: 60px;
-      background-image: url('https://cdn-icons-png.flaticon.com/512/3109/3109026.png');
-      background-size: cover;
-      border-radius: 50%;
-      margin-right: 1rem;
+    #hutFace {
+      width: 64px;
+      height: 64px;
+      background-image: url('https://cdn-icons-png.flaticon.com/512/616/616408.png');
+      background-size: contain;
+      background-repeat: no-repeat;
+      animation: float 2s ease-in-out infinite;
     }
-    .chat-row {
-      display: flex;
-      align-items: flex-start;
-    }
-    input[type="text"], button {
-      width: 100%;
-      padding: 0.5rem;
-      margin-top: 0.5rem;
-      border-radius: 5px;
-      border: none;
-      font-size: 1rem;
-    }
-    button {
-      background: #4caf50;
-      color: white;
-      cursor: pointer;
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-5px); }
     }
   </style>
 </head>
 <body>
-  <header>
-    <h1>👋 Eierhütten-Setup</h1>
-  </header>  <div id="chat">
-    <div class="chat-row">
-      <div class="chat-avatar"></div>
-      <div class="message bot">Willkommen! Ich bin Hütti 🛖<br>Wie soll deine Hütte heißen?</div>
-    </div>
-    <input type="text" id="hutName" placeholder="z. B. Waldhütte" /><div id="map"></div>
+<div id="chat">
+  <div class="message bot"><div id="hutFace"></div>Hallo! Ich bin Hütti 🛖. Wie soll deine Hütte heißen?</div>
+</div>
+<div id="inputArea">
+  <input id="userInput" type="text" placeholder="Antwort eingeben...">
+  <button id="sendBtn">Senden</button>
+</div>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+    authDomain: "eierhuettentour.firebaseapp.com",
+    projectId: "eierhuettentour",
+    storageBucket: "eierhuettentour.appspot.com",
+    messagingSenderId: "348272135205",
+    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+  const auth = firebase.auth();const chat = document.getElementById('chat'); const input = document.getElementById('userInput'); const sendBtn = document.getElementById('sendBtn');
 
-<button onclick="confirmHut()">Standort bestätigen</button>
+let currentStep = 0; const hutData = {};
 
-<div id="confirmMessage" class="message bot" style="display: none;"></div>
+const steps = [ { key: 'name', question: 'Wie soll deine Hütte heißen?' }, { key: 'beschreibung', question: 'Beschreibe deine Hütte in ein paar Worten.' }, { key: 'strom', question: 'Gibt es bei deiner Hütte Strom? (Ja/Nein)', validate: v => /ja|nein/i.test(v) }, { key: 'location', question: 'Klicke auf der Karte, wo deine Hütte steht.', customInput: true }, { key: 'zusammenfassung', question: 'Danke! Alles korrekt? Tippe "Ja" zum Einreichen oder "Nein" zum Abbrechen.', validate: v => /ja|nein/i.test(v) } ];
 
-  </div>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script>
-    let selectedLatLng = null;
-    let map = L.map('map').setView([51.1657, 10.4515], 6);
-    let marker;
+function addMessage(text, sender = 'bot') { const msg = document.createElement('div'); msg.className = 'message ' + sender; msg.innerText = text; chat.appendChild(msg); chat.scrollTop = chat.scrollHeight; }
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+function askNext() { const step = steps[currentStep]; if (step.customInput && step.key === 'location') { addMessage(step.question); const mapEl = document.createElement('div'); mapEl.id = 'map'; chat.appendChild(mapEl); const map = L.map(mapEl).setView([51.1657, 10.4515], 6); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map); let marker; map.on('click', function(e) { if (marker) marker.remove(); marker = L.marker(e.latlng).addTo(map); hutData.location = { latitude: e.latlng.lat, longitude: e.latlng.lng }; currentStep++; setTimeout(askNext, 1000); }); } else { addMessage(step.question); } }
 
-    map.on('click', e => {
-      selectedLatLng = e.latlng;
-      if (!marker) {
-        marker = L.marker(e.latlng).addTo(map);
-      } else {
-        marker.setLatLng(e.latlng);
-      }
-    });
+sendBtn.onclick = () => { const text = input.value.trim(); if (!text) return; addMessage(text, 'user'); input.value = '';
 
-    function confirmHut() {
-      const name = document.getElementById('hutName').value;
-      if (!name || !selectedLatLng) {
-        alert('Bitte Name eingeben und Standort auswählen.');
-        return;
-      }
+const step = steps[currentStep];
+if (step.validate && !step.validate(text)) {
+  addMessage('Bitte antworte mit "Ja" oder "Nein".');
+  return;
+}
+if (step.key === 'strom') {
+  hutData.strom = /ja/i.test(text);
+} else if (step.key === 'zusammenfassung') {
+  if (/ja/i.test(text)) {
+    submitHut();
+    return;
+  } else {
+    addMessage('Abgebrochen. Starte neu, wenn du willst.');
+    return;
+  }
+} else {
+  hutData[step.key] = text;
+}
+currentStep++;
+askNext();
 
-      const msg = document.getElementById('confirmMessage');
-      msg.innerHTML = `Super, <strong>${name}</strong> wurde mit den Koordinaten:<br><br>
-      🌍 <code>${selectedLatLng.lat.toFixed(5)}, ${selectedLatLng.lng.toFixed(5)}</code><br><br>
-      gespeichert!`;
-      msg.style.display = 'block';
-    }
-  </script></body>
+}
+
+function submitHut() { auth.onAuthStateChanged(user => { if (!user) return alert("Nicht eingeloggt!"); db.collection('eierhuetten').add({ userId: user.uid, ...hutData, erstelltAm: firebase.firestore.FieldValue.serverTimestamp(), status: 'offen' }).then(() => { addMessage('✅ Hütte erfolgreich eingereicht!'); }).catch(err => { addMessage('❌ Fehler beim Einreichen: ' + err.message); }); }); }
+
+askNext(); </script>
+
+</body>
 </html>
