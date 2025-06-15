@@ -1,99 +1,198 @@
-<!DOCTYPE html><html lang="de">
+<!DOCTYPE html>
+<html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Meine Eierhütten</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    body { font-family: sans-serif; margin:0; padding:0; background: #f9f9f9; }
-    main { max-width:800px; margin: auto; padding:1rem; }
-    .card { background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 0 5px rgba(0,0,0,0.1); margin-bottom: 1rem; }
+    body { font-family: Arial, sans-serif; margin: 0; background: #f0f0f0; }
+    header { background: #2a9d8f; color: white; padding: 1rem; text-align: center; }
+    main { max-width: 800px; margin: auto; padding: 1rem; }
+    .card { background: white; padding: 1rem; margin-bottom: 1rem; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
     .hidden { display: none; }
-    #map { width: 100%; height: 300px; margin-bottom: 1rem; }
+    #map { height: 300px; margin-bottom: 1rem; }
     .mini-map { height: 150px; margin-top: 0.5rem; pointer-events: none; }
-    input, textarea, button, select, progress { width: 100%; padding: 0.5rem; margin-bottom: 0.5rem; box-sizing: border-box; }
+    input, textarea, select, button { width: 100%; padding: 0.5rem; margin-bottom: 0.5rem; }
     button { background: #2a9d8f; color: white; border: none; border-radius: 5px; cursor: pointer; }
     button.logout { background: #d62828; }
-    #progressContainer { display: none; margin-bottom: 1rem; }
-    #uploadProgress { width: 100%; height: 20px; }
-    #successMsg { background: #4caf50; color: white; padding: 1rem; border-radius: 6px; text-align: center; margin-bottom: 1rem; display: none; }
+    #uploadProgressBox { margin-bottom: 1rem; display: none; }
   </style>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
-  <main>
-    <div class="card">
-      <h1>Neue Eierhütte einreichen</h1>
-      <input id="hut-name" placeholder="Name der Hütte" />
-      <textarea id="hut-desc" placeholder="Beschreibung"></textarea>
-      <select id="hut-strom">
-        <option value="Ja">Stromanschluss: Ja</option>
-        <option value="Nein">Stromanschluss: Nein</option>
-      </select>
-      <input type="file" id="hut-image" accept="image/*" />
-      <div id="progressContainer">
-        <progress id="uploadProgress" value="0" max="100"></progress>
-      </div>
-      <div id="map"></div>
-      <input id="hut-lat" type="hidden" />
-      <input id="hut-lng" type="hidden" />
-      <button id="submitBtn">Einreichen</button>
-    </div><div id="successMsg" class="card">🎉 Hütte erfolgreich eingereicht!</div>
+<header>
+  <h1>Meine Eierhütten</h1>
+  <div id="auth-controls">
+    <button id="loginBtn">Mit Google anmelden</button>
+    <button id="logoutBtn" class="hidden logout">Abmelden</button>
+  </div>
+</header>
 
-<div class="card hidden" id="list-section">
-  <h2>Meine eingereichten Hütten</h2>
-  <div id="huts-list"></div>
-</div>
+<main>
+  <section id="submit-section" class="card hidden">
+    <h2>Neue Eierhütte einreichen</h2>
+    <input id="hut-name" type="text" placeholder="Name der Hütte" required />
+    <textarea id="hut-desc" placeholder="Beschreibung"></textarea>
+    <select id="hut-strom">
+      <option value="Ja">Stromanschluss: Ja</option>
+      <option value="Nein">Stromanschluss: Nein</option>
+    </select>
+    <input type="file" id="hut-image" accept="image/*" />
+    <div id="uploadProgressBox">
+      <progress id="uploadProgress" value="0" max="100"></progress>
+    </div>
+    <div id="map"></div>
+    <input id="hut-lat" type="hidden" />
+    <input id="hut-lng" type="hidden" />
+    <button id="submitBtn">Einreichen</button>
+  </section>
 
-  </main>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script>
-    function debug(...args) {
-      const log = document.createElement('pre');
-      log.textContent = '[DEBUG] ' + args.join(' ');
-      document.body.appendChild(log);
-    }
+  <section id="list-section" class="card hidden">
+    <h2>Meine eingereichten Hütten</h2>
+    <div id="huts-list"></div>
+  </section>
+</main>
 
-    const firebaseConfig = { /* ... */ };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-    const storage = firebase.storage();
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+    authDomain: "eierhuettentour.firebaseapp.com",
+    projectId: "eierhuettentour",
+    storageBucket: "eierhuettentour.appspot.com",
+    messagingSenderId: "348272135205",
+    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+  const storage = firebase.storage();
 
-    // Dummy userId für Test
-    const userId = 'TESTUSER-123';
+  const loginBtn = document.getElementById('loginBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
+  const submitSection = document.getElementById('submit-section');
+  const listSection = document.getElementById('list-section');
+  const submitBtn = document.getElementById('submitBtn');
+  const hutsList = document.getElementById('huts-list');
+  const uploadProgressBox = document.getElementById('uploadProgressBox');
+  const uploadProgress = document.getElementById('uploadProgress');
 
-    let map = L.map('map').setView([51.1657, 10.4515], 6);
+  let map, marker;
+
+  function debug(msg) {
+    console.log('[DEBUG]', msg);
+  }
+
+  function initMap() {
+    map = L.map('map').setView([51.1657, 10.4515], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    let marker = L.marker([51.1657, 10.4515], { draggable: true }).addTo(map);
-    marker.on('dragend', e => updateCoords(e.target.getLatLng()));
-    map.on('click', e => { marker.setLatLng(e.latlng); updateCoords(e.latlng); });
-    function updateCoords(latlng) {
-      document.getElementById('hut-lat').value = latlng.lat;
-      document.getElementById('hut-lng').value = latlng.lng;
+    marker = L.marker([51.1657, 10.4515], { draggable: true }).addTo(map);
+    marker.on('dragend', e => updateLatLng(e.target.getLatLng()));
+    map.on('click', e => {
+      marker.setLatLng(e.latlng);
+      updateLatLng(e.latlng);
+    });
+    updateLatLng(marker.getLatLng());
+  }
+
+  function updateLatLng(latlng) {
+    document.getElementById('hut-lat').value = latlng.lat;
+    document.getElementById('hut-lng').value = latlng.lng;
+  }
+
+  auth.onAuthStateChanged(user => {
+    if (user) {
+      loginBtn.classList.add('hidden');
+      logoutBtn.classList.remove('hidden');
+      submitSection.classList.remove('hidden');
+      listSection.classList.remove('hidden');
+      if (!map) initMap();
+      loadHuts(user.uid);
+    } else {
+      loginBtn.classList.remove('hidden');
+      logoutBtn.classList.add('hidden');
+      submitSection.classList.add('hidden');
+      listSection.classList.add('hidden');
     }
+  });
 
-    document.getElementById('submitBtn').onclick = async () => {
-      const name = document.getElementById('hut-name').value;
-      const desc = document.getElementById('hut-desc').value;
-      const strom = document.getElementById('hut-strom').value;
-      const lat = parseFloat(document.getElementById('hut-lat').value);
-      const lng = parseFloat(document.getElementById('hut-lng').value);
-      const file = document.getElementById('hut-image').files[0];
-      if (!name || isNaN(lat) || isNaN(lng)) { alert('Bitte alle Felder ausfüllen.'); return; }
+  loginBtn.onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+  logoutBtn.onclick = () => auth.signOut();
 
-      let imageUrl = '';
-      if (file) {
-        const ref = storage.ref(`eierhuetten/${userId}/${Date.now()}_${file.name}`);
-        const task = ref.put(file);
-        document.getElementById('progressContainer').style.display='block';
-        await new Promise((res, rej) => {
-          task.on('state_changed', snap => {
-            const pct = (snap.bytesTransferred/snap.totalBytes)*100;
-            document.getElementById('uploadProgress').value = pct;
-          }, err=> rej(err), async ()=>{ imageUrl=await task.snapshot.ref.getDownloadURL(); res(); });
+  submitBtn.onclick = async () => {
+    const name = document.getElementById('hut-name').value;
+    const desc = document.getElementById('hut-desc').value;
+    const strom = document.getElementById('hut-strom').value;
+    const file = document.getElementById('hut-image').files[0];
+    const lat = parseFloat(document.getElementById('hut-lat').value);
+    const lng = parseFloat(document.getElementById('hut-lng').value);
+    const user = auth.currentUser;
+
+    if (!name || isNaN(lat) || isNaN(lng) || !file) return alert('Bitte alle Felder ausfüllen und ein Bild hochladen.');
+
+    uploadProgressBox.style.display = 'block';
+    const fileRef = storage.ref().child('hutfotos/' + Date.now() + '_' + file.name);
+    const uploadTask = fileRef.put(file);
+
+    uploadTask.on('state_changed',
+      snapshot => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        uploadProgress.value = progress;
+        debug('Upload Fortschritt: ' + progress + '%');
+      },
+      error => {
+        alert('Upload-Fehler: ' + error.message);
+        debug(error);
+      },
+      async () => {
+        const url = await fileRef.getDownloadURL();
+        await db.collection('eierhuetten').add({
+          userId: user.uid,
+          name,
+          beschreibung: desc,
+          strom,
+          bildUrl: url,
+          location: { latitude: lat, longitude: lng },
+          erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+          status: 'offen'
         });
+        debug('Hütte erfolgreich eingetragen');
+        uploadProgressBox.style.display = 'none';
+        uploadProgress.value = 0;
+        loadHuts(user.uid);
       }
+    );
+  };
 
-      await db.collection('eierhuetten').add({ userId, name, beschreibung:desc, strom, location:{latitude:lat,longitude:lng}, bild:imageUrl, erstelltAm:firebase.firestore.FieldValue.serverTimestamp() });
-      document.getElementById('successMsg').style.display='block';
-      setTimeout(()=>document.getElementById('successMsg').style.display='none',3000);
-    };
-  </script></body>
+  async function loadHuts(uid) {
+    hutsList.innerHTML = '';
+    const snapshot = await db.collection('eierhuetten').where('userId', '==', uid).orderBy('erstelltAm', 'desc').get();
+    if (snapshot.empty) return hutsList.innerHTML = '<p>Du hast noch keine Hütten eingereicht.</p>';
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      const card = document.createElement('div');
+      card.className = 'card';
+      const mapId = 'mini-' + doc.id;
+      card.innerHTML = `
+        <h3>${d.name}</h3>
+        <p>${d.beschreibung || ''}</p>
+        <p><strong>Strom:</strong> ${d.strom}</p>
+        ${d.bildUrl ? `<img src="${d.bildUrl}" alt="Bild" style="max-width: 100%; border-radius: 8px; margin: 0.5rem 0;">` : ''}
+        <p>Status: <strong>${d.status}</strong></p>
+        <div id="${mapId}" class="mini-map"></div>
+      `;
+      hutsList.appendChild(card);
+      setTimeout(() => {
+        const m = L.map(mapId, { zoomControl: false, dragging: false }).setView([d.location.latitude, d.location.longitude], 14);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
+        L.marker([d.location.latitude, d.location.longitude]).addTo(m);
+      }, 100);
+    });
+  }
+</script>
+</body>
 </html>
