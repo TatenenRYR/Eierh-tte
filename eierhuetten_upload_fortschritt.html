@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Hütten-Dialogsystem</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     body {
       background: #121212;
@@ -59,6 +60,12 @@
       border: none;
       border-radius: 5px;
     }
+    #map {
+      height: 300px;
+      margin-top: 1rem;
+      border-radius: 8px;
+      display: none;
+    }
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
@@ -66,141 +73,149 @@
   </style>
 </head>
 <body>
-<div class="chat-container">
-  <div id="messages"></div>
-  <form id="chat-form">
-    <input type="text" id="chat-input" placeholder="Nachricht eingeben..." autocomplete="off" />
-    <button type="submit">Senden</button>
-  </form>
-</div>
+  <div class="chat-container">
+    <div id="messages"></div>
+    <div id="map"></div>
+    <form id="chat-form">
+      <input type="text" id="chat-input" placeholder="Nachricht eingeben..." autocomplete="off" />
+      <button type="submit">Senden</button>
+    </form>
+  </div>
 
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-  import {
-    getAuth,
-    GoogleAuthProvider,
-    signInWithPopup,
-    setPersistence,
-    browserLocalPersistence,
-    onAuthStateChanged
-  } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
-  import {
-    getFirestore,
-    collection,
-    query,
-    where,
-    getDocs,
-    addDoc,
-    serverTimestamp
-  } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+    import {
+      getAuth,
+      GoogleAuthProvider,
+      signInWithPopup,
+      setPersistence,
+      browserLocalPersistence,
+      onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+    import {
+      getFirestore,
+      collection,
+      query,
+      where,
+      getDocs,
+      addDoc,
+      serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+    import L from "https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.esm.js";
 
-  const firebaseConfig = {
-    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-    authDomain: "eierhuettentour.firebaseapp.com",
-    projectId: "eierhuettentour",
-    storageBucket: "eierhuettentour.appspot.com",
-    messagingSenderId: "348272135205",
-    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
-  };
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.appspot.com",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+    };
 
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-  const db = getFirestore(app);
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
 
-  let currentUser = null;
-  let dialogState = null;
-  const hutData = {};
+    let currentUser = null;
+    let dialogState = null;
+    const hutData = {};
+    let map = null;
+    let marker = null;
 
-  const messagesEl = document.getElementById('messages');
-  const chatForm = document.getElementById('chat-form');
-  const inputEl = document.getElementById('chat-input');
+    const messagesEl = document.getElementById('messages');
+    const chatForm = document.getElementById('chat-form');
+    const inputEl = document.getElementById('chat-input');
+    const mapEl = document.getElementById('map');
 
-  const addMessage = (text, sender = "bot") => {
-    const div = document.createElement("div");
-    div.className = `message ${sender}`;
-    div.textContent = text;
-    messagesEl.appendChild(div);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-  };
+    const addMessage = (text, sender = "bot") => {
+      const div = document.createElement("div");
+      div.className = `message ${sender}`;
+      div.textContent = text;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    };
 
-  const askLogin = async () => {
-    try {
-      setPersistence(auth, browserLocalPersistence);
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      currentUser = result.user;
-      addMessage("Hallo " + currentUser.displayName + "! Was möchtest du tun?");
-    } catch (e) {
-      addMessage("Fehler beim Login: " + e.message);
-    }
-  };
-
-  onAuthStateChanged(auth, user => {
-    if (user) {
-      currentUser = user;
-      addMessage("Willkommen zurück, " + user.displayName + "! Was möchtest du tun?");
-    } else {
-      addMessage("Du bist nicht eingeloggt. Bitte melde dich an.");
-      askLogin();
-    }
-  });
-
-  chatForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const msg = inputEl.value.trim();
-    if (!msg) return;
-    addMessage(msg, "user");
-    inputEl.value = "";
-
-    if (!currentUser) {
-      addMessage("Bitte zuerst einloggen.");
-      return askLogin();
-    }
-
-    // Dialogzustand prüfen
-    if (dialogState === "awaiting_name") {
-      hutData.name = msg;
-      dialogState = "awaiting_location";
-      return addMessage("Bitte gib den Standort deiner Hütte an (z. B. 49.0, 8.4)");
-    }
-
-    if (dialogState === "awaiting_location") {
-      const parts = msg.split(",");
-      if (parts.length === 2) {
-        const lat = parseFloat(parts[0]);
-        const lng = parseFloat(parts[1]);
-        if (!isNaN(lat) && !isNaN(lng)) {
-          hutData.location = { latitude: lat, longitude: lng };
-          hutData.userId = currentUser.uid;
-          hutData.status = "offen";
-          hutData.erstelltAm = serverTimestamp();
-          await addDoc(collection(db, "eierhuetten"), hutData);
-          dialogState = null;
-          return addMessage("✅ Hütte erfolgreich eingetragen!");
-        }
+    const askLogin = async () => {
+      try {
+        await setPersistence(auth, browserLocalPersistence);
+        const provider = new GoogleAuthProvider();
+        const result = await signInWithPopup(auth, provider);
+        currentUser = result.user;
+        addMessage("Hallo " + currentUser.displayName + "! Was möchtest du tun?");
+      } catch (e) {
+        addMessage("Fehler beim Login: " + e.message);
       }
-      return addMessage("❌ Ungültige Koordinaten. Bitte im Format: 49.0, 8.4");
-    }
+    };
 
-    // Standardbefehlserkennung
-    const cmd = msg.toLowerCase();
-    if (cmd.includes("zeige hütten")) {
-      const q = query(collection(db, "eierhuetten"), where("userId", "==", currentUser.uid));
-      const snapshot = await getDocs(q);
-      if (snapshot.empty) return addMessage("Keine Hütten gefunden.");
-      snapshot.forEach(doc => {
-        const d = doc.data();
-        addMessage(`🏠 ${d.name || 'Ohne Namen'} (${d.status || 'Status unbekannt'})`);
-      });
-    } else if (cmd.includes("neue hütte")) {
-      dialogState = "awaiting_name";
-      hutData.name = "";
-      hutData.location = null;
-      return addMessage("Wie soll deine neue Hütte heißen?");
-    } else {
-      addMessage("Ich habe das leider nicht verstanden. Schreibe z. B. „zeige Hütten“ oder „neue Hütte“.");
-    }
-  });
-</script>
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        currentUser = user;
+        addMessage("Willkommen zurück, " + user.displayName + "! Was möchtest du tun?");
+      } else {
+        addMessage("Du bist nicht eingeloggt. Bitte melde dich an.");
+        askLogin();
+      }
+    });
+
+    chatForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = inputEl.value.trim();
+      if (!msg) return;
+      addMessage(msg, "user");
+      inputEl.value = "";
+
+      if (!currentUser) {
+        addMessage("Bitte zuerst einloggen.");
+        return askLogin();
+      }
+
+      if (dialogState === "awaiting_name") {
+        hutData.name = msg;
+        dialogState = "awaiting_location";
+        mapEl.style.display = 'block';
+        addMessage("Bitte klicke auf der Karte den Standort deiner Hütte.");
+        if (!map) {
+          map = L.map('map').setView([49.0, 8.4], 13);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap',
+          }).addTo(map);
+          map.on('click', async function (e) {
+            if (marker) map.removeLayer(marker);
+            marker = L.marker(e.latlng).addTo(map);
+            hutData.location = {
+              latitude: e.latlng.lat,
+              longitude: e.latlng.lng
+            };
+            hutData.userId = currentUser.uid;
+            hutData.status = "offen";
+            hutData.erstelltAm = serverTimestamp();
+            await addDoc(collection(db, "eierhuetten"), hutData);
+            dialogState = null;
+            mapEl.style.display = 'none';
+            addMessage("✅ Hütte erfolgreich gespeichert!");
+          });
+        }
+        return;
+      }
+
+      const cmd = msg.toLowerCase();
+      if (cmd.includes("zeige hütten")) {
+        const q = query(collection(db, "eierhuetten"), where("userId", "==", currentUser.uid));
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) return addMessage("Keine Hütten gefunden.");
+        snapshot.forEach(doc => {
+          const d = doc.data();
+          addMessage(`🏠 ${d.name || 'Ohne Namen'} (${d.status || 'Status unbekannt'})`);
+        });
+      } else if (cmd.includes("neue hütte")) {
+        dialogState = "awaiting_name";
+        hutData.name = "";
+        hutData.location = null;
+        return addMessage("Wie soll deine neue Hütte heißen?");
+      } else {
+        addMessage("Ich habe das leider nicht verstanden. Schreibe z. B. „zeige Hütten“ oder „neue Hütte“.");
+      }
+    });
+  </script>
 </body>
 </html>
