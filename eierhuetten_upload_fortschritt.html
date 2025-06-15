@@ -1,69 +1,36 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Meine Eierhütten</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f2f2f2; }
-    header { background: #4caf50; color: white; padding: 1rem; text-align: center; }
-    main { max-width: 800px; margin: auto; padding: 1rem; }
+    body { font-family: sans-serif; padding: 1rem; background: #f9f9f9; }
+    .card { background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 0 5px rgba(0,0,0,0.1); margin-bottom: 1rem; }
     .hidden { display: none; }
-    .card { background: white; padding: 1rem; margin-bottom: 1rem; border-radius: 8px; box-shadow: 0 0 5px rgba(0,0,0,0.1); }
     #map { height: 300px; margin-bottom: 1rem; }
-    .mini-map { height: 150px; margin-top: 0.5rem; pointer-events: none; }
-    input, textarea, button, select { width: 100%; padding: 0.5rem; margin-bottom: 0.5rem; }
-    button { background: #2a9d8f; color: white; border: none; border-radius: 5px; cursor: pointer; }
-    button.logout { background: #d62828; }
-    #progressContainer { display: none; margin-bottom: 1rem; }
-    #uploadProgress { width: 100%; height: 20px; }
-    #successMsg { opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
-    #successMsg.show { opacity: 1; pointer-events: auto; }
+    progress { width: 100%; margin-bottom: 1rem; }
+    .upload-status { margin: 0.5rem 0; color: green; font-weight: bold; }
+    #successMsg { background: #4caf50; color: white; padding: 1rem; border-radius: 6px; text-align: center; margin-bottom: 1rem; display: none; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>Meine Eierhütten</h1>
-    <div id="auth-controls">
-      <button id="loginBtn">Mit Google anmelden</button>
-      <button id="logoutBtn" class="hidden logout">Abmelden</button>
-    </div>
-  </header>
-  <main>
-    <section id="submit-section" class="card hidden">
-      <h2>Neue Eierhütte einreichen</h2>
-      <input id="hut-name" type="text" placeholder="Name der Hütte" required />
-      <textarea id="hut-desc" placeholder="Beschreibung"></textarea>
-      <select id="hut-strom">
-        <option value="Ja">Stromanschluss: Ja</option>
-        <option value="Nein">Stromanschluss: Nein</option>
-      </select>
-      <input type="file" id="hut-photo" accept="image/*" />
-      <div id="progressContainer">
-        <progress id="uploadProgress" value="0" max="100"></progress>
-      </div>
-      <div id="map"></div>
-      <input id="hut-lat" type="hidden" />
-      <input id="hut-lng" type="hidden" />
-      <button id="submitBtn">Einreichen</button>
-    </section>
-    <section id="list-section" class="card hidden">
-      <h2>Meine eingereichten Hütten</h2>
-      <div id="huts-list"></div>
-    </section>
-    <div id="successMsg" class="card" style="background: #4caf50; color: white;">
-      🎉 Deine Eierhütte wurde erfolgreich eingereicht!
-    </div>
-  </main>
-
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script>
-    const debug = (...args) => { console.log('[DEBUG]', ...args); };
+  <div class="card">
+    <h1>Neue Eierhütte einreichen</h1>
+    <input id="hut-name" placeholder="Name der Hütte" />
+    <textarea id="hut-desc" placeholder="Beschreibung"></textarea>
+    <input type="file" id="hut-image" accept="image/*" />
+    <progress id="uploadProgress" value="0" max="100" class="hidden"></progress>
+    <div id="uploadStatus" class="upload-status"></div>
+    <div id="map"></div>
+    <input id="hut-lat" type="hidden" />
+    <input id="hut-lng" type="hidden" />
+    <button id="submitBtn">Einreichen</button>
+  </div>  <div id="successMsg">🎉 Hütte erfolgreich eingereicht!</div>  <!-- Leaflet und Firebase -->  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>  <script>
+    function debug(...args) {
+      const log = document.createElement('pre');
+      log.textContent = '[DEBUG] ' + args.map(a => JSON.stringify(a)).join(' ');
+      document.body.appendChild(log);
+    }
 
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
@@ -73,138 +40,90 @@
       messagingSenderId: "348272135205",
       appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
     };
+
     firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
     const db = firebase.firestore();
     const storage = firebase.storage();
 
-    const loginBtn = document.getElementById('loginBtn');
-    const logoutBtn = document.getElementById('logoutBtn');
-    const submitSection = document.getElementById('submit-section');
-    const listSection = document.getElementById('list-section');
-    const submitBtn = document.getElementById('submitBtn');
-    const hutsList = document.getElementById('huts-list');
-    const successMsg = document.getElementById('successMsg');
-    const progressContainer = document.getElementById('progressContainer');
-    const uploadProgress = document.getElementById('uploadProgress');
+    // Dummy User für Test (ersetzen durch echten Login)
+    const userId = "TESTUSER-123";
 
-    let map, marker;
+    // Karte initialisieren
+    let map = L.map('map').setView([51.1657, 10.4515], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    let marker = L.marker([51.1657, 10.4515], { draggable: true }).addTo(map);
 
-    function initMap() {
-      map = L.map('map').setView([51.1657, 10.4515], 6);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-      marker = L.marker([51.1657, 10.4515], { draggable: true }).addTo(map);
-      marker.on('dragend', e => updateLatLng(e.target.getLatLng()));
-      map.on('click', e => {
-        marker.setLatLng(e.latlng);
-        updateLatLng(e.latlng);
-      });
-      updateLatLng(marker.getLatLng());
-    }
+    marker.on('dragend', () => updateCoords(marker.getLatLng()));
+    map.on('click', e => {
+      marker.setLatLng(e.latlng);
+      updateCoords(e.latlng);
+    });
 
-    function updateLatLng(latlng) {
+    function updateCoords(latlng) {
       document.getElementById('hut-lat').value = latlng.lat;
       document.getElementById('hut-lng').value = latlng.lng;
     }
 
-    auth.onAuthStateChanged(user => {
-      if (user) {
-        loginBtn.classList.add('hidden');
-        logoutBtn.classList.remove('hidden');
-        submitSection.classList.remove('hidden');
-        listSection.classList.remove('hidden');
-        if (!map) initMap();
-        loadHuts(user.uid);
-      } else {
-        loginBtn.classList.remove('hidden');
-        logoutBtn.classList.add('hidden');
-        submitSection.classList.add('hidden');
-        listSection.classList.add('hidden');
-      }
-    });
-
-    loginBtn.onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
-    logoutBtn.onclick = () => auth.signOut();
-
-    submitBtn.onclick = async () => {
-      const name = document.getElementById('hut-name').value;
-      const desc = document.getElementById('hut-desc').value;
-      const strom = document.getElementById('hut-strom').value;
+    document.getElementById('submitBtn').onclick = async () => {
+      const name = document.getElementById('hut-name').value.trim();
+      const desc = document.getElementById('hut-desc').value.trim();
       const lat = parseFloat(document.getElementById('hut-lat').value);
       const lng = parseFloat(document.getElementById('hut-lng').value);
-      const file = document.getElementById('hut-photo').files[0];
-      const user = auth.currentUser;
+      const fileInput = document.getElementById('hut-image');
+      const file = fileInput.files[0];
 
-      if (!name || isNaN(lat) || isNaN(lng)) return alert('Bitte alle Felder ausfüllen.');
-
-      let photoURL = '';
-      if (file) {
-        const ref = storage.ref(`eierhuetten/${user.uid}/${Date.now()}_${file.name}`);
-        const uploadTask = ref.put(file);
-
-        progressContainer.style.display = 'block';
-
-        await new Promise((resolve, reject) => {
-          uploadTask.on('state_changed',
-            snapshot => {
-              const percent = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-              uploadProgress.value = percent;
-              debug('Upload Fortschritt:', percent + '%');
-            },
-            error => {
-              debug('Upload Fehler:', error);
-              reject(error);
-            },
-            async () => {
-              photoURL = await uploadTask.snapshot.ref.getDownloadURL();
-              resolve();
-            });
-        });
-      }
-
-      await db.collection('eierhuetten').add({
-        userId: user.uid,
-        name, beschreibung: desc, strom,
-        location: { latitude: lat, longitude: lng },
-        bild: photoURL,
-        status: 'offen',
-        erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
-      });
-
-      document.getElementById('hut-name').value = '';
-      document.getElementById('hut-desc').value = '';
-      document.getElementById('hut-photo').value = '';
-      marker.setLatLng([51.1657, 10.4515]);
-      map.setView([51.1657, 10.4515], 6);
-      uploadProgress.value = 0;
-      progressContainer.style.display = 'none';
-      successMsg.classList.add('show');
-      setTimeout(() => successMsg.classList.remove('show'), 3000);
-
-      loadHuts(user.uid);
-    };
-
-    async function loadHuts(uid) {
-      hutsList.innerHTML = '';
-      const snapshot = await db.collection('eierhuetten').where('userId', '==', uid).orderBy('erstelltAm', 'desc').get();
-      if (snapshot.empty) {
-        hutsList.innerHTML = '<p>Du hast noch keine Hütten eingereicht.</p>';
+      if (!name || isNaN(lat) || isNaN(lng)) {
+        alert('Bitte alle Felder ausfüllen.');
         return;
       }
-      snapshot.forEach(doc => {
-        const d = doc.data();
-        const div = document.createElement('div');
-        div.className = 'card';
-        div.innerHTML = `
-          <h3>${d.name}</h3>
-          <p>${d.beschreibung || ''}</p>
-          <p><strong>Strom:</strong> ${d.strom}</p>
-          <p>Status: <strong>${d.status}</strong></p>
-          ${d.bild ? `<img src="${d.bild}" alt="Hüttenbild" style="max-width:100%;border-radius:6px;" />` : ''}
-        `;
-        hutsList.appendChild(div);
-      });
+
+      let imageUrl = "";
+
+      if (file) {
+        const storageRef = storage.ref().child('hütten_bilder/' + Date.now() + '_' + file.name);
+        const uploadTask = storageRef.put(file);
+
+        document.getElementById('uploadProgress').classList.remove('hidden');
+        document.getElementById('uploadStatus').textContent = 'Upload läuft...';
+
+        uploadTask.on('state_changed', 
+          snapshot => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            document.getElementById('uploadProgress').value = progress;
+            debug('Upload läuft', progress + '%');
+          }, 
+          error => {
+            debug('Upload-Fehler:', error);
+            alert('Fehler beim Hochladen des Bildes.');
+          }, 
+          async () => {
+            imageUrl = await uploadTask.snapshot.ref.getDownloadURL();
+            debug('Bild-URL:', imageUrl);
+            await saveHut(name, desc, lat, lng, imageUrl);
+          }
+        );
+      } else {
+        await saveHut(name, desc, lat, lng, imageUrl);
+      }
+    };
+
+    async function saveHut(name, desc, lat, lng, imageUrl) {
+      try {
+        await db.collection('eierhuetten').add({
+          userId,
+          name,
+          beschreibung: desc,
+          location: { latitude: lat, longitude: lng },
+          bild: imageUrl,
+          erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        document.getElementById('successMsg').style.display = 'block';
+        setTimeout(() => document.getElementById('successMsg').style.display = 'none', 3000);
+        debug('Hütte gespeichert');
+      } catch (e) {
+        debug('Fehler beim Speichern:', e);
+        alert('Fehler beim Speichern der Hütte.');
+      }
     }
-  </script>
-</body>
+  </script></body>
 </html>
