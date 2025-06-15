@@ -390,16 +390,174 @@ document.getElementById('editSaveBtn').onclick = async () => {
   document.getElementById('editModal').classList.add('hidden');
   const user = auth.currentUser;
   if (user) loadHuts(user.uid);
-};
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+    authDomain: "eierhuettentour.firebaseapp.com",
+    projectId: "eierhuettentour",
+    storageBucket: "eierhuettentour.appspot.com",
+    messagingSenderId: "348272135205",
+    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+  const storage = firebase.storage();
 
+  const loginBtn = document.getElementById('loginBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
+  const submitSection = document.getElementById('submit-section');
+  const listSection = document.getElementById('list-section');
+  const submitBtn = document.getElementById('submitBtn');
+  const hutsList = document.getElementById('huts-list');
+  const hutImage = document.getElementById('hut-image');
+  const progressBar = document.getElementById('uploadProgressBar');
+  const progressText = document.getElementById('uploadProgressText');
+  const progressContainer = document.getElementById('uploadProgressContainer');
 
+  let map, marker;
+  let currentUser = null;
 
-    document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    document.getElementById('editModal').classList.add('hidden');
-    document.getElementById('confirmModal').classList.remove('show');
+  // Leaflet initialisieren
+  function initMap() {
+    map = L.map('map').setView([51.1657, 10.4515], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    marker = L.marker([51.1657, 10.4515], { draggable: true }).addTo(map);
+    marker.on('dragend', e => updateLatLng(e.target.getLatLng()));
+    map.on('click', e => {
+      marker.setLatLng(e.latlng);
+      updateLatLng(e.latlng);
+    });
+    updateLatLng(marker.getLatLng());
   }
-});
+
+  function updateLatLng(latlng) {
+    document.getElementById('hut-lat').value = latlng.lat;
+    document.getElementById('hut-lng').value = latlng.lng;
+  }
+
+  // Auth State
+  auth.onAuthStateChanged(user => {
+    currentUser = user;
+    if (user) {
+      loginBtn.classList.add('hidden');
+      logoutBtn.classList.remove('hidden');
+      submitSection.classList.remove('hidden');
+      listSection.classList.remove('hidden');
+      if (!map) initMap();
+      loadHuts(user.uid);
+    } else {
+      loginBtn.classList.remove('hidden');
+      logoutBtn.classList.add('hidden');
+      submitSection.classList.add('hidden');
+      listSection.classList.add('hidden');
+    }
+  });
+
+  loginBtn.onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+  logoutBtn.onclick = () => auth.signOut();
+
+  // Hütte einreichen
+  submitBtn.onclick = async () => {
+    if (!currentUser) return alert("Nicht angemeldet!");
+
+    const name = document.getElementById('hut-name').value.trim();
+    const desc = document.getElementById('hut-desc').value.trim();
+    const strom = document.getElementById('hut-strom').value;
+    const lat = parseFloat(document.getElementById('hut-lat').value);
+    const lng = parseFloat(document.getElementById('hut-lng').value);
+    const file = hutImage.files[0];
+
+    if (!name || isNaN(lat) || isNaN(lng)) return alert("Bitte alle Pflichtfelder ausfüllen.");
+
+    let imageUrl = "";
+
+    if (file) {
+      const storageRef = storage.ref(`eierhuetten_bilder/${Date.now()}_${file.name}`);
+      const uploadTask = storageRef.put(file);
+
+      progressContainer.classList.remove("hidden");
+
+      await new Promise((resolve, reject) => {
+        uploadTask.on('state_changed', snapshot => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          progressBar.style.width = progress + "%";
+          progressText.textContent = Math.round(progress) + "%";
+        }, 
+        error => {
+          alert("Fehler beim Hochladen: " + error.message);
+          reject(error);
+        }, 
+        async () => {
+          imageUrl = await uploadTask.snapshot.ref.getDownloadURL();
+          resolve();
+        });
+      });
+    }
+
+    await db.collection('eierhuetten').add({
+      userId: currentUser.uid,
+      name,
+      beschreibung: desc,
+      strom,
+      imageUrl,
+      location: { latitude: lat, longitude: lng },
+      status: 'offen',
+      erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Felder zurücksetzen
+    document.getElementById('hut-name').value = '';
+    document.getElementById('hut-desc').value = '';
+    hutImage.value = '';
+    progressContainer.classList.add('hidden');
+    progressBar.style.width = "0%";
+    progressText.textContent = "0%";
+
+    loadHuts(currentUser.uid);
+    alert("Erfolgreich eingereicht!");
+  };
+
+  // Hütten laden
+  async function loadHuts(uid) {
+    hutsList.innerHTML = '';
+    if (!uid) return;
+
+    try {
+      const snapshot = await db.collection('eierhuetten')
+        .where('userId', '==', uid)
+        .orderBy('erstelltAm', 'desc')
+        .get();
+
+      if (snapshot.empty) {
+        hutsList.innerHTML = '<p>Du hast noch keine Hütten eingereicht.</p>';
+        return;
+      }
+
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        const card = document.createElement('div');
+        card.className = 'card';
+        const mapId = 'mini-' + doc.id;
+        card.innerHTML = `
+          <h3>${d.name}</h3>
+          <p>${d.beschreibung || ''}</p>
+          <p>Strom: ${d.strom || 'unbekannt'}</p>
+          <p>Status: <strong>${d.status}</strong></p>
+          ${d.imageUrl ? `<img src="${d.imageUrl}" alt="Bild" style="max-width:100%; margin-bottom:0.5rem;">` : ''}
+          <div id="${mapId}" class="mini-map"></div>
+        `;
+        hutsList.appendChild(card);
+        setTimeout(() => {
+          const m = L.map(mapId, { zoomControl: false, dragging: false, scrollWheelZoom: false }).setView([d.location.latitude, d.location.longitude], 14);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
+          L.marker([d.location.latitude, d.location.longitude]).addTo(m);
+        }, 100);
+      });
+    } catch (err) {
+      hutsList.innerHTML = '<p>Fehler beim Laden der Hütten: ' + err.message + '</p>';
+    }
+  }
   </script>
 </body>
 </html>
