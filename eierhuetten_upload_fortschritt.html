@@ -1,186 +1,168 @@
 <!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hütten-Setup Chat</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hütten-Chat</title>
   <style>
     body {
-      background: #121212;
-      color: #eee;
-      font-family: 'Segoe UI', sans-serif;
       margin: 0;
-      padding: 0;
-    }
-    header {
-      background: #1e1e1e;
-      padding: 1rem;
-      text-align: center;
-    }
-    .chat {
-      max-width: 600px;
-      margin: auto;
-      padding: 1rem;
-    }
-    .msg {
-      margin: 0.5rem 0;
-      padding: 0.75rem 1rem;
-      border-radius: 1rem;
-      max-width: 80%;
-      animation: fadeIn 0.4s ease;
-    }
-    .bot {
-      background: #2a2a2a;
-      align-self: flex-start;
-    }
-    .user {
-      background: #4caf50;
-      align-self: flex-end;
-    }
-    .chat-box {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #1e1e2f;
+      color: #fff;
       display: flex;
       flex-direction: column;
+      height: 100vh;
     }
-    input[type="text"] {
-      width: 100%;
-      padding: 0.75rem;
-      border: none;
-      border-radius: 0.5rem;
-      margin-top: 1rem;
-      background: #1f1f1f;
-      color: #eee;
+    .chat-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 1rem;
+      overflow-y: auto;
     }
-    button {
-      padding: 0.5rem 1rem;
-      background: #4caf50;
-      border: none;
-      border-radius: 0.5rem;
-      color: white;
-      cursor: pointer;
-      margin-top: 0.5rem;
+    .message {
+      max-width: 70%;
+      padding: 0.75rem 1rem;
+      margin-bottom: 0.5rem;
+      border-radius: 1rem;
+      animation: fadeIn 0.4s ease-in-out;
     }
-    .hut-face {
-      width: 50px;
-      height: 50px;
-      background: url('https://i.imgur.com/5WnPYgd.png') no-repeat center/contain;
-      animation: bounce 1s infinite;
-      margin-bottom: 1rem;
+    .user {
+      background-color: #3c3c5e;
+      align-self: flex-end;
     }
-    #map {
-      height: 250px;
-      border-radius: 10px;
-      margin: 1rem 0;
+    .bot {
+      background-color: #2d2d44;
+      align-self: flex-start;
     }
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
     }
-    @keyframes bounce {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-8px); }
+    .input-area {
+      display: flex;
+      padding: 1rem;
+      background: #111;
+      border-top: 1px solid #333;
+    }
+    .input-area input {
+      flex: 1;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      border: none;
+      font-size: 1rem;
+      background: #2d2d44;
+      color: #fff;
+    }
+    .input-area button {
+      margin-left: 1rem;
+      background: #4caf50;
+      border: none;
+      border-radius: 0.5rem;
+      padding: 0.75rem 1rem;
+      color: white;
+      cursor: pointer;
     }
   </style>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
-  <header>
-    <div class="hut-face"></div>
-    <h1>Hi, ich bin deine Hüttenhelferin!</h1>
-  </header>
-  <div class="chat chat-box" id="chatBox">
-    <div class="msg bot">Möchtest du eine neue Hütte eintragen? (ja/nein)</div>
-  </div>
-  <div class="chat" id="mapContainer" style="display:none">
-    <div id="map"></div>
-  </div>
-  <div class="chat">
-    <input type="text" id="chatInput" placeholder="Antwort schreiben...">
+  <div class="chat-container" id="chat"></div>
+  <div class="input-area">
+    <input type="text" id="userInput" placeholder="Was möchtest du tun?" />
     <button onclick="handleInput()">Senden</button>
-  </div>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script>
+  </div>  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
+    import {
+      getFirestore, collection, addDoc, getDocs, query, where
+    } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
+
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
       authDomain: "eierhuettentour.firebaseapp.com",
       projectId: "eierhuettentour",
       storageBucket: "eierhuettentour.appspot.com",
       messagingSenderId: "348272135205",
-      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
     };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-    const auth = firebase.auth();
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
 
-    let chatState = 'start';
-    let userInput = {};
+    const chat = document.getElementById('chat');
 
     function addMessage(text, sender = 'bot') {
-      const msg = document.createElement('div');
-      msg.className = `msg ${sender}`;
-      msg.innerText = text;
-      document.getElementById('chatBox').appendChild(msg);
-      msg.scrollIntoView();
+      const div = document.createElement('div');
+      div.className = `message ${sender}`;
+      div.innerText = text;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
     }
 
-    function handleInput() {
-      const input = document.getElementById('chatInput');
-      const value = input.value.trim().toLowerCase();
-      if (!value) return;
+    let currentUser = null;
+    let chatState = '';
 
-      addMessage(value, 'user');
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        currentUser = user;
+        addMessage(`👋 Willkommen zurück, ${user.displayName || 'Gast'}!`, 'bot');
+        addMessage("Was möchtest du tun? Du kannst sagen z. B. 'Neue Hütte eintragen' oder 'Zeige meine Hütten'.", 'bot');
+      } else {
+        addMessage("Bitte logge dich ein, um fortzufahren.", 'bot');
+      }
+    });
+
+    async function handleInput() {
+      const input = document.getElementById('userInput');
+      const text = input.value.trim();
+      if (!text) return;
+      addMessage(text, 'user');
       input.value = '';
 
-      if (chatState === 'start') {
-        if (value === 'ja') {
-          chatState = 'frageName';
-          setTimeout(() => addMessage('Wie heißt deine Hütte?'), 500);
-        } else if (value === 'nein') {
-          chatState = 'idle';
-          setTimeout(() => addMessage('Okay, ich bin hier falls du mich brauchst!'), 500);
-        } else {
-          addMessage('Bitte antworte mit "ja" oder "nein".');
-        }
-      } else if (chatState === 'frageName') {
-        userInput.name = value;
-        chatState = 'frageBeschreibung';
-        setTimeout(() => addMessage('Beschreibe deine Hütte in einem Satz:'), 500);
-      } else if (chatState === 'frageBeschreibung') {
-        userInput.beschreibung = value;
-        chatState = 'frageStrom';
-        setTimeout(() => addMessage('Gibt es Strom an der Hütte? (ja/nein)'), 500);
-      } else if (chatState === 'frageStrom') {
-        userInput.strom = value === 'ja';
-        chatState = 'frageStandort';
-        setTimeout(() => {
-          addMessage('Bitte klicke den Standort auf der Karte an.');
-          document.getElementById('mapContainer').style.display = 'block';
-          initMap();
-        }, 500);
-      }
-    }
+      if (!currentUser) return addMessage("❌ Du bist nicht eingeloggt.", 'bot');
 
-    let map, marker;
-    function initMap() {
-      map = L.map('map').setView([51.1657, 10.4515], 6);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-      map.on('click', async e => {
-        if (marker) map.removeLayer(marker);
-        marker = L.marker(e.latlng).addTo(map);
-        userInput.lat = e.latlng.lat;
-        userInput.lng = e.latlng.lng;
-        addMessage('Standort gespeichert! Deine Hütte wird eingetragen...');
-
-        const user = firebase.auth().currentUser;
-        const userId = user ? user.uid : 'anonymous';
-
-        await db.collection('eierhuetten').add({
-          ...userInput,
-          userId,
-          erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
-          status: 'offen'
+      if (/neue hütte/i.test(text)) {
+        chatState = 'add_hut_name';
+        addMessage("Wie soll deine Hütte heißen?", 'bot');
+      } else if (/zeige.*hütten/i.test(text)) {
+        const q = query(collection(db, 'eierhuetten'), where('userId', '==', currentUser.uid));
+        const snap = await getDocs(q);
+        if (snap.empty) return addMessage('Du hast noch keine Hütten eingetragen.', 'bot');
+        snap.forEach(doc => {
+          const d = doc.data();
+          addMessage(`🏠 ${d.name}\n📍 ${d.location?.latitude}, ${d.location?.longitude}\n⚡ Strom: ${d.strom || 'Nein'}\n📝 ${d.beschreibung || 'Keine Beschreibung'}`, 'bot');
         });
-
-        addMessage('✅ Deine Hütte wurde gespeichert. Danke!');
-        chatState = 'idle';
-        document.getElementById('mapContainer').style.display = 'none';
-      });
+      } else if (chatState === 'add_hut_name') {
+        window.newHut = { name: text };
+        chatState = 'add_hut_desc';
+        addMessage("Was möchtest du zur Hütte beschreiben?", 'bot');
+      } else if (chatState === 'add_hut_desc') {
+        window.newHut.beschreibung = text;
+        chatState = 'add_hut_strom';
+        addMessage("Hat die Hütte Strom? (ja/nein)", 'bot');
+      } else if (chatState === 'add_hut_strom') {
+        window.newHut.strom = /ja/i.test(text);
+        chatState = 'add_hut_coords';
+        addMessage("Bitte gib die Koordinaten ein (z. B. 48.123, 11.456)", 'bot');
+      } else if (chatState === 'add_hut_coords') {
+        const parts = text.split(',');
+        if (parts.length !== 2) return addMessage("Bitte zwei Zahlen durch Komma getrennt eingeben.", 'bot');
+        const lat = parseFloat(parts[0]);
+        const lng = parseFloat(parts[1]);
+        if (isNaN(lat) || isNaN(lng)) return addMessage("Ungültige Koordinaten.", 'bot');
+        window.newHut.location = { latitude: lat, longitude: lng };
+        const hut = {
+          ...window.newHut,
+          userId: currentUser.uid,
+          erstelltAm: new Date(),
+          status: 'offen'
+        };
+        await addDoc(collection(db, 'eierhuetten'), hut);
+        addMessage("✅ Hütte wurde eingetragen!", 'bot');
+        chatState = '';
+      } else {
+        addMessage("Ich habe dich leider nicht verstanden. Sag z. B. 'Neue Hütte eintragen' oder 'zeige meine Hütten'.", 'bot');
+      }
     }
   </script></body>
 </html>
