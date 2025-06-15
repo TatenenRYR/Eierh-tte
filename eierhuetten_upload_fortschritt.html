@@ -2,7 +2,8 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>Meine Eierhütte – Setup-Chat</title>
+  <title>Hütten-Setup</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
@@ -24,18 +25,9 @@
       border-radius: 8px;
       max-width: 80%;
     }
-    .bot {
-      background: #3d3d3d;
-      color: #fff;
-      animation: fadeInLeft 0.4s ease;
-    }
-    .user {
-      background: #4caf50;
-      color: white;
-      margin-left: auto;
-      text-align: right;
-      animation: fadeInRight 0.4s ease;
-    }
+    .bot { background: #3d3d3d; animation: fadeInLeft 0.4s ease; }
+    .user { background: #4caf50; margin-left: auto; animation: fadeInRight 0.4s ease; }
+    .bot, .user { color: white; }
     input, button {
       padding: 10px;
       margin-top: 10px;
@@ -46,16 +38,9 @@
       border-radius: 5px;
       box-sizing: border-box;
     }
-    input::placeholder {
-      color: #bbb;
-    }
-    button:hover {
-      background: #5a5a5a;
-      cursor: pointer;
-    }
-    .hidden {
-      display: none;
-    }
+    input::placeholder { color: #bbb; }
+    button:hover { background: #5a5a5a; cursor: pointer; }
+    .hidden { display: none; }
     #hut-avatar {
       text-align: center;
       margin-bottom: 10px;
@@ -64,17 +49,19 @@
       width: 60px;
       animation: bobble 2s infinite ease-in-out;
     }
-
+    #map {
+      height: 300px;
+      border-radius: 10px;
+      margin-top: 10px;
+    }
     @keyframes bobble {
       0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-5px) rotate(1deg); }
+      50% { transform: translateY(-5px); }
     }
-
     @keyframes fadeInLeft {
       from { opacity: 0; transform: translateX(-30px); }
       to { opacity: 1; transform: translateX(0); }
     }
-
     @keyframes fadeInRight {
       from { opacity: 0; transform: translateX(30px); }
       to { opacity: 1; transform: translateX(0); }
@@ -88,122 +75,154 @@
     <img src="https://cdn-icons-png.flaticon.com/512/4792/4792917.png" alt="Hütte">
   </div>
   <div id="messages"></div>
+  <div id="map" class="hidden"></div>
   <input type="text" id="input" placeholder="Antwort eingeben..." class="hidden">
   <button id="submit" class="hidden">Antworten</button>
 </div>
 
-<!-- Firebase SDKs -->
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-  const firebaseConfig = {
-    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-    authDomain: "eierhuettentour.firebaseapp.com",
-    projectId: "eierhuettentour",
-    storageBucket: "eierhuettentour.appspot.com",
-    messagingSenderId: "348272135205",
-    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
-  };
-  firebase.initializeApp(firebaseConfig);
-  const auth = firebase.auth();
-  const db = firebase.firestore();
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.appspot.com",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
 </script>
 
 <script>
-  const messages = document.getElementById("messages");
-  const input = document.getElementById("input");
-  const submit = document.getElementById("submit");
+const messages = document.getElementById("messages");
+const input = document.getElementById("input");
+const submit = document.getElementById("submit");
+const mapContainer = document.getElementById("map");
 
-  const chat = [
-    { q: "Hallo! Ich bin deine kleine Eierhütte 🏡 Wie soll ich heißen?", key: "name" },
-    { q: "Schöner Name! Jetzt eine kleine Beschreibung bitte.", key: "beschreibung" },
-    { q: "Brauche ich Strom? (ja / nein)", key: "strom" },
-    { q: "Wie ist mein Breitengrad? (z. B. 48.12345)", key: "lat" },
-    { q: "Und mein Längengrad? (z. B. 9.12345)", key: "lng" }
-  ];
+let hutData = {};
+let step = 0;
+let currentUser = null;
+let map, marker;
 
-  let step = 0;
-  let hutData = {};
-  let currentUser = null;
+const chat = [
+  { q: "Hallo! Ich bin deine kleine Eierhütte 🏡 Wie soll ich heißen?", key: "name" },
+  { q: "Schöner Name! Jetzt eine kleine Beschreibung bitte.", key: "beschreibung" },
+  { q: "Brauche ich Strom? (ja / nein)", key: "strom" },
+  { q: "Und wo genau stehe ich? Klicke auf die Karte 🗺️", key: "location", type: "map" }
+];
 
-  function appendMsg(text, sender = "bot") {
-    const div = document.createElement("div");
-    div.className = "msg " + sender;
-    div.innerText = text;
-    messages.appendChild(div);
-    messages.scrollTop = messages.scrollHeight;
-  }
+function appendMsg(text, sender = "bot") {
+  const div = document.createElement("div");
+  div.className = "msg " + sender;
+  div.innerText = text;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
 
-  function nextQuestion() {
-    if (step < chat.length) {
-      appendMsg(chat[step].q, "bot");
+function nextQuestion() {
+  if (step < chat.length) {
+    const current = chat[step];
+    appendMsg(current.q, "bot");
+    input.classList.add("hidden");
+    submit.classList.add("hidden");
+
+    if (current.type === "map") {
+      mapContainer.classList.remove("hidden");
+      initMap();
+    } else {
       input.classList.remove("hidden");
       submit.classList.remove("hidden");
       input.value = "";
       input.focus();
-    } else {
-      saveHut();
     }
+  } else {
+    saveHut();
   }
+}
 
-  submit.onclick = () => {
-    const answer = input.value.trim();
-    if (!answer) return;
+function initMap() {
+  setTimeout(() => {
+    if (!map) {
+      map = L.map('map').setView([48.5, 9.0], 7);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+      }).addTo(map);
 
-    appendMsg(answer, "user");
-    const key = chat[step].key;
-
-    if (key === "lat" || key === "lng") {
-      const num = parseFloat(answer.replace(",", "."));
-      if (isNaN(num)) return appendMsg("❌ Bitte eine gültige Zahl eingeben.", "bot");
-      hutData[key === "lat" ? "latitude" : "longitude"] = num;
-    } else if (key === "strom") {
-      hutData[key] = answer.toLowerCase().includes("ja");
-    } else {
-      hutData[key] = answer;
-    }
-
-    step++;
-    nextQuestion();
-  };
-
-  function saveHut() {
-    appendMsg("Ich schicke jetzt alle Daten los...", "bot");
-    input.classList.add("hidden");
-    submit.classList.add("hidden");
-
-    db.collection("eierhuetten").add({
-      userId: currentUser.uid,
-      name: hutData.name,
-      beschreibung: hutData.beschreibung,
-      strom: hutData.strom,
-      location: {
-        latitude: hutData.latitude,
-        longitude: hutData.longitude
-      },
-      erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
-      status: "offen"
-    }).then(() => {
-      appendMsg("✅ Juhu! Ich bin eingetragen! Jetzt muss nur noch ein Admin mich freigeben.", "bot");
-    }).catch(err => {
-      appendMsg("❌ Fehler beim Speichern: " + err.message, "bot");
-    });
-  }
-
-  auth.onAuthStateChanged(user => {
-    if (user) {
-      currentUser = user;
-      appendMsg("👋 Willkommen, " + user.displayName + "!");
-      setTimeout(nextQuestion, 800);
-    } else {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      auth.signInWithPopup(provider).catch(err => {
-        appendMsg("❌ Login fehlgeschlagen: " + err.message, "bot");
+      map.on('click', function (e) {
+        if (marker) map.removeLayer(marker);
+        marker = L.marker(e.latlng).addTo(map);
+        hutData.latitude = e.latlng.lat;
+        hutData.longitude = e.latlng.lng;
+        appendMsg(`📍 Standort gesetzt: ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`, "user");
+        step++;
+        setTimeout(() => {
+          map.remove();
+          mapContainer.classList.add("hidden");
+          map = null;
+          nextQuestion();
+        }, 1000);
       });
     }
+  }, 300);
+}
+
+submit.onclick = () => {
+  const val = input.value.trim();
+  if (!val) return;
+  appendMsg(val, "user");
+
+  const key = chat[step].key;
+  if (key === "strom") {
+    hutData.strom = val.toLowerCase().includes("ja");
+  } else {
+    hutData[key] = val;
+  }
+
+  step++;
+  nextQuestion();
+};
+
+function saveHut() {
+  appendMsg("Ich schicke jetzt alles los...", "bot");
+  input.classList.add("hidden");
+  submit.classList.add("hidden");
+
+  db.collection("eierhuetten").add({
+    userId: currentUser.uid,
+    name: hutData.name,
+    beschreibung: hutData.beschreibung,
+    strom: hutData.strom,
+    location: {
+      latitude: hutData.latitude,
+      longitude: hutData.longitude
+    },
+    erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+    status: "offen"
+  }).then(() => {
+    appendMsg("✅ Juhu! Ich bin eingetragen! Jetzt muss nur noch ein Admin mich freigeben.", "bot");
+  }).catch(err => {
+    appendMsg("❌ Fehler: " + err.message, "bot");
   });
+}
+
+auth.onAuthStateChanged(user => {
+  if (user) {
+    currentUser = user;
+    appendMsg("👋 Willkommen, " + user.displayName + "!");
+    setTimeout(nextQuestion, 800);
+  } else {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider).catch(err => {
+      appendMsg("❌ Login fehlgeschlagen: " + err.message, "bot");
+    });
+  }
+});
 </script>
 
 </body>
