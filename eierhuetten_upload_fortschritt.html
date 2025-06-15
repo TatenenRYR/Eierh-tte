@@ -1,177 +1,116 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Eierhütten KI-Chat</title>
-  <link rel="stylesheet"
-        href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
   <style>
-    body {
-      margin: 0; padding: 0;
-      font-family: 'Segoe UI', sans-serif;
-      background: #121212; color: #eee;
-      display: flex; align-items: center; justify-content: center;
-      height: 100vh;
-    }
-    .container {
-      width: 95vw; max-width: 600px;
-      height: 90vh; display: flex; flex-direction: column;
-      background: #1e1e1e; border-radius: 12px;
-      overflow: hidden; box-shadow: 0 0 15px #000;
-    }
-    .chat {
-      flex: 1; padding: 1rem; overflow-y: auto;
-      display: flex; flex-direction: column;
-    }
-    .input-area {
-      display: flex; border-top: 1px solid #333;
-      background: #181818; padding: .5rem;
-    }
-    .input-area input {
-      flex: 1; padding: .75rem;
-      border: none; border-radius: 8px;
-      background: #2c2c2c; color: #fff;
-      font-size: 1rem; outline: none;
-    }
-    .input-area button {
-      margin-left: .5rem; padding: .75rem 1rem;
-      background: #4e7f4e; border: none; color: white;
-      border-radius: 8px; cursor: pointer;
-      font-size: 1rem;
-    }
-    .message {
-      display: flex; margin-bottom: .75rem;
-    }
+    body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #121212; color: #eee; display: flex; justify-content: center; height: 100vh; }
+    .container { width: 100%; max-width: 600px; height: 100%; display: flex; flex-direction: column; background: #1e1e1e; }
+    .chat { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; }
+    .input-area { display: flex; padding: .5rem; background: #181818; border-top: 1px solid #333; }
+    .input-area input { flex: 1; background: #2c2c2c; border: none; border-radius: 6px; padding: .75rem; color: #fff; }
+    .input-area button { margin-left: .5rem; background: #4e7f4e; color: white; border: none; border-radius: 6px; padding: .75rem 1rem; cursor: pointer; }
+    .message { display: flex; margin-bottom: 1rem; }
     .message.user { justify-content: flex-end; }
-    .message.bot  { justify-content: flex-start; }
-    .bubble {
-      max-width: 75%; padding: .75rem 1rem;
-      border-radius: 16px; line-height: 1.4;
-      animation: fadeIn .4s;
-    }
+    .message.bot { justify-content: flex-start; }
+    .bubble { padding: .75rem 1rem; border-radius: 14px; max-width: 80%; line-height: 1.4; animation: fadeIn .3s ease-in; }
     .message.user .bubble { background: #3b8c3b; }
-    .message.bot  .bubble { background: #333; display: flex; align-items: center; }
-    .bot-icon {
-      width: 32px; height: 32px; margin-right: .5rem;
-      background: url('https://cdn-icons-png.flaticon.com/512/188/188987.png') center/cover no-repeat;
-      border-radius: 50%; animation: bounceIn .8s;
-    }
+    .message.bot .bubble { background: #333; }
   </style>
 </head>
 <body>
-
 <div class="container">
   <div id="chat" class="chat"></div>
   <div class="input-area">
-    <input id="inp" type="text" placeholder="Nachricht..." disabled>
-    <button id="btn" onclick="handleSend()" disabled>Senden</button>
+    <input id="inp" type="text" placeholder="Nachricht eingeben..." disabled>
+    <button onclick="handleSend()" disabled id="btn">Senden</button>
   </div>
-</div>
+</div><script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script><script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script><script>
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.appspot.com",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
 
-<!-- Firebase SDKs -->
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+let user = null;
+let dialogState = null;
+let newHut = {};
 
-<script>
-  // ——— Firebase initialisieren ———
-  const firebaseConfig = {
-    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-    authDomain: "eierhuettentour.firebaseapp.com",
-    projectId: "eierhuettentour",
-    storageBucket: "eierhuettentour.appspot.com",
-    messagingSenderId: "348272135205",
-    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
-  };
-  firebase.initializeApp(firebaseConfig);
-  const auth = firebase.auth();
-  const db   = firebase.firestore();
+function addMessage(sender, text) {
+  const m = document.createElement('div');
+  m.className = 'message ' + sender;
+  m.innerHTML = `<div class="bubble animate__animated animate__fadeIn">${text}</div>`;
+  document.getElementById('chat').appendChild(m);
+  document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
+}
 
-  let currentUser = null;
+function bot(text) {
+  addMessage('bot', text);
+}
 
-  const chatEl = document.getElementById('chat');
-  const inp    = document.getElementById('inp');
-  const btn    = document.getElementById('btn');
+function handleSend() {
+  const input = document.getElementById('inp');
+  const msg = input.value.trim();
+  if (!msg) return;
+  addMessage('user', msg);
+  input.value = '';
+  interpret(msg);
+}
 
-  // ——— Utility zum Hinzufügen von Nachrichten ———
-  function addMessage(sender, text) {
-    const m = document.createElement('div');
-    m.className = 'message ' + sender;
-    m.innerHTML = (sender==='bot'
-      ? '<div class="bot-icon"></div>'
-      : '') +
-      '<div class="bubble animate__animated animate__fadeIn">'+ text +'</div>';
-    chatEl.appendChild(m);
-    chatEl.scrollTop = chatEl.scrollHeight;
+function interpret(msg) {
+  if (!user) return bot('Bitte zuerst anmelden.');
+
+  if (dialogState === 'new_hut_name') {
+    newHut.name = msg;
+    dialogState = 'new_hut_location';
+    return bot('Wie ist der Standort (Ort oder Koordinaten)?');
   }
 
-  function bot(text) {
-    addMessage('bot', text);
+  if (dialogState === 'new_hut_location') {
+    newHut.location = msg;
+    dialogState = null;
+    db.collection('eierhuetten').add({ ...newHut, userId: user.uid, status: 'offen' }).then(() => {
+      bot('✅ Hütte wurde erfolgreich eingetragen!');
+      newHut = {};
+    });
+    return;
   }
 
-  // ——— Senden behandeln ———
-  function handleSend() {
-    const text = inp.value.trim();
-    if (!text) return;  // keine Leerzeichen
-    addMessage('user', text);
-    inp.value = '';
-    interpret(text.toLowerCase());
-  }
-
-  // ——— Chat-Logik als KI-Simulation ———
-  async function interpret(msg) {
-    if (!currentUser) {
-      bot('🔒 Bitte warte kurz, du wirst eingeloggt...');
-      return;
-    }
-
-    if (msg.includes('zeige hütten')) {
-      try {
-        const q = db.collection('eierhuetten').where('userId','==',currentUser.uid);
-        const snap = await q.get();
-        if (snap.empty) {
-          bot('🔍 Keine Hütten gefunden.');
-        } else {
-          snap.forEach(d => {
-            const o = d.data();
-            bot('🏠 '+ o.name +' • Status: '+ (o.status||'offen'));
-          });
-        }
-      } catch(e){
-        bot('❌ Fehler beim Laden der Hütten.');
-        console.error(e);
-      }
-    }
-    else if (msg.includes('neue hütte')) {
-      bot('📦 Toll! Wie soll die Hütte heißen?');
-      // hier könnte man weiteren Dialog anstoßen...
-    }
-    else {
-      bot('🤔 Ich habe das nicht verstanden. Schreibe „zeige Hütten“ oder „neue Hütte“');
-    }
-  }
-
-  // ——— Auth-State & automatisches Re-Login ———
-  auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
-    .then(() => {
-      auth.onAuthStateChanged(u => {
-        if (u) {
-          currentUser = u;
-          inp.disabled = false;
-          btn.disabled = false;
-          bot('👋 Willkommen '+ (u.displayName||u.email));
-        } else {
-          // sofort Google-Login-Popup
-          const provider = new firebase.auth.GoogleAuthProvider();
-          auth.signInWithPopup(provider).catch(err=>{
-            bot('❌ Login fehlgeschlagen.');
-            console.error(err);
-          });
-        }
+  if (msg.includes('zeige') && msg.includes('hütte')) {
+    db.collection('eierhuetten').where('userId', '==', user.uid).get().then(snap => {
+      if (snap.empty) return bot('Keine Hütten gefunden.');
+      snap.forEach(doc => {
+        const d = doc.data();
+        bot(`🏠 ${d.name} – ${d.location || 'Standort unbekannt'}`);
       });
     });
-</script>
+  } else if (msg.includes('neue hütte')) {
+    dialogState = 'new_hut_name';
+    bot('Wie soll die neue Hütte heißen?');
+  } else {
+    bot('Ich kann dir helfen, neue Hütten hinzuzufügen oder vorhandene zu zeigen. Schreibe z.B. "neue Hütte" oder "zeige Hütten".');
+  }
+}
 
-</body>
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).then(() => {
+  auth.onAuthStateChanged(u => {
+    if (u) {
+      user = u;
+      document.getElementById('inp').disabled = false;
+      document.getElementById('btn').disabled = false;
+      bot('Willkommen zur Eierhütten-Verwaltung! Du kannst mit mir chatten. 😊');
+    } else {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      auth.signInWithPopup(provider);
+    }
+  });
+});
+</script></body>
 </html>
