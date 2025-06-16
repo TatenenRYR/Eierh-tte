@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hütten-Dialogsystem</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    body {
+      background: #121212;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    .chat-container {
+      width: 100%;
+      max-width: 600px;
+      height: 90vh;
+      background: #1e1e1e;
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    }
+    #tips {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.75rem;
+      background: #262626;
+    }
+    #tips button {
+      background: #1abc9c;
+      color: #121212;
+      border: none;
+      border-radius: 5px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    #tips button:disabled {
+      background: #114f45;
+      cursor: default;
+    }
+    #messages {
+      flex: 1;
+      padding: 1rem;
+      overflow-y: auto;
+      background: #1e1e1e;
+    }
+    .message {
+      max-width: 75%;
+      margin-bottom: 0.75rem;
+      padding: 0.75rem 1rem;
+      border-radius: 10px;
+      animation: fadeIn 0.3s ease;
+    }
+    .message.bot {
+      background: #262626;
+      align-self: flex-start;
+      color: #e0e0e0;
+      border-bottom-left-radius: 0;
+    }
+    .message.user {
+      background: #1abc9c;
+      align-self: flex-end;
+      color: #121212;
+      border-bottom-right-radius: 0;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    #input-form {
+      display: flex;
+      border-top: 1px solid #333;
+      background: #1e1e1e;
+    }
+    #input-form input[type="text"] {
+      flex: 1;
+      border: none;
+      padding: 0.75rem 1rem;
+      font-size: 1rem;
+      background: #262626;
+      color: #e0e0e0;
+      outline: none;
+    }
+    #input-form button {
+      background: #1abc9c;
+      border: none;
+      color: #121212;
+      padding: 0 1.5rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    #input-form button:disabled {
+      background: #114f45;
+      cursor: default;
+    }
+    #map {
+      height: 250px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <div id="tips"></div>
+    <div id="messages"></div>
+    <form id="input-form">
+      <input type="text" id="input" placeholder="Nachricht eingeben..." autocomplete="off" />
+      <button type="submit" id="send-btn" disabled>Senden</button>
+    </form>
+    <div id="map"></div>
+  </div>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script>
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.firebasestorage.app",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+  measurementId: "G-16V6K5GXDT"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+const tipsEl = document.getElementById('tips');
+const messagesEl = document.getElementById('messages');
+const inputEl = document.getElementById('input');
+const sendBtn = document.getElementById('send-btn');
+const mapEl = document.getElementById('map');
+
+let map = L.map(mapEl).setView([51.1657, 10.4515], 6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' }).addTo(map);
+let marker;
+
+let currentUser = null;
+let dialogState = null;
+let hutData = {};
+
+function addMessage(text, sender = 'bot') {
+  const div = document.createElement('div');
+  div.className = `message ${sender}`;
+  div.textContent = text;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+const tipButtons = [
+  { text: 'Neue Hütte erstellen', action: startNewHut },
+  { text: 'Meine Hütten anzeigen', action: showMyHuts },
+  { text: 'Standort senden', action: sendLocation }
+];
+tipButtons.forEach(btnInfo => {
+  const btn = document.createElement('button');
+  btn.textContent = btnInfo.text;
+  btn.onclick = btnInfo.action;
+  tipsEl.appendChild(btn);
+});
+
+function disableTips() {
+  tipsEl.querySelectorAll('button').forEach(b => b.disabled = true);
+}
+
+function enableTips() {
+  tipsEl.querySelectorAll('button').forEach(b => b.disabled = false);
+}
+
+auth.onAuthStateChanged(user => {
+  currentUser = user;
+  if (user) {
+    addMessage(`Willkommen zurück, ${user.email}`);
+  } else {
+    addMessage('Bitte melde dich an.');
+  }
+});
+
+inputEl.addEventListener('input', () => sendBtn.disabled = !inputEl.value.trim());
+
+document.getElementById('input-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const msg = inputEl.value.trim();
+  if (!msg) return;
+  addMessage(msg, 'user');
+  inputEl.value = '';
+  sendBtn.disabled = true;
+
+  if (!currentUser) {
+    addMessage('Bitte melde dich an.');
+    return;
+  }
+
+  if (dialogState === 'awaiting_name') {
+    hutData.name = msg;
+    dialogState = 'awaiting_description';
+    addMessage('Gib bitte eine Beschreibung der Hütte ein.');
+    return;
+  }
+
+  if (dialogState === 'awaiting_description') {
+    hutData.beschreibung = msg;
+    dialogState = 'awaiting_location';
+    mapEl.style.display = 'block';
+    map.invalidateSize();
+    addMessage('Wähle den Standort: Karte anklicken oder nutze "Standort senden".');
+    return;
+  }
+
+  const cmd = msg.toLowerCase();
+  if (cmd.includes('neue hütte')) startNewHut();
+  else if (cmd.includes('zeige') && cmd.includes('hütten')) showMyHuts();
+  else if (cmd.includes('standort')) sendLocation();
+  else addMessage('Befehl nicht verstanden.');
+});
+
+function startNewHut() {
+  if (!currentUser) {
+    addMessage('Bitte melde dich an.');
+    return;
+  }
+  dialogState = 'awaiting_name';
+  hutData = {
+    userId: currentUser.uid,
+    status: 'offen',
+    erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  mapEl.style.display = 'none';
+  addMessage('Wie soll die neue Hütte heißen?');
+  disableTips();
+}
+
+async function showMyHuts() {
+  if (!currentUser) {
+    addMessage('Bitte melde dich an.');
+    return;
+  }
+  const snap = await db.collection('eierhuetten').where('userId', '==', currentUser.uid).get();
+  if (snap.empty) addMessage('Keine Hütten gefunden.');
+  else snap.forEach(d => addMessage(`🏠 ${d.data().name} (ID: ${d.id})`));
+}
+
+function sendLocation() {
+  if (!navigator.geolocation) return addMessage('Geolocation nicht unterstützt.');
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      addMessage(`📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+      if (dialogState === 'awaiting_location') {
+        if (marker) map.removeLayer(marker);
+        marker = L.marker([lat, lng]).addTo(map);
+        hutData.location = new firebase.firestore.GeoPoint(lat, lng);
+        finalizeHut();
+      }
+    },
+    () => addMessage('Fehler beim Abrufen des Standorts.')
+  );
+}
+
+map.on('click', async e => {
+  if (dialogState !== 'awaiting_location') {
+    addMessage('Zuerst eine neue Hütte erstellen.');
+    return;
+  }
+  const loc = { latitude: e.latlng.lat, longitude: e.latlng.lng };
+  if (marker) map.removeLayer(marker);
+  marker = L.marker([loc.latitude, loc.longitude]).addTo(map);
+  hutData.location = new firebase.firestore.GeoPoint(loc.latitude, loc.longitude);
+  finalizeHut();
+});
+
+async function finalizeHut() {
+  await db.collection('eierhuetten').add(hutData);
+  addMessage('✅ Hütte erfolgreich eingetragen.');
+  dialogState = null;
+  mapEl.style.display = 'none';
+  enableTips();
+}
+  </script>
+</body>
+</html>
