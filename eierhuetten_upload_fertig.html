@@ -1,197 +1,214 @@
 <!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Eierhütte einreichen – Chat-Modus</title>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+  <meta charset="UTF-8">
+  <title>Eierhütten Chat-Einreichung</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    body { font-family: sans-serif; background: #eef2f7; padding: 1rem; }
-    .chatbox { max-width: 600px; margin: auto; background: white; border-radius: 12px; padding: 1rem; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-    .bubble { padding: 0.8rem 1rem; margin: 0.5rem 0; border-radius: 12px; max-width: 80%; white-space: pre-wrap; }
-    .ai { background: #e1e7f5; align-self: flex-start; }
-    .user { background: #c3f7d3; align-self: flex-end; text-align: right; }
-    .chat-row { display: flex; flex-direction: column; }
-    .input-row { display: flex; margin-top: 1rem; }
-    input, select, textarea { flex: 1; padding: 0.6rem; border-radius: 8px; border: 1px solid #ccc; }
-    button { margin-left: 0.5rem; padding: 0.6rem 1rem; border: none; background: #4caf50; color: white; border-radius: 8px; cursor: pointer; font-weight: bold; }
-    button:hover { background: #45a049; }
-    #debugConsole { font-size: 0.8rem; margin-top: 1rem; white-space: pre; background: #000; color: #0f0; padding: 0.5rem; border-radius: 6px; max-height: 150px; overflow-y: auto; display: none; }
-    #map { height: 300px; width: 100%; margin-top: 1rem; border-radius: 8px; }
-    .hidden { display: none; }
+    body { font-family: sans-serif; margin: 0; padding: 0; }
+    #chat { max-width: 600px; margin: auto; padding: 1rem; }
+    .message { margin: 1rem 0; padding: 0.8rem; border-radius: 12px; max-width: 80%; }
+    .user { background: #def; align-self: flex-end; }
+    .bot { background: #eee; align-self: flex-start; }
+    #messages { display: flex; flex-direction: column; }
+    #input-container { display: flex; gap: 0.5rem; margin-top: 1rem; }
+    #map { height: 300px; margin-top: 1rem; }
+    #debug { background: #111; color: #0f0; padding: 0.5rem; font-family: monospace; display: none; }
+    #summary { background: #f0f0f0; padding: 1rem; border-radius: 8px; margin-top: 1rem; }
   </style>
-  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
 </head>
 <body>
-<div class="chatbox">
-  <div id="chat"></div>
-  <div id="mapContainer" class="hidden">
+  <div id="chat">
+    <button onclick="loginWithGoogle()">🔐 Mit Google anmelden</button>
+    <div id="messages"></div>
     <div id="map"></div>
-    <button onclick="nutzeStandort()">📍 Aktuellen Standort verwenden</button>
-  </div>
-  <div class="input-row">
-    <input id="userInput" placeholder="Deine Antwort hier..." onkeypress="if(event.key==='Enter') sendeAntwort()" />
-    <button onclick="sendeAntwort()">Senden</button>
-  </div>
-  <button onclick="toggleDebug()">🛠 Debug an/aus</button>
-  <pre id="debugConsole"></pre>
-</div><script>
-const firebaseConfig = {
-  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-  authDomain: "eierhuettentour.firebaseapp.com",
-  projectId: "eierhuettentour",
-  storageBucket: "eierhuettentour.appspot.com",
-  messagingSenderId: "348272135205",
-  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
-  measurementId: "G-16V6K5GXDT"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+    <div id="input-container">
+      <input id="user-input" placeholder="Antwort..." />
+      <button onclick="handleUserInput()">Senden</button>
+    </div>
+    <div id="summary" style="display:none;"></div>
+    <button onclick="toggleDebug()">🪛 Debug anzeigen</button>
+    <div id="debug"></div>
+  </div>  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.appspot.com",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const auth = firebase.auth();
 
-let debugMode = false;
-function debug(msg, data) {
-  if (!debugMode) return;
-  const line = `[DEBUG] ${msg}${data ? ': ' + JSON.stringify(data, null, 2) : ''}`;
-  document.getElementById("debugConsole").textContent += line + "\n";
-  console.log(line);
-}
-function toggleDebug() {
-  debugMode = !debugMode;
-  document.getElementById("debugConsole").style.display = debugMode ? 'block' : 'none';
-  debug("Debug-Modus aktiv: " + debugMode);
-}
+    let currentUser = null;
 
-const chatEl = document.getElementById("chat");
-function addMsg(role, text) {
-  const div = document.createElement("div");
-  div.className = "chat-row";
-  const b = document.createElement("div");
-  b.className = `bubble ${role}`;
-  b.textContent = text;
-  div.appendChild(b);
-  chatEl.appendChild(div);
-  chatEl.scrollTop = chatEl.scrollHeight;
-}
+    function loginWithGoogle() {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      auth.signInWithPopup(provider).then(result => {
+        currentUser = result.user;
+        debug(`Angemeldet als ${currentUser.displayName} (${currentUser.uid})`);
+        showMessage(`Hallo ${currentUser.displayName}! Ich helfe dir beim Einreichen deiner Eierhütte.`, 'bot');
+        askNext();
+      }).catch(err => alert("Fehler beim Login: " + err.message));
+    }
 
-let userData = {
-  name: "",
-  ort: "",
-  strom: "",
-  sitzplatz: "",
-  zusatz: "",
-  lat: null,
-  lng: null
-};
-let schritt = 0;
-let karteAusgewaehlt = false;
+    let formData = {
+      name: '',
+      extras: '',
+      strom: '',
+      location: null,
+      ort: '',
+      beschreibung: ''
+    };
+    let step = 0;
 
-function sendeAntwort() {
-  const input = document.getElementById("userInput");
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = "";
-  addMsg("user", text);
-  bearbeiteSchritt(text);
-}
+    function handleUserInput() {
+      const input = document.getElementById('user-input');
+      const text = input.value.trim();
+      if (!text) return;
+      showMessage(text, 'user');
+      input.value = '';
+      processInput(text);
+    }
 
-function bearbeiteSchritt(text) {
-  const input = document.getElementById("userInput");
-  if (schritt === 0) {
-    addMsg("ai", "Wie soll deine Eierhütte heißen?");
-    schritt++;
-  } else if (schritt === 1) {
-    userData.name = text;
-    addMsg("ai", "Bitte wähle den Standort deiner Eierhütte aus der Karte unten oder verwende deinen aktuellen Standort.");
-    document.getElementById("mapContainer").classList.remove("hidden");
-    initMap();
-    schritt++;
-  } else if (schritt === 2 && karteAusgewaehlt) {
-    addMsg("ai", "Gibt es einen Sitzplatz? (ja/nein)");
-    schritt++;
-  } else if (schritt === 3) {
-    userData.sitzplatz = text.toLowerCase();
-    addMsg("ai", "Gibt es eine Stromversorgung für E-Bikes? (ja/nein)");
-    schritt++;
-  } else if (schritt === 4) {
-    userData.strom = text.toLowerCase();
-    addMsg("ai", "Möchtest du noch etwas hinzufügen? (z.B. Besonderheiten, Tipps)");
-    schritt++;
-  } else if (schritt === 5) {
-    userData.zusatz = text;
-    zeigeUebersicht();
-    schritt++;
-    document.getElementById("userInput").disabled = true;
-  }
-}
+    function processInput(text) {
+      switch (step) {
+        case 0:
+          formData.name = text;
+          step++;
+          askNext();
+          break;
+        case 1:
+          formData.strom = text.toLowerCase().includes("ja") ? "ja" : "nein";
+          step++;
+          askNext();
+          break;
+        case 2:
+          formData.extras = text;
+          generateKIBeschreibung();
+          step++;
+          askNext();
+          break;
+      }
+    }
 
-function zeigeUebersicht() {
-  const beschreibung = `Die Hütte \"${userData.name}\" liegt bei (${userData.lat.toFixed(5)}, ${userData.lng.toFixed(5)}). ${userData.sitzplatz === 'ja' ? 'Sie bietet einen Sitzplatz.' : 'Es ist kein Sitzplatz vorhanden.'} ${userData.strom === 'ja' ? 'E-Bike-Ladestrom ist verfügbar.' : 'Keine Stromversorgung vorhanden.'} ${userData.zusatz}`;
-  addMsg("ai", `Hier ist deine Zusammenfassung:\n\n📍 Name: ${userData.name}\n🌍 Standort: (${userData.lat.toFixed(5)}, ${userData.lng.toFixed(5)})\n🪑 Sitzplatz: ${userData.sitzplatz}\n🔌 Strom: ${userData.strom}\n📝 Zusatzinfos: ${userData.zusatz}\n\n💬 Beschreibung: ${beschreibung}`);
-  const confirmDiv = document.createElement("div");
-  confirmDiv.innerHTML = '<button onclick="abschicken()">✅ Bestätigen & Einreichen</button> <button onclick="window.location.reload()">❌ Abbrechen</button>';
-  chatEl.appendChild(confirmDiv);
-}
+    function askNext() {
+      const fragen = [
+        "Wie heißt deine Eierhütte?",
+        "Gibt es eine Stromversorgung für E-Bikes? (Ja/Nein)",
+        "Möchtest du noch etwas hinzufügen? (z.B. Besonderheiten, Tipps)",
+        "Bitte wähle den Standort auf der Karte oder nutze den Button für deinen aktuellen Standort."
+      ];
+      if (step < fragen.length) {
+        showMessage(fragen[step], 'bot');
+        if (step === 3) {
+          document.getElementById('input-container').style.display = 'none';
+          initMap();
+        }
+      }
+    }
 
-function abschicken() {
-  const beschreibung = `Die Hütte \"${userData.name}\" liegt bei (${userData.lat.toFixed(5)}, ${userData.lng.toFixed(5)}). ${userData.sitzplatz === 'ja' ? 'Sie bietet einen Sitzplatz.' : 'Es ist kein Sitzplatz vorhanden.'} ${userData.strom === 'ja' ? 'E-Bike-Ladestrom ist verfügbar.' : 'Keine Stromversorgung vorhanden.'} ${userData.zusatz}`;
-  db.collection("eierhuetten").add({
-    name: userData.name,
-    beschreibung,
-    location: { lat: userData.lat, lng: userData.lng },
-    strom: userData.strom,
-    sitzplatz: userData.sitzplatz,
-    status: "offen",
-    erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
-    history: [`${new Date().toLocaleString()}: erstellt`]  
-  }).then(() => {
-    addMsg("ai", "✅ Die Eierhütte wurde erfolgreich eingereicht!");
-  }).catch(err => {
-    debug("Fehler beim Speichern", err);
-    addMsg("ai", "❌ Fehler beim Speichern der Daten.");
-  });
-}
+    function showMessage(text, type) {
+      const msg = document.createElement('div');
+      msg.className = `message ${type}`;
+      msg.textContent = text;
+      document.getElementById('messages').appendChild(msg);
+    }
 
-let map, marker;
-function initMap() {
-  map = L.map('map').setView([51.0, 10.0], 6);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
-  map.on('click', function(e) {
-    if (karteAusgewaehlt) return;
-    if (marker) map.removeLayer(marker);
-    marker = L.marker(e.latlng).addTo(map);
-    userData.lat = e.latlng.lat;
-    userData.lng = e.latlng.lng;
-    karteAusgewaehlt = true;
-    document.getElementById("mapContainer").classList.add("hidden");
-    bearbeiteSchritt("standort_gewaehlt");
-  });
-}
+    function toggleDebug() {
+      const dbg = document.getElementById('debug');
+      dbg.style.display = dbg.style.display === 'none' ? 'block' : 'none';
+    }
 
-function nutzeStandort() {
-  if (!navigator.geolocation) {
-    alert("Standort wird nicht unterstützt.");
-    return;
-  }
-  navigator.geolocation.getCurrentPosition(pos => {
-    const { latitude, longitude } = pos.coords;
-    if (marker) map.removeLayer(marker);
-    marker = L.marker([latitude, longitude]).addTo(map);
-    userData.lat = latitude;
-    userData.lng = longitude;
-    karteAusgewaehlt = true;
-    document.getElementById("mapContainer").classList.add("hidden");
-    bearbeiteSchritt("standort_gewaehlt");
-  });
-}
+    function debug(msg) {
+      document.getElementById('debug').innerText += `\n${msg}`;
+    }
 
-window.onload = () => {
-  setTimeout(() => {
-    addMsg("ai", "👋 Hallo! Ich helfe dir, eine neue Eierhütte einzureichen.");
-    bearbeiteSchritt("");
-  }, 500);
-}
-</script></body>
+    async function generateKIBeschreibung() {
+      const prompt = `Erstelle eine kurze freundliche Beschreibung für eine Eierhütte mit dem Namen "${formData.name}", ${formData.strom === "ja" ? "Stromversorgung vorhanden" : "keine Stromversorgung"} und folgendem Hinweis: ${formData.extras}`;
+      try {
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": "Bearer " + localStorage.getItem("openrouter-key"),
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: "mistralai/mistral-7b-instruct:free",
+            messages: [
+              { role: "system", content: "Du bist ein hilfsbereiter Textgenerator für eine Eierhütten-App." },
+              { role: "user", content: prompt }
+            ]
+          })
+        });
+        const data = await response.json();
+        formData.beschreibung = data.choices?.[0]?.message?.content || "Beschreibung folgt.";
+        debug("Beschreibung generiert:", formData.beschreibung);
+      } catch (e) {
+        debug("Fehler bei Beschreibung:", e.message);
+      }
+    }
+
+    function initMap() {
+      const map = L.map('map').setView([48.5, 9], 7);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      const marker = L.marker([48.5, 9], { draggable: true }).addTo(map);
+      formData.location = { lat: 48.5, lng: 9 };
+      marker.on('dragend', () => {
+        formData.location = marker.getLatLng();
+        debug(`Standort gewählt: ${JSON.stringify(formData.location)}`);
+        finalizeSubmission();
+      });
+
+      const btn = document.createElement('button');
+      btn.textContent = "📍 Aktueller Standort";
+      btn.onclick = () => {
+        navigator.geolocation.getCurrentPosition(pos => {
+          const { latitude, longitude } = pos.coords;
+          formData.location = { lat: latitude, lng: longitude };
+          marker.setLatLng([latitude, longitude]);
+          map.setView([latitude, longitude], 15);
+          debug("Aktueller Standort übernommen.");
+          finalizeSubmission();
+        });
+      };
+      document.getElementById('map').appendChild(btn);
+    }
+
+    function finalizeSubmission() {
+      document.getElementById('map').style.display = 'none';
+      document.getElementById('input-container').style.display = 'none';
+      showMessage("Hier ist eine Übersicht deiner Angaben:", 'bot');
+      const summary = document.getElementById('summary');
+      summary.style.display = 'block';
+      summary.innerHTML = `
+        <b>Name:</b> ${formData.name}<br>
+        <b>Strom:</b> ${formData.strom}<br>
+        <b>Extras:</b> ${formData.extras}<br>
+        <b>Standort:</b> ${formData.location.lat.toFixed(4)}, ${formData.location.lng.toFixed(4)}<br>
+        <b>Beschreibung:</b><br>${formData.beschreibung}<br><br>
+        <button onclick="submitToFirestore()">✅ Einreichen</button>
+        <button onclick="window.location.reload()">❌ Abbrechen</button>
+      `;
+    }
+
+    async function submitToFirestore() {
+      if (!currentUser) return alert("Nicht angemeldet.");
+      await db.collection("eierhuetten").add({
+        ...formData,
+        userId: currentUser.uid,
+        erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+        status: "offen",
+        history: [new Date().toLocaleString() + ': Erstellt']
+      });
+      alert("Anfrage eingereicht!");
+      window.location.reload();
+    }
+  </script></body>
 </html>
