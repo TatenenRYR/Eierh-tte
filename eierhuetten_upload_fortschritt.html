@@ -4,15 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Hütten-Dialogsystem</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     body {
       background: #121212;
       color: #fff;
       font-family: 'Segoe UI', sans-serif;
-      margin: 0;
       display: flex;
-      justify-content: center;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
     }
     .chat-container {
       width: 100%;
@@ -60,21 +60,20 @@
       border-radius: 5px;
     }
     #map {
-      height: 300px;
+      height: 200px;
       margin-top: 10px;
-      border-radius: 10px;
-      overflow: hidden;
     }
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
     }
   </style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 </head>
 <body>
 <div class="chat-container">
   <div id="messages"></div>
-  <div id="map" style="display: none;"></div>
+  <div id="map" style="display:none;"></div>
   <form id="chat-form">
     <input type="text" id="chat-input" placeholder="Nachricht eingeben..." autocomplete="off" />
     <button type="submit">Senden</button>
@@ -121,8 +120,6 @@
   const messagesEl = document.getElementById('messages');
   const chatForm = document.getElementById('chat-form');
   const inputEl = document.getElementById('chat-input');
-  const mapEl = document.getElementById('map');
-  let map, marker;
 
   const addMessage = (text, sender = "bot") => {
     const div = document.createElement("div");
@@ -154,27 +151,22 @@
     }
   });
 
-  const initMap = () => {
-    if (map) return;
-    map = L.map('map').setView([51, 10], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap'
-    }).addTo(map);
-    map.on('click', async (e) => {
-      if (marker) marker.remove();
-      marker = L.marker(e.latlng).addTo(map);
-      hutData.location = {
-        latitude: e.latlng.lat,
-        longitude: e.latlng.lng
-      };
-      hutData.userId = currentUser.uid;
-      hutData.status = "offen";
-      hutData.erstelltAm = serverTimestamp();
-      await addDoc(collection(db, "eierhuetten"), hutData);
-      dialogState = null;
-      mapEl.style.display = "none";
-      addMessage("✅ Hütte erfolgreich eingetragen!");
-    });
+  const detectIntent = (msg) => {
+    const lower = msg.toLowerCase();
+
+    if (lower.includes("zeige") && (lower.includes("hütten") || lower.includes("hütte"))) {
+      return "show_huts";
+    }
+
+    if ((lower.includes("neue") || lower.includes("eintragen") || lower.includes("hinzufügen")) && lower.includes("hütte")) {
+      return "new_hut";
+    }
+
+    if (lower.includes("hilfe") || lower.includes("was kannst du")) {
+      return "help";
+    }
+
+    return "unknown";
   };
 
   chatForm.addEventListener("submit", async (e) => {
@@ -189,16 +181,17 @@
       return askLogin();
     }
 
+    // Dialogzustände
     if (dialogState === "awaiting_name") {
       hutData.name = msg;
       dialogState = "awaiting_location";
-      mapEl.style.display = "block";
-      initMap();
-      return addMessage("Bitte wähle nun den Standort deiner Hütte auf der Karte aus.");
+      showMapForLocation();
+      return addMessage("Bitte wähle den Standort deiner Hütte auf der Karte aus.");
     }
 
-    const cmd = msg.toLowerCase();
-    if (cmd.includes("zeige hütten")) {
+    const intent = detectIntent(msg);
+
+    if (intent === "show_huts") {
       const q = query(collection(db, "eierhuetten"), where("userId", "==", currentUser.uid));
       const snapshot = await getDocs(q);
       if (snapshot.empty) return addMessage("Keine Hütten gefunden.");
@@ -206,17 +199,42 @@
         const d = doc.data();
         addMessage(`🏠 ${d.name || 'Ohne Namen'} (${d.status || 'Status unbekannt'})`);
       });
-    } else if (cmd.includes("neue hütte")) {
+    } else if (intent === "new_hut") {
       dialogState = "awaiting_name";
       hutData.name = "";
       hutData.location = null;
       return addMessage("Wie soll deine neue Hütte heißen?");
+    } else if (intent === "help") {
+      return addMessage("Ich kann dir helfen beim:\n– Neue Hütte eintragen\n– Bestehende Hütten anzeigen\nSchreib z. B. „Ich möchte eine neue Hütte eintragen“");
     } else {
-      addMessage("Ich habe das leider nicht verstanden. Schreibe z. B. „zeige Hütten“ oder „neue Hütte“.");
+      addMessage("Ich habe das leider nicht verstanden. Versuche z. B. „zeige meine Hütten“ oder „neue Hütte erstellen“.");
     }
   });
-</script>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  // 📍 Karte anzeigen
+  let map;
+  const showMapForLocation = () => {
+    const mapEl = document.getElementById("map");
+    mapEl.style.display = "block";
+    if (!map) {
+      map = L.map('map').setView([51, 10], 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      map.on('click', async (e) => {
+        hutData.location = {
+          latitude: e.latlng.lat,
+          longitude: e.latlng.lng
+        };
+        hutData.userId = currentUser.uid;
+        hutData.status = "offen";
+        hutData.erstelltAm = serverTimestamp();
+        await addDoc(collection(db, "eierhuetten"), hutData);
+        dialogState = null;
+        addMessage("✅ Hütte erfolgreich eingetragen!");
+        mapEl.style.display = "none";
+      });
+    }
+  };
+</script>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 </body>
 </html>
