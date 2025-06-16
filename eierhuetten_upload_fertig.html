@@ -1,7 +1,7 @@
 <!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Eierhütten Assistent</title>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -14,10 +14,10 @@
   <button id="google-login" class="bg-red-600 hover:bg-red-700 text-white py-2 px-6 rounded">
     Mit Google anmelden
   </button>
-</div><!-- Chat & Einreichung --><section id="chat-section" class="max-w-3xl mx-auto mt-8 bg-white shadow-lg rounded-xl overflow-hidden hidden">
+</div><!-- Chat-Einreichung --><section id="chat-section" class="max-w-3xl mx-auto mt-8 bg-white shadow-lg rounded-xl overflow-hidden hidden">
   <div class="bg-green-600 text-white text-xl font-bold p-4">🥚 Eierhütten Assistent</div>
   <div id="chat-window" class="p-4 h-96 overflow-y-auto space-y-4 text-sm bg-gray-50"></div>
-  <div class="p-4 border-t flex gap-2" id="input-row">
+  <div id="input-row" class="p-4 border-t flex gap-2">
     <input id="chat-input" type="text" class="flex-grow border border-gray-300 rounded px-3 py-2" placeholder="Schreibe eine Nachricht...">
     <button onclick="sendeNachricht()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">Senden</button>
   </div>
@@ -29,10 +29,23 @@
     Meine Hütten ansehen
   </button>
 </div><style>
-  #chat-window .user { text-align: right; background-color: #d1fae5; padding: 0.5rem 1rem; border-radius: 1rem; display: inline-block; max-width: 80%; }
-  #chat-window .bot  { background-color: #f1f5f9; padding: 0.5rem 1rem; border-radius: 1rem; display: inline-block; max-width: 80%; }
+  #chat-window .user {
+    text-align: right;
+    background-color: #d1fae5;
+    padding: 0.5rem 1rem;
+    border-radius: 1rem;
+    display: inline-block;
+    max-width: 80%;
+  }
+  #chat-window .bot {
+    background-color: #f1f5f9;
+    padding: 0.5rem 1rem;
+    border-radius: 1rem;
+    display: inline-block;
+    max-width: 80%;
+  }
 </style><script>
-// Konfiguration
+// Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
   authDomain: "eierhuettentour.firebaseapp.com",
@@ -47,61 +60,101 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 
 let currentUser = null;
-let formData = {}, chatStep = 0, map, marker;
+let step = 0;
+let formData = {};
+let map, marker;
 
-// Login
+// Google Login
 document.getElementById('google-login').onclick = async () => {
   const provider = new firebase.auth.GoogleAuthProvider();
   const res = await auth.signInWithPopup(provider);
   currentUser = res.user;
   document.getElementById('login-section').classList.add('hidden');
   document.getElementById('chat-section').classList.remove('hidden');
-  zeigeMsg(`Hallo ${currentUser.displayName}! Ich helfe dir, deine Eierhütte einzureichen. Wie soll sie heißen?`, 'bot');
+  showMsg(`Hallo ${currentUser.displayName}! Wie soll deine Eierhütte heißen?`, 'bot');
 };
 
-// Chat-Funktionen
+// Chat
 const chatWindow = document.getElementById('chat-window');
-function zeigeMsg(text, role) {
-  const div = document.createElement('div');
-  div.className = role;
-  div.textContent = text;
-  chatWindow.appendChild(div);
+function showMsg(msg, role) {
+  const d = document.createElement('div'); d.className = role; d.textContent = msg;
+  chatWindow.appendChild(d);
   chatWindow.scrollTop = chatWindow.scrollHeight;
 }
 function sendeNachricht() {
   const inp = document.getElementById('chat-input');
-  const text = inp.value.trim(); if(!text) return;
-  zeigeMsg(text,'user'); inp.value=''; bearbeite(text);
+  const txt = inp.value.trim(); if(!txt) return;
+  showMsg(txt,'user'); inp.value=''; handleStep(txt);
 }
 
-// Ablaufsteuerung
-function bearbeite(text) {
-  switch(chatStep) {
-    case 0: formData.name=text; chatStep++; zeigeMsg('Bitte wähle den Standort auf der Karte aus oder nutze aktuellen Standort.', 'bot'); initMap(); break;
-    case 1: /* Standort-Logik */ break;
-    // implementiere weitere Schritte: Sitzplatz, Strom, Extras, KI-Description
+function handleStep(txt) {
+  switch(step) {
+    case 0:
+      formData.name = txt;
+      showMsg('Bitte wähle den Standort auf der Karte oder nutze GPS.', 'bot');
+      initMap(); step++;
+      break;
+    case 1:
+      // after map click
+      showMsg('Gibt es Sitzplätze? (ja/nein)', 'bot'); step++;
+      break;
+    case 2:
+      formData.sitzplatz = txt.toLowerCase();
+      showMsg('Gibt es Strom für E-Bikes? (ja/nein)', 'bot'); step++;
+      break;
+    case 3:
+      formData.strom = txt.toLowerCase();
+      showMsg('Möchtest du noch Zusatzinfos eingeben? (optional)', 'bot'); step++;
+      break;
+    case 4:
+      formData.extras = txt;
+      showSummary(); step++;
+      break;
   }
 }
 
-// Karte initialisieren
-function initMap(){
-  if(map) return;
-  document.getElementById('input-row').remove(); // remove input while map
-  map = L.map(document.createElement('div')).setView([51.2,10.5],6);
-  document.getElementById('chat-window').appendChild(map._container);
+// Map
+function initMap() {
+  document.getElementById('input-row').style.display='none';
+  const mapDiv = document.createElement('div'); mapDiv.id='map'; mapDiv.style.height='300px';
+  document.getElementById('chat-section').appendChild(mapDiv);
+  map = L.map('map').setView([51.2,10.5],6);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
   map.on('click', e=>{
-    formData.loc=e.latlng; marker&&map.removeLayer(marker); marker=L.marker(e.latlng).addTo(map);
-    chatStep=1; document.getElementById('chat-input').disabled=false;
-    document.getElementById('chat-window').appendChild(document.createElement('div')).textContent='Ort gespeichert!';
-    bearbeite('');
+    formData.loc = e.latlng;
+    if(marker) marker.setLatLng(e.latlng); else marker=L.marker(e.latlng).addTo(map);
+    showMsg('Standort gespeichert.', 'bot');
+    map.remove(); document.getElementById('map').remove();
+    step=1;
   });
 }
 
-// Hütten laden
-async function ladeMeineHuetten(uid){
-  if(!uid)return alert('Bitte anmelden');
-  const https=snapshot=>snapshot.docs.forEach(doc=>{/* render */});
+// Summary & submit
+function showSummary() {
+  showMsg('Hier die Zusammenfassung:', 'bot');
+  const text = `Name: ${formData.name}\nStandort: ${formData.loc.lat.toFixed(5)},${formData.loc.lng.toFixed(5)}\nSitzplatz: ${formData.sitzplatz}\nStrom: ${formData.strom}\nExtras: ${formData.extras}`;
+  showMsg(text,'bot');
+  const confirm = document.createElement('div');
+  confirm.innerHTML = `<button onclick="submitEntry()" class="bg-green-600 text-white px-3 py-1 rounded">Einreichen</button>`;
+  chatWindow.appendChild(confirm);
+}
+async function submitEntry() {
+  await db.collection('eierhuetten').add({ ...formData, userId: currentUser.uid, erstelltAm: firebase.firestore.FieldValue.serverTimestamp(), status:'offen' });
+  showMsg('✅ Deine Hütte wurde eingereicht!','bot');
+}
+
+// Load own
+async function ladeMeineHuetten(uid) {
+  if(!uid) return alert('Anmelden erforderlich');
+  const sec = document.getElementById('meine-huetten'); sec.classList.remove('hidden');
+  const list = document.getElementById('huetten-liste'); list.innerHTML='';
+  const snap = await db.collection('eierhuetten').where('userId','==',uid).orderBy('erstelltAm','desc').get();
+  if(snap.empty) { list.innerHTML='<p>Keine Einträge.</p>'; return; }
+  snap.forEach(doc=>{ const h=doc.data();
+    const div=document.createElement('div'); div.className='bg-white p-4 rounded shadow';
+    div.innerHTML=`<h3>${h.name}</h3><p><strong>Status:</strong>${h.status}</p>`;
+    list.appendChild(div);
+  });
 }
 </script></body>
 </html>
