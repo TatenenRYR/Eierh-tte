@@ -1,204 +1,276 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Eierhütten Upload – KI+GPS</title>
+  <title>Eierhütten Upload – KI & Standort</title>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <link href="https://unpkg.com/leaflet/dist/leaflet.css" rel="stylesheet"/>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <style>
-    body {{ background: #121212; color: #eee; font-family: sans-serif; }}
-    #chat {{ max-width: 600px; margin: 2rem auto; background: #1e1e1e; border-radius: 10px; padding: 1rem; }}
-    #messages {{ max-height: 300px; overflow-y: auto; margin-bottom: 1rem; }}
-    .msg {{ padding: 0.5rem; margin: 0.5rem 0; border-radius: 6px; }}
-    .bot {{ background: #2c2c2c; }}
-    .user {{ background: #1abc9c; color: #000; text-align: right; }}
-    #map {{ height: 250px; margin-top: 1rem; display: none; }}
-    button {{ background: #1abc9c; border: none; padding: 0.5rem 1rem; margin: 0.25rem; border-radius: 5px; cursor: pointer; }}
-    input, #send {{ padding: 0.5rem; border-radius: 4px; border: none; width: calc(100% - 90px); }}
-    form {{ display: flex; gap: 0.5rem; }}
+    body {
+      background: #f4f4f9;
+      color: #333;
+      font-family: "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+    #chat {
+      max-width: 600px;
+      margin: 2rem auto;
+      background: white;
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      box-shadow: 0 0 12px rgba(0,0,0,0.1);
+    }
+    #messages {
+      max-height: 300px;
+      overflow-y: auto;
+      margin-bottom: 1rem;
+    }
+    .msg {
+      padding: 0.6rem 1rem;
+      margin: 0.5rem 0;
+      border-radius: 10px;
+      line-height: 1.4;
+    }
+    .bot {
+      background: #e9f5ff;
+      border-left: 4px solid #007acc;
+    }
+    .user {
+      background: #d1ffd6;
+      text-align: right;
+      border-right: 4px solid #4caf50;
+    }
+    #map {
+      height: 250px;
+      margin-top: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      display: none;
+    }
+    button, input {
+      font-size: 1rem;
+    }
+    input {
+      flex: 1;
+      padding: 0.5rem;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+    button {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 8px;
+      background: #007acc;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #005f99;
+    }
+    form {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    .top-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
   </style>
 </head>
 <body>
-<div id="chat">
-  <div id="messages"></div>
-  <form id="form">
-    <input id="input" placeholder="Nachricht eingeben…" />
-    <button id="send" type="submit">Senden</button>
-  </form>
-  <button onclick="standortSenden()">📍 Standort senden</button>
-  <div id="map"></div>
-</div>
+  <div id="chat">
+    <h2>Eierhütten melden 🥚🚲</h2>
+    <div id="messages"></div>
+    <form id="form">
+      <input id="input" placeholder="Nachricht eingeben…" autocomplete="off" />
+      <button id="send" type="submit">Senden</button>
+    </form>
+    <div class="top-buttons">
+      <button onclick="standortSenden()">📍 Standort senden</button>
+      <button onclick="neustart()">🔁 Neu starten</button>
+    </div>
+    <div id="map"></div>
+  </div>  <script>
+    const openaiKey = "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";
 
-<script>
-const openaiKey = "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";
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.appspot.com",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const auth = firebase.auth();
 
-const firebaseConfig = {{
-  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-  authDomain: "eierhuettentour.firebaseapp.com",
-  projectId: "eierhuettentour",
-  storageBucket: "eierhuettentour.appspot.com",
-  messagingSenderId: "348272135205",
-  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
-}};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-const auth = firebase.auth();
+    let state = null;
+    let hutData = {};
+    let marker;
+    let map = L.map('map').setView([51.1657, 10.4515], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let state = null;
-let hutData = {{}};
-let marker;
-let map = L.map('map').setView([51.1657, 10.4515], 6);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    auth.onAuthStateChanged(user => {
+      if (!user) alert('Bitte melde dich in Firebase an.');
+      hutData.userId = user.uid;
+    });
 
-auth.onAuthStateChanged(user => {{
-  if (!user) alert('Bitte melde dich in Firebase an.');
-  hutData.userId = user.uid;
-}});
+    document.getElementById('form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const input = document.getElementById('input');
+      const msg = input.value.trim();
+      if (!msg) return;
+      addMessage(msg, 'user');
+      input.value = '';
 
-document.getElementById('form').addEventListener('submit', async e => {{
-  e.preventDefault();
-  const input = document.getElementById('input');
-  const msg = input.value.trim();
-  if (!msg) return;
-  addMessage(msg, 'user');
-  input.value = '';
+      if (!state) {
+        hutData = {
+          userId: firebase.auth().currentUser.uid,
+          erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+          status: 'offen'
+        };
+        state = 'awaiting_name';
+        addMessage('Wie heißt die Hütte?');
+        return;
+      }
 
-  if (!state) {{
-    hutData = {{
-      userId: firebase.auth().currentUser.uid,
-      erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
-      status: 'offen'
-    }};
-    state = 'awaiting_name';
-    addMessage('Wie heißt die Hütte?');
-    return;
-  }}
+      if (state === 'awaiting_name') {
+        hutData.name = msg;
+        state = 'awaiting_description';
+        addMessage('Beschreibe die Hütte. (Oder schreibe "Vorschlag", um die KI zu nutzen)');
+        return;
+      }
 
-  if (state === 'awaiting_name') {{
-    hutData.name = msg;
-    state = 'awaiting_description';
-    addMessage('Beschreibe die Hütte. (Oder schreibe "Vorschlag", um die KI zu nutzen)');
-    return;
-  }}
+      if (state === 'awaiting_description') {
+        if (msg.toLowerCase().includes("vorschlag")) {
+          addMessage('⏳ Beschreibung wird von der KI erstellt...');
+          hutData.beschreibung = await beschreibungMitKI(hutData.name);
+          addMessage('✅ KI-Beschreibung: ' + hutData.beschreibung);
+        } else {
+          hutData.beschreibung = msg;
+        }
+        state = 'awaiting_strom';
+        addMessage('Gibt es Strom an der Hütte?');
+        return;
+      }
 
-  if (state === 'awaiting_description') {{
-    if (msg.toLowerCase().includes("vorschlag")) {{
-      addMessage('⏳ Beschreibung wird von der KI erstellt...');
-      hutData.beschreibung = await beschreibungMitKI(hutData.name);
-      addMessage('✅ KI-Beschreibung: ' + hutData.beschreibung);
-    }} else {{
-      hutData.beschreibung = msg;
-    }}
-    state = 'awaiting_strom';
-    addMessage('Gibt es Strom an der Hütte?');
-    return;
-  }}
+      if (state === 'awaiting_strom') {
+        addMessage('⏳ Frage wird an KI gesendet...');
+        const strom = await checkStromMitKI(msg);
+        if (strom === null) {
+          addMessage('Antwort unklar. Bitte versuche es mit "Ja" oder "Nein".');
+          return;
+        }
+        hutData.strom = strom;
+        state = 'awaiting_location';
+        document.getElementById('map').style.display = 'block';
+        map.invalidateSize();
+        addMessage('📍 Karte anzeigen. Klick auf einen Punkt oder nutze "Standort senden".');
+        return;
+      }
+    });
 
-  if (state === 'awaiting_strom') {{
-    addMessage('⏳ Frage wird an KI gesendet...');
-    const strom = await checkStromMitKI(msg);
-    if (strom === null) {{
-      addMessage('Antwort unklar. Bitte versuche es mit "Ja" oder "Nein".');
-      return;
-    }}
-    hutData.strom = strom;
-    state = 'awaiting_location';
-    document.getElementById('map').style.display = 'block';
-    map.invalidateSize();
-    addMessage('📍 Karte anzeigen. Klick auf einen Punkt oder nutze "Standort senden".');
-    return;
-  }}
-}});
+    map.on('click', async e => {
+      if (state !== 'awaiting_location') return;
+      if (marker) map.removeLayer(marker);
+      marker = L.marker(e.latlng).addTo(map);
+      hutData.location = new firebase.firestore.GeoPoint(e.latlng.lat, e.latlng.lng);
+      await db.collection('eierhuetten').add(hutData);
+      addMessage('✅ Hütte gespeichert. Danke!');
+      state = null;
+    });
 
-map.on('click', async e => {{
-  if (state !== 'awaiting_location') return;
-  if (marker) map.removeLayer(marker);
-  marker = L.marker(e.latlng).addTo(map);
-  hutData.location = new firebase.firestore.GeoPoint(e.latlng.lat, e.latlng.lng);
-  await db.collection('eierhuetten').add(hutData);
-  addMessage('✅ Hütte gespeichert. Danke!');
-  state = null;
-}});
+    function standortSenden() {
+      if (!navigator.geolocation) {
+        addMessage('❌ GPS nicht verfügbar');
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(pos => {
+        const latlng = [pos.coords.latitude, pos.coords.longitude];
+        map.setView(latlng, 15);
+        if (marker) map.removeLayer(marker);
+        marker = L.marker(latlng).addTo(map);
+        hutData.location = new firebase.firestore.GeoPoint(latlng[0], latlng[1]);
+        addMessage('📍 Standort gesetzt. Du kannst ihn durch Klick auf die Karte noch ändern.');
+      }, () => {
+        addMessage('❌ Standortzugriff verweigert');
+      });
+    }
 
-function standortSenden() {{
-  if (!navigator.geolocation) {{
-    addMessage('❌ GPS nicht verfügbar');
-    return;
-  }}
-  navigator.geolocation.getCurrentPosition(pos => {{
-    const latlng = [pos.coords.latitude, pos.coords.longitude];
-    map.setView(latlng, 15);
-    if (marker) map.removeLayer(marker);
-    marker = L.marker(latlng).addTo(map);
-    hutData.location = new firebase.firestore.GeoPoint(latlng[0], latlng[1]);
-    addMessage('📍 Standort gesetzt. Du kannst ihn durch Klick auf die Karte noch ändern.');
-  }}, () => {{
-    addMessage('❌ Standortzugriff verweigert');
-  }});
-}}
+    function addMessage(text, cls='bot') {
+      const msgEl = document.createElement('div');
+      msgEl.textContent = text;
+      msgEl.className = `msg ${cls}`;
+      document.getElementById('messages').appendChild(msgEl);
+      document.getElementById('messages').scrollTop = 9999;
+    }
 
-function addMessage(text, cls='bot') {{
-  const msgEl = document.createElement('div');
-  msgEl.textContent = text;
-  msgEl.className = `msg ${cls}`;
-  document.getElementById('messages').appendChild(msgEl);
-  document.getElementById('messages').scrollTop = 9999;
-}}
+    function neustart() {
+      state = null;
+      hutData = {};
+      document.getElementById('messages').innerHTML = '';
+      if (marker) map.removeLayer(marker);
+      document.getElementById('map').style.display = 'none';
+      addMessage('Neustart. Was möchtest du melden?');
+    }
 
-async function checkStromMitKI(userInput) {{
-  const prompt = `Beantworte nur mit true oder false: Gibt es Strom an der Hütte? Der Benutzer sagt: "${userInput}"`;
-  try {{
-    const res = await fetch("https://api.openai.com/v1/completions", {{
-      method: "POST",
-      headers: {{
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${openaiKey}`
-      }},
-      body: JSON.stringify({{
-        model: "text-davinci-003",
-        prompt,
-        max_tokens: 5,
-        temperature: 0
-      }})
-    }});
-    const data = await res.json();
-    const reply = data.choices?.[0]?.text?.trim().toLowerCase();
-    if (reply.includes("true")) return true;
-    if (reply.includes("false")) return false;
-    return null;
-  }} catch (e) {{
-    addMessage('OpenAI-Fehler: ' + e.message);
-    return null;
-  }}
-}}
+    async function checkStromMitKI(userInput) {
+      const prompt = `Beantworte nur mit true oder false: Gibt es Strom an der Hütte? Der Benutzer sagt: "${userInput}"`;
+      try {
+        const res = await fetch("https://api.openai.com/v1/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${openaiKey}`
+          },
+          body: JSON.stringify({
+            model: "text-davinci-003",
+            prompt,
+            max_tokens: 5,
+            temperature: 0
+          })
+        });
+        const data = await res.json();
+        const reply = data.choices?.[0]?.text?.trim().toLowerCase();
+        if (reply.includes("true")) return true;
+        if (reply.includes("false")) return false;
+        return null;
+      } catch (e) {
+        addMessage('OpenAI-Fehler: ' + e.message);
+        return null;
+      }
+    }
 
-async function beschreibungMitKI(hutName) {{
-  const prompt = `Beschreibe in 1–2 Sätzen eine Hütte namens "${hutName}" für Radfahrer, z. B. was man dort vorfindet.`;
-  try {{
-    const res = await fetch("https://api.openai.com/v1/completions", {{
-      method: "POST",
-      headers: {{
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${openaiKey}`
-      }},
-      body: JSON.stringify({{
-        model: "text-davinci-003",
-        prompt,
-        max_tokens: 100,
-        temperature: 0.7
-      }})
-    }});
-    const data = await res.json();
-    return data.choices?.[0]?.text?.trim() || "";
-  }} catch (e) {{
-    addMessage('Fehler bei Beschreibung: ' + e.message);
-    return "Eine schöne Rastmöglichkeit für Radfahrer.";
-  }}
-}}
-</script>
-</body>
+    async function beschreibungMitKI(hutName) {
+      const prompt = `Beschreibe in 1–2 Sätzen eine Hütte namens "${hutName}" für Radfahrer.`;
+      try {
+        const res = await fetch("https://api.openai.com/v1/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${openaiKey}`
+          },
+          body: JSON.stringify({
+            model: "text-davinci-003",
+            prompt,
+            max_tokens: 100,
+            temperature: 0.7
+          })
+        });
+        const data = await res.json();
+        return data.choices?.[0]?.text?.trim() || "";
+      } catch (e) {
+        addMessage('Fehler bei Beschreibung: ' + e.message);
+        return "Eine schöne Rastmöglichkeit für Radfahrer.";
+      }
+    }
+  </script></body>
 </html>
