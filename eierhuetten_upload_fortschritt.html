@@ -4,16 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Hütten-Dialogsystem</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     body {
       background: #121212;
       color: #fff;
       font-family: 'Segoe UI', sans-serif;
+      margin: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
-      margin: 0;
     }
     .chat-container {
       width: 100%;
@@ -60,12 +59,6 @@
       border: none;
       border-radius: 5px;
     }
-    #map {
-      height: 300px;
-      margin-top: 1rem;
-      border-radius: 8px;
-      display: none;
-    }
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
@@ -73,149 +66,137 @@
   </style>
 </head>
 <body>
-  <div class="chat-container">
-    <div id="messages"></div>
-    <div id="map"></div>
-    <form id="chat-form">
-      <input type="text" id="chat-input" placeholder="Nachricht eingeben..." autocomplete="off" />
-      <button type="submit">Senden</button>
-    </form>
-  </div>
+<div class="chat-container">
+  <div id="messages"></div>
+  <form id="chat-form">
+    <input type="text" id="chat-input" placeholder="Nachricht eingeben..." autocomplete="off" />
+    <button type="submit">Senden</button>
+  </form>
+</div>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-    import {
-      getAuth,
-      GoogleAuthProvider,
-      signInWithPopup,
-      setPersistence,
-      browserLocalPersistence,
-      onAuthStateChanged
-    } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
-    import {
-      getFirestore,
-      collection,
-      query,
-      where,
-      getDocs,
-      addDoc,
-      serverTimestamp
-    } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
-    import L from "https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.esm.js";
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+  import {
+    getAuth,
+    GoogleAuthProvider,
+    signInWithPopup,
+    onAuthStateChanged,
+    setPersistence,
+    browserLocalPersistence
+  } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+  import {
+    getFirestore,
+    collection,
+    query,
+    where,
+    getDocs,
+    addDoc,
+    serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-      authDomain: "eierhuettentour.firebaseapp.com",
-      projectId: "eierhuettentour",
-      storageBucket: "eierhuettentour.appspot.com",
-      messagingSenderId: "348272135205",
-      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
-    };
+  const firebaseConfig = {
+    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+    authDomain: "eierhuettentour.firebaseapp.com",
+    projectId: "eierhuettentour",
+    storageBucket: "eierhuettentour.appspot.com",
+    messagingSenderId: "348272135205",
+    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+  };
 
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db = getFirestore(app);
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
 
-    let currentUser = null;
-    let dialogState = null;
-    const hutData = {};
-    let map = null;
-    let marker = null;
+  let currentUser = null;
+  let dialogState = null;
+  const hutData = {};
 
-    const messagesEl = document.getElementById('messages');
-    const chatForm = document.getElementById('chat-form');
-    const inputEl = document.getElementById('chat-input');
-    const mapEl = document.getElementById('map');
+  const messagesEl = document.getElementById("messages");
+  const chatForm = document.getElementById("chat-form");
+  const inputEl = document.getElementById("chat-input");
 
-    const addMessage = (text, sender = "bot") => {
-      const div = document.createElement("div");
-      div.className = `message ${sender}`;
-      div.textContent = text;
-      messagesEl.appendChild(div);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    };
+  function addMessage(text, sender = "bot") {
+    const div = document.createElement("div");
+    div.className = `message ${sender}`;
+    div.textContent = text;
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
 
-    const askLogin = async () => {
-      try {
-        await setPersistence(auth, browserLocalPersistence);
-        const provider = new GoogleAuthProvider();
-        const result = await signInWithPopup(auth, provider);
-        currentUser = result.user;
-        addMessage("Hallo " + currentUser.displayName + "! Was möchtest du tun?");
-      } catch (e) {
-        addMessage("Fehler beim Login: " + e.message);
-      }
-    };
+  async function askLogin() {
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      currentUser = result.user;
+      addMessage("Hallo " + currentUser.displayName + "! Was möchtest du tun?");
+    } catch (e) {
+      addMessage("❌ Login fehlgeschlagen: " + e.message);
+    }
+  }
 
-    onAuthStateChanged(auth, user => {
-      if (user) {
-        currentUser = user;
-        addMessage("Willkommen zurück, " + user.displayName + "! Was möchtest du tun?");
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      currentUser = user;
+      addMessage("👋 Willkommen zurück, " + user.displayName + "! Was möchtest du tun?");
+    } else {
+      addMessage("🔐 Du bist nicht eingeloggt. Melde dich mit Google an.");
+      askLogin();
+    }
+  });
+
+  chatForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const msg = inputEl.value.trim();
+    if (!msg) return;
+    addMessage(msg, "user");
+    inputEl.value = "";
+
+    if (!currentUser) {
+      return askLogin();
+    }
+
+    // Dialog-Fortschritt
+    if (dialogState === "awaiting_name") {
+      hutData.name = msg;
+      dialogState = "awaiting_location";
+      return addMessage("📍 Bitte gib die Koordinaten deiner Hütte an (z. B. 49.0, 8.4)");
+    }
+
+    if (dialogState === "awaiting_location") {
+      const [latStr, lngStr] = msg.split(",").map(s => s.trim());
+      const lat = parseFloat(latStr);
+      const lng = parseFloat(lngStr);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        hutData.location = { latitude: lat, longitude: lng };
+        hutData.userId = currentUser.uid;
+        hutData.status = "offen";
+        hutData.erstelltAm = serverTimestamp();
+        await addDoc(collection(db, "eierhuetten"), hutData);
+        dialogState = null;
+        return addMessage("✅ Hütte erfolgreich eingetragen!");
       } else {
-        addMessage("Du bist nicht eingeloggt. Bitte melde dich an.");
-        askLogin();
+        return addMessage("⚠️ Ungültige Koordinaten. Bitte im Format: 49.0, 8.4");
       }
-    });
+    }
 
-    chatForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const msg = inputEl.value.trim();
-      if (!msg) return;
-      addMessage(msg, "user");
-      inputEl.value = "";
-
-      if (!currentUser) {
-        addMessage("Bitte zuerst einloggen.");
-        return askLogin();
-      }
-
-      if (dialogState === "awaiting_name") {
-        hutData.name = msg;
-        dialogState = "awaiting_location";
-        mapEl.style.display = 'block';
-        addMessage("Bitte klicke auf der Karte den Standort deiner Hütte.");
-        if (!map) {
-          map = L.map('map').setView([49.0, 8.4], 13);
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap',
-          }).addTo(map);
-          map.on('click', async function (e) {
-            if (marker) map.removeLayer(marker);
-            marker = L.marker(e.latlng).addTo(map);
-            hutData.location = {
-              latitude: e.latlng.lat,
-              longitude: e.latlng.lng
-            };
-            hutData.userId = currentUser.uid;
-            hutData.status = "offen";
-            hutData.erstelltAm = serverTimestamp();
-            await addDoc(collection(db, "eierhuetten"), hutData);
-            dialogState = null;
-            mapEl.style.display = 'none';
-            addMessage("✅ Hütte erfolgreich gespeichert!");
-          });
-        }
-        return;
-      }
-
-      const cmd = msg.toLowerCase();
-      if (cmd.includes("zeige hütten")) {
-        const q = query(collection(db, "eierhuetten"), where("userId", "==", currentUser.uid));
-        const snapshot = await getDocs(q);
-        if (snapshot.empty) return addMessage("Keine Hütten gefunden.");
-        snapshot.forEach(doc => {
-          const d = doc.data();
-          addMessage(`🏠 ${d.name || 'Ohne Namen'} (${d.status || 'Status unbekannt'})`);
-        });
-      } else if (cmd.includes("neue hütte")) {
-        dialogState = "awaiting_name";
-        hutData.name = "";
-        hutData.location = null;
-        return addMessage("Wie soll deine neue Hütte heißen?");
-      } else {
-        addMessage("Ich habe das leider nicht verstanden. Schreibe z. B. „zeige Hütten“ oder „neue Hütte“.");
-      }
-    });
-  </script>
+    // Befehle
+    const cmd = msg.toLowerCase();
+    if (cmd.includes("zeige hütten")) {
+      const q = query(collection(db, "eierhuetten"), where("userId", "==", currentUser.uid));
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) return addMessage("📭 Keine Hütten gefunden.");
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        addMessage(`🏡 ${d.name || "Ohne Namen"} – Status: ${d.status || "unbekannt"}`);
+      });
+    } else if (cmd.includes("neue hütte")) {
+      dialogState = "awaiting_name";
+      return addMessage("📝 Wie soll deine neue Hütte heißen?");
+    } else {
+      return addMessage("🤖 Ich habe dich nicht verstanden. Schreibe z. B. „zeige Hütten“ oder „neue Hütte“.");
+    }
+  });
+</script>
 </body>
 </html>
