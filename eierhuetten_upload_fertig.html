@@ -3,6 +3,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Eierhütten-Eintrag</title>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
   <style>
     body { font-family: sans-serif; background: #f1f1f1; color: #333; margin: 0; padding: 1rem; }
     .container { max-width: 600px; margin: auto; background: white; padding: 1.5rem; border-radius: 10px; box-shadow: 0 0 12px rgba(0,0,0,0.1); }
@@ -32,11 +34,22 @@
 
 <button onclick="beschreibungErstellen()">🧠 Beschreibung mit KI generieren</button>
 
-  <div id="chatBox"></div><button onclick="toggleDebug()">🛠️ Debug an/aus</button> <button onclick="clearDebug()">🧹 Debug löschen</button>
+  <div id="chatBox"></div><button onclick="einreichen()">📤 Anfrage an Firestore senden</button> <button onclick="toggleDebug()">🛠️ Debug an/aus</button> <button onclick="clearDebug()">🧹 Debug löschen</button>
 
   <pre id="debugConsole"></pre></div><script>
-let debugMode = true;
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.appspot.com",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+  measurementId: "G-16V6K5GXDT"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
 
+let debugMode = true;
 function debug(msg, data) {
   if (!debugMode) return;
   const line = `[DEBUG] ${msg}${data ? ': ' + JSON.stringify(data, null, 2) : ''}`;
@@ -53,7 +66,6 @@ function toggleDebug() {
   document.getElementById("debugConsole").style.display = debugMode ? 'block' : 'none';
   debug("Debug-Modus: " + (debugMode ? "aktiv" : "inaktiv"));
 }
-
 function saveApiKey() {
   const key = document.getElementById("apiKeyInput").value.trim();
   if (key) localStorage.setItem("openrouter_api_key", key);
@@ -61,12 +73,10 @@ function saveApiKey() {
 function getApiKey() {
   return localStorage.getItem("openrouter_api_key") || "";
 }
-
 document.addEventListener("DOMContentLoaded", () => {
   const saved = getApiKey();
   if (saved) document.getElementById("apiKeyInput").value = saved;
 });
-
 function addChatMessage(sender, text) {
   const chatBox = document.getElementById("chatBox");
   const div = document.createElement("div");
@@ -76,20 +86,18 @@ function addChatMessage(sender, text) {
   chatBox.scrollTop = chatBox.scrollHeight;
 }
 
+let letzteBeschreibung = "";
+
 async function beschreibungErstellen() {
   const ort = document.getElementById("ort").value.trim();
   const sitz = document.getElementById("sitzplatz").value;
   const strom = document.getElementById("strom").value;
   const zusatz = document.getElementById("zusatz").value.trim();
   const key = getApiKey();
-
   if (!key) return alert("Bitte OpenRouter API-Key eingeben.");
-
   const prompt = `Erstelle eine freundliche, vollständige Beschreibung einer Eierhütte. Ort: ${ort}. Sitzplatz: ${sitz}. Strom: ${strom}. Zusatzinfos: ${zusatz}`;
   addChatMessage("user", prompt);
-
   try {
-    debug("Sende Anfrage an OpenRouter", { prompt });
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -107,10 +115,36 @@ async function beschreibungErstellen() {
     const data = await res.json();
     debug("Antwort erhalten", data);
     const beschreibung = data.choices?.[0]?.message?.content || "❌ Keine Beschreibung erhalten.";
+    letzteBeschreibung = beschreibung;
     addChatMessage("ai", beschreibung);
   } catch (err) {
     debug("Fehler bei Anfrage", err);
     alert("Fehler bei der Beschreibung: " + err.message);
+  }
+}
+
+async function einreichen() {
+  const ort = document.getElementById("ort").value.trim();
+  const strom = document.getElementById("strom").value;
+  const sitz = document.getElementById("sitzplatz").value;
+  const zusatz = document.getElementById("zusatz").value.trim();
+  const beschreibung = letzteBeschreibung || `Ort: ${ort}. Sitzplatz: ${sitz}. Strom: ${strom}. Zusatz: ${zusatz}`;
+  const location = { latitude: 0, longitude: 0 }; // Geolocation kann noch integriert werden
+  try {
+    await db.collection("eierhuetten").add({
+      name: ort,
+      beschreibung,
+      location,
+      strom,
+      bildUrl: null,
+      status: "offen",
+      history: [`${new Date().toLocaleString()}: Erstellt`],
+      erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    alert("✅ Anfrage erfolgreich übermittelt!");
+  } catch (e) {
+    debug("Fehler beim Einreichen", e);
+    alert("❌ Fehler beim Speichern in Firestore.");
   }
 }
 </script></body>
