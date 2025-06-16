@@ -2,70 +2,51 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>Eierhütte melden</title>
+  <title>Eierhütte melden (mit KI)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    body { font-family: sans-serif; margin: 0; padding: 1rem; background: #f8f8f8; }
-    #messages .msg { padding: 0.5rem 1rem; margin: 0.3rem 0; border-radius: 1rem; max-width: 90%; }
-    .user { background: #dcf8c6; text-align: right; margin-left: auto; }
-    .bot { background: #eee; }
+    body { font-family: sans-serif; background: #f4f4f4; padding: 1rem; }
     input, button { padding: 0.5rem; margin-top: 0.5rem; width: 100%; }
-    #map { height: 300px; margin-top: 1rem; border-radius: 1rem; display: none; }
-
-    #debugConsole {
-      background: #111;
-      color: #0f0;
-      font-family: monospace;
-      font-size: 0.85rem;
-      padding: 0.5rem;
-      margin-top: 1rem;
-      max-height: 200px;
-      overflow-y: auto;
-      border-radius: 0.5rem;
-      display: none;
-    }
-    #debugToggle {
-      margin-top: 1rem;
-      background: #333;
-      color: white;
-      padding: 0.3rem 1rem;
-      border: none;
-      border-radius: 0.5rem;
-      cursor: pointer;
-    }
+    #map { height: 300px; margin-top: 1rem; border-radius: 0.5rem; display: none; }
+    #messages .msg { padding: 0.5rem; margin: 0.3rem 0; border-radius: 0.7rem; }
+    .user { background: #c7f5d9; text-align: right; margin-left: auto; }
+    .bot { background: #e2e2e2; text-align: left; }
   </style>
 </head>
 <body>
 
 <h2>🐣 Neue Eierhütte einreichen</h2>
+<input id="apiKeyInput" placeholder="🔑 OpenAI API-Key eingeben" oninput="saveApiKey()">
+
 <div id="messages"></div>
 <input id="userInput" placeholder="Deine Antwort...">
 <button onclick="sendMessage()">Antwort senden</button>
 <button onclick="getLocation()">📍 Standort übernehmen</button>
 <div id="map"></div>
 
-<button id="debugToggle" onclick="toggleDebug()">Debug anzeigen</button>
-<div id="debugConsole"></div>
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const openaiKey = "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";
-let debugEnabled = false;
-function toggleDebug() {
-  debugEnabled = !debugEnabled;
-  document.getElementById('debugConsole').style.display = debugEnabled ? 'block' : 'none';
+const debugMode = true;
+function debug(msg, data) {
+  if (debugMode) {
+    console.log("[DEBUG]", msg, data || '');
+  }
 }
 
-function debug(msg, data = null) {
-  if (!debugEnabled) return;
-  const dbg = document.getElementById('debugConsole');
-  const entry = document.createElement('div');
-  const time = new Date().toLocaleTimeString();
-  entry.textContent = `[${time}] ${msg} ${data ? JSON.stringify(data, null, 2) : ''}`;
-  dbg.appendChild(entry);
-  dbg.scrollTop = dbg.scrollHeight;
+function saveApiKey() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  if (key) localStorage.setItem('openai_api_key', key);
 }
+
+function getApiKey() {
+  return localStorage.getItem('openai_api_key') || '';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const savedKey = getApiKey();
+  if (savedKey) document.getElementById('apiKeyInput').value = savedKey;
+});
 
 let state = 'beschreibung';
 let data = {};
@@ -92,25 +73,25 @@ function handleState(text) {
   if (state === 'beschreibung') {
     data.beschreibung = text;
     state = 'strom';
-    addMessage("Gibt es Strom für E-Bikes?");
+    addMessage("🔌 Gibt es Strom für E-Bikes?");
   } else if (state === 'strom') {
     data.strom = text;
     state = 'verkauf';
-    addMessage("Gibt es einen Verkauf?");
+    addMessage("🛒 Gibt es einen Verkauf?");
   } else if (state === 'verkauf') {
     data.verkauf = text;
     state = 'sitzplatz';
-    addMessage("Gibt es Sitzplätze?");
+    addMessage("🪑 Gibt es Sitzplätze?");
   } else if (state === 'sitzplatz') {
     data.sitzplatz = text;
     state = 'ueberdacht';
-    addMessage("Ist die Hütte überdacht?");
+    addMessage("🏠 Ist die Hütte überdacht?");
   } else if (state === 'ueberdacht') {
     data.ueberdacht = text;
     state = 'standort';
     initMap();
     document.getElementById('map').style.display = 'block';
-    addMessage("Bitte klicke auf die Karte oder nutze 📍 Standort übernehmen.");
+    addMessage("📍 Klicke auf die Karte oder nutze den Standort-Button.");
   }
 }
 
@@ -119,9 +100,9 @@ function getLocation() {
     const lat = pos.coords.latitude;
     const lon = pos.coords.longitude;
     setLocation(lat, lon);
-  }, err => {
+  }, () => {
     addMessage("❌ Standort nicht verfügbar.");
-    debug("Standortfehler", err.message);
+    debug("Standortzugriff verweigert oder fehlgeschlagen");
   });
 }
 
@@ -144,7 +125,13 @@ function setLocation(lat, lon) {
 }
 
 async function generateSummary() {
-  const prompt = `Erstelle eine freundliche, kurze Beschreibung einer Selbstbedienungs-Hütte (Eierhütte) auf dem Land basierend auf folgenden Infos:
+  const openaiKey = getApiKey();
+  if (!openaiKey) {
+    addMessage("❌ Kein API-Key hinterlegt!");
+    return;
+  }
+
+  const prompt = `Erstelle eine kurze, freundliche Beschreibung für eine Selbstbedienungs-Hütte auf dem Land anhand dieser Informationen:
 - Beschreibung: ${data.beschreibung}
 - Strom: ${data.strom}
 - Verkauf: ${data.verkauf}
@@ -152,7 +139,7 @@ async function generateSummary() {
 - Überdacht: ${data.ueberdacht}
 - Standort: ${data.lat}, ${data.lon}`;
 
-  debug("Prompt an OpenAI", prompt);
+  debug("Sende Prompt an OpenAI", prompt);
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -164,7 +151,7 @@ async function generateSummary() {
       body: JSON.stringify({
         model: "gpt-3.5-turbo",
         messages: [
-          { role: "system", content: "Du bist ein freundlicher Helfer für Kurzbeschreibungen von Selbstbedienungshütten." },
+          { role: "system", content: "Du hilfst dabei, kurze, freundliche Beschreibungen für Eierhütten zu erstellen." },
           { role: "user", content: prompt }
         ]
       })
@@ -178,15 +165,14 @@ async function generateSummary() {
       addMessage("📋 KI-Beschreibung:\n" + reply);
     } else {
       addMessage("❌ Beschreibung konnte nicht erstellt werden.");
-      debug("Keine gültige KI-Antwort", json);
     }
   } catch (e) {
-    addMessage("❌ Fehler bei der KI-Anfrage.");
-    debug("OpenAI Fehler", e.message);
+    addMessage("❌ Fehler: " + e.message);
+    debug("Fehler bei API-Aufruf", e);
   }
 }
 
-// 🟢 Starte mit Begrüßung
+// 🟢 Starte mit der ersten Frage
 addMessage("Bitte beschreibe die Hütte in einem Satz.");
 </script>
 
