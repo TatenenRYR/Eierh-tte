@@ -7,36 +7,41 @@
   <style>
     body { font-family: sans-serif; background: #f8f8f8; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; }
     #chat { width: 100%; max-width: 600px; margin-top: 1rem; background: white; padding: 1rem; border-radius: 1rem; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-    #messages { min-height: 200px; margin-bottom: 1rem; }
-    .msg { padding: .5rem .75rem; margin: .25rem 0; border-radius: .75rem; max-width: 80%; }
+    #messages { min-height: 200px; margin-bottom: 1rem; display: flex; flex-direction: column; }
+    .msg { padding: .5rem .75rem; margin: .25rem 0; border-radius: .75rem; max-width: 80%; white-space: pre-wrap; }
     .user { background: #dcf8c6; align-self: flex-end; }
     .bot { background: #f1f0f0; align-self: flex-start; }
     #map { height: 300px; width: 100%; margin-bottom: 1rem; display: none; border-radius: 1rem; }
-    input, button { padding: .5rem; font-size: 1rem; margin-top: .5rem; width: 100%; border-radius: .5rem; border: 1px solid #ccc; }
+    input, button { padding: .5rem; font-size: 1rem; margin-top: .5rem; width: 100%; border-radius: .5rem; border: 1px solid #ccc; box-sizing: border-box; }
     button { background: #4CAF50; color: white; border: none; cursor: pointer; }
     button:hover { background: #45a049; }
+    .buttons { display: flex; gap: .5rem; }
+    .buttons button { flex: 1; margin-top: .5rem; }
   </style>
 </head>
 <body>
 <div id="chat">
   <div id="messages"></div>
   <input id="userInput" placeholder="Antwort eingeben...">
-  <button onclick="sendMessage()">Antwort senden</button>
-  <button onclick="getLocation()">📍 Standort senden</button>
-  <button onclick="neustart()">Neu starten</button>
+  <div class="buttons">
+    <button onclick="sendMessage()">Antwort senden</button>
+    <button onclick="getLocation()">📍 Standort senden</button>
+    <button onclick="neustart()">Neu starten</button>
+  </div>
   <div id="map"></div>
 </div><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script>
 let dialogState = 'awaiting_description';
 let hutData = {};
 let map, marker;
 const mapEl = document.getElementById('map');
-const openaiKey = "sk-proj-..."; // <-- DEIN API KEY
+const messagesEl = document.getElementById('messages');
+const openaiKey = "sk-proj-..."; // DEIN API KEY
 
 function addMessage(text, sender = 'bot') {
   const msg = document.createElement('div');
   msg.className = 'msg ' + sender;
   msg.textContent = text;
-  document.getElementById('messages').appendChild(msg);
+  messagesEl.appendChild(msg);
   msg.scrollIntoView();
 }
 
@@ -52,8 +57,9 @@ function sendMessage() {
 function neustart() {
   dialogState = 'awaiting_description';
   hutData = {};
-  document.getElementById('messages').innerHTML = '';
+  messagesEl.innerHTML = '';
   marker?.remove();
+  mapEl.style.display = 'none';
   addMessage('Bitte beschreibe die Hütte oder gib einen kurzen Hinweis.');
 }
 
@@ -94,7 +100,7 @@ async function handleMessage(msg) {
     hutData.ueberdacht = result;
     dialogState = 'awaiting_location';
     mapEl.style.display = 'block';
-    map.invalidateSize();
+    initMap();
     addMessage('📍 Klicke auf die Karte oder nutze „Standort senden“.');
     return;
   }
@@ -105,10 +111,7 @@ async function kiErkenneJaNein(feldName, frage, userInput) {
   try {
     const res = await fetch("https://api.openai.com/v1/completions", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${openaiKey}`
-      },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openaiKey}` },
       body: JSON.stringify({ model: "text-davinci-003", prompt, max_tokens: 5, temperature: 0 })
     });
     const data = await res.json();
@@ -116,6 +119,8 @@ async function kiErkenneJaNein(feldName, frage, userInput) {
     if (reply?.includes("true")) return true;
     if (reply?.includes("false")) return false;
   } catch (e) { addMessage(`❌ KI-Fehler: ${e.message}`); }
+
+  // Lokaler Fallback
   const t = userInput.toLowerCase();
   const p = { strom:["ja","strom","steckdose","e-bike"], verkauf:["eier","verkauf","snack","automat"], sitzplatz:["bank","tisch","stuhl"], ueberdacht:["dach","überdacht"] };
   const n = { strom:["kein","nein"], verkauf:["leer","nichts"], sitzplatz:["keine","nicht"], ueberdacht:["nicht","kein"] };
@@ -126,15 +131,19 @@ async function kiErkenneJaNein(feldName, frage, userInput) {
 }
 
 function getLocation() {
-  navigator.geolocation.getCurrentPosition(pos => {
-    const lat = pos.coords.latitude;
-    const lon = pos.coords.longitude;
-    setLocation(lat, lon);
-  });
+  navigator.geolocation.getCurrentPosition(pos => setLocation(pos.coords.latitude, pos.coords.longitude),
+    () => addMessage('❌ Standortzugriff verweigert'));
+}
+
+function initMap() {
+  if (map) return;
+  map = L.map('map').setView([51.1657, 10.4515], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  map.on('click', e => setLocation(e.latlng.lat, e.latlng.lng));
 }
 
 function setLocation(lat, lon) {
-  if (!map) initMap(lat, lon);
+  if (!map) initMap();
   if (marker) marker.setLatLng([lat, lon]);
   else marker = L.marker([lat, lon]).addTo(map);
   map.setView([lat, lon], 17);
@@ -143,31 +152,18 @@ function setLocation(lat, lon) {
   zeigeZusammenfassung();
 }
 
-function initMap(lat, lon) {
-  map = L.map('map').setView([lat, lon], 17);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap'
-  }).addTo(map);
-  map.on('click', e => setLocation(e.latlng.lat, e.latlng.lng));
-}
-
 async function zeigeZusammenfassung() {
   const prompt = `Erstelle eine kurze schöne Beschreibung für folgende Eierhütte:
-
 Beschreibung: ${hutData.beschreibung}
 Strom: ${hutData.strom}
 Verkauf: ${hutData.verkauf}
 Sitzplatz: ${hutData.sitzplatz}
 Überdacht: ${hutData.ueberdacht}
 Standort: ${hutData.lat}, ${hutData.lon}`;
-
   try {
     const res = await fetch("https://api.openai.com/v1/completions", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${openaiKey}`
-      },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openaiKey}` },
       body: JSON.stringify({ model: "text-davinci-003", prompt, max_tokens: 120, temperature: 0.7 })
     });
     const data = await res.json();
@@ -179,6 +175,7 @@ Standort: ${hutData.lat}, ${hutData.lon}`;
   }
 }
 
+// Start
 addMessage('Bitte beschreibe die Hütte oder gib einen kurzen Hinweis.');
 </script></body>
 </html>
