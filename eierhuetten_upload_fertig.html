@@ -27,6 +27,14 @@
 <script>
 const openaiKey = "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";
 
+// 🔧 Debug aktivieren/deaktivieren:
+const debugMode = true;
+function debug(message, data = null) {
+  if (debugMode) {
+    console.log("[DEBUG]", message, data);
+  }
+}
+
 let state = 'beschreibung';
 let data = {};
 let map, marker;
@@ -81,6 +89,7 @@ function getLocation() {
     setLocation(lat, lon);
   }, () => {
     addMessage("❌ Standort nicht verfügbar.");
+    debug("Standortzugriff verweigert oder fehlgeschlagen");
   });
 }
 
@@ -89,6 +98,7 @@ function initMap() {
   map = L.map('map').setView([51.2, 10.5], 6);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
   map.on('click', e => setLocation(e.latlng.lat, e.latlng.lng));
+  debug("Karte initialisiert");
 }
 
 function setLocation(lat, lon) {
@@ -97,6 +107,7 @@ function setLocation(lat, lon) {
   if (marker) marker.setLatLng([lat, lon]);
   else marker = L.marker([lat, lon]).addTo(map);
   map.setView([lat, lon], 16);
+  debug("Standort gesetzt", { lat, lon });
   generateSummary();
 }
 
@@ -108,6 +119,8 @@ async function generateSummary() {
 - Sitzplatz: ${data.sitzplatz}
 - Überdacht: ${data.ueberdacht}
 - Standort: ${data.lat}, ${data.lon}`;
+
+  debug("Sende folgenden Prompt an OpenAI:", prompt);
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -126,20 +139,22 @@ async function generateSummary() {
     });
 
     const json = await res.json();
-    console.log("OpenAI Antwort:", json);
+    debug("Antwort von OpenAI", json);
 
-    const reply = json.choices.[0].message.content;
+    const reply = json?.choices?.[0]?.message?.content?.trim();
     if (reply) {
       addMessage("📋 KI-Beschreibung:\n" + reply);
     } else {
       addMessage("❌ Beschreibung konnte nicht erstellt werden.");
+      debug("Keine gültige Antwort erhalten", json);
     }
   } catch (e) {
     addMessage("❌ Fehler: " + e.message);
+    debug("Fehler bei Anfrage an OpenAI", e);
   }
 }
 
-// Startfrage
+// 🟢 Start-Frage
 addMessage("Bitte beschreibe die Hütte in einem Satz.");
 </script>
 
