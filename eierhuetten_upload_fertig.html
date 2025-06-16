@@ -28,7 +28,7 @@
   <div id="chat"></div>
   <div id="map"></div>
   <div id="summaryBox"></div>
-  <div class="input-row">
+  <div class="input-row" id="inputArea">
     <input id="userInput" placeholder="Deine Antwort hier..." onkeypress="if(event.key==='Enter') sendeAntwort()" />
     <button onclick="sendeAntwort()">Senden</button>
   </div>
@@ -92,24 +92,20 @@ function sendeAntwort() {
 
 function bearbeiteSchritt(text) {
   if (schritt === 0) {
-    addMsg("ai", "Wie lautet der Ort der Eierhütte?");
+    addMsg("ai", "Klicke auf der Karte, um den Ort der Hütte festzulegen.");
+    zeigeKarte();
     schritt++;
   } else if (schritt === 1) {
-    userData.ort = text;
-    addMsg("ai", "Gibt es einen Sitzplatz? (ja/nein)");
+    userData.sitzplatz = text.toLowerCase();
+    addMsg("ai", "Kann man dort bequem sitzen oder rasten? (ja/nein)");
     schritt++;
   } else if (schritt === 2) {
-    userData.sitzplatz = text.toLowerCase();
-    addMsg("ai", "Gibt es eine Stromversorgung für E-Bikes? (ja/nein)");
+    userData.strom = text.toLowerCase();
+    addMsg("ai", "Gibt es eine Steckdose oder Ladestation für E-Bikes? (ja/nein)");
     schritt++;
   } else if (schritt === 3) {
-    userData.strom = text.toLowerCase();
-    addMsg("ai", "Hast du noch Zusatzinfos zur Hütte? (optional)");
-    schritt++;
-  } else if (schritt === 4) {
     userData.zusatz = text;
-    addMsg("ai", "Klicke nun auf der Karte, um den Standort der Hütte festzulegen.");
-    zeigeKarte();
+    addMsg("ai", "Möchtest du noch etwas hinzufügen? (z.B. Besonderheiten, Tipps)");
     schritt++;
   }
 }
@@ -126,11 +122,15 @@ function zeigeKarte() {
     userData.location = e.latlng;
     if (marker) marker.setLatLng(e.latlng);
     else marker = L.marker(e.latlng).addTo(map);
-    zeigeZusammenfassung();
+    userData.ort = `Koordinaten: ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
+    addMsg("ai", "Super, danke! Jetzt ein paar Fragen zur Ausstattung:");
+    addMsg("ai", "Gibt es Sitzmöglichkeiten an der Hütte? (ja/nein)");
+    schritt = 1;
   });
 }
 
 function zeigeZusammenfassung() {
+  document.getElementById("inputArea").style.display = "none";
   const box = document.getElementById("summaryBox");
   box.innerHTML = `
     <h3>📝 Zusammenfassung</h3>
@@ -139,15 +139,15 @@ function zeigeZusammenfassung() {
     <p><b>Stromversorgung:</b> ${userData.strom}</p>
     <p><b>Zusatz:</b> ${userData.zusatz}</p>
     <p><b>Koordinaten:</b> ${userData.location.lat.toFixed(5)}, ${userData.location.lng.toFixed(5)}</p>
-    <button onclick="absenden()">✅ Bestätigen & Absenden</button>
+    <button onclick="absenden()">✅ Alles korrekt – Einreichen</button>
     <button onclick="location.reload()">❌ Abbrechen</button>
   `;
   box.style.display = "block";
-  addMsg("ai", "Bitte überprüfe deine Angaben und bestätige die Einsendung.");
+  addMsg("ai", "Alles klar! Hier ist deine Zusammenfassung. Wenn alles passt, kannst du jetzt einreichen.");
 }
 
 function absenden() {
-  const beschreibung = `Eierhütte in ${userData.ort}. ${userData.sitzplatz === 'ja' ? 'Mit Sitzplatz.' : 'Kein Sitzplatz.'} ${userData.strom === 'ja' ? 'Stromversorgung für E-Bikes vorhanden.' : 'Keine Stromversorgung.'} ${userData.zusatz}`;
+  const beschreibung = `Eierhütte bei ${userData.ort}. ${userData.sitzplatz === 'ja' ? 'Mit Sitzplatz.' : 'Kein Sitzplatz.'} ${userData.strom === 'ja' ? 'Strom für E-Bikes verfügbar.' : 'Keine Stromversorgung.'} ${userData.zusatz}`;
   db.collection("eierhuetten").add({
     name: userData.ort,
     beschreibung,
@@ -168,7 +168,7 @@ function absenden() {
 
 window.onload = () => {
   setTimeout(() => {
-    addMsg("ai", "Hallo! Ich helfe dir beim Einreichen einer neuen Eierhütte. 🪺");
+    addMsg("ai", "Hallo! Ich begleite dich beim Einreichen einer neuen Eierhütte. 🐣");
     bearbeiteSchritt("");
   }, 500);
 }
