@@ -12,6 +12,28 @@
     .bot { background: #eee; }
     input, button { padding: 0.5rem; margin-top: 0.5rem; width: 100%; }
     #map { height: 300px; margin-top: 1rem; border-radius: 1rem; display: none; }
+
+    #debugConsole {
+      background: #111;
+      color: #0f0;
+      font-family: monospace;
+      font-size: 0.85rem;
+      padding: 0.5rem;
+      margin-top: 1rem;
+      max-height: 200px;
+      overflow-y: auto;
+      border-radius: 0.5rem;
+      display: none;
+    }
+    #debugToggle {
+      margin-top: 1rem;
+      background: #333;
+      color: white;
+      padding: 0.3rem 1rem;
+      border: none;
+      border-radius: 0.5rem;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -23,16 +45,27 @@
 <button onclick="getLocation()">📍 Standort übernehmen</button>
 <div id="map"></div>
 
+<button id="debugToggle" onclick="toggleDebug()">Debug anzeigen</button>
+<div id="debugConsole"></div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const openaiKey = "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";
+const openaiKey = "sk-proj-1KBq6..."; // 🔐 Dein Schlüssel
 
-// 🔧 Debug aktivieren/deaktivieren:
-const debugMode = true;
-function debug(message, data = null) {
-  if (debugMode) {
-    console.log("[DEBUG]", message, data);
-  }
+let debugEnabled = false;
+function toggleDebug() {
+  debugEnabled = !debugEnabled;
+  document.getElementById('debugConsole').style.display = debugEnabled ? 'block' : 'none';
+}
+
+function debug(msg, data = null) {
+  if (!debugEnabled) return;
+  const dbg = document.getElementById('debugConsole');
+  const entry = document.createElement('div');
+  const time = new Date().toLocaleTimeString();
+  entry.textContent = `[${time}] ${msg} ${data ? JSON.stringify(data, null, 2) : ''}`;
+  dbg.appendChild(entry);
+  dbg.scrollTop = dbg.scrollHeight;
 }
 
 let state = 'beschreibung';
@@ -87,9 +120,9 @@ function getLocation() {
     const lat = pos.coords.latitude;
     const lon = pos.coords.longitude;
     setLocation(lat, lon);
-  }, () => {
+  }, err => {
     addMessage("❌ Standort nicht verfügbar.");
-    debug("Standortzugriff verweigert oder fehlgeschlagen");
+    debug("Standortfehler", err.message);
   });
 }
 
@@ -120,7 +153,7 @@ async function generateSummary() {
 - Überdacht: ${data.ueberdacht}
 - Standort: ${data.lat}, ${data.lon}`;
 
-  debug("Sende folgenden Prompt an OpenAI:", prompt);
+  debug("Prompt an OpenAI", prompt);
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -146,15 +179,15 @@ async function generateSummary() {
       addMessage("📋 KI-Beschreibung:\n" + reply);
     } else {
       addMessage("❌ Beschreibung konnte nicht erstellt werden.");
-      debug("Keine gültige Antwort erhalten", json);
+      debug("Keine gültige KI-Antwort", json);
     }
   } catch (e) {
-    addMessage("❌ Fehler: " + e.message);
-    debug("Fehler bei Anfrage an OpenAI", e);
+    addMessage("❌ Fehler bei der KI-Anfrage.");
+    debug("OpenAI Fehler", e.message);
   }
 }
 
-// 🟢 Start-Frage
+// 🟢 Starte mit Begrüßung
 addMessage("Bitte beschreibe die Hütte in einem Satz.");
 </script>
 
