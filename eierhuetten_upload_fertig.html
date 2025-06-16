@@ -28,6 +28,7 @@
   <button onclick="ladeMeineHuetten(currentUser?.uid)" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded">
     Meine Hütten ansehen
   </button>
+  <button onclick="resetKey()" class="text-sm text-gray-500 hover:underline block mt-2">🔑 API-Schlüssel zurücksetzen</button>
 </div><style>
   #chat-window .user {
     text-align: right;
@@ -45,7 +46,6 @@
     max-width: 80%;
   }
 </style><script>
-// Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
   authDomain: "eierhuettentour.firebaseapp.com",
@@ -63,6 +63,44 @@ let currentUser = null;
 let step = 0;
 let formData = {};
 let map, marker;
+let OPENROUTER_KEY = localStorage.getItem("openrouter_key");
+
+async function frageOpenRouter(prompt) {
+  if (!OPENROUTER_KEY) OPENROUTER_KEY = promptForKey();
+  if (!OPENROUTER_KEY) return "Kein API-Key hinterlegt.";
+  try {
+    const res = await fetch("https://us-central1-eierhuettentour.cloudfunctions.net/chatWithOpenRouter", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: prompt, key: OPENROUTER_KEY })
+    });
+    const data = await res.json();
+    if (data.error && data.error.includes("invalid")) {
+      localStorage.removeItem("openrouter_key");
+      alert("API-Schlüssel ungültig. Bitte neu eingeben.");
+      OPENROUTER_KEY = null;
+    }
+    return data.reply || "Fehler beim Abrufen der Antwort.";
+  } catch (err) {
+    console.error("Fehler:", err);
+    return "❌ Fehler bei der KI-Anfrage.";
+  }
+}
+function promptForKey() {
+  const eingabe = prompt("Bitte deinen OpenRouter API-Key eingeben:");
+  if (eingabe) {
+    localStorage.setItem("openrouter_key", eingabe);
+    return eingabe;
+  } else {
+    alert("Kein Schlüssel eingegeben.");
+    return null;
+  }
+}
+function resetKey() {
+  localStorage.removeItem("openrouter_key");
+  OPENROUTER_KEY = null;
+  alert("API-Schlüssel gelöscht. Du wirst beim nächsten Mal neu gefragt.");
+}
 
 // Google Login
 document.getElementById('google-login').onclick = async () => {
@@ -74,7 +112,6 @@ document.getElementById('google-login').onclick = async () => {
   showMsg(`Hallo ${currentUser.displayName}! Wie soll deine Eierhütte heißen?`, 'bot');
 };
 
-// Chat
 const chatWindow = document.getElementById('chat-window');
 function showMsg(msg, role) {
   const d = document.createElement('div'); d.className = role; d.textContent = msg;
@@ -95,7 +132,6 @@ function handleStep(txt) {
       initMap(); step++;
       break;
     case 1:
-      // after map click
       showMsg('Gibt es Sitzplätze? (ja/nein)', 'bot'); step++;
       break;
     case 2:
@@ -113,7 +149,6 @@ function handleStep(txt) {
   }
 }
 
-// Map
 function initMap() {
   document.getElementById('input-row').style.display='none';
   const mapDiv = document.createElement('div'); mapDiv.id='map'; mapDiv.style.height='300px';
@@ -125,25 +160,28 @@ function initMap() {
     if(marker) marker.setLatLng(e.latlng); else marker=L.marker(e.latlng).addTo(map);
     showMsg('Standort gespeichert.', 'bot');
     map.remove(); document.getElementById('map').remove();
-    step=1;
+    step=1; handleStep();
   });
 }
 
-// Summary & submit
-function showSummary() {
+async function showSummary() {
+  const beschreibungPrompt = `Erstelle eine kreative Beschreibung für eine Eierhütte namens "${formData.name}" mit ${formData.sitzplatz === 'ja' ? 'Sitzplatz' : 'ohne Sitzplatz'} und ${formData.strom === 'ja' ? 'Stromanschluss' : 'ohne Strom'}${formData.extras ? ` sowie Besonderheiten: ${formData.extras}` : ''}.`;
+  const beschreibung = await frageOpenRouter(beschreibungPrompt);
+  formData.beschreibung = beschreibung;
+
   showMsg('Hier die Zusammenfassung:', 'bot');
-  const text = `Name: ${formData.name}\nStandort: ${formData.loc.lat.toFixed(5)},${formData.loc.lng.toFixed(5)}\nSitzplatz: ${formData.sitzplatz}\nStrom: ${formData.strom}\nExtras: ${formData.extras}`;
+  const text = `Name: ${formData.name}\nStandort: ${formData.loc.lat.toFixed(5)},${formData.loc.lng.toFixed(5)}\nSitzplatz: ${formData.sitzplatz}\nStrom: ${formData.strom}\nExtras: ${formData.extras}\n\nBeschreibung: ${beschreibung}`;
   showMsg(text,'bot');
   const confirm = document.createElement('div');
   confirm.innerHTML = `<button onclick="submitEntry()" class="bg-green-600 text-white px-3 py-1 rounded">Einreichen</button>`;
   chatWindow.appendChild(confirm);
 }
+
 async function submitEntry() {
   await db.collection('eierhuetten').add({ ...formData, userId: currentUser.uid, erstelltAm: firebase.firestore.FieldValue.serverTimestamp(), status:'offen' });
   showMsg('✅ Deine Hütte wurde eingereicht!','bot');
 }
 
-// Load own
 async function ladeMeineHuetten(uid) {
   if(!uid) return alert('Anmelden erforderlich');
   const sec = document.getElementById('meine-huetten'); sec.classList.remove('hidden');
@@ -152,7 +190,7 @@ async function ladeMeineHuetten(uid) {
   if(snap.empty) { list.innerHTML='<p>Keine Einträge.</p>'; return; }
   snap.forEach(doc=>{ const h=doc.data();
     const div=document.createElement('div'); div.className='bg-white p-4 rounded shadow';
-    div.innerHTML=`<h3>${h.name}</h3><p><strong>Status:</strong>${h.status}</p>`;
+    div.innerHTML=`<h3>${h.name}</h3><p><strong>Status:</strong> ${h.status}</p><p>${h.beschreibung || ''}</p>`;
     list.appendChild(div);
   });
 }
