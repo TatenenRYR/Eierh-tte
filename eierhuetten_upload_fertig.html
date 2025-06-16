@@ -1,200 +1,98 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <title>Eierhütte melden (mit KI)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eierhütten-Eintrag</title>
   <style>
-    body { font-family: sans-serif; background: #f4f4f4; padding: 1rem; }
-    input, button { padding: 0.5rem; margin-top: 0.5rem; width: 100%; }
-    #map { height: 300px; margin-top: 1rem; border-radius: 0.5rem; display: none; }
-    #messages .msg { padding: 0.5rem; margin: 0.3rem 0; border-radius: 0.7rem; }
-    .user { background: #c7f5d9; text-align: right; margin-left: auto; }
-    .bot { background: #e2e2e2; text-align: left; }
-    #debugConsole { background: #111; color: #0f0; padding: 0.5rem; font-size: 0.8rem; overflow: auto; max-height: 200px; border-radius: 6px; margin-top: 1rem; white-space: pre-wrap; }
+    body { font-family: sans-serif; padding: 2rem; background: #f4f4f4; color: #333; }
+    label { display: block; margin-top: 1rem; font-weight: bold; }
+    input, textarea, select, button { width: 100%; padding: 0.5rem; margin-top: 0.2rem; border-radius: 5px; border: 1px solid #ccc; }
+    #debugConsole { background:#111; color:#0f0; padding:0.5rem; font-size:0.8rem; overflow:auto; max-height:150px; border-radius:6px; margin-top:1rem; }
+    #summary { margin-top: 1rem; padding: 1rem; background: #fff5d1; border: 1px solid #ffd42a; border-radius: 6px; }
   </style>
 </head>
 <body>
+  <h1>🪺 Eierhütte einreichen</h1><label>📍 Ort</label> <input id="ort" placeholder="z. B. Meisenstraße 12, Dorf" />
 
-<h2>🐣 Neue Eierhütte einreichen</h2>
-<input id="apiKeyInput" placeholder="🔑 OpenAI API-Key eingeben" oninput="saveApiKey()">
+<label>🪑 Sitzplatz vorhanden?</label> <select id="sitzplatz"> <option value="ja">Ja</option> <option value="nein">Nein</option> </select>
 
-<div id="messages"></div>
-<input id="userInput" placeholder="Deine Antwort...">
-<button onclick="sendMessage()">Antwort senden</button>
-<button onclick="getLocation()">📍 Standort übernehmen</button>
-<div id="map"></div>
+<label>🔌 Stromversorgung für E-Bikes?</label> <select id="strom"> <option value="ja">Ja</option> <option value="nein">Nein</option> </select>
 
-<button onclick="toggleDebug()">🛠️ Debug an/aus</button>
-<button onclick="clearDebug()">🧹 Debug löschen</button>
-<pre id="debugConsole"></pre>
+<label>📋 Weitere Infos</label>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
+  <textarea id="zusatz" rows="3" placeholder="Besonderheiten, Öffnungszeiten etc."></textarea><label>🔑 OpenRouter API-Key</label> <input id="apiKeyInput" placeholder="org-..." oninput="saveApiKey()" />
+
+<button onclick="beschreibungErstellen()">🧠 Beschreibung automatisch erstellen</button>
+
+  <div id="summary"></div><button onclick="toggleDebug()">🛠️ Debug an/aus</button> <button onclick="clearDebug()">🧹 Debug löschen</button>
+
+  <pre id="debugConsole"></pre><script>
 let debugMode = true;
 
 function debug(msg, data) {
   if (!debugMode) return;
   const line = `[DEBUG] ${msg}${data ? ': ' + JSON.stringify(data, null, 2) : ''}`;
   console.log(line);
-  const debugConsole = document.getElementById('debugConsole');
-  if (debugConsole) debugConsole.textContent += line + '\n';
+  const el = document.getElementById("debugConsole");
+  if (el) el.textContent += line + "\n";
 }
-
 function clearDebug() {
-  const debugConsole = document.getElementById('debugConsole');
-  if (debugConsole) debugConsole.textContent = '';
+  document.getElementById("debugConsole").textContent = "";
   console.clear();
 }
-
 function toggleDebug() {
   debugMode = !debugMode;
-  const state = debugMode ? 'aktiviert' : 'deaktiviert';
-  debug(`Debug-Modus wurde ${state}`);
+  debug("Debug-Modus: " + (debugMode ? "aktiv" : "inaktiv"));
 }
 
 function saveApiKey() {
-  const key = document.getElementById('apiKeyInput').value.trim();
-  if (key) localStorage.setItem('openai_api_key', key);
+  const key = document.getElementById("apiKeyInput").value.trim();
+  if (key) localStorage.setItem("openrouter_api_key", key);
 }
-
 function getApiKey() {
-  return localStorage.getItem('openai_api_key') || '';
+  return localStorage.getItem("openrouter_api_key") || "";
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  const savedKey = getApiKey();
-  if (savedKey) document.getElementById('apiKeyInput').value = savedKey;
+document.addEventListener("DOMContentLoaded", () => {
+  const saved = getApiKey();
+  if (saved) document.getElementById("apiKeyInput").value = saved;
 });
 
-let state = 'beschreibung';
-let data = {};
-let map, marker;
+async function beschreibungErstellen() {
+  const ort = document.getElementById("ort").value.trim();
+  const sitz = document.getElementById("sitzplatz").value;
+  const strom = document.getElementById("strom").value;
+  const zusatz = document.getElementById("zusatz").value.trim();
+  const key = getApiKey();
 
-function addMessage(text, sender = 'bot') {
-  const msg = document.createElement('div');
-  msg.className = `msg ${sender}`;
-  msg.textContent = text;
-  document.getElementById('messages').appendChild(msg);
-  msg.scrollIntoView();
-}
+  if (!key) return alert("Bitte OpenRouter API-Key eingeben.");
 
-function sendMessage() {
-  const input = document.getElementById('userInput');
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = '';
-  addMessage(text, 'user');
-  handleState(text);
-}
-
-function handleState(text) {
-  if (state === 'beschreibung') {
-    data.beschreibung = text;
-    state = 'strom';
-    addMessage("🔌 Gibt es Strom für E-Bikes?");
-  } else if (state === 'strom') {
-    data.strom = text;
-    state = 'verkauf';
-    addMessage("🛒 Gibt es einen Verkauf?");
-  } else if (state === 'verkauf') {
-    data.verkauf = text;
-    state = 'sitzplatz';
-    addMessage("🪑 Gibt es Sitzplätze?");
-  } else if (state === 'sitzplatz') {
-    data.sitzplatz = text;
-    state = 'ueberdacht';
-    addMessage("🏠 Ist die Hütte überdacht?");
-  } else if (state === 'ueberdacht') {
-    data.ueberdacht = text;
-    state = 'standort';
-    initMap();
-    document.getElementById('map').style.display = 'block';
-    addMessage("📍 Klicke auf die Karte oder nutze den Standort-Button.");
-  }
-}
-
-function getLocation() {
-  navigator.geolocation.getCurrentPosition(pos => {
-    const lat = pos.coords.latitude;
-    const lon = pos.coords.longitude;
-    setLocation(lat, lon);
-  }, () => {
-    addMessage("❌ Standort nicht verfügbar.");
-    debug("Standortzugriff verweigert oder fehlgeschlagen");
-  });
-}
-
-function initMap() {
-  if (map) return;
-  map = L.map('map').setView([51.2, 10.5], 6);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-  map.on('click', e => setLocation(e.latlng.lat, e.latlng.lng));
-  debug("Karte initialisiert");
-}
-
-function setLocation(lat, lon) {
-  data.lat = lat;
-  data.lon = lon;
-  if (marker) marker.setLatLng([lat, lon]);
-  else marker = L.marker([lat, lon]).addTo(map);
-  map.setView([lat, lon], 16);
-  debug("Standort gesetzt", { lat, lon });
-  generateSummary();
-}
-
-async function generateSummary() {
-  const openaiKey = getApiKey();
-  if (!openaiKey) {
-    addMessage("❌ Kein API-Key hinterlegt!");
-    return;
-  }
-
-  const prompt = `Erstelle eine kurze, freundliche Beschreibung für eine Selbstbedienungs-Hütte auf dem Land anhand dieser Informationen:
-- Beschreibung: ${data.beschreibung}
-- Strom: ${data.strom}
-- Verkauf: ${data.verkauf}
-- Sitzplatz: ${data.sitzplatz}
-- Überdacht: ${data.ueberdacht}
-- Standort: ${data.lat}, ${data.lon}`;
-
-  debug("Sende Prompt an OpenAI", prompt);
+  const prompt = `Erstelle eine freundliche, vollständige Beschreibung einer Eierhütte. Ort: ${ort}. Sitzplatz: ${sitz}. Strom: ${strom}. Zusatzinfos: ${zusatz}`;
 
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    debug("Sende Anfrage an OpenRouter", { prompt });
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${openaiKey}`
+        "Authorization": `Bearer ${key}`,
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "gpt-3.5-turbo",
+        model: "openchat/openchat-7b",
         messages: [
-          { role: "system", content: "Du hilfst dabei, kurze, freundliche Beschreibungen für Eierhütten zu erstellen." },
+          { role: "system", content: "Du bist ein freundlicher Beschreibungshelfer für eine Fahrradtour-App mit Eierhütten." },
           { role: "user", content: prompt }
         ]
       })
     });
-
-    const json = await res.json();
-    debug("Antwort von OpenAI", json);
-
-    const reply = json?.choices?.[0]?.message?.content?.trim();
-    if (reply) {
-      addMessage("📋 KI-Beschreibung:\n" + reply);
-    } else {
-      addMessage("❌ Beschreibung konnte nicht erstellt werden.");
-    }
-  } catch (e) {
-    addMessage("❌ Fehler: " + e.message);
-    debug("Fehler bei API-Aufruf", e);
+    const data = await res.json();
+    debug("Antwort erhalten", data);
+    const beschreibung = data.choices?.[0]?.message?.content;
+    document.getElementById("summary").textContent = beschreibung || "❌ Keine Beschreibung erhalten.";
+  } catch (err) {
+    debug("Fehler bei Anfrage", err);
+    alert("Fehler bei der Beschreibung: " + err.message);
   }
 }
-
-// Starte mit erster Frage
-addMessage("Bitte beschreibe die Hütte in einem Satz.");
-</script>
-
-</body>
+</script></body>
 </html>
