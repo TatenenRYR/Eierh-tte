@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Hütten-Dialogsystem</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
     body {
       background: #121212;
@@ -34,14 +35,8 @@
       max-width: 80%;
       animation: fadeIn 0.3s ease;
     }
-    .bot {
-      background: #4caf50;
-      align-self: flex-start;
-    }
-    .user {
-      background: #333;
-      align-self: flex-end;
-    }
+    .bot { background: #4caf50; align-self: flex-start; }
+    .user { background: #333; align-self: flex-end; }
     form {
       display: flex;
       gap: 0.5rem;
@@ -61,43 +56,35 @@
     }
     #map {
       height: 200px;
-      margin-top: 10px;
+      margin-top: 1rem;
+      border-radius: 10px;
+      display: none;
     }
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
     }
   </style>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 </head>
 <body>
 <div class="chat-container">
   <div id="messages"></div>
-  <div id="map" style="display:none;"></div>
   <form id="chat-form">
     <input type="text" id="chat-input" placeholder="Nachricht eingeben..." autocomplete="off" />
     <button type="submit">Senden</button>
   </form>
+  <div id="map"></div>
 </div>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
   import {
-    getAuth,
-    GoogleAuthProvider,
-    signInWithPopup,
-    setPersistence,
-    browserLocalPersistence,
-    onAuthStateChanged
+    getAuth, GoogleAuthProvider, signInWithPopup,
+    setPersistence, browserLocalPersistence, onAuthStateChanged
   } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
   import {
-    getFirestore,
-    collection,
-    query,
-    where,
-    getDocs,
-    addDoc,
-    serverTimestamp
+    getFirestore, collection, query, where,
+    getDocs, addDoc, updateDoc, doc, serverTimestamp
   } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -115,11 +102,13 @@
 
   let currentUser = null;
   let dialogState = null;
-  const hutData = {};
+  let hutData = {};
+  let map, marker, selectedHutId = null;
 
   const messagesEl = document.getElementById('messages');
   const chatForm = document.getElementById('chat-form');
   const inputEl = document.getElementById('chat-input');
+  const mapEl = document.getElementById('map');
 
   const addMessage = (text, sender = "bot") => {
     const div = document.createElement("div");
@@ -131,7 +120,7 @@
 
   const askLogin = async () => {
     try {
-      setPersistence(auth, browserLocalPersistence);
+      await setPersistence(auth, browserLocalPersistence);
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
       currentUser = result.user;
@@ -151,24 +140,6 @@
     }
   });
 
-  const detectIntent = (msg) => {
-    const lower = msg.toLowerCase();
-
-    if (lower.includes("zeige") && (lower.includes("hütten") || lower.includes("hütte"))) {
-      return "show_huts";
-    }
-
-    if ((lower.includes("neue") || lower.includes("eintragen") || lower.includes("hinzufügen")) && lower.includes("hütte")) {
-      return "new_hut";
-    }
-
-    if (lower.includes("hilfe") || lower.includes("was kannst du")) {
-      return "help";
-    }
-
-    return "unknown";
-  };
-
   chatForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const msg = inputEl.value.trim();
@@ -181,59 +152,79 @@
       return askLogin();
     }
 
-    // Dialogzustände
     if (dialogState === "awaiting_name") {
       hutData.name = msg;
       dialogState = "awaiting_location";
-      showMapForLocation();
-      return addMessage("Bitte wähle den Standort deiner Hütte auf der Karte aus.");
+      mapEl.style.display = "block";
+      map.invalidateSize();
+      addMessage("Klicke auf die Karte, um den Standort auszuwählen.");
+      return;
     }
 
-    const intent = detectIntent(msg);
+    if (dialogState === "awaiting_edit_name") {
+      if (selectedHutId) {
+        const hutRef = doc(db, "eierhuetten", selectedHutId);
+        await updateDoc(hutRef, { name: msg });
+        dialogState = null;
+        addMessage("✅ Hütte aktualisiert.");
+        selectedHutId = null;
+      } else {
+        addMessage("❌ Keine Hütte ausgewählt.");
+      }
+      return;
+    }
 
-    if (intent === "show_huts") {
+    // KI-Befehlserkennung
+    const cmd = msg.toLowerCase();
+    if (/zeige.*(hütten|meine)/.test(cmd)) {
       const q = query(collection(db, "eierhuetten"), where("userId", "==", currentUser.uid));
       const snapshot = await getDocs(q);
       if (snapshot.empty) return addMessage("Keine Hütten gefunden.");
       snapshot.forEach(doc => {
         const d = doc.data();
-        addMessage(`🏠 ${d.name || 'Ohne Namen'} (${d.status || 'Status unbekannt'})`);
+        addMessage(`🏠 ${d.name || 'Ohne Namen'} (${d.status || 'Status unbekannt'}) – ID: ${doc.id}`);
       });
-    } else if (intent === "new_hut") {
+    } else if (/neue.*(hütte|eintragen|hinzufügen)/.test(cmd)) {
       dialogState = "awaiting_name";
-      hutData.name = "";
-      hutData.location = null;
+      hutData = { userId: currentUser.uid, status: "offen", erstelltAm: serverTimestamp() };
       return addMessage("Wie soll deine neue Hütte heißen?");
-    } else if (intent === "help") {
-      return addMessage("Ich kann dir helfen beim:\n– Neue Hütte eintragen\n– Bestehende Hütten anzeigen\nSchreib z. B. „Ich möchte eine neue Hütte eintragen“");
+    } else if (/bearbeite.*hütte/.test(cmd)) {
+      const idMatch = msg.match(/hütte\s+([a-zA-Z0-9]+)/);
+      if (!idMatch) return addMessage("Bitte gib eine ID an, z. B. 'bearbeite Hütte abc123'");
+      selectedHutId = idMatch[1];
+      dialogState = "awaiting_edit_name";
+      return addMessage("Neuer Name für die Hütte?");
+    } else if (/standort\s*(senden|übertragen)/.test(cmd)) {
+      if (!navigator.geolocation) return addMessage("Geolocation wird nicht unterstützt.");
+      navigator.geolocation.getCurrentPosition(pos => {
+        const { latitude, longitude } = pos.coords;
+        addMessage(`📍 Dein aktueller Standort: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+      }, () => {
+        addMessage("❌ Standort konnte nicht abgerufen werden.");
+      });
     } else {
-      addMessage("Ich habe das leider nicht verstanden. Versuche z. B. „zeige meine Hütten“ oder „neue Hütte erstellen“.");
+      addMessage("Ich habe das leider nicht verstanden. Versuche z. B.: „zeige meine Hütten“, „füge eine neue Hütte hinzu“, „standort senden“.");
     }
   });
 
-  // 📍 Karte anzeigen
-  let map;
-  const showMapForLocation = () => {
-    const mapEl = document.getElementById("map");
-    mapEl.style.display = "block";
-    if (!map) {
-      map = L.map('map').setView([51, 10], 6);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-      map.on('click', async (e) => {
-        hutData.location = {
-          latitude: e.latlng.lat,
-          longitude: e.latlng.lng
-        };
-        hutData.userId = currentUser.uid;
-        hutData.status = "offen";
-        hutData.erstelltAm = serverTimestamp();
-        await addDoc(collection(db, "eierhuetten"), hutData);
-        dialogState = null;
-        addMessage("✅ Hütte erfolgreich eingetragen!");
-        mapEl.style.display = "none";
-      });
-    }
-  };
+  // Leaflet-Karte
+  setTimeout(() => {
+    map = L.map('map').setView([49.0, 8.4], 8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    map.on('click', async function(e) {
+      const { lat, lng } = e.latlng;
+      if (marker) map.removeLayer(marker);
+      marker = L.marker([lat, lng]).addTo(map);
+      hutData.location = { latitude: lat, longitude: lng };
+      await addDoc(collection(db, "eierhuetten"), hutData);
+      addMessage("📍 Standort gespeichert und Hütte erfolgreich eingetragen.");
+      dialogState = null;
+      mapEl.style.display = "none";
+    });
+  }, 500);
 </script>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 </body>
