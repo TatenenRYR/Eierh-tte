@@ -35,7 +35,7 @@ let hutData = {};
 let map, marker;
 const mapEl = document.getElementById('map');
 const messagesEl = document.getElementById('messages');
-const openaiKey = "sk-proj-..."; // DEIN API KEY
+const openaiKey = "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"; // Dein echter API-Key hier eintragen
 
 function addMessage(text, sender = 'bot') {
   const msg = document.createElement('div');
@@ -106,25 +106,24 @@ function askNext() {
 }
 
 async function kiErkenneJaNein(feldName, frage, userInput) {
-  const prompt = `Beantworte nur mit true oder false: ${frage} Der Benutzer sagt: "${userInput}"`;
+  const prompt = `Beantworte mit true oder false: ${frage} Der Benutzer sagt: "${userInput}"`;
   try {
-    const res = await fetch("https://api.openai.com/v1/completions", {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openaiKey}` },
-      body: JSON.stringify({ model: "text-davinci-003", prompt, max_tokens: 5, temperature: 0 })
+      body: JSON.stringify({
+        model: "gpt-3.5-turbo",
+        messages: [
+          { role: "system", content: "Antworte immer nur mit true oder false." },
+          { role: "user", content: prompt }
+        ]
+      })
     });
     const data = await res.json();
-    const reply = data?.choices?.[0]?.text?.trim().toLowerCase();
+    const reply = data?.choices?.[0]?.message?.content?.trim().toLowerCase();
     if (reply?.includes("true")) return true;
     if (reply?.includes("false")) return false;
   } catch (e) { addMessage(`❌ KI-Fehler: ${e.message}`); }
-
-  const t = userInput.toLowerCase();
-  const p = { strom:["ja","strom","steckdose","e-bike"], verkauf:["eier","verkauf","snack","automat"], sitzplatz:["bank","tisch","stuhl","bänke","sitzplatz","hocker","platz","sitzen"], ueberdacht:["dach","überdacht","unterstand"] };
-  const n = { strom:["kein","nein"], verkauf:["leer","nichts","nein"], sitzplatz:["keine","nicht","nein"], ueberdacht:["nicht","kein","nein"] };
-  if (n[feldName]?.some(w=>t.includes(w))) return false;
-  if (p[feldName]?.some(w=>t.includes(w))) return true;
-  addMessage(`❓ Ich konnte nicht erkennen, ob "${feldName}" zutrifft. Bitte antworte mit „ja“, „nein“ oder schreibe z. B. „es gibt eine Bank“. Du kannst auch „überspringen“ schreiben.`);
   return null;
 }
 
@@ -151,21 +150,32 @@ function setLocation(lat, lon) {
 }
 
 async function zeigeZusammenfassung() {
-  const prompt = `Erstelle eine schöne, kurze Beschreibung für folgende Eierhütte auf Deutsch. 
-Beschreibung: ${hutData.beschreibung}
-Strom: ${hutData.strom ? "ja" : "nein"}
-Verkauf: ${hutData.verkauf ? "ja" : "nein"}
-Sitzplatz: ${hutData.sitzplatz ? "ja" : "nein"}
-Überdacht: ${hutData.ueberdacht ? "ja" : "nein"}
-Koordinaten: ${hutData.lat}, ${hutData.lon}`;
+  const prompt = `Erstelle eine kurze, schöne Beschreibung einer Eierhütte auf Deutsch. Die Hütte bietet:
+- Beschreibung: ${hutData.beschreibung}
+- Strom: ${hutData.strom ? "ja" : "nein"}
+- Verkauf: ${hutData.verkauf ? "ja" : "nein"}
+- Sitzplatz: ${hutData.sitzplatz ? "ja" : "nein"}
+- Überdacht: ${hutData.ueberdacht ? "ja" : "nein"}
+- Standort: ${hutData.lat}, ${hutData.lon}`;
+
   try {
-    const res = await fetch("https://api.openai.com/v1/completions", {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openaiKey}` },
-      body: JSON.stringify({ model: "text-davinci-003", prompt, max_tokens: 150, temperature: 0.7 })
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${openaiKey}`
+      },
+      body: JSON.stringify({
+        model: "gpt-3.5-turbo",
+        messages: [
+          { role: "system", content: "Du bist ein Assistent für das Schreiben kurzer, freundlicher Beschreibungen von Eierhütten." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.7
+      })
     });
     const data = await res.json();
-    const reply = data?.choices?.[0]?.text?.trim();
+    const reply = data?.choices?.[0]?.message?.content?.trim();
     if (reply) addMessage("📍 Zusammenfassung:\n" + reply);
     else addMessage("❌ Beschreibung konnte nicht erzeugt werden.");
   } catch (e) {
