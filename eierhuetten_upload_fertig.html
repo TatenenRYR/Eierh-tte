@@ -1,8 +1,7 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Eierhütten Assistent</title>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -11,59 +10,29 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-100 font-sans">
-
-<!-- Login -->
-<div id="login-section" class="text-center p-6">
+<body class="bg-gray-100 font-sans"><!-- Login --><div id="login-section" class="text-center p-6">
   <button id="google-login" class="bg-red-600 hover:bg-red-700 text-white py-2 px-6 rounded">
     Mit Google anmelden
   </button>
-</div>
-
-<!-- Chat-Bereich -->
-<section id="chat-section" class="max-w-3xl mx-auto mt-8 bg-white shadow-lg rounded-xl overflow-hidden hidden">
+</div><!-- Chat & Einreichung --><section id="chat-section" class="max-w-3xl mx-auto mt-8 bg-white shadow-lg rounded-xl overflow-hidden hidden">
   <div class="bg-green-600 text-white text-xl font-bold p-4">🥚 Eierhütten Assistent</div>
   <div id="chat-window" class="p-4 h-96 overflow-y-auto space-y-4 text-sm bg-gray-50"></div>
-  <div class="p-4 border-t flex gap-2">
+  <div class="p-4 border-t flex gap-2" id="input-row">
     <input id="chat-input" type="text" class="flex-grow border border-gray-300 rounded px-3 py-2" placeholder="Schreibe eine Nachricht...">
     <button onclick="sendeNachricht()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">Senden</button>
   </div>
-</section>
-
-<!-- Bereich für hochgeladene Hütten -->
-<section id="meine-huetten" class="max-w-5xl mx-auto mt-12 hidden">
+</section><!-- Eigene Hütten anzeigen --><section id="meine-huetten" class="max-w-5xl mx-auto mt-12 hidden">
   <h2 class="text-2xl font-bold mb-4">🧺 Deine eingereichten Eierhütten</h2>
   <div id="huetten-liste" class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"></div>
-</section>
-
-<!-- Button zum Anzeigen der Liste -->
-<div class="text-center mt-6">
+</section><div class="text-center mt-6">
   <button onclick="ladeMeineHuetten(currentUser?.uid)" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded">
     Meine Hütten ansehen
   </button>
-</div>
-
-<!-- Styles (Chat-Optik) -->
-<style>
-  #chat-window .user {
-    text-align: right;
-    background-color: #d1fae5;
-    padding: 0.5rem 1rem;
-    border-radius: 1rem;
-    display: inline-block;
-    max-width: 80%;
-  }
-  #chat-window .bot {
-    background-color: #f1f5f9;
-    padding: 0.5rem 1rem;
-    border-radius: 1rem;
-    display: inline-block;
-    max-width: 80%;
-  }
-</style>
-
-<!-- Firebase Config -->
-<script>
+</div><style>
+  #chat-window .user { text-align: right; background-color: #d1fae5; padding: 0.5rem 1rem; border-radius: 1rem; display: inline-block; max-width: 80%; }
+  #chat-window .bot  { background-color: #f1f5f9; padding: 0.5rem 1rem; border-radius: 1rem; display: inline-block; max-width: 80%; }
+</style><script>
+// Konfiguration
 const firebaseConfig = {
   apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
   authDomain: "eierhuettentour.firebaseapp.com",
@@ -74,89 +43,65 @@ const firebaseConfig = {
   measurementId: "G-16V6K5GXDT"
 };
 firebase.initializeApp(firebaseConfig);
-</script>
+const auth = firebase.auth();
+const db = firebase.firestore();
 
-<!-- Chat & Nutzerlogik -->
-<script>
 let currentUser = null;
+let formData = {}, chatStep = 0, map, marker;
 
-document.getElementById("google-login").onclick = async () => {
+// Login
+document.getElementById('google-login').onclick = async () => {
   const provider = new firebase.auth.GoogleAuthProvider();
-  try {
-    const result = await firebase.auth().signInWithPopup(provider);
-    currentUser = result.user;
-    document.getElementById("chat-section").classList.remove("hidden");
-    document.getElementById("login-section").classList.add("hidden");
-    zeigeNachricht(`Hallo ${currentUser.displayName}! Ich helfe dir beim Einreichen deiner Hütte.`, "bot");
-  } catch (error) {
-    alert("Login fehlgeschlagen: " + error.message);
-  }
+  const res = await auth.signInWithPopup(provider);
+  currentUser = res.user;
+  document.getElementById('login-section').classList.add('hidden');
+  document.getElementById('chat-section').classList.remove('hidden');
+  zeigeMsg(`Hallo ${currentUser.displayName}! Ich helfe dir, deine Eierhütte einzureichen. Wie soll sie heißen?`, 'bot');
 };
 
-const chatWindow = document.getElementById("chat-window");
-const input = document.getElementById("chat-input");
-
-function sendeNachricht() {
-  const text = input.value.trim();
-  if (!text) return;
-  zeigeNachricht(text, "user");
-  input.value = "";
-  setTimeout(() => {
-    zeigeNachricht("Danke für deine Nachricht! Ich helfe dir bei der Hüttenerstellung.", "bot");
-  }, 500);
-}
-
-function zeigeNachricht(text, sender) {
-  const div = document.createElement("div");
-  div.className = sender;
-  div.innerText = text;
+// Chat-Funktionen
+const chatWindow = document.getElementById('chat-window');
+function zeigeMsg(text, role) {
+  const div = document.createElement('div');
+  div.className = role;
+  div.textContent = text;
   chatWindow.appendChild(div);
   chatWindow.scrollTop = chatWindow.scrollHeight;
 }
-</script>
+function sendeNachricht() {
+  const inp = document.getElementById('chat-input');
+  const text = inp.value.trim(); if(!text) return;
+  zeigeMsg(text,'user'); inp.value=''; bearbeite(text);
+}
 
-<!-- Hüttenabfrage -->
-<script>
-async function ladeMeineHuetten(uid) {
-  if (!uid) {
-    alert("Bitte zuerst mit Google einloggen.");
-    return;
-  }
-  const container = document.getElementById("huetten-liste");
-  container.innerHTML = "<p>⏳ Lade deine Einträge...</p>";
-  document.getElementById("meine-huetten").classList.remove("hidden");
-  try {
-    const snapshot = await firebase.firestore()
-      .collection("eierhuetten")
-      .where("userId", "==", uid)
-      .orderBy("erstelltAm", "desc")
-      .get();
-    container.innerHTML = "";
-    if (snapshot.empty) {
-      container.innerHTML = "<p>❌ Du hast noch keine Hütten eingereicht.</p>";
-      return;
-    }
-    snapshot.forEach(doc => {
-      const h = doc.data();
-      const div = document.createElement("div");
-      div.className = "bg-white rounded-xl shadow-md p-4 border border-gray-200";
-      div.innerHTML = `
-        <h3 class="text-lg font-bold text-green-700">${h.name || "Unbenannte Hütte"}</h3>
-        <p><strong>Status:</strong> ${h.status || "offen"}</p>
-        ${h.ort ? `<p><strong>Ort:</strong> ${h.ort}</p>` : ""}
-        ${h.beschreibung ? `<p><strong>Beschreibung:</strong> ${h.beschreibung}</p>` : ""}
-        <p><strong>Strom:</strong> ${h.strom || "—"}</p>
-        <p><strong>Sitzplatz:</strong> ${h.sitzplatz || "—"}</p>
-        <p><strong>Überdacht:</strong> ${h.ueberdacht || "—"}</p>
-        <p class="text-sm text-gray-500 mt-2">⏱️ Eingereicht: ${h.erstelltAm?.toDate().toLocaleString()}</p>
-      `;
-      container.appendChild(div);
-    });
-  } catch (error) {
-    container.innerHTML = `<p class='text-red-600'>Fehler beim Laden: ${error.message}</p>`;
+// Ablaufsteuerung
+function bearbeite(text) {
+  switch(chatStep) {
+    case 0: formData.name=text; chatStep++; zeigeMsg('Bitte wähle den Standort auf der Karte aus oder nutze aktuellen Standort.', 'bot'); initMap(); break;
+    case 1: /* Standort-Logik */ break;
+    // implementiere weitere Schritte: Sitzplatz, Strom, Extras, KI-Description
   }
 }
-</script>
 
-</body>
+// Karte initialisieren
+function initMap(){
+  if(map) return;
+  document.getElementById('input-row').remove(); // remove input while map
+  map = L.map(document.createElement('div')).setView([51.2,10.5],6);
+  document.getElementById('chat-window').appendChild(map._container);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  map.on('click', e=>{
+    formData.loc=e.latlng; marker&&map.removeLayer(marker); marker=L.marker(e.latlng).addTo(map);
+    chatStep=1; document.getElementById('chat-input').disabled=false;
+    document.getElementById('chat-window').appendChild(document.createElement('div')).textContent='Ort gespeichert!';
+    bearbeite('');
+  });
+}
+
+// Hütten laden
+async function ladeMeineHuetten(uid){
+  if(!uid)return alert('Bitte anmelden');
+  const https=snapshot=>snapshot.docs.forEach(doc=>{/* render */});
+}
+</script></body>
 </html>
