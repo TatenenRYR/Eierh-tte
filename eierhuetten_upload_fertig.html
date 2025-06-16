@@ -4,15 +4,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Eierhütten-Eintrag</title>
   <style>
-    body { font-family: sans-serif; padding: 2rem; background: #f4f4f4; color: #333; }
+    body { font-family: sans-serif; background: #f1f1f1; color: #333; margin: 0; padding: 1rem; }
+    .container { max-width: 600px; margin: auto; background: white; padding: 1.5rem; border-radius: 10px; box-shadow: 0 0 12px rgba(0,0,0,0.1); }
     label { display: block; margin-top: 1rem; font-weight: bold; }
-    input, textarea, select, button { width: 100%; padding: 0.5rem; margin-top: 0.2rem; border-radius: 5px; border: 1px solid #ccc; }
-    #debugConsole { background:#111; color:#0f0; padding:0.5rem; font-size:0.8rem; overflow:auto; max-height:150px; border-radius:6px; margin-top:1rem; }
-    #summary { margin-top: 1rem; padding: 1rem; background: #fff5d1; border: 1px solid #ffd42a; border-radius: 6px; }
+    input, textarea, select, button { width: 100%; padding: 0.5rem; margin-top: 0.2rem; border-radius: 5px; border: 1px solid #ccc; box-sizing: border-box; }
+    button { background: #28a745; color: white; font-weight: bold; border: none; cursor: pointer; margin-top: 1rem; }
+    button:hover { background: #218838; }
+    #chatBox { margin-top: 2rem; background: #fafafa; border-radius: 10px; padding: 1rem; max-height: 300px; overflow-y: auto; }
+    .chat-msg { margin-bottom: 1rem; }
+    .user { font-weight: bold; color: #007bff; }
+    .ai { font-weight: bold; color: #6f42c1; }
+    .bubble { background: #e9ecef; padding: 0.7rem; border-radius: 10px; margin-top: 0.3rem; white-space: pre-wrap; }
+    #debugConsole { background: #111; color: #0f0; padding: 0.5rem; font-size: 0.8rem; overflow: auto; max-height: 150px; border-radius: 6px; margin-top: 1rem; display: none; }
   </style>
 </head>
 <body>
-  <h1>🪺 Eierhütte einreichen</h1><label>📍 Ort</label> <input id="ort" placeholder="z. B. Meisenstraße 12, Dorf" />
+<div class="container">
+  <h2>🪺 Eierhütte einreichen</h2><label>📍 Ort</label> <input id="ort" placeholder="z. B. Meisenstraße 12, Dorf" />
 
 <label>🪑 Sitzplatz vorhanden?</label> <select id="sitzplatz"> <option value="ja">Ja</option> <option value="nein">Nein</option> </select>
 
@@ -22,11 +30,11 @@
 
   <textarea id="zusatz" rows="3" placeholder="Besonderheiten, Öffnungszeiten etc."></textarea><label>🔑 OpenRouter API-Key</label> <input id="apiKeyInput" placeholder="org-..." oninput="saveApiKey()" />
 
-<button onclick="beschreibungErstellen()">🧠 Beschreibung automatisch erstellen</button>
+<button onclick="beschreibungErstellen()">🧠 Beschreibung mit KI generieren</button>
 
-  <div id="summary"></div><button onclick="toggleDebug()">🛠️ Debug an/aus</button> <button onclick="clearDebug()">🧹 Debug löschen</button>
+  <div id="chatBox"></div><button onclick="toggleDebug()">🛠️ Debug an/aus</button> <button onclick="clearDebug()">🧹 Debug löschen</button>
 
-  <pre id="debugConsole"></pre><script>
+  <pre id="debugConsole"></pre></div><script>
 let debugMode = true;
 
 function debug(msg, data) {
@@ -42,6 +50,7 @@ function clearDebug() {
 }
 function toggleDebug() {
   debugMode = !debugMode;
+  document.getElementById("debugConsole").style.display = debugMode ? 'block' : 'none';
   debug("Debug-Modus: " + (debugMode ? "aktiv" : "inaktiv"));
 }
 
@@ -58,6 +67,15 @@ document.addEventListener("DOMContentLoaded", () => {
   if (saved) document.getElementById("apiKeyInput").value = saved;
 });
 
+function addChatMessage(sender, text) {
+  const chatBox = document.getElementById("chatBox");
+  const div = document.createElement("div");
+  div.className = "chat-msg";
+  div.innerHTML = `<div class="${sender}">${sender === 'user' ? '👤 Du' : '🤖 KI'}</div><div class="bubble">${text}</div>`;
+  chatBox.appendChild(div);
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
 async function beschreibungErstellen() {
   const ort = document.getElementById("ort").value.trim();
   const sitz = document.getElementById("sitzplatz").value;
@@ -68,6 +86,7 @@ async function beschreibungErstellen() {
   if (!key) return alert("Bitte OpenRouter API-Key eingeben.");
 
   const prompt = `Erstelle eine freundliche, vollständige Beschreibung einer Eierhütte. Ort: ${ort}. Sitzplatz: ${sitz}. Strom: ${strom}. Zusatzinfos: ${zusatz}`;
+  addChatMessage("user", prompt);
 
   try {
     debug("Sende Anfrage an OpenRouter", { prompt });
@@ -78,7 +97,7 @@ async function beschreibungErstellen() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "openchat/openchat-7b",
+        model: "mistralai/mistral-7b-instruct:free",
         messages: [
           { role: "system", content: "Du bist ein freundlicher Beschreibungshelfer für eine Fahrradtour-App mit Eierhütten." },
           { role: "user", content: prompt }
@@ -87,8 +106,8 @@ async function beschreibungErstellen() {
     });
     const data = await res.json();
     debug("Antwort erhalten", data);
-    const beschreibung = data.choices?.[0]?.message?.content;
-    document.getElementById("summary").textContent = beschreibung || "❌ Keine Beschreibung erhalten.";
+    const beschreibung = data.choices?.[0]?.message?.content || "❌ Keine Beschreibung erhalten.";
+    addChatMessage("ai", beschreibung);
   } catch (err) {
     debug("Fehler bei Anfrage", err);
     alert("Fehler bei der Beschreibung: " + err.message);
