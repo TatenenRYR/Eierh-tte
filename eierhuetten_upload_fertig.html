@@ -64,46 +64,45 @@ function neustart() {
 }
 
 async function handleMessage(msg) {
-  if (dialogState === 'awaiting_description') {
-    hutData.beschreibung = msg;
-    dialogState = 'awaiting_strom';
-    addMessage('Gibt es Strom (z. B. für E-Bikes)?');
+  if (msg.toLowerCase().includes("überspringen") || msg.toLowerCase().includes("weiß ich nicht")) {
+    if (dialogState === 'awaiting_location') {
+      mapEl.style.display = 'block'; initMap(); addMessage('📍 Klicke auf die Karte oder nutze „Standort senden“.');
+      return;
+    }
+    dialogState = nextState(dialogState);
+    askNext();
     return;
   }
-  if (dialogState === 'awaiting_strom') {
-    const result = await kiErkenneJaNein('strom', 'Gibt es Strom?', msg);
-    if (result === null) return;
-    hutData.strom = result;
-    dialogState = 'awaiting_verkauf';
-    addMessage('Gibt es etwas zu kaufen (Eier, Snacks)?');
-    return;
+
+  switch(dialogState) {
+    case 'awaiting_description': hutData.beschreibung = msg; break;
+    case 'awaiting_strom': hutData.strom = await kiErkenneJaNein('strom', 'Gibt es Strom?', msg); break;
+    case 'awaiting_verkauf': hutData.verkauf = await kiErkenneJaNein('verkauf', 'Gibt es einen Verkauf?', msg); break;
+    case 'awaiting_sitzplatz': hutData.sitzplatz = await kiErkenneJaNein('sitzplatz', 'Gibt es Sitzplätze?', msg); break;
+    case 'awaiting_ueberdacht': hutData.ueberdacht = await kiErkenneJaNein('ueberdacht', 'Ist die Hütte überdacht?', msg); break;
   }
-  if (dialogState === 'awaiting_verkauf') {
-    const result = await kiErkenneJaNein('verkauf', 'Gibt es einen Verkauf?', msg);
-    if (result === null) return;
-    hutData.verkauf = result;
-    dialogState = 'awaiting_sitzplatz';
-    addMessage('Gibt es eine Sitzgelegenheit?');
-    return;
+
+  if (dialogState !== 'awaiting_location') {
+    dialogState = nextState(dialogState);
+    askNext();
+  } else {
+    mapEl.style.display = 'block'; initMap(); addMessage('📍 Klicke auf die Karte oder nutze „Standort senden“.');
   }
-  if (dialogState === 'awaiting_sitzplatz') {
-    const result = await kiErkenneJaNein('sitzplatz', 'Gibt es Sitzplätze?', msg);
-    if (result === null) return;
-    hutData.sitzplatz = result;
-    dialogState = 'awaiting_ueberdacht';
-    addMessage('Ist die Hütte überdacht?');
-    return;
-  }
-  if (dialogState === 'awaiting_ueberdacht') {
-    const result = await kiErkenneJaNein('ueberdacht', 'Ist die Hütte überdacht?', msg);
-    if (result === null) return;
-    hutData.ueberdacht = result;
-    dialogState = 'awaiting_location';
-    mapEl.style.display = 'block';
-    initMap();
-    addMessage('📍 Klicke auf die Karte oder nutze „Standort senden“.');
-    return;
-  }
+}
+
+function nextState(current) {
+  const states = ['awaiting_description','awaiting_strom','awaiting_verkauf','awaiting_sitzplatz','awaiting_ueberdacht','awaiting_location'];
+  return states[states.indexOf(current)+1];
+}
+
+function askNext() {
+  const fragen = {
+    awaiting_strom: 'Gibt es Strom (z. B. für E-Bikes)?',
+    awaiting_verkauf: 'Gibt es etwas zu kaufen (Eier, Snacks)?',
+    awaiting_sitzplatz: 'Gibt es eine Sitzgelegenheit?',
+    awaiting_ueberdacht: 'Ist die Hütte überdacht?'
+  };
+  if (fragen[dialogState]) addMessage(fragen[dialogState]);
 }
 
 async function kiErkenneJaNein(feldName, frage, userInput) {
@@ -120,13 +119,12 @@ async function kiErkenneJaNein(feldName, frage, userInput) {
     if (reply?.includes("false")) return false;
   } catch (e) { addMessage(`❌ KI-Fehler: ${e.message}`); }
 
-  // Lokaler Fallback
   const t = userInput.toLowerCase();
-  const p = { strom:["ja","strom","steckdose","e-bike"], verkauf:["eier","verkauf","snack","automat"], sitzplatz:["bank","tisch","stuhl"], ueberdacht:["dach","überdacht"] };
-  const n = { strom:["kein","nein"], verkauf:["leer","nichts"], sitzplatz:["keine","nicht"], ueberdacht:["nicht","kein"] };
+  const p = { strom:["ja","strom","steckdose","e-bike"], verkauf:["eier","verkauf","snack","automat"], sitzplatz:["bank","tisch","stuhl","bänke","sitzplatz","hocker","platz","sitzen"], ueberdacht:["dach","überdacht","unterstand"] };
+  const n = { strom:["kein","nein"], verkauf:["leer","nichts","nein"], sitzplatz:["keine","nicht","nein"], ueberdacht:["nicht","kein","nein"] };
   if (n[feldName]?.some(w=>t.includes(w))) return false;
   if (p[feldName]?.some(w=>t.includes(w))) return true;
-  addMessage(`❓ "${feldName}" unklar. Bitte klarer antworten.`);
+  addMessage(`❓ Ich konnte nicht erkennen, ob "${feldName}" zutrifft. Bitte antworte mit „ja“, „nein“ oder schreibe z. B. „es gibt eine Bank“. Du kannst auch „überspringen“ schreiben.`);
   return null;
 }
 
@@ -153,18 +151,18 @@ function setLocation(lat, lon) {
 }
 
 async function zeigeZusammenfassung() {
-  const prompt = `Erstelle eine kurze schöne Beschreibung für folgende Eierhütte:
+  const prompt = `Erstelle eine schöne, kurze Beschreibung für folgende Eierhütte auf Deutsch. 
 Beschreibung: ${hutData.beschreibung}
-Strom: ${hutData.strom}
-Verkauf: ${hutData.verkauf}
-Sitzplatz: ${hutData.sitzplatz}
-Überdacht: ${hutData.ueberdacht}
-Standort: ${hutData.lat}, ${hutData.lon}`;
+Strom: ${hutData.strom ? "ja" : "nein"}
+Verkauf: ${hutData.verkauf ? "ja" : "nein"}
+Sitzplatz: ${hutData.sitzplatz ? "ja" : "nein"}
+Überdacht: ${hutData.ueberdacht ? "ja" : "nein"}
+Koordinaten: ${hutData.lat}, ${hutData.lon}`;
   try {
     const res = await fetch("https://api.openai.com/v1/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openaiKey}` },
-      body: JSON.stringify({ model: "text-davinci-003", prompt, max_tokens: 120, temperature: 0.7 })
+      body: JSON.stringify({ model: "text-davinci-003", prompt, max_tokens: 150, temperature: 0.7 })
     });
     const data = await res.json();
     const reply = data?.choices?.[0]?.text?.trim();
