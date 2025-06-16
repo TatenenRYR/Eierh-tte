@@ -3,6 +3,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Eierhütte einreichen – Chat-Modus</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
   <style>
@@ -17,11 +19,15 @@
     button { margin-left: 0.5rem; padding: 0.6rem 1rem; border: none; background: #4caf50; color: white; border-radius: 8px; cursor: pointer; font-weight: bold; }
     button:hover { background: #45a049; }
     #debugConsole { font-size: 0.8rem; margin-top: 1rem; white-space: pre; background: #000; color: #0f0; padding: 0.5rem; border-radius: 6px; max-height: 150px; overflow-y: auto; display: none; }
+    #map { height: 250px; margin-top: 1rem; border-radius: 10px; display: none; }
+    #summaryBox { background: #f5f5f5; padding: 1rem; border-radius: 8px; margin-top: 1rem; display: none; }
   </style>
 </head>
 <body>
 <div class="chatbox">
   <div id="chat"></div>
+  <div id="map"></div>
+  <div id="summaryBox"></div>
   <div class="input-row">
     <input id="userInput" placeholder="Deine Antwort hier..." onkeypress="if(event.key==='Enter') sendeAntwort()" />
     <button onclick="sendeAntwort()">Senden</button>
@@ -70,7 +76,8 @@ let userData = {
   ort: "",
   strom: "",
   sitzplatz: "",
-  zusatz: ""
+  zusatz: "",
+  location: null
 };
 let schritt = 0;
 
@@ -101,26 +108,58 @@ function bearbeiteSchritt(text) {
     schritt++;
   } else if (schritt === 4) {
     userData.zusatz = text;
-    addMsg("ai", "Danke! Ich erstelle jetzt eine Zusammenfassung und reiche die Hütte ein...");
-    abschicken();
+    addMsg("ai", "Klicke nun auf der Karte, um den Standort der Hütte festzulegen.");
+    zeigeKarte();
     schritt++;
-  } else {
-    addMsg("ai", "Die Anfrage wurde bereits übermittelt. Vielen Dank!");
   }
 }
 
-function abschicken() {
+function zeigeKarte() {
+  const mapDiv = document.getElementById("map");
+  mapDiv.style.display = "block";
+  const map = L.map('map').setView([51, 10], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
+  let marker;
+  map.on('click', function (e) {
+    userData.location = e.latlng;
+    if (marker) marker.setLatLng(e.latlng);
+    else marker = L.marker(e.latlng).addTo(map);
+    zeigeZusammenfassung();
+  });
+}
+
+function zeigeZusammenfassung() {
+  const box = document.getElementById("summaryBox");
+  box.innerHTML = `
+    <h3>📝 Zusammenfassung</h3>
+    <p><b>Ort:</b> ${userData.ort}</p>
+    <p><b>Sitzplatz:</b> ${userData.sitzplatz}</p>
+    <p><b>Stromversorgung:</b> ${userData.strom}</p>
+    <p><b>Zusatz:</b> ${userData.zusatz}</p>
+    <p><b>Koordinaten:</b> ${userData.location.lat.toFixed(5)}, ${userData.location.lng.toFixed(5)}</p>
+    <button onclick="absenden()">✅ Bestätigen & Absenden</button>
+    <button onclick="location.reload()">❌ Abbrechen</button>
+  `;
+  box.style.display = "block";
+  addMsg("ai", "Bitte überprüfe deine Angaben und bestätige die Einsendung.");
+}
+
+function absenden() {
   const beschreibung = `Eierhütte in ${userData.ort}. ${userData.sitzplatz === 'ja' ? 'Mit Sitzplatz.' : 'Kein Sitzplatz.'} ${userData.strom === 'ja' ? 'Stromversorgung für E-Bikes vorhanden.' : 'Keine Stromversorgung.'} ${userData.zusatz}`;
   db.collection("eierhuetten").add({
     name: userData.ort,
     beschreibung,
-    location: { lat: 0, lng: 0 },
+    location: userData.location,
     strom: userData.strom,
     status: "offen",
     erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
     history: [`${new Date().toLocaleString()}: erstellt`]  
   }).then(() => {
     addMsg("ai", "✅ Die Eierhütte wurde erfolgreich eingereicht!");
+    document.getElementById("summaryBox").style.display = "none";
+    document.getElementById("map").style.display = "none";
   }).catch(err => {
     debug("Fehler beim Speichern", err);
     addMsg("ai", "❌ Fehler beim Speichern der Daten.");
