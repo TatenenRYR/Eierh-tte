@@ -1,43 +1,40 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Eierhütten Assistent</title>
   <style>
-    body { font-family: sans-serif; background: #f3f4f6; padding: 2rem; }
+    body { font-family: sans-serif; background: #f9fafb; padding: 2rem; }
     #chat { max-width: 600px; margin: auto; background: white; padding: 1rem; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
     .msg { margin: 1rem 0; }
-    .user { text-align: right; }
-    .bot { text-align: left; color: #333; }
+    .user { text-align: right; color: #2563eb; }
+    .bot { text-align: left; color: #111827; }
     input, button { padding: 0.5rem; font-size: 1rem; width: 100%; margin-top: 0.5rem; }
     input[type="file"] { padding: 0; }
+    #preview { margin-top: 1rem; max-width: 100%; display: none; }
+    .success { color: green; }
+    .error { color: red; }
   </style>
 </head>
 <body>
   <div id="chat">
     <div id="messages"></div>
+    <img id="preview" />
     <form id="chatForm">
       <input type="text" id="userInput" placeholder="Antwort eingeben..." required />
       <input type="file" id="photoInput" accept="image/*" style="display:none" />
       <button type="submit">Senden</button>
     </form>
-  </div>
-
-  <!-- Firebase SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
-
-  <script>
+  </div>  <!-- Firebase SDKs -->  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>  <script>
     // Firebase-Konfiguration
     const firebaseConfig = {
-      apiKey: "DEIN_API_KEY",
-      authDomain: "DEIN_PROJEKT.firebaseapp.com",
-      projectId: "DEIN_PROJEKT",
-      storageBucket: "DEIN_PROJEKT.appspot.com",
-      messagingSenderId: "...",
-      appId: "..."
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.firebasestorage.app",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
     };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
@@ -47,6 +44,7 @@
     const form = document.getElementById('chatForm');
     const input = document.getElementById('userInput');
     const photoInput = document.getElementById('photoInput');
+    const preview = document.getElementById('preview');
 
     let step = 0;
     let formData = {};
@@ -56,13 +54,15 @@
       "Wo befindet sich die Hütte (Adresse oder Koordinaten)?",
       "Gibt es besondere Merkmale (z. B. Stromversorgung, Sitzplätze)?",
       "Möchtest du ein Foto hochladen? (Ja/Nein)",
-      "Bitte lade jetzt das Foto hoch.",
-      "Vielen Dank! Die Hütte wurde übermittelt."
+      "Bitte lade jetzt das Foto hoch und klicke dann auf Senden.",
+      "Vielen Dank! Die Hütte wurde erfolgreich übermittelt ✅"
     ];
 
-    function addMessage(text, sender = 'bot') {
+    function addMessage(text, sender = 'bot', type = 'normal') {
       const div = document.createElement('div');
       div.className = 'msg ' + sender;
+      if (type === 'error') div.classList.add('error');
+      if (type === 'success') div.classList.add('success');
       div.textContent = text;
       messages.appendChild(div);
       messages.scrollTop = messages.scrollHeight;
@@ -74,48 +74,64 @@
           photoInput.style.display = 'block';
         } else {
           photoInput.style.display = 'none';
+          preview.style.display = 'none';
         }
         addMessage(prompts[step]);
       }
     }
 
-    addMessage("Hallo! Ich helfe dir dabei, eine neue Hütte einzureichen.");
+    addMessage("👋 Hallo! Ich helfe dir dabei, eine neue Hütte einzureichen.");
     nextPrompt();
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const val = input.value.trim();
       if (!val && step !== 4) return;
-      addMessage(val, 'user');
+      if (step !== 4) addMessage(val, 'user');
       input.value = '';
 
       if (step === 0) formData.name = val;
       if (step === 1) formData.standort = val;
       if (step === 2) formData.besonderheiten = val;
 
-      if (step === 3 && val.toLowerCase() === 'ja') {
-        step++;
-        nextPrompt();
-        return;
-      }
-
-      if (step === 3 && val.toLowerCase() === 'nein') {
-        formData.fotoUrl = null;
-        await submitForm();
-        return;
+      if (step === 3) {
+        if (val.toLowerCase() === 'ja') {
+          step++;
+          nextPrompt();
+          return;
+        } else if (val.toLowerCase() === 'nein') {
+          formData.fotoUrl = null;
+          await submitForm();
+          return;
+        } else {
+          addMessage("Bitte antworte mit Ja oder Nein.", 'bot', 'error');
+          return;
+        }
       }
 
       if (step === 4) {
         const file = photoInput.files[0];
         if (!file) {
-          addMessage("Bitte wähle eine Bilddatei aus.");
+          addMessage("❗Bitte wähle eine Bilddatei aus.", 'bot', 'error');
           return;
         }
-        const storageRef = storage.ref('eierhuetten/' + Date.now() + '_' + file.name);
-        const uploadTask = await storageRef.put(file);
-        const downloadURL = await uploadTask.ref.getDownloadURL();
-        formData.fotoUrl = downloadURL;
-        await submitForm();
+        const reader = new FileReader();
+        reader.onload = () => {
+          preview.src = reader.result;
+          preview.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+
+        try {
+          const storageRef = storage.ref('eierhuetten/' + Date.now() + '_' + file.name);
+          const uploadTask = await storageRef.put(file);
+          const downloadURL = await uploadTask.ref.getDownloadURL();
+          formData.fotoUrl = downloadURL;
+          await submitForm();
+        } catch (err) {
+          console.error(err);
+          addMessage("❌ Fehler beim Hochladen des Bildes.", 'bot', 'error');
+        }
         return;
       }
 
@@ -124,12 +140,28 @@
     });
 
     async function submitForm() {
-      formData.status = 'offen';
-      formData.timestamp = new Date();
-      await db.collection('eierhuetten_antraege').add(formData);
-      step++;
-      nextPrompt();
+      try {
+        formData.status = 'offen';
+        formData.timestamp = new Date();
+        await db.collection('eierhuetten_antraege').add(formData);
+        addMessage(prompts[5], 'bot', 'success');
+        step = prompts.length; // Ende
+      } catch (err) {
+        console.error(err);
+        addMessage("❌ Fehler beim Speichern der Daten in Firestore.", 'bot', 'error');
+      }
     }
-  </script>
-</body>
+
+    photoInput.addEventListener('change', () => {
+      const file = photoInput.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          preview.src = reader.result;
+          preview.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+  </script></body>
 </html>
