@@ -215,25 +215,52 @@ function handleIntent(input) {
     handleStep('');
   }
 
-  function showMapSelect(){
-  addMessage('Bitte wähle den Standort auf der Karte:', 'bot');
+  function showMapSelect() {
+  addMessage('📍 Bitte wähle den Standort auf der Karte:', 'bot');
+
   const mDiv = document.createElement('div');
   mDiv.id = 'map';
   chatWindow.appendChild(mDiv);
+
   map = L.map('map').setView([51.2, 10.5], 6);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
   marker = null;
+
+  // Aktueller Standort
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      const { latitude, longitude } = pos.coords;
+      map.setView([latitude, longitude], 15);
+      marker = L.marker([latitude, longitude]).addTo(map);
+      formData.loc = { lat: latitude, lng: longitude };
+      addMessage(`📌 Aktueller Standort: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`, 'bot');
+      addMessage('Ist das der richtige Standort?', 'bot');
+      addChoiceButtons(['Ja', 'Nein'], choice => {
+        if (choice === 'ja') {
+          map.remove(); // Karte entfernen
+          document.getElementById('map').remove();
+          addMessage('Möchtest du jetzt einreichen?', 'bot');
+          addChoiceButtons(['Ja', 'Nein'], c => { if (c === 'ja') submit(); });
+        } else {
+          addMessage('Okay, bitte klicke einen neuen Standort auf der Karte.', 'bot');
+        }
+      });
+    }, err => {
+      console.warn('Geolocation fehlgeschlagen:', err);
+      addMessage('⚠️ Standort konnte nicht automatisch ermittelt werden. Bitte Standort auf der Karte wählen.', 'bot');
+    });
+  }
 
   map.on('click', e => {
     if (marker) marker.setLatLng(e.latlng);
     else marker = L.marker(e.latlng).addTo(map);
     formData.loc = e.latlng;
-    addMessage(`Standort gewählt: ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`, 'bot');
+    addMessage(`📌 Standort gewählt: ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`, 'bot');
     addMessage('Ist das der richtige Standort?', 'bot');
     addChoiceButtons(['Ja', 'Nein'], choice => {
       if (choice === 'ja') {
-        map.remove(); // Entfernt die Karte
-        document.getElementById('map').remove(); // Entfernt Map-Container
+        map.remove();
+        document.getElementById('map').remove();
         addMessage('Möchtest du jetzt einreichen?', 'bot');
         addChoiceButtons(['Ja', 'Nein'], c => { if (c === 'ja') submit(); });
       } else {
@@ -241,8 +268,7 @@ function handleIntent(input) {
       }
     });
   });
-  }
-
+}
   async function submit(){
   if (!formData.loc) {
     addMessage('⚠️ Bitte Standort auswählen, bevor du einreichst.', 'bot');
