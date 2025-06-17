@@ -197,51 +197,54 @@
   }
 
   function showMapSelect(){
-    addMessage('Bitte wähle Standort auf der Karte:','bot');
-    const mDiv=document.createElement('div');
-    mDiv.id='map';
-    chatWindow.appendChild(mDiv);
-    map=L.map('map').setView([51.2,10.5],6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    marker=null;
-    map.on('click',e=>{
-      if(marker) marker.setLatLng(e.latlng);
-      else marker=L.marker(e.latlng).addTo(map);
-      formData.loc=e.latlng;
-      addMessage(`Standort gewählt: ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`,'bot');
-      addMessage('Möchtest du jetzt einreichen?','bot');
-      addChoiceButtons(['Ja','Nein'], choice=>{ if(choice==='ja') submit(); });
+  addMessage('Bitte wähle den Standort auf der Karte:', 'bot');
+  const mDiv = document.createElement('div');
+  mDiv.id = 'map';
+  chatWindow.appendChild(mDiv);
+  map = L.map('map').setView([51.2, 10.5], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  marker = null;
+
+  map.on('click', e => {
+    if (marker) marker.setLatLng(e.latlng);
+    else marker = L.marker(e.latlng).addTo(map);
+    formData.loc = e.latlng;
+    addMessage(`Standort gewählt: ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`, 'bot');
+    addMessage('Ist das der richtige Standort?', 'bot');
+    addChoiceButtons(['Ja', 'Nein'], choice => {
+      if (choice === 'ja') {
+        map.remove(); // Entfernt die Karte
+        document.getElementById('map').remove(); // Entfernt Map-Container
+        addMessage('Möchtest du jetzt einreichen?', 'bot');
+        addChoiceButtons(['Ja', 'Nein'], c => { if (c === 'ja') submit(); });
+      } else {
+        addMessage('Okay, bitte klicke erneut auf die Karte.', 'bot');
+      }
     });
+  });
   }
 
   async function submit(){
   if (!formData.loc) {
-  addMessage('⚠️ Bitte Standort auswählen, bevor du einreichst.', 'bot');
-  return;
+    addMessage('⚠️ Bitte Standort auswählen, bevor du einreichst.', 'bot');
+    return;
   }
-  // Zeige Fortschritt; speichere Referenz auf diese Nachricht
-  const statusMsg = document.createElement('div');
-  statusMsg.className = 'message bot';
-  statusMsg.textContent = 'Sende Daten…';
-  chatWindow.appendChild(statusMsg);
-  chatWindow.scrollTop = chatWindow.scrollHeight;
-
-  try {
-    await db.collection('eierhuetten').add({
-  name: formData.name,
-  strom: formData.strom,
-  beschreibung: formData.extras,
-  location: new firebase.firestore.GeoPoint(formData.loc.lat, formData.loc.lng),
-  userId: currentUser.uid,
-  erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
-  status: 'offen',
-  history: [`${new Date().toLocaleString()}: Eingereicht von ${currentUser.displayName}`]
-});
-    // Ersetze Status-Nachricht durch Bestätigung
-    statusMsg.textContent = '✅ Erfolgreich eingereicht!';
-  } catch (e) {
-    statusMsg.textContent = '❌ Fehler beim Senden: ' + e.message;
-  }
+  addMessage('Sende Daten...', 'bot');
+  await db.collection('eierhuetten').add({
+    name: formData.name,
+    strom: formData.strom,
+    beschreibung: formData.extras,
+    location: new firebase.firestore.GeoPoint(formData.loc.lat, formData.loc.lng),
+    userId: currentUser.uid,
+    erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+    status: 'offen',
+    history: [`${new Date().toLocaleString()}: Eingereicht von ${currentUser.displayName}`]
+  });
+  addMessage('✅ Erfolgreich eingereicht!', 'bot');
+  // Chat zurücksetzen
+  step = 0;
+  formData = {};
+  setTimeout(startDialog, 1500); // Neue Session starten
   }
 
   function startDialog(){
