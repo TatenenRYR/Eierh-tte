@@ -1,35 +1,101 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <title>Eierhütten-Anfrage</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Eierhütte melden</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    body { font-family: sans-serif; margin: 1rem; }
-    #map { height: 300px; margin-bottom: 1rem; }
-    .preview-img { max-width: 100%; height: auto; margin-top: 0.5rem; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f9f9f9;
+      margin: 2rem;
+      color: #333;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    form {
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+      padding: 1.5rem;
+      border-radius: 1rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+    label {
+      font-weight: 600;
+      display: block;
+      margin-top: 1rem;
+    }
+    input[type="text"],
+    textarea,
+    input[type="file"] {
+      width: 100%;
+      padding: 0.5rem;
+      margin-top: 0.25rem;
+      border: 1px solid #ccc;
+      border-radius: 0.5rem;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+    #map {
+      height: 300px;
+      margin-top: 0.5rem;
+      border-radius: 0.5rem;
+      overflow: hidden;
+    }
+    .preview-img {
+      max-width: 100%;
+      margin-top: 0.5rem;
+      display: none;
+      border-radius: 0.5rem;
+    }
+    button {
+      margin-top: 1.5rem;
+      width: 100%;
+      padding: 0.75rem;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      font-weight: bold;
+      border-radius: 0.5rem;
+      cursor: pointer;
+    }
+    button:disabled {
+      background: #aaa;
+      cursor: not-allowed;
+    }
+    .status {
+      margin-top: 1rem;
+      text-align: center;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
   <h1>Neue Eierhütte melden</h1>
   <form id="hutForm">
-    <label for="name">Name der Hütte:</label><br>
-    <input type="text" id="name" name="name" required><br><br>
+    <label for="name">Name der Hütte*</label>
+    <input type="text" id="name" required />
 
-    <label for="description">Beschreibung:</label><br>
-    <textarea id="description" name="description" required></textarea><br><br>
+    <label for="description">Beschreibung*</label>
+    <textarea id="description" required></textarea>
 
-    <label>Standort auf Karte wählen:</label>
+    <label>Standort auf Karte wählen*</label>
     <div id="map"></div>
-    <input type="hidden" id="latitude" name="latitude">
-    <input type="hidden" id="longitude" name="longitude">
+    <input type="hidden" id="latitude" />
+    <input type="hidden" id="longitude" />
 
-    <label for="photo">Foto der Hütte (optional):</label><br>
-    <input type="file" id="photo" name="photo" accept="image/*"><br>
-    <img id="preview" class="preview-img" style="display:none"><br><br>
+    <label for="photo">Foto der Hütte (optional)</label>
+    <input type="file" id="photo" accept="image/*" />
+    <img id="preview" class="preview-img" />
 
-    <button type="submit">Absenden</button>
+    <button type="submit" id="submitBtn">Absenden</button>
+    <div id="status" class="status"></div>
   </form>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -37,22 +103,21 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-  authDomain: "eierhuettentour.firebaseapp.com",
-  projectId: "eierhuettentour",
-  storageBucket: "eierhuettentour.firebasestorage.app",
-  messagingSenderId: "348272135205",
-  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
-  measurementId: "G-16V6K5GXDT"
-};
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.appspot.com",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
+    };
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    // Leaflet Karte initialisieren
-    let map = L.map('map').setView([51.1657, 10.4515], 6);
+    // Karte
+    const map = L.map('map').setView([51.1657, 10.4515], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap'
     }).addTo(map);
@@ -60,13 +125,14 @@ const firebaseConfig = {
     let marker;
     map.on('click', function (e) {
       const { lat, lng } = e.latlng;
+      document.getElementById('latitude').value = lat;
+      document.getElementById('longitude').value = lng;
+
       if (!marker) {
         marker = L.marker(e.latlng).addTo(map);
       } else {
         marker.setLatLng(e.latlng);
       }
-      document.getElementById('latitude').value = lat;
-      document.getElementById('longitude').value = lng;
     });
 
     // Foto-Vorschau
@@ -82,7 +148,7 @@ const firebaseConfig = {
           encodedImage = e.target.result;
           preview.src = encodedImage;
           preview.style.display = 'block';
-        }
+        };
         reader.readAsDataURL(file);
       }
     });
@@ -92,32 +158,46 @@ const firebaseConfig = {
       e.preventDefault();
       const name = document.getElementById("name").value.trim();
       const description = document.getElementById("description").value.trim();
-      const latitude = parseFloat(document.getElementById("latitude").value);
-      const longitude = parseFloat(document.getElementById("longitude").value);
+      const lat = parseFloat(document.getElementById("latitude").value);
+      const lng = parseFloat(document.getElementById("longitude").value);
+      const statusBox = document.getElementById("status");
+      const btn = document.getElementById("submitBtn");
 
-      if (!name || !description || isNaN(latitude) || isNaN(longitude)) {
-        alert("Bitte alle Pflichtfelder ausfüllen und Standort wählen.");
+      if (!name || !description || isNaN(lat) || isNaN(lng)) {
+        statusBox.textContent = "Bitte alle Pflichtfelder ausfüllen!";
+        statusBox.style.color = "red";
         return;
       }
 
-      const newEntry = {
+      btn.disabled = true;
+      statusBox.textContent = "Wird gespeichert...";
+      statusBox.style.color = "#555";
+
+      const entry = {
         name,
         description,
-        location: { lat: latitude, lng: longitude },
+        location: { lat, lng },
         status: "offen",
         createdAt: serverTimestamp(),
         image: encodedImage || null
       };
 
       try {
-        await addDoc(collection(db, "eierhuetten_antraege"), newEntry);
-        alert("Anfrage erfolgreich gespeichert!");
-        document.getElementById('hutForm').reset();
-        preview.style.display = 'none';
-        marker?.remove();
-      } catch (error) {
-        alert("Fehler beim Speichern: " + error.message);
+        await addDoc(collection(db, "eierhuetten_antraege"), entry);
+        statusBox.textContent = "Anfrage erfolgreich gespeichert!";
+        statusBox.style.color = "green";
+        document.getElementById("hutForm").reset();
+        preview.style.display = "none";
+        if (marker) {
+          map.removeLayer(marker);
+          marker = null;
+        }
+      } catch (err) {
+        statusBox.textContent = "Fehler beim Speichern: " + err.message;
+        statusBox.style.color = "red";
       }
+
+      btn.disabled = false;
     });
   </script>
 </body>
