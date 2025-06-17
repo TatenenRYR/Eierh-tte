@@ -9,40 +9,49 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    #chat-window div { clear: both; max-width: 80%; margin-bottom: 0.5rem; }
-    #chat-window .user { float: right; background-color: #dcfce7; text-align: right; padding: .5rem 1rem; border-radius: 1rem; }
-    #chat-window .bot { float: left; background-color: #f1f5f9; padding: .5rem 1rem; border-radius: 1rem; }
-  </style>
 </head>
-<body class="bg-gray-100 font-sans"><div id="login-section" class="text-center p-6">
+<body class="bg-gray-100 font-sans"><!-- Login --><div id="login-section" class="text-center p-6">
   <button id="google-login" class="bg-red-600 hover:bg-red-700 text-white py-2 px-6 rounded">
     Mit Google anmelden
   </button>
-</div><section id="chat-section" class="max-w-3xl mx-auto mt-8 bg-white shadow-lg rounded-xl overflow-hidden hidden">
+</div><!-- Chat & Formular --><section id="main-section" class="max-w-3xl mx-auto mt-8 bg-white shadow-lg rounded-xl overflow-hidden hidden">
   <div class="bg-green-600 text-white text-xl font-bold p-4">🥚 Eierhütten Assistent</div>
-  <div id="key-input-section" class="p-4 border-b">
-    <input id="chat-api-key" type="text" placeholder="OpenRouter API-Key eingeben" class="border px-3 py-2 rounded w-full mb-2" />
-    <button onclick="saveChatKey()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Key speichern</button>
+  <div id="key-section" class="p-4">
+    <input id="api-key" type="text" placeholder="OpenRouter API-Key eingeben" class="border px-3 py-2 rounded w-full mb-2" />
+    <button onclick="saveKey()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Key speichern</button>
   </div>
-  <div id="chat-window" class="p-4 h-80 overflow-y-auto bg-gray-50"></div>
-  <div id="input-row" class="p-4 border-t flex gap-2">
-    <input id="chat-input" type="text" class="flex-grow border border-gray-300 rounded px-3 py-2" placeholder="Schreibe eine Nachricht..." />
-    <button id="chat-send" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">Weiter</button>
+  <div id="chat-window" class="p-4 h-96 overflow-y-auto space-y-2 text-sm bg-gray-50"></div>
+  <div id="chat-controls" class="p-4 border-t flex gap-2">
+    <input id="chat-input" type="text" class="flex-grow border border-gray-300 rounded px-3 py-2" placeholder="Antwort schreiben...">
+    <button onclick="sendeNachricht()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">Weiter</button>
   </div>
-</section><script>
-const firebaseConfig = { apiKey:"AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro", authDomain:"eierhuettentour.firebaseapp.com", projectId:"eierhuettentour", storageBucket:"eierhuettentour.appspot.com", messagingSenderId:"348272135205", appId:"1:348272135205:web:f39a7d26d927fbf28dc3cc", measurementId:"G-16V6K5GXDT" };
+</section><style>
+  #chat-window .user { background-color: #dcfce7; text-align: right; padding: .5rem 1rem; border-radius: 1rem; display: inline-block; max-width: 80%; float: right; clear: both; }
+  #chat-window .bot { background-color: #f3f4f6; text-align: left; padding: .5rem 1rem; border-radius: 1rem; display: inline-block; max-width: 80%; float: left; clear: both; }
+</style><script>
+const firebaseConfig = {
+  apiKey:"AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain:"eierhuettentour.firebaseapp.com",
+  projectId:"eierhuettentour",
+  storageBucket:"eierhuettentour.appspot.com",
+  messagingSenderId:"348272135205",
+  appId:"1:348272135205:web:f39a7d26d927fbf28dc3cc"
+};
 firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth(), db=firebase.firestore();
+const auth = firebase.auth(), db = firebase.firestore();
 
-let OPENROUTER_KEY = localStorage.getItem('openrouter_api_key');
-function saveChatKey() {
-  const key = document.getElementById('chat-api-key').value.trim();
+let OPENROUTER_KEY = localStorage.getItem('openrouter_api_key') || '';
+
+function saveKey() {
+  const key = document.getElementById('api-key').value.trim();
   if (key.length > 20) {
     localStorage.setItem('openrouter_api_key', key);
     OPENROUTER_KEY = key;
-    document.getElementById('key-input-section').classList.add('hidden');
-  } else alert('Bitte gültigen API-Key eingeben');
+    document.getElementById('key-section').style.display = 'none';
+    starteDialog();
+  } else {
+    alert('Bitte gültigen Key eingeben');
+  }
 }
 
 let currentUser;
@@ -50,72 +59,149 @@ document.getElementById('google-login').onclick = async () => {
   const res = await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
   currentUser = res.user;
   document.getElementById('login-section').classList.add('hidden');
-  document.getElementById('chat-section').classList.remove('hidden');
-  if (!OPENROUTER_KEY) document.getElementById('key-input-section').classList.remove('hidden');
-  else document.getElementById('key-input-section').classList.add('hidden');
-  showMsg(`Hallo ${currentUser.displayName}!`, 'bot');
-  showMsg('Wie soll deine Eierhütte heißen?', 'bot');
+  document.getElementById('main-section').classList.remove('hidden');
+  if (!OPENROUTER_KEY) {
+    document.getElementById('key-section').style.display = 'block';
+  } else {
+    document.getElementById('key-section').style.display = 'none';
+    starteDialog();
+  }
 };
 
 const chatWindow = document.getElementById('chat-window');
 function showMsg(msg, role) {
-  const d = document.createElement('div');
-  d.className = role;
-  d.textContent = msg;
-  chatWindow.appendChild(d);
+  const div = document.createElement('div');
+  div.className = role;
+  div.textContent = msg;
+  chatWindow.appendChild(div);
   chatWindow.scrollTop = chatWindow.scrollHeight;
 }
-
-document.getElementById('chat-send').addEventListener('click', () => {
-  const input = document.getElementById('chat-input');
-  const text = input.value.trim();
-  if (!text) return;
-  showMsg(text, 'user');
-  input.value = '';
-  handleStep(text);
-});
 
 let step = 0;
 let formData = {};
 
+function sendeNachricht() {
+  const input = document.getElementById('chat-input');
+  const txt = input.value.trim();
+  if (!txt) return;
+  showMsg(txt, 'user');
+  input.value = '';
+  handleStep(txt);
+}
+
+function starteDialog() {
+  step = 0;
+  showMsg('Wie soll deine Eierhütte heißen?', 'bot');
+}
+
 function handleStep(txt) {
   if (step === 0) {
     formData.name = txt;
-    showMsg('Bitte wähle den Standort auf der Karte aus und bestätige unten.', 'bot');
+    showMsg('Bitte wähle einen Standort auf der Karte und bestätige mit dem Button.', 'bot');
     initMap();
     step++;
+  } else if (step === 1) {
+    formData.loc = txt;
+    showMsg('Gibt es Sitzplätze?', 'bot');
+    zeigeJaNeinFrage('sitzplaetze');
+    step++;
+  } else if (step === 2) {
+    formData.sitzplaetze = txt;
+    showMsg('Gibt es Strom?', 'bot');
+    zeigeJaNeinFrage('strom');
+    step++;
+  } else if (step === 3) {
+    formData.strom = txt;
+    showMsg('Gibt es weitere Besonderheiten?', 'bot');
+    step++;
+  } else if (step === 4) {
+    formData.extras = txt;
+    showZusammenfassung();
+    step++;
   }
-  // Weitere Schritte folgen
+}
+
+function zeigeJaNeinFrage(feld) {
+  const container = document.createElement('div');
+  container.className = 'bot';
+  ['Ja', 'Nein'].forEach(label => {
+    const btn = document.createElement('button');
+    btn.textContent = label;
+    btn.className = 'bg-blue-500 text-white px-2 py-1 m-1 rounded';
+    btn.onclick = () => {
+      container.remove();
+      handleStep(label.toLowerCase());
+    };
+    container.appendChild(btn);
+  });
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
 }
 
 function initMap() {
-  const div = document.createElement('div');
-  div.id = 'map';
-  div.style.height = '300px';
-  chatWindow.appendChild(div);
+  const mapDiv = document.createElement('div');
+  mapDiv.id = 'map';
+  mapDiv.style.height = '300px';
+  chatWindow.appendChild(mapDiv);
 
-  const confirm = document.createElement('button');
-  confirm.textContent = 'Standort bestätigen';
-  confirm.className = 'mt-2 bg-blue-600 text-white px-3 py-2 rounded';
-  confirm.onclick = () => {
-    if (!formData.loc) return alert('Bitte zuerst einen Ort auswählen');
-    showMsg('Standort gespeichert.', 'bot');
+  const confirmBtn = document.createElement('button');
+  confirmBtn.textContent = 'Standort bestätigen';
+  confirmBtn.className = 'bg-green-600 text-white px-4 py-2 rounded mt-2';
+  confirmBtn.onclick = () => {
+    if (!formData.loc) {
+      alert('Bitte Standort auf der Karte wählen');
+      return;
+    }
     document.getElementById('map').remove();
-    confirm.remove();
-    showMsg('Gibt es Sitzplätze? (ja / nein)', 'bot');
-    step++;
+    confirmBtn.remove();
+    handleStep(`${formData.loc.lat.toFixed(5)}, ${formData.loc.lng.toFixed(5)}`);
   };
-  chatWindow.appendChild(confirm);
+  chatWindow.appendChild(confirmBtn);
 
-  const map = L.map('map').setView([51.2, 10.5], 6);
+  const map = L.map(mapDiv).setView([51.2, 10.5], 6);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-  if (navigator.geolocation) navigator.geolocation.getCurrentPosition(p => map.setView([p.coords.latitude, p.coords.longitude], 15));
   let marker;
-  map.on('click', e => {
+  map.on('click', (e) => {
     formData.loc = e.latlng;
     if (marker) marker.setLatLng(e.latlng);
     else marker = L.marker(e.latlng).addTo(map);
   });
+  navigator.geolocation?.getCurrentPosition(pos => map.setView([pos.coords.latitude, pos.coords.longitude], 14));
+}
+
+function showZusammenfassung() {
+  const zusammenfassung = `Name: ${formData.name}\nStandort: ${formData.loc.lat.toFixed(5)}, ${formData.loc.lng.toFixed(5)}\nSitzplätze: ${formData.sitzplaetze}\nStrom: ${formData.strom}\nExtras: ${formData.extras}`;
+  showMsg(zusammenfassung, 'bot');
+  const button = document.createElement('button');
+  button.textContent = 'Einreichen';
+  button.className = 'bg-green-600 text-white px-4 py-2 rounded';
+  button.onclick = submitEintrag;
+  chatWindow.appendChild(button);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+async function submitEintrag() {
+  showMsg('Bitte warten – Beschreibung wird generiert...', 'bot');
+  const prompt = `Beschreibe die Eierhütte ${formData.name} mit Sitzplätzen: ${formData.sitzplaetze}, Strom: ${formData.strom}, Besonderheiten: ${formData.extras}`;
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENROUTER_KEY}`
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-3.5-turbo",
+        messages: [{ role: "user", content: prompt }]
+      })
+    });
+    const data = await response.json();
+    formData.beschreibung = data.choices?.[0]?.message?.content || 'Keine Beschreibung verfügbar';
+  } catch (e) {
+    formData.beschreibung = 'Fehler bei der Beschreibungserstellung. Bitte manuell ausfüllen.';
+  }
+  await db.collection('eierhuetten').add({ ...formData, userId: currentUser.uid, erstelltAm: firebase.firestore.FieldValue.serverTimestamp(), status: 'offen' });
+  showMsg('✅ Hütte erfolgreich eingereicht!', 'bot');
 }
 </script></body>
 </html>
