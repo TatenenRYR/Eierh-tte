@@ -9,131 +9,113 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    #chat-window div { clear: both; max-width: 80%; margin-bottom: 0.5rem; }
+    #chat-window .user { float: right; background-color: #dcfce7; text-align: right; padding: .5rem 1rem; border-radius: 1rem; }
+    #chat-window .bot { float: left; background-color: #f1f5f9; padding: .5rem 1rem; border-radius: 1rem; }
+  </style>
 </head>
 <body class="bg-gray-100 font-sans"><div id="login-section" class="text-center p-6">
   <button id="google-login" class="bg-red-600 hover:bg-red-700 text-white py-2 px-6 rounded">
     Mit Google anmelden
   </button>
 </div><section id="chat-section" class="max-w-3xl mx-auto mt-8 bg-white shadow-lg rounded-xl overflow-hidden hidden">
-  <div class="bg-green-600 text-white text-xl font-bold p-4">🥚 Eierhütten Assistent</div>  <div id="key-input-section" class="p-4 border-b hidden">
+  <div class="bg-green-600 text-white text-xl font-bold p-4">🥚 Eierhütten Assistent</div>
+  <div id="key-input-section" class="p-4 border-b">
     <input id="chat-api-key" type="text" placeholder="OpenRouter API-Key eingeben" class="border px-3 py-2 rounded w-full mb-2" />
     <button onclick="saveChatKey()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Key speichern</button>
-  </div>  <div id="chat-window" class="p-4 h-80 overflow-y-auto space-y-4 text-sm bg-gray-50"></div>
+  </div>
+  <div id="chat-window" class="p-4 h-80 overflow-y-auto bg-gray-50"></div>
   <div id="input-row" class="p-4 border-t flex gap-2">
-    <input id="chat-input" type="text" class="flex-grow border border-gray-300 rounded px-3 py-2" placeholder="Schreibe eine Nachricht...">
-    <button onclick="handleNextStep()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">Weiter</button>
-    <button onclick="goBack()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">Zurück</button>
+    <input id="chat-input" type="text" class="flex-grow border border-gray-300 rounded px-3 py-2" placeholder="Schreibe eine Nachricht..." />
+    <button id="chat-send" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">Weiter</button>
   </div>
-</section><div id="map-wrapper" class="max-w-3xl mx-auto mt-4 hidden">
-  <div class="bg-white shadow p-4 rounded">
-    <h2 class="font-bold mb-2">📍 Standort auswählen</h2>
-    <div id="map" class="h-64 mb-2 rounded"></div>
-    <button onclick="confirmLocation()" class="bg-blue-600 text-white px-4 py-2 rounded">Standort übernehmen</button>
-  </div>
-</div><script>
-const firebaseConfig = { apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro", authDomain: "eierhuettentour.firebaseapp.com", projectId: "eierhuettentour", storageBucket: "eierhuettentour.appspot.com", messagingSenderId: "348272135205", appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc" };
+</section><script>
+const firebaseConfig = { apiKey:"AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro", authDomain:"eierhuettentour.firebaseapp.com", projectId:"eierhuettentour", storageBucket:"eierhuettentour.appspot.com", messagingSenderId:"348272135205", appId:"1:348272135205:web:f39a7d26d927fbf28dc3cc", measurementId:"G-16V6K5GXDT" };
 firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-const db = firebase.firestore();
+const auth = firebase.auth(), db=firebase.firestore();
 
-let currentUser;
 let OPENROUTER_KEY = localStorage.getItem('openrouter_api_key');
-
-function showKeyInput() {
-  document.getElementById('key-input-section').classList.remove('hidden');
-}
 function saveChatKey() {
   const key = document.getElementById('chat-api-key').value.trim();
   if (key.length > 20) {
     localStorage.setItem('openrouter_api_key', key);
     OPENROUTER_KEY = key;
     document.getElementById('key-input-section').classList.add('hidden');
-  } else {
-    alert('Ungültiger API-Key');
-  }
+  } else alert('Bitte gültigen API-Key eingeben');
 }
 
-// Login anzeigen und danach App aktivieren
-firebase.auth().onAuthStateChanged(user => {
-  if (user) {
-    currentUser = user;
-    document.getElementById('login-section').classList.add('hidden');
-    document.getElementById('chat-section').classList.remove('hidden');
-    if (!OPENROUTER_KEY) showKeyInput();
-    initChat();
-  }
+let currentUser;
+document.getElementById('google-login').onclick = async () => {
+  const res = await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+  currentUser = res.user;
+  document.getElementById('login-section').classList.add('hidden');
+  document.getElementById('chat-section').classList.remove('hidden');
+  if (!OPENROUTER_KEY) document.getElementById('key-input-section').classList.remove('hidden');
+  else document.getElementById('key-input-section').classList.add('hidden');
+  showMsg(`Hallo ${currentUser.displayName}!`, 'bot');
+  showMsg('Wie soll deine Eierhütte heißen?', 'bot');
+};
+
+const chatWindow = document.getElementById('chat-window');
+function showMsg(msg, role) {
+  const d = document.createElement('div');
+  d.className = role;
+  d.textContent = msg;
+  chatWindow.appendChild(d);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+document.getElementById('chat-send').addEventListener('click', () => {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  showMsg(text, 'user');
+  input.value = '';
+  handleStep(text);
 });
 
-let chatStep = 0;
+let step = 0;
 let formData = {};
-let map, marker;
 
-function initChat() {
-  showMessage('Wie soll deine Eierhütte heißen?', 'bot');
+function handleStep(txt) {
+  if (step === 0) {
+    formData.name = txt;
+    showMsg('Bitte wähle den Standort auf der Karte aus und bestätige unten.', 'bot');
+    initMap();
+    step++;
+  }
+  // Weitere Schritte folgen
 }
 
-function showMessage(msg, sender) {
+function initMap() {
   const div = document.createElement('div');
-  div.className = sender === 'bot' ? 'bot bg-gray-200 rounded p-2' : 'user bg-green-100 text-right rounded p-2';
-  div.textContent = msg;
-  document.getElementById('chat-window').appendChild(div);
-  document.getElementById('chat-window').scrollTop = chatWindow.scrollHeight;
-}
+  div.id = 'map';
+  div.style.height = '300px';
+  chatWindow.appendChild(div);
 
-function handleNextStep() {
-  const input = document.getElementById('chat-input');
-  const value = input.value.trim();
-  if (!value) return;
-  showMessage(value, 'user');
-  input.value = '';
+  const confirm = document.createElement('button');
+  confirm.textContent = 'Standort bestätigen';
+  confirm.className = 'mt-2 bg-blue-600 text-white px-3 py-2 rounded';
+  confirm.onclick = () => {
+    if (!formData.loc) return alert('Bitte zuerst einen Ort auswählen');
+    showMsg('Standort gespeichert.', 'bot');
+    document.getElementById('map').remove();
+    confirm.remove();
+    showMsg('Gibt es Sitzplätze? (ja / nein)', 'bot');
+    step++;
+  };
+  chatWindow.appendChild(confirm);
 
-  switch (chatStep) {
-    case 0:
-      formData.name = value;
-      showMap();
-      break;
-    case 1:
-      // Sitzplatzfrage, folgt nach Standort
-      break;
-  }
-}
-
-function showMap() {
-  document.getElementById('map-wrapper').classList.remove('hidden');
-  map = L.map('map').setView([51.2, 10.5], 6);
+  const map = L.map('map').setView([51.2, 10.5], 6);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(pos => {
-      const { latitude, longitude } = pos.coords;
-      map.setView([latitude, longitude], 15);
-      marker = L.marker([latitude, longitude], { draggable: true }).addTo(map);
-    });
-  }
-
+  if (navigator.geolocation) navigator.geolocation.getCurrentPosition(p => map.setView([p.coords.latitude, p.coords.longitude], 15));
+  let marker;
   map.on('click', e => {
+    formData.loc = e.latlng;
     if (marker) marker.setLatLng(e.latlng);
-    else marker = L.marker(e.latlng, { draggable: true }).addTo(map);
+    else marker = L.marker(e.latlng).addTo(map);
   });
 }
-
-function confirmLocation() {
-  if (!marker) return alert('Bitte Standort wählen');
-  formData.loc = marker.getLatLng();
-  document.getElementById('map-wrapper').classList.add('hidden');
-  chatStep++;
-  showMessage(`Standort gespeichert bei ${formData.loc.lat.toFixed(5)}, ${formData.loc.lng.toFixed(5)}`, 'bot');
-  showMessage('Gibt es Sitzplätze?', 'bot');
-}
-
-function goBack() {
-  if (chatStep > 0) {
-    chatStep--;
-    showMessage('🔙 Schritt zurück', 'bot');
-  }
-}
-</script><style>
-  #chat-window .user { background-color: #d1fae5; text-align: right; padding: .5rem 1rem; border-radius: 1rem; display: inline-block; max-width: 80%; }
-  #chat-window .bot { background-color: #f1f5f9; padding: .5rem 1rem; border-radius: 1rem; display: inline-block; max-width: 80%; }
-</style></body>
+</script></body>
 </html>
