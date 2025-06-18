@@ -37,174 +37,121 @@
     <button id="send-btn">Senden</button>
   </div>
 </section><script>
-firebase.initializeApp({
-  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-  authDomain: "eierhuettentour.firebaseapp.com",
-  projectId: "eierhuettentour",
-  storageBucket: "eierhuettentour.appspot.com",
-  messagingSenderId: "348272135205",
-  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
-});
-const auth = firebase.auth(), db = firebase.firestore();
+const adminEmail = "admin@eierhuette.de";
+let isAdminMode = false;
 
-let currentUser = null, step = 0, formData = {}, editId = null;
-const chatWindow = document.getElementById('chat-window');
-const chatInput = document.getElementById('chat-input');
-const sendBtn = document.getElementById('send-btn');
-
-function addMessage(text, sender = 'bot') {
-  const div = document.createElement('div');
-  div.classList.add('message', sender);
-  div.textContent = text;
-  chatWindow.appendChild(div);
-  chatWindow.scrollTop = chatWindow.scrollHeight;
+function handleAdminCommand(txt) {
+  const input = txt.toLowerCase().trim();
+  if (input === "/admin on") {
+    if (currentUser?.email === adminEmail) {
+      isAdminMode = true;
+      addMessage("🔒 Admin-Modus aktiviert.", 'bot');
+      showAllHutsForAdmin();
+    } else {
+      addMessage("❌ Du bist nicht berechtigt, den Admin-Modus zu aktivieren.", 'bot');
+    }
+    return true;
+  }
+  if (input === "/admin off") {
+    isAdminMode = false;
+    addMessage("🔓 Admin-Modus deaktiviert. Zurück zum Benutzer-Modus.", 'bot');
+    startDialog();
+    return true;
+  }
+  if (isAdminMode) {
+    if (input === "/delete all") {
+      const confirm = prompt("⚠️ Bist du sicher, dass du ALLE Hütten löschen möchtest? Tippe JA zum Bestätigen.");
+      if (confirm === "JA") {
+        db.collection("eierhuetten").get().then(snapshot => {
+          const batch = db.batch();
+          snapshot.forEach(doc => batch.delete(doc.ref));
+          batch.commit().then(() => addMessage("🗑️ Alle Hütten wurden gelöscht.", 'bot'));
+        });
+      } else {
+        addMessage("Abgebrochen. Es wurden keine Daten gelöscht.", 'bot');
+      }
+    }
+    return true;
+  }
+  return false;
 }
 
-function addChoiceButtons(options, callback) {
-  const container = document.createElement('div');
-  container.classList.add('message', 'bot');
-  options.forEach(opt => {
-    const btn = document.createElement('button');
-    btn.className = 'choice-btn';
-    btn.textContent = opt;
-    btn.onclick = () => {
-      addMessage(opt, 'user');
-      container.remove();
-      callback(opt.toLowerCase());
-    };
-    container.appendChild(btn);
-  });
-  chatWindow.appendChild(container);
-  chatWindow.scrollTop = chatWindow.scrollHeight;
-}
-
-function startDialog() {
+function showAllHutsForAdmin() {
   chatWindow.innerHTML = '';
-  addMessage('Hallo 👋 Ich bin dein Assistent für Eierhütten. Wie kann ich dir helfen?', 'bot');
-  addChoiceButtons(['🥚 Neue Hütte erstellen', '📋 Meine Hütten anzeigen'], handleIntent);
-}
-
-function handleIntent(input) {
-  const txt = input.toLowerCase();
-  if (!txt.trim()) return addMessage('❓ Ich habe das leider nicht verstanden. Bitte versuch es nochmal.', 'bot');
-  if (txt.includes('erstellen')) {
-    step = 1;
-    formData = {};
-    addMessage('Wie möchtest du deine Hütte nennen? 😊', 'bot');
-  } else if (txt.includes('meine')) {
-    chatWindow.innerHTML = '';
-    showMyHuts();
-  } else {
-    addMessage('❓ Diese Option habe ich nicht erkannt. Möchtest du eine neue Hütte erstellen oder deine bisherigen ansehen?', 'bot');
-    addChoiceButtons(['Neue Hütte erstellen', 'Meine Hütten anzeigen'], handleIntent);
-  }
-}
-
-function processUserInput() {
-  const txt = chatInput.value.trim();
-  if (!txt) {
-    addMessage('❓ Du hast nichts eingegeben. Bitte versuch es nochmal.', 'bot');
-    return;
-  }
-  addMessage(txt, 'user');
-  chatInput.value = '';
-
-  if (step === 1) {
-    if (txt.length < 2) return addMessage('📝 Der Name ist zu kurz. Bitte gib einen aussagekräftigen Hüttennamen ein.', 'bot');
-    formData.name = txt;
-    step = 2;
-    addMessage('✅ Verstanden! Gibt es Sitzplätze an der Hütte?', 'bot');
-    addChoiceButtons(['Ja','Nein'], ans => {
-      formData.sitzplaetze = ans;
-      step = 3;
-      addMessage('🔌 Ist ein Stromanschluss vorhanden?', 'bot');
-      addChoiceButtons(['Ja','Nein'], strom => {
-        formData.strom = strom;
-        step = 4;
-        addMessage('✨ Gibt es besondere Extras? (optional – oder „weiter“ schreiben)', 'bot');
-      });
-    });
-  } else if (step === 4) {
-    formData.extras = txt.toLowerCase() === 'weiter' ? '' : txt;
-    step = 5;
-    addMessage('📍 Bitte klicke jetzt auf die Karte, um den Standort deiner Hütte festzulegen.', 'bot');
-    showMap();
-  } else {
-    handleIntent(txt);
-  }
-}
-
-function showMap() {
-  const mapDiv = document.createElement('div');
-  mapDiv.id = 'map';
-  chatWindow.appendChild(mapDiv);
-  const map = L.map('map').setView([51.2, 10.5], 6);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-  let marker;
-  map.on('click', e => {
-    if (marker) marker.setLatLng(e.latlng);
-    else marker = L.marker(e.latlng).addTo(map);
-    formData.loc = e.latlng;
-    addMessage(`📌 Standort gespeichert: ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`, 'bot');
-    addChoiceButtons(['✅ Einreichen', '🔁 Abbrechen'], choice => {
-      if (choice.includes('einreichen')) submitHut();
-      else startDialog();
-    });
-  });
-}
-
-function submitHut() {
-  if (!formData.loc) return addMessage('⚠️ Du musst einen Standort auswählen, bevor du einreichen kannst.', 'bot');
-  db.collection('eierhuetten').add({
-    name: formData.name,
-    sitzplaetze: formData.sitzplaetze,
-    strom: formData.strom,
-    extras: formData.extras,
-    location: new firebase.firestore.GeoPoint(formData.loc.lat, formData.loc.lng),
-    userId: currentUser.uid,
-    erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
-    status: 'offen'
-  }).then(() => {
-    addMessage('🎉 Deine Hütte wurde erfolgreich eingereicht!', 'bot');
-    formData = {}; step = 0;
-    setTimeout(startDialog, 1200);
-  });
-}
-
-function showMyHuts() {
-  addMessage('🔎 Ich lade deine Hütten...', 'bot');
-  db.collection('eierhuetten').where('userId', '==', currentUser.uid).orderBy('erstelltAm', 'desc').get().then(snapshot => {
-    if (snapshot.empty) return addMessage('❌ Du hast noch keine Hütten eingereicht.', 'bot');
+  addMessage('🛠️ Alle eingereichten Hütten:', 'bot');
+  db.collection('eierhuetten').orderBy('erstelltAm', 'desc').get().then(snapshot => {
+    if (snapshot.empty) return addMessage('Keine Hütten gefunden.', 'bot');
     snapshot.forEach(doc => {
       const h = doc.data();
+      const id = doc.id;
       const coords = h.location ? `${h.location.latitude.toFixed(5)}, ${h.location.longitude.toFixed(5)}` : '-';
-      const block = document.createElement('div');
-      block.className = 'message bot';
-      block.innerHTML = `
-        <div class="p-3 border border-blue-300 rounded bg-blue-50 shadow text-sm mb-2">
-          <div><strong>📍 Name:</strong> ${h.name}</div>
-          <div><strong>🪑 Sitzplätze:</strong> ${h.sitzplaetze}</div>
-          <div><strong>🔌 Strom:</strong> ${h.strom}</div>
-          <div><strong>✨ Extras:</strong> ${h.extras}</div>
-          <div><strong>📌 Koordinaten:</strong> ${coords}</div>
+      const div = document.createElement('div');
+      div.className = 'message bot';
+      div.innerHTML = `
+        <div class="p-3 border border-gray-300 bg-gray-50 rounded text-sm space-y-1">
+          <div><strong>Name:</strong> ${h.name}</div>
+          <div><strong>Sitzplätze:</strong> ${h.sitzplaetze}</div>
+          <div><strong>Strom:</strong> ${h.strom}</div>
+          <div><strong>Extras:</strong> ${h.extras}</div>
           <div><strong>Status:</strong> ${h.status}</div>
+          <div><strong>Koordinaten:</strong> ${coords}</div>
+          <div class="flex gap-2 mt-2">
+            <button onclick="updateStatus('${id}')" class="bg-blue-100 text-blue-800 px-2 py-1 rounded">🟢 Status ändern</button>
+            <button onclick="editHut('${id}')" class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded">✏️ Bearbeiten</button>
+            <button onclick="deleteHut('${id}')" class="bg-red-100 text-red-800 px-2 py-1 rounded">🗑️ Löschen</button>
+          </div>
         </div>`;
-      chatWindow.appendChild(block);
+      chatWindow.appendChild(div);
     });
   });
 }
 
-sendBtn.onclick = processUserInput;
-chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') processUserInput(); });
+function updateStatus(id) {
+  const status = prompt("Neuen Status eingeben (z. B. offen, angenommen, abgelehnt):");
+  if (status) {
+    db.collection('eierhuetten').doc(id).update({ status }).then(() => {
+      addMessage(`✅ Status aktualisiert auf: ${status}`, 'bot');
+      showAllHutsForAdmin();
+    });
+  }
+}
 
-auth.onAuthStateChanged(user => {
-  if (user) {
-    currentUser = user;
-    document.getElementById('login-section').classList.add('hidden');
-    document.getElementById('main-section').classList.remove('hidden');
-    startDialog();
+function editHut(id) {
+  const neuesFeld = prompt("Welches Feld möchtest du bearbeiten? (name, strom, sitzplaetze, extras)");
+  const neuerWert = prompt("Gib den neuen Wert ein:");
+  if (neuesFeld && neuerWert) {
+    db.collection('eierhuetten').doc(id).update({ [neuesFeld]: neuerWert }).then(() => {
+      addMessage(`✏️ Feld '${neuesFeld}' aktualisiert.`, 'bot');
+      showAllHutsForAdmin();
+    });
+  }
+}
+
+function deleteHut(id) {
+  const conf = confirm("⚠️ Möchtest du diese Hütte wirklich löschen?");
+  if (conf) {
+    db.collection('eierhuetten').doc(id).delete().then(() => {
+      addMessage("🗑️ Hütte gelöscht.", 'bot');
+      showAllHutsForAdmin();
+    });
+  }
+}
+
+// ✨ ADMIN COMMAND PRECHECK
+sendBtn.onclick = () => {
+  const txt = chatInput.value.trim();
+  if (!txt) return;
+  if (handleAdminCommand(txt)) return;
+  processUserInput(txt);
+};
+
+chatInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const txt = chatInput.value.trim();
+    if (!txt) return;
+    if (handleAdminCommand(txt)) return;
+    processUserInput(txt);
   }
 });
-document.getElementById('google-login').onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
 </script></body>
 </html>
