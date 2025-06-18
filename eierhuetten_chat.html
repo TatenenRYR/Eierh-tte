@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="de">
+<!DOCTYPE html>
+<html lang="de">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -12,7 +13,7 @@
   <style>
     body { background: #f3f4f6; font-family: Arial, sans-serif; }
     #chat-window { height: 500px; overflow-y: auto; padding: 1rem; background: #fff; border-radius: 0.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    .message { clear: both; margin-bottom: 1rem; max-width: 75%; padding: 0.75rem 1rem; border-radius: 1rem; }
+    .message { clear: both; margin-bottom: 1rem; max-width: 100%; padding: 0.75rem 1rem; border-radius: 1rem; }
     .bot { float: left; background: #e0f2fe; color: #0369a1; }
     .user { float: right; background: #dcfce7; color: #166534; text-align: right; }
     #input-area { margin-top: 1rem; display: flex; gap: 0.5rem; }
@@ -23,20 +24,28 @@
     button.choice-btn:hover { background: #bae6fd; }
     .hidden { display: none; }
     #map, .preview-map { width: 100%; height: 300px; margin-top: 1rem; border-radius: 0.5rem; }
+    .edit-input { display: block; width: 100%; padding: 0.4rem; margin-top: 0.3rem; border: 1px solid #ccc; border-radius: 0.4rem; }
   </style>
 </head>
-<body class="p-6"><div id="login-section" class="max-w-md mx-auto text-center">
+<body class="p-6">
+
+<div id="login-section" class="max-w-md mx-auto text-center">
   <button id="google-login" class="bg-red-600 hover:bg-red-700 text-white py-2 px-6 rounded text-lg">
     Mit Google anmelden
   </button>
-</div><section id="main-section" class="max-w-md mx-auto mt-6 bg-white p-4 rounded-lg shadow hidden">
+</div>
+
+<section id="main-section" class="max-w-md mx-auto mt-6 bg-white p-4 rounded-lg shadow hidden">
   <div class="text-center font-bold text-2xl text-green-700 mb-4">🥚 Eierhütten Assistent Chat</div>
   <div id="chat-window" aria-live="polite" role="log"></div>
   <div id="input-area">
     <input id="chat-input" type="text" placeholder="Antwort hier..." autocomplete="off" class="border border-gray-300 rounded px-3 py-2"/>
     <button id="send-btn">Senden</button>
   </div>
-</section><script>
+</section>
+
+<script>
+// Firebase-Konfiguration
 const firebaseConfig = {
   apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
   authDomain: "eierhuettentour.firebaseapp.com",
@@ -93,18 +102,14 @@ function startDialog() {
 
 function handleIntent(input) {
   const txt = input.toLowerCase();
-  if (isAdminMode) {
-    addMessage('Admin-Modus ist aktiv. Bitte gib einen Admin-Befehl ein.', 'bot');
-    return;
-  }
+  if (isAdminMode) return addMessage('🛠 Admin-Modus ist aktiv. Gib Admin-Befehle ein.', 'bot');
   if (txt.includes('erstellen')) {
     step = 1;
     formData = {};
-    addMessage('Wie möchtest du deine Hütte nennen?', 'bot');
+    addMessage('Wie soll deine Hütte heißen?', 'bot');
   } else if (txt.includes('meine')) {
     showMyHuts();
   } else {
-    addMessage('❓ Diese Option habe ich nicht verstanden.', 'bot');
     startDialog();
   }
 }
@@ -124,7 +129,7 @@ function processUserInput(input) {
       addChoiceButtons(['Ja', 'Nein'], strom => {
         formData.strom = strom;
         step = 4;
-        addMessage('Extras? (oder „weiter“ schreiben)', 'bot');
+        addMessage('Extras? (oder „weiter“)', 'bot');
       });
     });
   } else if (step === 4) {
@@ -156,29 +161,87 @@ function showMap() {
 }
 
 function submitHut() {
-  if (!formData.loc) return addMessage('⚠️ Standort fehlt!', 'bot');
-  db.collection('eierhuetten').add({
-    ...formData,
+  if (!formData.name || !formData.loc) return addMessage('❌ Bitte gib alle Daten ein.', 'bot');
+  const hut = {
+    name: formData.name,
+    sitzplaetze: formData.sitzplaetze,
+    strom: formData.strom,
+    extras: formData.extras,
     location: new firebase.firestore.GeoPoint(formData.loc.lat, formData.loc.lng),
     userId: currentUser.uid,
     erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
     status: 'offen'
-  }).then(() => {
+  };
+  db.collection('eierhuetten').add(hut).then(() => {
     addMessage('🎉 Eingereicht!', 'bot');
-    formData = {}; step = 0; startDialog();
+    step = 0; formData = {}; startDialog();
   });
 }
 
 function showMyHuts() {
   chatWindow.innerHTML = '';
-  addMessage('📋 Deine Hütten:', 'bot');
-  db.collection('eierhuetten').where('userId', '==', currentUser.uid).get().then(snapshot => {
-    if (snapshot.empty) return addMessage('Du hast noch keine Hütten.', 'bot');
+  db.collection('eierhuetten').where('userId', '==', currentUser.uid).orderBy('erstelltAm', 'desc').get().then(snapshot => {
+    if (snapshot.empty) return addMessage('❌ Keine Hütten gefunden.', 'bot');
     snapshot.forEach(doc => {
-      const h = doc.data();
-      addMessage(`📍 ${h.name} – Status: ${h.status}`, 'bot');
+      const d = doc.data();
+      const h = document.createElement('div');
+      h.className = 'message bot';
+      h.innerHTML = `
+        <div class="p-3 bg-blue-50 border border-blue-200 rounded space-y-1 text-sm">
+          <div><strong>📍 Name:</strong> ${d.name}</div>
+          <div><strong>🪑 Sitzplätze:</strong> ${d.sitzplaetze}</div>
+          <div><strong>🔌 Strom:</strong> ${d.strom}</div>
+          <div><strong>✨ Extras:</strong> ${d.extras}</div>
+          <div><strong>Status:</strong> ${d.status}</div>
+          <div class="mt-2 flex gap-2">
+            <button onclick="editHut('${doc.id}', ${JSON.stringify(d).replace(/\"/g, '&quot;')})" class="bg-yellow-100 text-yellow-900 px-2 py-1 rounded">✏️ Bearbeiten</button>
+            <button onclick="deleteHut('${doc.id}')" class="bg-red-100 text-red-900 px-2 py-1 rounded">🗑️ Löschen</button>
+          </div>
+        </div>
+      `;
+      chatWindow.appendChild(h);
     });
   });
+}
+
+function editHut(id, data) {
+  const h = document.createElement('div');
+  h.className = 'message bot';
+  h.innerHTML = `
+    <div class="p-3 bg-yellow-50 border border-yellow-300 rounded space-y-1">
+      <label><strong>📍 Name:</strong><input class="edit-input" id="edit-name" value="${data.name || ''}"/></label>
+      <label><strong>🪑 Sitzplätze:</strong><input class="edit-input" id="edit-sitz" value="${data.sitzplaetze || ''}"/></label>
+      <label><strong>🔌 Strom:</strong><input class="edit-input" id="edit-strom" value="${data.strom || ''}"/></label>
+      <label><strong>✨ Extras:</strong><input class="edit-input" id="edit-extras" value="${data.extras || ''}"/></label>
+      <div class="mt-2">
+        <button onclick="saveEdit('${id}')" class="bg-green-600 text-white px-3 py-1 rounded">💾 Speichern</button>
+      </div>
+    </div>
+  `;
+  chatWindow.appendChild(h);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function saveEdit(id) {
+  const update = {
+    name: document.getElementById('edit-name').value.trim(),
+    sitzplaetze: document.getElementById('edit-sitz').value.trim(),
+    strom: document.getElementById('edit-strom').value.trim(),
+    extras: document.getElementById('edit-extras').value.trim(),
+  };
+  db.collection('eierhuetten').doc(id).update(update).then(() => {
+    addMessage('✅ Hütte aktualisiert.', 'bot');
+    showMyHuts();
+  });
+}
+
+function deleteHut(id) {
+  if (confirm('⚠️ Wirklich löschen?')) {
+    db.collection('eierhuetten').doc(id).delete().then(() => {
+      addMessage('🗑️ Hütte gelöscht.', 'bot');
+      showMyHuts();
+    });
+  }
 }
 
 function handleAdminCommand(txt) {
@@ -186,7 +249,8 @@ function handleAdminCommand(txt) {
   if (t === '/admin on' && isAdmin) {
     isAdminMode = true;
     addMessage('🔒 Admin-Modus aktiviert.', 'bot');
-    showAllHuts(); return true;
+    // TODO: showAllHuts();
+    return true;
   }
   if (t === '/admin off') {
     isAdminMode = false;
@@ -196,16 +260,6 @@ function handleAdminCommand(txt) {
   return false;
 }
 
-function showAllHuts() {
-  chatWindow.innerHTML = '';
-  db.collection('eierhuetten').get().then(snapshot => {
-    snapshot.forEach(doc => {
-      const d = doc.data();
-      addMessage(`📍 ${d.name} (${d.status})`, 'bot');
-    });
-  });
-}
-
 document.getElementById('google-login').onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
 sendBtn.onclick = () => processUserInput(chatInput.value);
 chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') processUserInput(chatInput.value); });
@@ -213,18 +267,14 @@ chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') processUserI
 auth.onAuthStateChanged(user => {
   if (user) {
     currentUser = user;
-    db.collection("admins").doc(user.email).get().then(doc => {
+    db.collection('admins').doc(user.email).get().then(doc => {
       isAdmin = doc.exists;
-      document.getElementById('login-section').classList.add('hidden');
-      document.getElementById('main-section').classList.remove('hidden');
-      startDialog();
-    }).catch(() => {
-      isAdmin = false;
       document.getElementById('login-section').classList.add('hidden');
       document.getElementById('main-section').classList.remove('hidden');
       startDialog();
     });
   }
 });
-</script></body>
+</script>
+</body>
 </html>
