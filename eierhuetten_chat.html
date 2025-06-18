@@ -37,7 +37,6 @@
     <button id="send-btn">Senden</button>
   </div>
 </section><script>
-// Vorherige Firebase-Konfiguration
 const firebaseConfig = {
   apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
   authDomain: "eierhuettentour.firebaseapp.com",
@@ -50,20 +49,177 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth(), db = firebase.firestore();
 
-let currentUser = null, isAdmin = false;
+let currentUser = null;
+let isAdmin = false;
+let isAdminMode = false;
+let step = 0;
+let formData = {};
 
-// Checke, ob der aktuelle Benutzer in der Admin-Liste ist
-function checkAdminRights(user) {
-  return db.collection("admins").doc(user.email).get().then(doc => {
-    return doc.exists;
+const chatWindow = document.getElementById('chat-window');
+const chatInput = document.getElementById('chat-input');
+const sendBtn = document.getElementById('send-btn');
+
+function addMessage(text, sender = 'bot') {
+  const div = document.createElement('div');
+  div.classList.add('message', sender);
+  div.textContent = text;
+  chatWindow.appendChild(div);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function addChoiceButtons(options, callback) {
+  const container = document.createElement('div');
+  container.classList.add('message', 'bot');
+  options.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = opt;
+    btn.onclick = () => {
+      addMessage(opt, 'user');
+      container.remove();
+      callback(opt.toLowerCase());
+    };
+    container.appendChild(btn);
+  });
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function startDialog() {
+  chatWindow.innerHTML = '';
+  addMessage('Hallo 👋 Ich bin dein Assistent für Eierhütten. Wie kann ich dir helfen?', 'bot');
+  addChoiceButtons(['🥚 Neue Hütte erstellen', '📋 Meine Hütten anzeigen'], handleIntent);
+}
+
+function handleIntent(input) {
+  const txt = input.toLowerCase();
+  if (isAdminMode) {
+    addMessage('Admin-Modus ist aktiv. Bitte gib einen Admin-Befehl ein.', 'bot');
+    return;
+  }
+  if (txt.includes('erstellen')) {
+    step = 1;
+    formData = {};
+    addMessage('Wie möchtest du deine Hütte nennen?', 'bot');
+  } else if (txt.includes('meine')) {
+    showMyHuts();
+  } else {
+    addMessage('❓ Diese Option habe ich nicht verstanden.', 'bot');
+    startDialog();
+  }
+}
+
+function processUserInput(input) {
+  const txt = input.trim();
+  if (handleAdminCommand(txt)) return;
+
+  if (step === 1) {
+    formData.name = txt;
+    step = 2;
+    addMessage('Hat deine Hütte Sitzplätze?', 'bot');
+    addChoiceButtons(['Ja', 'Nein'], ans => {
+      formData.sitzplaetze = ans;
+      step = 3;
+      addMessage('Gibt es Strom?', 'bot');
+      addChoiceButtons(['Ja', 'Nein'], strom => {
+        formData.strom = strom;
+        step = 4;
+        addMessage('Extras? (oder „weiter“ schreiben)', 'bot');
+      });
+    });
+  } else if (step === 4) {
+    formData.extras = txt.toLowerCase() === 'weiter' ? '' : txt;
+    step = 5;
+    showMap();
+  } else {
+    handleIntent(txt);
+  }
+}
+
+function showMap() {
+  const div = document.createElement('div');
+  div.id = 'map';
+  chatWindow.appendChild(div);
+  const map = L.map('map').setView([51.2, 10.5], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  let marker;
+  map.on('click', e => {
+    if (marker) marker.setLatLng(e.latlng);
+    else marker = L.marker(e.latlng).addTo(map);
+    formData.loc = e.latlng;
+    addMessage(`📍 Standort gespeichert: ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`, 'bot');
+    addChoiceButtons(['Einreichen', 'Abbrechen'], ans => {
+      if (ans.includes('einreichen')) submitHut();
+      else startDialog();
+    });
   });
 }
+
+function submitHut() {
+  if (!formData.loc) return addMessage('⚠️ Standort fehlt!', 'bot');
+  db.collection('eierhuetten').add({
+    ...formData,
+    location: new firebase.firestore.GeoPoint(formData.loc.lat, formData.loc.lng),
+    userId: currentUser.uid,
+    erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+    status: 'offen'
+  }).then(() => {
+    addMessage('🎉 Eingereicht!', 'bot');
+    formData = {}; step = 0; startDialog();
+  });
+}
+
+function showMyHuts() {
+  chatWindow.innerHTML = '';
+  addMessage('📋 Deine Hütten:', 'bot');
+  db.collection('eierhuetten').where('userId', '==', currentUser.uid).get().then(snapshot => {
+    if (snapshot.empty) return addMessage('Du hast noch keine Hütten.', 'bot');
+    snapshot.forEach(doc => {
+      const h = doc.data();
+      addMessage(`📍 ${h.name} – Status: ${h.status}`, 'bot');
+    });
+  });
+}
+
+function handleAdminCommand(txt) {
+  const t = txt.toLowerCase();
+  if (t === '/admin on' && isAdmin) {
+    isAdminMode = true;
+    addMessage('🔒 Admin-Modus aktiviert.', 'bot');
+    showAllHuts(); return true;
+  }
+  if (t === '/admin off') {
+    isAdminMode = false;
+    addMessage('🔓 Admin-Modus deaktiviert.', 'bot');
+    startDialog(); return true;
+  }
+  return false;
+}
+
+function showAllHuts() {
+  chatWindow.innerHTML = '';
+  db.collection('eierhuetten').get().then(snapshot => {
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      addMessage(`📍 ${d.name} (${d.status})`, 'bot');
+    });
+  });
+}
+
+document.getElementById('google-login').onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+sendBtn.onclick = () => processUserInput(chatInput.value);
+chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') processUserInput(chatInput.value); });
 
 auth.onAuthStateChanged(user => {
   if (user) {
     currentUser = user;
-    checkAdminRights(user).then(is => {
-      isAdmin = is;
+    db.collection("admins").doc(user.email).get().then(doc => {
+      isAdmin = doc.exists;
+      document.getElementById('login-section').classList.add('hidden');
+      document.getElementById('main-section').classList.remove('hidden');
+      startDialog();
+    }).catch(() => {
+      isAdmin = false;
       document.getElementById('login-section').classList.add('hidden');
       document.getElementById('main-section').classList.remove('hidden');
       startDialog();
