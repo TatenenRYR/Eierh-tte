@@ -27,56 +27,185 @@
     .edit-input, .status-dropdown { display: block; width: 100%; padding: 0.4rem; margin-top: 0.3rem; border: 1px solid #ccc; border-radius: 0.4rem; }
   </style>
 </head>
-<body class="p-6"><!-- ... vorheriger HTML-Code bleibt bestehen ... --><script>
-// ... vorheriger JS-Code bleibt bestehen ...
+<body class="p-6"><div id="login-section" class="max-w-md mx-auto text-center">
+  <button id="google-login" class="bg-red-600 hover:bg-red-700 text-white py-2 px-6 rounded text-lg">
+    Mit Google anmelden
+  </button>
+</div><section id="main-section" class="max-w-md mx-auto mt-6 bg-white p-4 rounded-lg shadow hidden">
+  <div class="text-center font-bold text-2xl text-green-700 mb-4">🥚 Eierhütten Assistent Chat</div>
+  <div id="chat-window" aria-live="polite" role="log"></div>
+  <div id="input-area">
+    <input id="chat-input" type="text" placeholder="Antwort hier..." autocomplete="off" class="border border-gray-300 rounded px-3 py-2"/>
+    <button id="send-btn">Senden</button>
+  </div>
+</section><script>
+// Firebase-Konfiguration
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.appspot.com",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+  measurementId: "G-16V6K5GXDT"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth(), db = firebase.firestore();
 
-function showMyHuts() {
-  chatWindow.innerHTML = '';
-  db.collection('eierhuetten').where('userId', '==', currentUser.uid).orderBy('erstelltAm', 'desc').get().then(snapshot => {
-    if (snapshot.empty) return addMessage('❌ Keine Hütten gefunden.', 'bot');
-    snapshot.forEach(doc => {
-      const d = doc.data();
-      const container = document.createElement('div');
-      container.className = 'message bot';
-      const hutId = doc.id;
-      container.innerHTML = `
-        <div class="p-3 bg-blue-50 border border-blue-200 rounded space-y-1 text-sm">
-          <div><strong>📍 Name:</strong> ${d.name}</div>
-          <div><strong>🪑 Sitzplätze:</strong> ${d.sitzplaetze}</div>
-          <div><strong>🔌 Strom:</strong> ${d.strom}</div>
-          <div><strong>✨ Extras:</strong> ${d.extras}</div>
-          <div><strong>Status:</strong>
-            <select class="status-dropdown" onchange="updateStatus('${hutId}', this.value)">
-              <option value="offen" ${d.status === 'offen' ? 'selected' : ''}>offen</option>
-              <option value="angenommen" ${d.status === 'angenommen' ? 'selected' : ''}>angenommen</option>
-              <option value="abgelehnt" ${d.status === 'abgelehnt' ? 'selected' : ''}>abgelehnt</option>
-            </select>
-          </div>
-          <div class="minimap" id="minimap-${doc.id}"></div>
-          <div class="mt-2 flex gap-2">
-            <button onclick="editHut('${doc.id}', ${JSON.stringify(d).replace(/"/g, '&quot;')})" class="bg-yellow-100 text-yellow-900 px-2 py-1 rounded">✏️ Bearbeiten</button>
-            <button onclick="deleteHut('${doc.id}')" class="bg-red-100 text-red-900 px-2 py-1 rounded">🗑️ Löschen</button>
-          </div>
-        </div>
-      `;
-      chatWindow.appendChild(container);
+let currentUser = null;
+let isAdmin = false;
+let isAdminMode = false;
+let step = 0;
+let formData = {};
 
-      // Mini-Karte initialisieren
-      if (d.location && d.location.latitude && d.location.longitude) {
-        const mapDiv = document.getElementById(`minimap-${doc.id}`);
-        const m = L.map(mapDiv, { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false }).setView([d.location.latitude, d.location.longitude], 13);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
-        L.marker([d.location.latitude, d.location.longitude]).addTo(m);
-        setTimeout(() => m.invalidateSize(), 200);
-      }
-    });
-  }).catch(err => addMessage('⚠️ Fehler beim Laden deiner Hütten: ' + err.message, 'bot'));
+const chatWindow = document.getElementById('chat-window');
+const chatInput = document.getElementById('chat-input');
+const sendBtn = document.getElementById('send-btn');
+
+function addMessage(text, sender = 'bot') {
+  const div = document.createElement('div');
+  div.classList.add('message', sender);
+  div.textContent = text;
+  chatWindow.appendChild(div);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
 }
 
-function updateStatus(hutId, newStatus) {
-  db.collection('eierhuetten').doc(hutId).update({ status: newStatus }).then(() => {
-    addMessage(`✅ Status aktualisiert: ${newStatus}`, 'bot');
+function addChoiceButtons(options, callback) {
+  const container = document.createElement('div');
+  container.classList.add('message', 'bot');
+  options.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = opt;
+    btn.onclick = () => {
+      addMessage(opt, 'user');
+      container.remove();
+      callback(opt.toLowerCase());
+    };
+    container.appendChild(btn);
+  });
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function startDialog() {
+  chatWindow.innerHTML = '';
+  addMessage('Hallo 👋 Ich bin dein Assistent für Eierhütten. Wie kann ich dir helfen?', 'bot');
+  addChoiceButtons(['🥚 Neue Hütte erstellen', '📋 Meine Hütten anzeigen'], handleIntent);
+}
+
+function handleIntent(input) {
+  const txt = input.toLowerCase();
+  if (isAdminMode) { addMessage('🛠 Admin-Modus aktiv. Gib Admin-Befehl ein.', 'bot'); return; }
+  if (txt.includes('erstellen')) {
+    step = 1; formData = {}; addMessage('Wie soll deine Hütte heißen?', 'bot');
+  } else if (txt.includes('meine')) {
+    showMyHuts();
+  } else {
+    startDialog();
+  }
+}
+
+function processUserInput(input) {
+  const txt = input.trim();
+  if (handleAdminCommand(txt)) return;
+  if (step === 1) {
+    formData.name = txt; step = 2;
+    addMessage('Hat deine Hütte Sitzplätze?', 'bot');
+    addChoiceButtons(['Ja','Nein'], ans => { formData.sitzplaetze = ans; step = 3; addMessage('Gibt es Strom?', 'bot'); addChoiceButtons(['Ja','Nein'], st => { formData.strom = st; step = 4; addMessage('Extras? (oder „weiter“)', 'bot'); }); });
+  } else if (step === 4) {
+    formData.extras = txt.toLowerCase()==='weiter'?'':txt; step=5; showMap();
+  } else {
+    handleIntent(txt);
+  }
+}
+
+function showMap() {
+  const div=document.createElement('div'); div.id='map'; chatWindow.appendChild(div);
+  const map=L.map('map').setView([51.2,10.5],6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  let marker;
+  map.on('click', e=>{ if(marker)marker.setLatLng(e.latlng);else marker=L.marker(e.latlng).addTo(map);
+    formData.loc=e.latlng; addMessage(`📌 Standort: ${e.latlng.lat.toFixed(5)},${e.latlng.lng.toFixed(5)}`,'bot');
+    addChoiceButtons(['Einreichen','Abbrechen'],c=>{ if(c.includes('einreichen'))submitHut();else startDialog(); });
   });
 }
+
+function submitHut(){
+  if(!formData.name||!formData.loc)return addMessage('❌ Bitte gib alle Daten ein.','bot');
+  const hut={ name:formData.name,sitzplaetze:formData.sitzplaetze,strom:formData.strom,extras:formData.extras,
+    location:new firebase.firestore.GeoPoint(formData.loc.lat,formData.loc.lng),userId:currentUser.uid,
+    erstelltAm:firebase.firestore.FieldValue.serverTimestamp(),status:'offen'};
+  db.collection('eierhuetten').add(hut).then(()=>{ addMessage('✅ Erfolgreich eingereicht!','bot'); step=0; formData={}; startDialog(); });
+}
+
+function showMyHuts(){
+  chatWindow.innerHTML='';
+  db.collection('eierhuetten').where('userId','==',currentUser.uid).orderBy('erstelltAm','desc').get().then(snapshot=>{
+    if(snapshot.empty)return addMessage('❌ Keine Hütten gefunden.','bot');
+    snapshot.forEach(doc=>{
+      const d=doc.data(),id=doc.id;
+      const cont=document.createElement('div'); cont.className='message bot';
+      cont.innerHTML=`<div class="p-3 bg-blue-50 border border-blue-200 rounded space-y-1 text-sm">
+        <div><strong>📍 Name:</strong> ${d.name}</div>
+        <div><strong>🪑 Sitzplätze:</strong> ${d.sitzplaetze}</div>
+        <div><strong>🔌 Strom:</strong> ${d.strom}</div>
+        <div><strong>✨ Extras:</strong> ${d.extras}</div>
+        <div><strong>Status:</strong> <select class="status-dropdown" onchange="updateStatus('${id}',this.value)">
+          <option value="offen"${d.status==='offen'?' selected':''}>offen</option>
+          <option value="angenommen"${d.status==='angenommen'?' selected':''}>angenommen</option>
+          <option value="abgelehnt"${d.status==='abgelehnt'?' selected':''}>abgelehnt</option>
+        </select></div>
+        <div class="minimap" id="minimap-${id}"></div>
+        <div class="mt-2 flex gap-2">
+          <button onclick="editHut('${id}',${JSON.stringify(d).replace(/"/g,'&quot;')})" class="bg-yellow-100 text-yellow-900 px-2 py-1 rounded">✏️ Bearbeiten</button>
+          <button onclick="deleteHut('${id}')" class="bg-red-100 text-red-900 px-2 py-1 rounded">🗑️ Löschen</button>
+        </div>
+      </div>`;
+      chatWindow.appendChild(cont);
+      if(d.location){ const mdiv=document.getElementById(`minimap-${id}`);
+        const m=L.map(mdiv,{zoomControl:false,dragging:false,scrollWheelZoom:false}).setView([d.location.latitude,d.location.longitude],13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
+        L.marker([d.location.latitude,d.location.longitude]).addTo(m);
+        setTimeout(()=>m.invalidateSize(),200);
+      }
+    });
+  }).catch(err=>addMessage('⚠️ Fehler: '+err.message,'bot'));
+}
+
+function updateStatus(id,val){
+  db.collection('eierhuetten').doc(id).update({status:val}).then(()=>addMessage(`✅ Status: ${val}`,'bot'));
+}
+
+function editHut(id,data){
+  const h=document.createElement('div'); h.className='message bot';
+  h.innerHTML=`<div class="p-3 bg-yellow-50 border border-yellow-300 rounded space-y-1">
+    <label><strong>📍 Name:</strong><input class="edit-input" id="edit-name" value="${data.name||''}"/></label>
+    <label><strong>🪑 Sitzplätze:</strong><input class="edit-input" id="edit-sitz" value="${data.sitzplaetze||''}"/></label>
+    <label><strong>🔌 Strom:</strong><input class="edit-input" id="edit-strom" value="${data.strom||''}"/></label>
+    <label><strong>✨ Extras:</strong><input class="edit-input" id="edit-extras" value="${data.extras||''}"/></label>
+    <div class="mt-2"><button onclick="saveEdit('${id}')" class="bg-green-600 text-white px-3 py-1 rounded">💾 Speichern</button></div>
+  </div>`;
+  chatWindow.appendChild(h); chatWindow.scrollTop=chatWindow.scrollHeight;
+}
+
+function saveEdit(id){
+  const up={ name:document.getElementById('edit-name').value.trim(), sitzplaetze:document.getElementById('edit-sitz').value.trim(), strom:document.getElementById('edit-strom').value.trim(), extras:document.getElementById('edit-extras').value.trim() };
+  db.collection('eierhuetten').doc(id).update(up).then(()=>{addMessage('✅ Aktualisiert','bot');showMyHuts();});
+}
+
+function deleteHut(id){ if(confirm('⚠️ Löschen?')) db.collection('eierhuetten').doc(id).delete().then(()=>{addMessage('🗑️ Gelöscht','bot');showMyHuts();}); }
+
+function handleAdminCommand(txt){ const t=txt.toLowerCase(); if(t==='/admin on'&&isAdmin){isAdminMode=true;addMessage('🔒 Admin-Modus an','bot');showAllHuts();return true;} if(t==='/admin off'){isAdminMode=false;addMessage('🔓 Admin-Modus aus','bot');startDialog();return true;}return false;}
+
+function showAllHuts(){chatWindow.innerHTML='';addMessage('📂 Admin: Alle Hütten','bot');db.collection('eierhuetten').orderBy('erstelltAm','desc').get().then(snap=>snap.forEach(doc=>addMessage(`📍${doc.data().name} (${doc.data().status})`,'bot')));}  
+
+// Event-Handler
+sendBtn.onclick = () => { processUserInput(chatInput.value); chatInput.value=''; };
+chatInput.addEventListener('keydown', e => { if(e.key==='Enter'){ processUserInput(chatInput.value); chatInput.value=''; }});
+
+document.getElementById('google-login').onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+
+auth.onAuthStateChanged(user => { if(user){ currentUser=user; db.collection('admins').doc(user.email).get().then(doc=>{ isAdmin=doc.exists; document.getElementById('login-section').classList.add('hidden'); document.getElementById('main-section').classList.remove('hidden'); startDialog(); }); }});
 </script></body>
 </html>
