@@ -43,9 +43,131 @@
   </div>
 </section>
 
-<!-- Hinweis: Das vollständige Skript folgt in der echten Anwendung -->
 <script>
-// Hinweis: Dein kompletter JavaScript-Code muss hier ergänzt werden
+firebase.initializeApp({
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.appspot.com",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+});
+const auth = firebase.auth(), db = firebase.firestore();
+
+let currentUser = null, step = 0, formData = {}, editId = null;
+const chatWindow = document.getElementById('chat-window');
+const chatInput = document.getElementById('chat-input');
+const sendBtn = document.getElementById('send-btn');
+
+function addMessage(text, sender = 'bot') {
+  const div = document.createElement('div');
+  div.classList.add('message', sender);
+  div.textContent = text;
+  chatWindow.appendChild(div);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function addChoiceButtons(options, callback) {
+  const container = document.createElement('div');
+  container.classList.add('message', 'bot');
+  options.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = opt;
+    btn.onclick = () => {
+      addMessage(opt, 'user');
+      container.remove();
+      callback(opt.toLowerCase());
+    };
+    container.appendChild(btn);
+  });
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function showMyHuts() {
+  addMessage('📋 Deine eingereichten Hütten:', 'bot');
+  db.collection('eierhuetten').where('userId', '==', currentUser.uid).get().then(snapshot => {
+    if (snapshot.empty) {
+      addMessage('Du hast noch keine Hütten eingereicht.', 'bot');
+    } else {
+      snapshot.forEach(doc => {
+        const h = doc.data();
+        const id = doc.id;
+        const coords = h.location ? `${h.location.latitude.toFixed(5)}, ${h.location.longitude.toFixed(5)}` : '-';
+        const card = document.createElement('div');
+        card.className = 'message bot';
+        card.innerHTML = `
+          <div class="p-3 border border-blue-300 rounded bg-blue-50 shadow text-sm">
+            <div><strong>📍 Name:</strong> ${h.name || '-'}</div>
+            <div><strong>🪑 Sitzplätze:</strong> ${h.sitzplaetze || '-'}</div>
+            <div><strong>🔌 Strom:</strong> ${h.strom || '-'}</div>
+            <div><strong>✨ Extras:</strong> ${h.extras || '-'}</div>
+            <div><strong>📌 Koordinaten:</strong> ${coords}</div>
+            <div><strong>📄 Status:</strong> ${h.status || 'offen'}</div>
+            <button onclick="editHut('${id}', ${JSON.stringify(h).replace(/"/g, '&quot;')})" class="mt-2 bg-yellow-100 text-yellow-800 px-2 py-1 rounded">✏️ Bearbeiten</button>
+          </div>`;
+        chatWindow.appendChild(card);
+      });
+    }
+  });
+}
+
+function editHut(id, hutData) {
+  editId = id;
+  formData = { ...hutData };
+  addMessage(`Bearbeite: ${formData.name}`, 'bot');
+  step = 99;
+  addMessage('Welches Feld möchtest du ändern? (name, strom, sitzplätze, extras)', 'bot');
+}
+
+function processUserInput() {
+  const txt = chatInput.value.trim();
+  if (!txt) return;
+  addMessage(txt, 'user');
+  chatInput.value = '';
+
+  if (step === 99) {
+    const map = { name: 'name', strom: 'strom', 'sitzplätze': 'sitzplaetze', extras: 'extras' };
+    const f = map[txt.toLowerCase()];
+    if (f) {
+      formData._edit = f;
+      step = 100;
+      addMessage(`Neuer Wert für ${txt}:`, 'bot');
+    } else {
+      addMessage('⚠️ Feld ungültig.', 'bot');
+    }
+  } else if (step === 100) {
+    formData[formData._edit] = txt;
+    delete formData._edit;
+    db.collection('eierhuetten').doc(editId).update({
+      ...formData,
+      status: 'offen'
+    }).then(() => {
+      addMessage('✅ Aktualisiert! Status auf „offen“ gesetzt.', 'bot');
+      setTimeout(() => {
+        chatWindow.innerHTML = '';
+        showMyHuts();
+      }, 800);
+    });
+    step = 0;
+  } else {
+    showMyHuts(); // oder startDialog()
+  }
+}
+
+sendBtn.onclick = processUserInput;
+chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') processUserInput(); });
+
+auth.onAuthStateChanged(user => {
+  if (user) {
+    currentUser = user;
+    document.getElementById('login-section').classList.add('hidden');
+    document.getElementById('main-section').classList.remove('hidden');
+    showMyHuts();
+  }
+});
+document.getElementById('google-login').onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
 </script>
 
 </body>
