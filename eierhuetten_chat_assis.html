@@ -7,6 +7,8 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { background: #f3f4f6; font-family: Arial, sans-serif; }
@@ -21,6 +23,7 @@
     button.choice-btn { background: #e0f2fe; border: 1px solid #0284c7; color: #0369a1; padding: 0.3rem 0.7rem; border-radius: 0.5rem; cursor: pointer; margin-right: 0.5rem; }
     button.choice-btn:hover { background: #bae6fd; }
     .hidden { display: none; }
+    #map { width: 100%; height: 350px; margin-top: 1rem; border-radius: 0.5rem; }
   </style>
 </head>
 <body class="p-6">
@@ -84,31 +87,49 @@
       chatWindow.scrollTop = chatWindow.scrollHeight;
     }
 
-    function showUserHuts() {
-      chatWindow.innerHTML = '';
-      addMessage('📋 Deine eingereichten Hütten:', 'bot');
-      db.collection('eierhuetten').where('userId', '==', currentUser.uid).get()
-        .then(snapshot => {
-          if (snapshot.empty) {
-            addMessage('Du hast noch keine Hütten eingereicht.', 'bot');
-          } else {
-            snapshot.forEach(doc => {
-              const h = doc.data();
-              const div = document.createElement('div');
-              div.className = 'message bot';
-              div.innerHTML = `
-                <div class="border border-gray-300 p-2 rounded bg-gray-50 text-sm mb-2">
-                  <strong>${h.name}</strong><br>
-                  Sitzplätze: ${h.sitzplaetze || '-'}<br>
-                  Strom: ${h.strom || '-'}<br>
-                  Extras: ${h.beschreibung || '-'}<br>
-                  Status: <strong>${h.status || 'unbekannt'}</strong><br>
-                  <button onclick="alert('Bearbeiten folgt bald...')" class="mt-1 text-blue-600 underline">Bearbeiten</button>
-                </div>`;
-              chatWindow.appendChild(div);
-            });
+    function handleMapSelection() {
+      const oldMap = document.getElementById('map');
+      if (oldMap) oldMap.remove();
+
+      const mapDiv = document.createElement('div');
+      mapDiv.id = 'map';
+      chatWindow.appendChild(mapDiv);
+
+      const map = L.map('map').setView([51.2, 10.5], 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      let marker;
+
+      map.on('click', e => {
+        if (marker) marker.setLatLng(e.latlng);
+        else marker = L.marker(e.latlng).addTo(map);
+        formData.loc = e.latlng;
+        addMessage(`📌 Standort gewählt: ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`, 'bot');
+        addChoiceButtons(['Standort speichern', 'Neu wählen'], c => {
+          if (c.includes('speichern')) {
+            map.remove();
+            mapDiv.remove();
+            saveToFirestore();
           }
         });
+      });
+    }
+
+    async function saveToFirestore() {
+      if (!formData.loc) {
+        addMessage('⚠️ Kein Standort gesetzt.', 'bot');
+        return;
+      }
+      await db.collection('eierhuetten').add({
+        ...formData,
+        location: new firebase.firestore.GeoPoint(formData.loc.lat, formData.loc.lng),
+        userId: currentUser.uid,
+        erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+        status: 'offen'
+      });
+      addMessage('✅ Erfolgreich eingereicht!', 'bot');
+      step = 0;
+      formData = {};
+      startDialog();
     }
 
     function handleIntent(input) {
@@ -118,11 +139,9 @@
         formData = {};
         chatWindow.innerHTML = '';
         addMessage('🆕 Wie soll deine Eierhütte heißen?', 'bot');
-      } else if (txt.includes('meine')) {
-        showUserHuts();
       } else {
         addMessage('🤖 Was möchtest du tun?', 'bot');
-        addChoiceButtons(['Neue Hütte einreichen', 'Meine Hütten ansehen', 'Hilfe'], handleIntent);
+        addChoiceButtons(['Neue Hütte einreichen', 'Hilfe'], handleIntent);
       }
     }
 
@@ -142,15 +161,14 @@
           addChoiceButtons(['Ja', 'Nein'], st => {
             formData.strom = st;
             step = 4;
-            addMessage('Gib noch Extras an (optional, oder "weiter")', 'bot');
+            addMessage('Gib noch Extras an (optional, oder \"weiter\")', 'bot');
           });
         });
       } else if (step === 4) {
-        if (txt.toLowerCase().includes('weiter')) formData.extras = '';
-        else formData.extras = txt;
+        formData.extras = txt.toLowerCase().includes('weiter') ? '' : txt;
         step = 5;
-        addMessage('🗺️ Standortwahl folgt in der nächsten Version.', 'bot');
-        addMessage('✅ Eingaben gespeichert. Danke!', 'bot');
+        addMessage('🗺️ Bitte wähle jetzt den Standort deiner Hütte auf der Karte.', 'bot');
+        handleMapSelection();
       } else {
         handleIntent(txt);
       }
@@ -171,7 +189,7 @@
     function startDialog() {
       chatWindow.innerHTML = '';
       addMessage('Willkommen beim Eierhütten-Assistent. Was möchtest du tun?', 'bot');
-      addChoiceButtons(['Neue Hütte einreichen', 'Meine Hütten ansehen', 'Hilfe'], handleIntent);
+      addChoiceButtons(['Neue Hütte einreichen', 'Hilfe'], handleIntent);
     }
 
     document.getElementById('google-login').onclick = () => {
