@@ -37,120 +37,37 @@
     <button id="send-btn">Senden</button>
   </div>
 </section><script>
-const adminEmail = "admin@eierhuette.de";
-let isAdminMode = false;
+// Vorherige Firebase-Konfiguration
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.appspot.com",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+  measurementId: "G-16V6K5GXDT"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth(), db = firebase.firestore();
 
-function handleAdminCommand(txt) {
-  const input = txt.toLowerCase().trim();
-  if (input === "/admin on") {
-    if (currentUser?.email === adminEmail) {
-      isAdminMode = true;
-      addMessage("🔒 Admin-Modus aktiviert.", 'bot');
-      showAllHutsForAdmin();
-    } else {
-      addMessage("❌ Du bist nicht berechtigt, den Admin-Modus zu aktivieren.", 'bot');
-    }
-    return true;
-  }
-  if (input === "/admin off") {
-    isAdminMode = false;
-    addMessage("🔓 Admin-Modus deaktiviert. Zurück zum Benutzer-Modus.", 'bot');
-    startDialog();
-    return true;
-  }
-  if (isAdminMode) {
-    if (input === "/delete all") {
-      const confirm = prompt("⚠️ Bist du sicher, dass du ALLE Hütten löschen möchtest? Tippe JA zum Bestätigen.");
-      if (confirm === "JA") {
-        db.collection("eierhuetten").get().then(snapshot => {
-          const batch = db.batch();
-          snapshot.forEach(doc => batch.delete(doc.ref));
-          batch.commit().then(() => addMessage("🗑️ Alle Hütten wurden gelöscht.", 'bot'));
-        });
-      } else {
-        addMessage("Abgebrochen. Es wurden keine Daten gelöscht.", 'bot');
-      }
-    }
-    return true;
-  }
-  return false;
-}
+let currentUser = null, isAdmin = false;
 
-function showAllHutsForAdmin() {
-  chatWindow.innerHTML = '';
-  addMessage('🛠️ Alle eingereichten Hütten:', 'bot');
-  db.collection('eierhuetten').orderBy('erstelltAm', 'desc').get().then(snapshot => {
-    if (snapshot.empty) return addMessage('Keine Hütten gefunden.', 'bot');
-    snapshot.forEach(doc => {
-      const h = doc.data();
-      const id = doc.id;
-      const coords = h.location ? `${h.location.latitude.toFixed(5)}, ${h.location.longitude.toFixed(5)}` : '-';
-      const div = document.createElement('div');
-      div.className = 'message bot';
-      div.innerHTML = `
-        <div class="p-3 border border-gray-300 bg-gray-50 rounded text-sm space-y-1">
-          <div><strong>Name:</strong> ${h.name}</div>
-          <div><strong>Sitzplätze:</strong> ${h.sitzplaetze}</div>
-          <div><strong>Strom:</strong> ${h.strom}</div>
-          <div><strong>Extras:</strong> ${h.extras}</div>
-          <div><strong>Status:</strong> ${h.status}</div>
-          <div><strong>Koordinaten:</strong> ${coords}</div>
-          <div class="flex gap-2 mt-2">
-            <button onclick="updateStatus('${id}')" class="bg-blue-100 text-blue-800 px-2 py-1 rounded">🟢 Status ändern</button>
-            <button onclick="editHut('${id}')" class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded">✏️ Bearbeiten</button>
-            <button onclick="deleteHut('${id}')" class="bg-red-100 text-red-800 px-2 py-1 rounded">🗑️ Löschen</button>
-          </div>
-        </div>`;
-      chatWindow.appendChild(div);
-    });
+// Checke, ob der aktuelle Benutzer in der Admin-Liste ist
+function checkAdminRights(user) {
+  return db.collection("admins").doc(user.email).get().then(doc => {
+    return doc.exists;
   });
 }
 
-function updateStatus(id) {
-  const status = prompt("Neuen Status eingeben (z. B. offen, angenommen, abgelehnt):");
-  if (status) {
-    db.collection('eierhuetten').doc(id).update({ status }).then(() => {
-      addMessage(`✅ Status aktualisiert auf: ${status}`, 'bot');
-      showAllHutsForAdmin();
+auth.onAuthStateChanged(user => {
+  if (user) {
+    currentUser = user;
+    checkAdminRights(user).then(is => {
+      isAdmin = is;
+      document.getElementById('login-section').classList.add('hidden');
+      document.getElementById('main-section').classList.remove('hidden');
+      startDialog();
     });
-  }
-}
-
-function editHut(id) {
-  const neuesFeld = prompt("Welches Feld möchtest du bearbeiten? (name, strom, sitzplaetze, extras)");
-  const neuerWert = prompt("Gib den neuen Wert ein:");
-  if (neuesFeld && neuerWert) {
-    db.collection('eierhuetten').doc(id).update({ [neuesFeld]: neuerWert }).then(() => {
-      addMessage(`✏️ Feld '${neuesFeld}' aktualisiert.`, 'bot');
-      showAllHutsForAdmin();
-    });
-  }
-}
-
-function deleteHut(id) {
-  const conf = confirm("⚠️ Möchtest du diese Hütte wirklich löschen?");
-  if (conf) {
-    db.collection('eierhuetten').doc(id).delete().then(() => {
-      addMessage("🗑️ Hütte gelöscht.", 'bot');
-      showAllHutsForAdmin();
-    });
-  }
-}
-
-// ✨ ADMIN COMMAND PRECHECK
-sendBtn.onclick = () => {
-  const txt = chatInput.value.trim();
-  if (!txt) return;
-  if (handleAdminCommand(txt)) return;
-  processUserInput(txt);
-};
-
-chatInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter') {
-    const txt = chatInput.value.trim();
-    if (!txt) return;
-    if (handleAdminCommand(txt)) return;
-    processUserInput(txt);
   }
 });
 </script></body>
