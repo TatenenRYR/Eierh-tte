@@ -1,5 +1,4 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -27,24 +26,18 @@
     .edit-input { display: block; width: 100%; padding: 0.4rem; margin-top: 0.3rem; border: 1px solid #ccc; border-radius: 0.4rem; }
   </style>
 </head>
-<body class="p-6">
-
-<div id="login-section" class="max-w-md mx-auto text-center">
+<body class="p-6"><div id="login-section" class="max-w-md mx-auto text-center">
   <button id="google-login" class="bg-red-600 hover:bg-red-700 text-white py-2 px-6 rounded text-lg">
     Mit Google anmelden
   </button>
-</div>
-
-<section id="main-section" class="max-w-md mx-auto mt-6 bg-white p-4 rounded-lg shadow hidden">
+</div><section id="main-section" class="max-w-md mx-auto mt-6 bg-white p-4 rounded-lg shadow hidden">
   <div class="text-center font-bold text-2xl text-green-700 mb-4">🥚 Eierhütten Assistent Chat</div>
   <div id="chat-window" aria-live="polite" role="log"></div>
   <div id="input-area">
     <input id="chat-input" type="text" placeholder="Antwort hier..." autocomplete="off" class="border border-gray-300 rounded px-3 py-2"/>
     <button id="send-btn">Senden</button>
   </div>
-</section>
-
-<script>
+</section><script>
 // Firebase-Konfiguration
 const firebaseConfig = {
   apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
@@ -92,6 +85,33 @@ function addChoiceButtons(options, callback) {
   });
   chatWindow.appendChild(container);
   chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function showAllHuts() {
+  addMessage('📂 Admin: Liste aller Hütten folgt...', 'bot');
+  db.collection('eierhuetten').orderBy('erstelltAm', 'desc').get().then(snapshot => {
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      addMessage(`📍 ${d.name} (${d.status})`, 'bot');
+    });
+  });
+}
+
+function handleAdminCommand(txt) {
+  const t = txt.toLowerCase();
+  if (t === '/admin on' && isAdmin) {
+    isAdminMode = true;
+    addMessage('🔒 Admin-Modus aktiviert.', 'bot');
+    showAllHuts();
+    return true;
+  }
+  if (t === '/admin off') {
+    isAdminMode = false;
+    addMessage('🔓 Admin-Modus deaktiviert.', 'bot');
+    startDialog();
+    return true;
+  }
+  return false;
 }
 
 function startDialog() {
@@ -173,96 +193,22 @@ function submitHut() {
     status: 'offen'
   };
   db.collection('eierhuetten').add(hut).then(() => {
-    addMessage('🎉 Eingereicht!', 'bot');
+    addMessage('✅ Erfolgreich eingereicht!', 'bot');
     step = 0; formData = {}; startDialog();
   });
 }
 
-function showMyHuts() {
-  chatWindow.innerHTML = '';
-  db.collection('eierhuetten').where('userId', '==', currentUser.uid).orderBy('erstelltAm', 'desc').get().then(snapshot => {
-    if (snapshot.empty) return addMessage('❌ Keine Hütten gefunden.', 'bot');
-    snapshot.forEach(doc => {
-      const d = doc.data();
-      const h = document.createElement('div');
-      h.className = 'message bot';
-      h.innerHTML = `
-        <div class="p-3 bg-blue-50 border border-blue-200 rounded space-y-1 text-sm">
-          <div><strong>📍 Name:</strong> ${d.name}</div>
-          <div><strong>🪑 Sitzplätze:</strong> ${d.sitzplaetze}</div>
-          <div><strong>🔌 Strom:</strong> ${d.strom}</div>
-          <div><strong>✨ Extras:</strong> ${d.extras}</div>
-          <div><strong>Status:</strong> ${d.status}</div>
-          <div class="mt-2 flex gap-2">
-            <button onclick="editHut('${doc.id}', ${JSON.stringify(d).replace(/\"/g, '&quot;')})" class="bg-yellow-100 text-yellow-900 px-2 py-1 rounded">✏️ Bearbeiten</button>
-            <button onclick="deleteHut('${doc.id}')" class="bg-red-100 text-red-900 px-2 py-1 rounded">🗑️ Löschen</button>
-          </div>
-        </div>
-      `;
-      chatWindow.appendChild(h);
-    });
-  });
-}
-
-function editHut(id, data) {
-  const h = document.createElement('div');
-  h.className = 'message bot';
-  h.innerHTML = `
-    <div class="p-3 bg-yellow-50 border border-yellow-300 rounded space-y-1">
-      <label><strong>📍 Name:</strong><input class="edit-input" id="edit-name" value="${data.name || ''}"/></label>
-      <label><strong>🪑 Sitzplätze:</strong><input class="edit-input" id="edit-sitz" value="${data.sitzplaetze || ''}"/></label>
-      <label><strong>🔌 Strom:</strong><input class="edit-input" id="edit-strom" value="${data.strom || ''}"/></label>
-      <label><strong>✨ Extras:</strong><input class="edit-input" id="edit-extras" value="${data.extras || ''}"/></label>
-      <div class="mt-2">
-        <button onclick="saveEdit('${id}')" class="bg-green-600 text-white px-3 py-1 rounded">💾 Speichern</button>
-      </div>
-    </div>
-  `;
-  chatWindow.appendChild(h);
-  chatWindow.scrollTop = chatWindow.scrollHeight;
-}
-
-function saveEdit(id) {
-  const update = {
-    name: document.getElementById('edit-name').value.trim(),
-    sitzplaetze: document.getElementById('edit-sitz').value.trim(),
-    strom: document.getElementById('edit-strom').value.trim(),
-    extras: document.getElementById('edit-extras').value.trim(),
-  };
-  db.collection('eierhuetten').doc(id).update(update).then(() => {
-    addMessage('✅ Hütte aktualisiert.', 'bot');
-    showMyHuts();
-  });
-}
-
-function deleteHut(id) {
-  if (confirm('⚠️ Wirklich löschen?')) {
-    db.collection('eierhuetten').doc(id).delete().then(() => {
-      addMessage('🗑️ Hütte gelöscht.', 'bot');
-      showMyHuts();
-    });
-  }
-}
-
-function handleAdminCommand(txt) {
-  const t = txt.toLowerCase();
-  if (t === '/admin on' && isAdmin) {
-    isAdminMode = true;
-    addMessage('🔒 Admin-Modus aktiviert.', 'bot');
-    // TODO: showAllHuts();
-    return true;
-  }
-  if (t === '/admin off') {
-    isAdminMode = false;
-    addMessage('🔓 Admin-Modus deaktiviert.', 'bot');
-    startDialog(); return true;
-  }
-  return false;
-}
-
 document.getElementById('google-login').onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
-sendBtn.onclick = () => processUserInput(chatInput.value);
-chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') processUserInput(chatInput.value); });
+sendBtn.onclick = () => {
+  processUserInput(chatInput.value);
+  chatInput.value = '';
+};
+chatInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    processUserInput(chatInput.value);
+    chatInput.value = '';
+  }
+});
 
 auth.onAuthStateChanged(user => {
   if (user) {
@@ -275,6 +221,5 @@ auth.onAuthStateChanged(user => {
     });
   }
 });
-</script>
-</body>
+</script></body>
 </html>
