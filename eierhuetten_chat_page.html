@@ -1,16 +1,11 @@
-
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Eierhütten Assistent Chat - Erweitert</title>
+  <title>Eierhütten Assistent Chat - Bearbeitung</title>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { background: #f3f4f6; font-family: Arial, sans-serif; }
@@ -22,16 +17,7 @@
     #chat-input { flex-grow: 1; padding: 0.5rem 1rem; border: 1px solid #cbd5e1; border-radius: 0.5rem; }
     #send-btn { background: #0284c7; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; }
     #send-btn:hover { background: #0369a1; }
-    button.choice-btn { background: #e0f2fe; border: 1px solid #0284c7; color: #0369a1; padding: 0.3rem 0.7rem; border-radius: 0.5rem; cursor: pointer; margin-right: 0.5rem; }
-    button.choice-btn:hover { background: #bae6fd; }
-    .hidden { display: none; }
-    #map, .preview-map { width: 100%; height: 300px; margin-top: 1rem; border-radius: 0.5rem; }
-    .minimap { width: 100%; height: 200px; margin-top: 0.5rem; border-radius: 0.5rem; }
-    .edit-input, select { display: block; width: 100%; padding: 0.4rem; margin-top: 0.3rem; border: 1px solid #ccc; border-radius: 0.4rem; }
-    .log-entry { font-size: 0.8rem; color: #555; margin-top: 0.2rem; padding-left: 1rem; }
-    .foto-thumb { position: relative; display: inline-block; margin-right: 8px; margin-bottom: 8px; }
-    .foto-thumb img { width: 80px; height: 80px; object-fit: cover; border-radius: 0.25rem; border: 1px solid #ccc; }
-    .foto-thumb button { position: absolute; top: 0; right: 0; background: #dc2626; color: white; border: none; border-radius: 0 0.25rem 0.25rem 0; cursor: pointer; padding: 2px 5px; font-size: 12px; }
+    .edit-btn { margin-top: 0.5rem; background: #fbbf24; color: #92400e; padding: 0.3rem 0.6rem; border-radius: 0.5rem; cursor: pointer; display: inline-block; }
   </style>
 </head>
 <body class="p-6">
@@ -39,38 +25,93 @@
     <button id="google-login" class="bg-red-600 hover:bg-red-700 text-white py-2 px-6 rounded text-lg">
       Mit Google anmelden
     </button>
-  </div>
-
-  <section id="main-section" class="max-w-md mx-auto mt-6 bg-white p-4 rounded-lg shadow hidden">
+  </div>  <section id="main-section" class="max-w-md mx-auto mt-6 bg-white p-4 rounded-lg shadow hidden">
     <div class="text-center font-bold text-2xl text-green-700 mb-4">🥚 Eierhütten Assistent Chat</div>
     <div id="chat-window" aria-live="polite" role="log"></div>
     <div id="input-area">
       <input id="chat-input" type="text" placeholder="Antwort hier..." autocomplete="off" class="border border-gray-300 rounded px-3 py-2"/>
       <button id="send-btn">Senden</button>
     </div>
-  </section>
-
-<script>
+  </section><script>
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
   authDomain: "eierhuettentour.firebaseapp.com",
   projectId: "eierhuettentour",
-  storageBucket: "eierhuettentour.appspot.com",
+  storageBucket: "eierhuettentour.firebasestorage.app",
   messagingSenderId: "348272135205",
   appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
   measurementId: "G-16V6K5GXDT"
 };
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth(), db = firebase.firestore(), storage = firebase.storage();
+    firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth(), db = firebase.firestore();
 
 let currentUser = null;
-let isAdmin = false;
-let isAdminMode = false;
+let editingHutId = null;
+let editingData = null;
 let step = 0;
-let formData = {};
-const chatWindow = document.getElementById('chat-window');
-const chatInput = document.getElementById('chat-input');
-const sendBtn = document.getElementById('send-btn');
+
+function startDialog() {
+  chatWindow.innerHTML = '';
+  addMessage('Hallo 👋 Ich bin dein Assistent für Eierhütten. Was möchtest du tun?', 'bot');
+  addChoiceButtons(['🥚 Neue Hütte erstellen', '📋 Meine Hütten anzeigen'], handleIntent);
+}
+
+function handleIntent(input) {
+  const txt = input.toLowerCase();
+  if (txt.includes('meine')) return showMyHuts();
+  if (txt.includes('neu')) { step = 1; editingData = {}; addMessage('Wie soll deine neue Hütte heißen?', 'bot'); return; }
+}
+
+function showMyHuts() {
+  chatWindow.innerHTML = '';
+  db.collection('eierhuetten').where('userId', '==', currentUser.uid).get().then(snapshot => {
+    if (snapshot.empty) return addMessage('Du hast noch keine Hütten.', 'bot');
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      const div = document.createElement('div');
+      div.className = 'message bot';
+      div.innerHTML = `<div class='space-y-1 text-sm'>
+        <div><strong>📍 Name:</strong> ${d.name}</div>
+        <div><strong>🪑 Sitzplätze:</strong> ${d.sitzplaetze}</div>
+        <div><strong>🔌 Strom:</strong> ${d.strom}</div>
+        <div><strong>✨ Extras:</strong> ${d.extras}</div>
+        <button class='edit-btn' onclick='startEditHut("${doc.id}", ${JSON.stringify(d).replace(/"/g, "&quot;")})'>Bearbeiten</button>
+      </div>`;
+      chatWindow.appendChild(div);
+    });
+  });
+}
+
+function startEditHut(id, data) {
+  chatWindow.innerHTML = '';
+  editingHutId = id;
+  editingData = data;
+  step = 101;
+  addMessage(`Bearbeitung der Hütte: ${data.name}`, 'bot');
+  addMessage('Neuer Name?', 'bot');
+}
+
+function processUserInput(txt) {
+  if (step === 101) { editingData.name = txt; step = 102; addMessage('Neue Sitzplatzangabe?', 'bot'); return; }
+  if (step === 102) { editingData.sitzplaetze = txt; step = 103; addMessage('Neuer Strom-Status?', 'bot'); return; }
+  if (step === 103) {
+    editingData.strom = txt;
+    step = 104;
+    addMessage('Neue Extras?', 'bot');
+    return;
+  }
+  if (step === 104) {
+    editingData.extras = txt;
+    db.collection('eierhuetten').doc(editingHutId).update(editingData).then(() => {
+      addMessage('✅ Hütte wurde aktualisiert.', 'bot');
+      step = 0;
+      showMyHuts();
+    });
+    return;
+  }
+  handleIntent(txt);
+}
 
 function addMessage(text, sender = 'bot') {
   const div = document.createElement('div');
@@ -85,12 +126,12 @@ function addChoiceButtons(options, callback) {
   container.classList.add('message', 'bot');
   options.forEach(opt => {
     const btn = document.createElement('button');
-    btn.className = 'choice-btn';
+    btn.className = 'edit-btn';
     btn.textContent = opt;
     btn.onclick = () => {
       addMessage(opt, 'user');
       container.remove();
-      callback(opt.toLowerCase());
+      callback(opt);
     };
     container.appendChild(btn);
   });
@@ -98,207 +139,26 @@ function addChoiceButtons(options, callback) {
   chatWindow.scrollTop = chatWindow.scrollHeight;
 }
 
-function startDialog() {
-  chatWindow.innerHTML = '';
-  addMessage('Hallo 👋 Ich bin dein Assistent für Eierhütten. Wie kann ich dir helfen?', 'bot');
-  addChoiceButtons(['🥚 Neue Hütte erstellen', '📋 Meine Hütten anzeigen'], handleIntent);
-}
-
-function handleIntent(input) {
-  const txt = input.toLowerCase();
-  if (isAdminMode) return addMessage('🛠 Admin-Modus aktiv. Zeige alle Hütten...', 'bot'), showAllHuts();
-  if (txt.includes('erstellen')) {
-    db.collection('eierhuetten').where('userId', '==', currentUser.uid).get().then(snap => {
-      if (snap.size >= 10) {
-        addMessage('⚠️ Du hast bereits 10 Eierhütten. Lösche eine, um eine neue zu erstellen.', 'bot');
-      } else {
-        step = 1;
-        formData = {};
-        addMessage('Wie soll deine Hütte heißen?', 'bot');
-      }
-    });
-  } else if (txt.includes('meine')) {
-    showMyHuts();
-  } else {
-    startDialog();
-  }
-}
-
-function processUserInput(input) {
-  const txt = input.trim();
-  if (handleAdminCommand(txt)) return;
-  if (step === 1) {
-    formData.name = txt; step = 2;
-    addMessage('Hat deine Hütte Sitzplätze?', 'bot');
-    addChoiceButtons(['Ja','Nein'], ans => {
-      formData.sitzplaetze = ans; step = 3;
-      addMessage('Gibt es Strom?', 'bot');
-      addChoiceButtons(['Ja','Nein'], strom => {
-        formData.strom = strom; step = 4;
-        addMessage('Extras? (oder „weiter“)', 'bot');
-      });
-    });
-  } else if (step === 4) {
-    formData.extras = txt.toLowerCase() === 'weiter' ? '' : txt;
-    step = 5; showMap();
-  } else {
-    handleIntent(txt);
-  }
-}
-
-function showMap() {
-  const div = document.createElement('div');
-  div.id = 'map';
-  chatWindow.appendChild(div);
-  const map = L.map('map').setView([51.2, 10.5], 6);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-  let marker;
-  map.on('click', e => {
-    if (marker) marker.setLatLng(e.latlng);
-    else marker = L.marker(e.latlng).addTo(map);
-    formData.loc = e.latlng;
-    addMessage(`📍 Standort gespeichert: ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`, 'bot');
-    addChoiceButtons(['Einreichen', 'Abbrechen'], ans => {
-      if (ans.includes('einreichen')) submitHut();
-      else startDialog();
-    });
-  });
-}
-
-async function submitHut() {
-  if (!formData.name || !formData.loc) return addMessage('❌ Bitte gib alle Daten ein.', 'bot');
-  const hut = {
-    name: formData.name,
-    sitzplaetze: formData.sitzplaetze,
-    strom: formData.strom,
-    extras: formData.extras,
-    location: new firebase.firestore.GeoPoint(formData.loc.lat, formData.loc.lng),
-    userId: currentUser.uid,
-    erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
-    status: 'offen',
-    fotos: []
-  };
-  try {
-    await db.collection('eierhuetten').add(hut);
-    addMessage('🎉 Deine Eierhütte wurde erfolgreich eingereicht!', 'bot');
-    step = 0; formData = {}; startDialog();
-  } catch(e) {
-    addMessage('❌ Fehler beim Einreichen: ' + e.message, 'bot');
-  }
-}
-
-function showMyHuts() {
-  chatWindow.innerHTML = '';
-  db.collection('eierhuetten').where('userId', '==', currentUser.uid).orderBy('erstelltAm', 'desc').get().then(snapshot => {
-    if (snapshot.empty) return addMessage('❌ Keine Hütten gefunden.', 'bot');
-    snapshot.forEach(doc => {
-      const d = doc.data();
-      const container = document.createElement('div');
-      container.className = 'message bot';
-      // Fotos anzeigen
-      let fotosHtml = '';
-      if(d.fotos && Array.isArray(d.fotos)) {
-        fotosHtml = d.fotos.map((url, i) => 
-          `<div class="foto-thumb"><img src="${url}" alt="Foto ${i+1}" loading="lazy"></div>`
-        ).join('');
-      }
-      container.innerHTML = `
-        <div class="p-3 bg-blue-50 border border-blue-200 rounded space-y-1 text-sm">
-          <div><strong>📍 Name:</strong> ${d.name}</div>
-          <div><strong>🪑 Sitzplätze:</strong> ${d.sitzplaetze}</div>
-          <div><strong>🔌 Strom:</strong> ${d.strom}</div>
-          <div><strong>✨ Extras:</strong> ${d.extras}</div>
-          <div><strong>Status:</strong> ${d.status}</div>
-          <div><strong>Fotos:</strong> <div class="flex flex-wrap">${fotosHtml}</div></div>
-          <div class="minimap" id="minimap-${doc.id}"></div>
-        </div>
-      `;
-      chatWindow.appendChild(container);
-      if (d.location && d.location.latitude && d.location.longitude) {
-        const mapDiv = document.getElementById(`minimap-${doc.id}`);
-        const m = L.map(mapDiv, { zoomControl: false, dragging: false }).setView([d.location.latitude, d.location.longitude], 13);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
-        L.marker([d.location.latitude, d.location.longitude]).addTo(m);
-        setTimeout(() => m.invalidateSize(), 200);
-      }
-    });
-  });
-}
-
-function handleAdminCommand(txt) {
-  // Admin-Befehl: /admin (nur User mit bestimmter E-Mail erlauben)
-  if (txt === '/admin') {
-    if (currentUser && currentUser.email && currentUser.email.endsWith('@deinedomain.de')) {
-      isAdminMode = !isAdminMode;
-      addMessage(`Admin-Modus ${isAdminMode ? 'aktiviert' : 'deaktiviert'}.`, 'bot');
-      if (isAdminMode) showAllHuts();
-      else startDialog();
-      return true;
-    } else {
-      addMessage('Du bist kein Admin.', 'bot');
-      return true;
-    }
-  }
-  return false;
-}
-
-function showAllHuts() {
-  chatWindow.innerHTML = '';
-  db.collection('eierhuetten').orderBy('erstelltAm', 'desc').get().then(snapshot => {
-    if (snapshot.empty) return addMessage('Keine Hütten vorhanden.', 'bot');
-    snapshot.forEach(doc => {
-      const d = doc.data();
-      const container = document.createElement('div');
-      container.className = 'message bot';
-      container.innerHTML = `
-        <div class="p-3 bg-gray-50 border border-gray-300 rounded space-y-1 text-sm">
-          <div><strong>📍 Name:</strong> ${d.name}</div>
-          <div><strong>🪑 Sitzplätze:</strong> ${d.sitzplaetze}</div>
-          <div><strong>🔌 Strom:</strong> ${d.strom}</div>
-          <div><strong>✨ Extras:</strong> ${d.extras}</div>
-          <div><strong>Status:</strong> ${d.status}</div>
-          <div><strong>Erstellt von:</strong> ${d.userId}</div>
-        </div>
-      `;
-      chatWindow.appendChild(container);
-    });
-  });
-}
-
 auth.onAuthStateChanged(user => {
   if (user) {
     currentUser = user;
-    isAdmin = user.email && user.email.endsWith('@deinedomain.de');
     document.getElementById('login-section').classList.add('hidden');
     document.getElementById('main-section').classList.remove('hidden');
     startDialog();
-  } else {
-    currentUser = null;
-    isAdmin = false;
-    isAdminMode = false;
-    document.getElementById('login-section').classList.remove('hidden');
-    document.getElementById('main-section').classList.add('hidden');
   }
 });
 
-document.getElementById('google-login').addEventListener('click', () => {
+document.getElementById('google-login').onclick = () => {
   const provider = new firebase.auth.GoogleAuthProvider();
   auth.signInWithPopup(provider);
-});
+};
 
-sendBtn.addEventListener('click', () => {
-  const val = chatInput.value.trim();
+document.getElementById('send-btn').onclick = () => {
+  const val = document.getElementById('chat-input').value.trim();
   if (!val) return;
   addMessage(val, 'user');
-  chatInput.value = '';
+  document.getElementById('chat-input').value = '';
   processUserInput(val);
-});
-
-chatInput.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') {
-    sendBtn.click();
-  }
-});
-</script>
-</body>
+};
+</script></body>
 </html>
