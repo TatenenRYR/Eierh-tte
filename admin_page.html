@@ -112,112 +112,115 @@
         const el = document.createElement('div');
         el.className = 'bg-white p-4 rounded shadow space-y-2';
         el.innerHTML = `
-          <h2 class="text-xl font-bold">${hut.name || 'Ohne Name'}</h2>
-          <p><strong>Status:</strong> 
-            <select onchange="updateField('${hut.id}', 'status', this.value)" class="border rounded p-1">
+          <input class="text-xl font-bold w-full border rounded px-2 py-1" onchange="updateFieldWithComment('${hut.id}', 'name', this.value)" value="${hut.name || ''}" />
+
+          <p><strong>Status:</strong>
+            <select onchange="updateFieldWithComment('${hut.id}', 'status', this.value)" class="border rounded p-1">
               <option ${hut.status === 'offen' ? 'selected' : ''}>offen</option>
               <option ${hut.status === 'angenommen' ? 'selected' : ''}>angenommen</option>
               <option ${hut.status === 'abgelehnt' ? 'selected' : ''}>abgelehnt</option>
             </select>
           </p>
-          <p><strong>Strom:</strong> ${hut.strom || '–'}</p>
-          <p><strong>Sitzplätze:</strong> ${hut.sitzplaetze || '–'}</p>
+
+          <p><strong>Strom:</strong>
+            <select onchange="updateFieldWithComment('${hut.id}', 'strom', this.value)" class="border rounded p-1">
+              <option ${hut.strom === 'ja' ? 'selected' : ''}>ja</option>
+              <option ${hut.strom === 'nein' ? 'selected' : ''}>nein</option>
+            </select>
+          </p>
+
+          <p><strong>Sitzplätze:</strong>
+            <select onchange="updateFieldWithComment('${hut.id}', 'sitzplaetze', this.value)" class="border rounded p-1">
+              <option ${hut.sitzplaetze === 'keine' ? 'selected' : ''}>keine</option>
+              <option ${hut.sitzplaetze === '2' ? 'selected' : ''}>2</option>
+              <option ${hut.sitzplaetze === '4' ? 'selected' : ''}>4</option>
+              <option ${hut.sitzplaetze === '6+' ? 'selected' : ''}>6+</option>
+            </select>
+          </p>
+
           <p><strong>Ebenkeit:</strong>
-            <select onchange="updateField('${hut.id}', 'eben', this.value)" class="border rounded p-1">
+            <select onchange="updateFieldWithComment('${hut.id}', 'eben', this.value)" class="border rounded p-1">
               <option ${hut.eben === 'flach' ? 'selected' : ''}>flach</option>
               <option ${hut.eben === 'leicht geneigt' ? 'selected' : ''}>leicht geneigt</option>
               <option ${hut.eben === 'steil' ? 'selected' : ''}>steil</option>
             </select>
           </p>
-          <p><strong>Extras:</strong> ${hut.extras || '–'}</p>
-          <p><strong>Erstellt von:</strong> ${hut.einreicherName || hut.userId || 'Unbekannt'}</p>
-          <p><strong>Admin zuständig:</strong> ${hut.adminZustaendig || '-'}</p>
-          <div class="flex gap-2">
-            <button onclick="editHut('${hut.id}')" class="bg-blue-500 text-white px-2 py-1 rounded">Bearbeiten</button>
-            <button onclick="openMap('${hut.id}', ${hut.location?.latitude || 52.5}, ${hut.location?.longitude || 13.4})" class="bg-indigo-600 text-white px-2 py-1 rounded">Standort</button>
-            <button onclick="showLog('${hut.id}')" class="bg-gray-600 text-white px-2 py-1 rounded">Log</button>
-            <button onclick="deleteHut('${hut.id}')" class="bg-red-500 text-white px-2 py-1 rounded">Löschen</button>
-          </div>
-          <div class="minimap" id="map-${hut.id}"></div>
-        `;
-        hutList.appendChild(el);
 
-        if (hut.location?.latitude && hut.location?.longitude) {
-          const map = L.map(`map-${hut.id}`, { zoomControl: false, dragging: false }).setView([hut.location.latitude, hut.location.longitude], 13);
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-          L.marker([hut.location.latitude, hut.location.longitude]).addTo(map);
-          setTimeout(() => map.invalidateSize(), 200);
-        }
-      });
+          <textarea class="w-full border rounded p-2" placeholder="Extras" onchange="updateFieldWithComment('${hut.id}', 'extras', this.value)">${hut.extras || ''}</textarea><p><strong>Erstellt von:</strong> ${hut.einreicherName || hut.userId || 'Unbekannt'}</p>
+      <p><strong>Admin zuständig:</strong> ${hut.adminZustaendig || '-'}</p>
+
+      <div class="flex gap-2">
+        <button onclick="openMap('${hut.id}', ${hut.location?.latitude || 52.5}, ${hut.location?.longitude || 13.4})" class="bg-indigo-600 text-white px-2 py-1 rounded">Standort</button>
+        <button onclick="showLog('${hut.id}')" class="bg-gray-600 text-white px-2 py-1 rounded">Log</button>
+      </div>
+
+      <div class="minimap" id="map-${hut.id}"></div>
+    `;
+    hutList.appendChild(el);
+
+    if (hut.location?.latitude && hut.location?.longitude) {
+      const map = L.map(`map-${hut.id}`, { zoomControl: false, dragging: false }).setView([hut.location.latitude, hut.location.longitude], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      L.marker([hut.location.latitude, hut.location.longitude]).addTo(map);
+      setTimeout(() => map.invalidateSize(), 200);
     }
+  });
+}
 
-    async function editHut(id) {
-      const doc = await db.collection('eierhuetten').doc(id).get();
-      const hut = doc.data();
+async function updateFieldWithComment(id, field, value) {
+  const kommentar = prompt("Kommentar zur Änderung von '" + field + "':");
+  if (!kommentar) return;
+  await db.collection('eierhuetten').doc(id).update({
+    [field]: value,
+    adminZustaendig: currentUser.displayName || currentUser.email
+  });
+  await db.collection('eierhuetten').doc(id).collection('log').add({
+    aktion: 'Feld geändert',
+    feld: field,
+    kommentar,
+    admin: currentUser.displayName || currentUser.email,
+    zeitpunkt: firebase.firestore.Timestamp.now()
+  });
+  loadHuts();
+}
 
-      const newName = prompt('Neuer Name:', hut.name || '');
-      const newExtras = prompt('Neue Extras:', hut.extras || '');
-      const newStrom = prompt('Strom vorhanden? (ja/nein):', hut.strom || '');
-      const newSitzplaetze = prompt('Anzahl Sitzplätze:', hut.sitzplaetze || '');
-      const kommentar = prompt('Admin-Kommentar zur Änderung:');
+async function showLog(id) {
+  const logSnap = await db.collection('eierhuetten').doc(id).collection('log').orderBy('zeitpunkt', 'desc').get();
+  const logs = logSnap.docs.map(doc => doc.data());
+  if (logs.length === 0) return alert('Keine Einträge vorhanden.');
+  alert(logs.map(log => `(${log.zeitpunkt.toDate().toLocaleString()}) ${log.admin}: ${log.aktion} (${log.feld})\nKommentar: ${log.kommentar || '-'}`).join('\n\n'));
+}
 
-      if (newName !== null && newExtras !== null && newStrom !== null) {
-        await db.collection('eierhuetten').doc(id).update({
-          name: newName,
-          extras: newExtras,
-          strom: newStrom,
-          sitzplaetze: newSitzplaetze,
-          adminZustaendig: currentUser.displayName || currentUser.email
-        });
-        await db.collection('eierhuetten').doc(id).collection('log').add({
-          aktion: 'Bearbeitung',
-          feld: 'diverse',
-          kommentar: kommentar,
-          admin: currentUser.displayName || currentUser.email,
-          zeitpunkt: firebase.firestore.Timestamp.now()
-        });
-        loadHuts();
-      }
-    }
+function openMap(id, lat, lng) {
+  currentHutId = id;
+  mapModal.style.display = 'flex';
+  if (editMap) editMap.remove();
+  editMap = L.map('edit-map').setView([lat, lng], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(editMap);
+  marker = L.marker([lat, lng], { draggable: true }).addTo(editMap);
+}
 
-    function updateField(id, field, value) {
-      db.collection('eierhuetten').doc(id).update({ [field]: value });
-    }
+cancelMapBtn.onclick = () => {
+  mapModal.style.display = 'none';
+};
 
-    async function showLog(id) {
-      const logSnap = await db.collection('eierhuetten').doc(id).collection('log').orderBy('zeitpunkt', 'desc').get();
-      const logs = logSnap.docs.map(doc => doc.data());
-      if (logs.length === 0) return alert('Keine Einträge vorhanden.');
-      alert(logs.map(log => `(${log.zeitpunkt.toDate().toLocaleString()}) ${log.admin}: ${log.aktion} (${log.feld})\nKommentar: ${log.kommentar || '-'}`).join('\n\n'));
-    }
+saveMapBtn.onclick = async () => {
+  const { lat, lng } = marker.getLatLng();
+  await db.collection('eierhuetten').doc(currentHutId).update({
+    location: { latitude: lat, longitude: lng },
+    adminZustaendig: currentUser.displayName || currentUser.email
+  });
+  await db.collection('eierhuetten').doc(currentHutId).collection('log').add({
+    aktion: 'Standort geändert',
+    feld: 'location',
+    kommentar: 'Manuell über Karte verschoben',
+    admin: currentUser.displayName || currentUser.email,
+    zeitpunkt: firebase.firestore.Timestamp.now()
+  });
+  mapModal.style.display = 'none';
+  loadHuts();
+}
 
-    function openMap(id, lat, lng) {
-      currentHutId = id;
-      mapModal.style.display = 'flex';
-      if (editMap) editMap.remove();
-      editMap = L.map('edit-map').setView([lat, lng], 13);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(editMap);
-      marker = L.marker([lat, lng], { draggable: true }).addTo(editMap);
-    }
-
-    cancelMapBtn.onclick = () => {
-      mapModal.style.display = 'none';
-    };
-
-    saveMapBtn.onclick = async () => {
-      const { lat, lng } = marker.getLatLng();
-      await db.collection('eierhuetten').doc(currentHutId).update({
-        location: { latitude: lat, longitude: lng }
-      });
-      await db.collection('eierhuetten').doc(currentHutId).collection('log').add({
-        aktion: 'Standort geändert',
-        feld: 'location',
-        kommentar: 'Manuell über Karte verschoben',
-        admin: currentUser.displayName || currentUser.email,
-        zeitpunkt: firebase.firestore.Timestamp.now()
-      });
-      mapModal.style.display = 'none';
-      loadHuts();
-    }
-  </script></body>
+  </script>
+</body>
 </html>
