@@ -1,39 +1,40 @@
-
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Eierhütten Chat & Übersicht</title>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    .progress-bar { height: 6px; background: #e5e7eb; border-radius: 5px; margin-top: 0.5rem; }
-    .progress-fill { height: 100%; background: #34d399; border-radius: 5px; width: 0%; transition: width 0.3s; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Eierhütten Chat & Verwaltung</title>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  #chat-window { height: 400px; overflow-y: auto; background: #ffffff; border-radius: .5rem; padding: 1rem; }
+  .message { margin-bottom: 1rem; }
+  .bot { color: #0369a1; }
+  .user { color: #166534; text-align: right; }
+  .minimap { width: 100%; height: 150px; margin-top: .5rem; border-radius: .5rem; }
+  .edit-input { width: 100%; padding: .3rem; margin-top: .3rem; border: 1px solid #ccc; border-radius: .3rem; }
+  button { cursor: pointer; }
+</style>
 </head>
 <body class="bg-gray-100 p-6">
+
 <div id="login-section" class="text-center mb-6">
   <button id="google-login" class="bg-red-600 hover:bg-red-700 text-white py-2 px-6 rounded text-lg">
     Mit Google anmelden
   </button>
 </div>
 
-<div id="chat-area" class="max-w-2xl mx-auto hidden">
-  <h1 class="text-2xl font-bold text-green-700 mb-4">🥚 Eierhütten Assistent</h1>
-  <div id="chat-window" class="bg-white p-4 rounded shadow mb-4 h-96 overflow-y-auto"></div>
-  <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+<div id="chat-area" class="max-w-3xl mx-auto hidden">
+  <h1 class="text-2xl font-bold text-green-700 mb-4">🥚 Eierhütten Assistent & Verwaltung</h1>
+  <div id="chat-window" aria-live="polite" role="log"></div>
   <div class="flex gap-2 mt-4">
-    <input id="chat-input" type="text" class="flex-grow p-2 border border-gray-300 rounded" placeholder="Antwort eingeben..." />
-    <button onclick="sendInput()" class="bg-blue-600 text-white px-4 py-2 rounded">Senden</button>
+    <input id="chat-input" type="text" placeholder="Antwort eingeben..." class="flex-grow p-2 border border-gray-300 rounded" />
+    <button id="send-btn" class="bg-blue-600 text-white px-4 py-2 rounded">Senden</button>
   </div>
-</div>
-
-<div id="my-huts" class="max-w-4xl mx-auto mt-10 hidden">
-  <h2 class="text-xl font-bold mb-4">📋 Meine Eierhütten</h2>
-  <div id="hut-list" class="grid md:grid-cols-2 gap-4"></div>
 </div>
 
 <script>
@@ -43,121 +44,165 @@ const firebaseConfig = {
   projectId: "eierhuettentour",
   storageBucket: "eierhuettentour.appspot.com",
   messagingSenderId: "348272135205",
-  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
-  measurementId: "G-16V6K5GXDT"
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
 };
 firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-const auth = firebase.auth();
+const db = firebase.firestore(), auth = firebase.auth();
 
-let currentUser = null;
-let step = 0;
-let formData = {};
+let currentUser, step = 0, formData = {};
 
-function setProgress(p) {
-  document.getElementById('progress-fill').style.width = p + '%';
+const chatWindow = document.getElementById('chat-window'),
+      chatInput  = document.getElementById('chat-input'),
+      sendBtn    = document.getElementById('send-btn');
+
+function escapeHtml(text) {
+  return text.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 
-function addMessage(txt, sender = 'bot') {
+function addMessage(html, sender='bot') {
   const div = document.createElement('div');
-  div.className = 'mb-2';
-  div.innerHTML = '<span class="font-semibold">' + (sender === 'bot' ? '🤖' : '🧑') + '</span> ' + txt;
-  document.getElementById('chat-window').appendChild(div);
-  document.getElementById('chat-window').scrollTop = document.getElementById('chat-window').scrollHeight;
+  div.className = 'message ' + sender;
+  div.innerHTML = html;
+  chatWindow.appendChild(div);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function startDialog() {
+  chatWindow.innerHTML = '';
+  step = 0; formData = {};
+  addMessage('🤖 Wie heißt deine neue Eierhütte?');
 }
 
 function sendInput() {
-  const val = document.getElementById('chat-input').value.trim();
-  if (!val) return;
-  addMessage(val, 'user');
-  processInput(val);
-  document.getElementById('chat-input').value = '';
+  const txt = chatInput.value.trim();
+  if (!txt) return;
+  addMessage('🧑 ' + escapeHtml(txt), 'user');
+  processInput(txt);
+  chatInput.value = '';
 }
 
 function processInput(txt) {
-  if (step === 0) {
-    formData.name = txt; step = 1; setProgress(25);
-    addMessage("Hat die Hütte Sitzplätze? (Ja/Nein)");
-  } else if (step === 1) {
-    formData.sitzplaetze = txt; step = 2; setProgress(50);
-    addMessage("Gibt es Strom? (Ja/Nein)");
-  } else if (step === 2) {
-    formData.strom = txt; step = 3; setProgress(75);
-    addMessage("Gibt es Extras? (z. B. Kühlschrank, Kinderecke)");
-  } else if (step === 3) {
-    formData.extras = txt; step = 4; setProgress(100);
-    addMessage("Willst du deine Hütte jetzt einreichen? (Ja/Nein)");
-  } else if (step === 4 && txt.toLowerCase() === 'ja') {
+  if (step===0) {
+    formData.name=txt; step=1;
+    addMessage('🤖 Hat die Hütte Sitzplätze? (Ja/Nein)');
+  } else if (step===1) {
+    formData.sitzplaetze=txt; step=2;
+    addMessage('🤖 Gibt es Strom? (Ja/Nein)');
+  } else if (step===2) {
+    formData.strom=txt; step=3;
+    addMessage('🤖 Extras? (Weiter für keine)');
+  } else if (step===3) {
+    formData.extras= txt.toLowerCase()==='weiter'?'':txt; step=4;
+    addMessage('🤖 Standort wählen: Klicke auf Karte');
+    const md=document.createElement('div'); md.id='map-select'; md.className='minimap'; chatWindow.appendChild(md);
+    const map = L.map('map-select').setView([51.1657,10.4515],6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    let mk;
+    map.on('click', e => {
+      if(mk) mk.setLatLng(e.latlng); else mk=L.marker(e.latlng,{draggable:true}).addTo(map);
+      formData.location=e.latlng;
+      addMessage('🤖 Standort gespeichert: '+e.latlng.lat.toFixed(5)+', '+e.latlng.lng.toFixed(5));
+      addMessage('🤖 Soll eingereicht werden? (Ja/Nein)');
+    });
+  } else if (step===4 && txt.toLowerCase()==='ja') {
     submitHut();
+  } else if (txt.toLowerCase()==='meine hütten') {
+    loadMyHuts();
   } else {
-    resetChat();
+    startDialog();
   }
 }
 
 function submitHut() {
-  const hut = {
-    name: formData.name,
-    sitzplaetze: formData.sitzplaetze,
-    strom: formData.strom,
-    extras: formData.extras,
-    status: 'offen',
-    userId: currentUser.uid,
-    erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
+  const doc={...formData,
+    location:new firebase.firestore.GeoPoint(formData.location.lat,formData.location.lng),
+    userId:currentUser.uid,
+    erstelltAm:firebase.firestore.FieldValue.serverTimestamp(),
+    status:'offen'
   };
-  db.collection("eierhuetten").add(hut).then(() => {
-    addMessage("✅ Erfolgreich eingereicht!");
-    loadMyHuts();
-    resetChat();
+  db.collection('eierhuetten').add(doc).then(()=>{
+    addMessage('🤖 Hütte erfolgreich eingereicht!');
+    startDialog();
   });
 }
 
-function resetChat() {
-  step = 0; formData = {}; setProgress(0);
-  document.getElementById('chat-window').innerHTML = '';
-  addMessage("Wie soll deine neue Eierhütte heißen?");
+function loadMyHuts() {
+  chatWindow.innerHTML='';
+  addMessage('🤖 Lade deine Hütten...');
+  db.collection('eierhuetten').where('userId','==',currentUser.uid).orderBy('erstelltAm','desc').get().then(snap=>{
+    chatWindow.innerHTML='';
+    if(snap.empty){ addMessage('🤖 Keine Hütten gefunden.'); startDialog(); return; }
+    snap.forEach(doc=>{
+      const d=doc.data(), id=doc.id;
+      addMessage(
+        '<div><strong>📍 '+escapeHtml(d.name)+'</strong> ('+escapeHtml(d.status)+')</div>'
+        +'<div>🪑 '+escapeHtml(d.sitzplaetze)+'</div>'
+        +'<div>🔌 '+escapeHtml(d.strom)+'</div>'
+        +'<div>✨ '+escapeHtml(d.extras)+'</div>'
+        +'<div id="mini-'+id+'" class="minimap"></div>'
+        +'<button onclick="editHut(\\''+id+'\\')" class="bg-yellow-400 text-white px-2 py-1 rounded mt-1">Bearbeiten</button>'
+        +' <button onclick="deleteHut(\\''+id+'\\')" class="bg-red-500 text-white px-2 py-1 rounded mt-1">Löschen</button>'
+      );
+      setTimeout(()=>{
+        const m=L.map('mini-'+id,{zoomControl:false,dragging:false}).setView([d.location.latitude,d.location.longitude],13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
+        L.marker([d.location.latitude,d.location.longitude]).addTo(m);
+        m.invalidateSize();
+      },100);
+    });
+  });
 }
 
-function loadMyHuts() {
-  db.collection("eierhuetten").where("userId", "==", currentUser.uid).orderBy("erstelltAm", "desc").get().then(snapshot => {
-    const list = document.getElementById("hut-list");
-    list.innerHTML = "";
-    snapshot.forEach(doc => {
-      const d = doc.data();
-      const card = document.createElement("div");
-      card.className = "bg-white p-4 rounded shadow";
-      card.innerHTML = `
-        <h3 class="font-bold text-lg mb-1">${d.name}</h3>
-        <p><strong>Sitzplätze:</strong> ${d.sitzplaetze}</p>
-        <p><strong>Strom:</strong> ${d.strom}</p>
-        <p><strong>Extras:</strong> ${d.extras}</p>
-        <p><strong>Status:</strong> ${d.status}</p>
-        <button onclick="deleteHut('${doc.id}')" class="mt-2 bg-red-100 text-red-800 px-3 py-1 rounded">🗑️ Löschen</button>
-      `;
-      list.appendChild(card);
-    });
-    document.getElementById("my-huts").classList.remove("hidden");
+function editHut(id) {
+  db.collection('eierhuetten').doc(id).get().then(doc=>{
+    const d=doc.data();
+    chatWindow.innerHTML='';
+    addMessage('🤖 Bearbeite: '+escapeHtml(d.name));
+    const fw=document.createElement('div'); fw.className='message bot';
+    fw.innerHTML=`
+      <label>Name:<input id="e-name" class="edit-input" value="${escapeHtml(d.name)}"/></label>
+      <label>Sitzplätze:<select id="e-sitz" class="edit-input"><option>Ja</option><option>Nein</option></select></label>
+      <label>Strom:<select id="e-strom" class="edit-input"><option>Ja</option><option>Nein</option></select></label>
+      <label>Extras:<input id="e-extras" class="edit-input" value="${escapeHtml(d.extras)}"/></label>
+      <label>Standort:<div id="e-map" class="minimap"></div></label>
+      <div class="mt-2">
+        <button id="save" class="bg-green-600 text-white px-3 py-1 rounded">Speichern</button>
+        <button id="cancel" class="bg-gray-400 text-black px-3 py-1 rounded">Abbrechen</button>
+      </div>`;
+    chatWindow.appendChild(fw);
+    document.getElementById('e-sitz').value=d.sitzplaetze;
+    document.getElementById('e-strom').value=d.strom;
+    setTimeout(()=>{
+      const m2=L.map('e-map').setView([d.location.latitude,d.location.longitude],13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m2);
+      const mk=L.marker([d.location.latitude,d.location.longitude],{draggable:true}).addTo(m2);
+      mk.on('dragend',()=>{ d.location=mk.getLatLng(); });
+    },100);
+    document.getElementById('save').onclick=()=>{
+      db.collection('eierhuetten').doc(id).update({
+        name:document.getElementById('e-name').value,
+        sitzplaetze:document.getElementById('e-sitz').value,
+        strom:document.getElementById('e-strom').value,
+        extras:document.getElementById('e-extras').value,
+        location:new firebase.firestore.GeoPoint(d.location.lat,d.location.lng)
+      }).then(()=>{ addMessage('✅ Gespeichert'); loadMyHuts(); });
+    };
+    document.getElementById('cancel').onclick=()=> loadMyHuts();
   });
 }
 
 function deleteHut(id) {
-  if (confirm("❌ Diese Hütte wirklich löschen?")) {
-    db.collection("eierhuetten").doc(id).delete().then(loadMyHuts);
+  if(confirm('Hütte wirklich löschen?')) {
+    db.collection('eierhuetten').doc(id).delete().then(()=>{ addMessage('🗑️ Gelöscht'); loadMyHuts(); });
   }
 }
 
-document.getElementById('google-login').onclick = () => {
-  auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
-};
-
-auth.onAuthStateChanged(user => {
-  if (user) {
-    currentUser = user;
-    document.getElementById("login-section").classList.add("hidden");
-    document.getElementById("chat-area").classList.remove("hidden");
-    loadMyHuts();
-    resetChat();
-  }
+auth.onAuthStateChanged(user=>{
+  if(user){ currentUser=user; document.getElementById('login-section').classList.add('hidden'); document.getElementById('chat-area').classList.remove('hidden'); startDialog(); }
 });
+document.getElementById('google-login').onclick=()=>auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+sendBtn.onclick=sendInput;
+chatInput.addEventListener('keypress',e=>{if(e.key==='Enter') sendInput();});
 </script>
 </body>
 </html>
