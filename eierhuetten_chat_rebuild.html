@@ -1,0 +1,163 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Eierhütten Chat & Übersicht</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .progress-bar { height: 6px; background: #e5e7eb; border-radius: 5px; margin-top: 0.5rem; }
+    .progress-fill { height: 100%; background: #34d399; border-radius: 5px; width: 0%; transition: width 0.3s; }
+  </style>
+</head>
+<body class="bg-gray-100 p-6">
+<div id="login-section" class="text-center mb-6">
+  <button id="google-login" class="bg-red-600 hover:bg-red-700 text-white py-2 px-6 rounded text-lg">
+    Mit Google anmelden
+  </button>
+</div>
+
+<div id="chat-area" class="max-w-2xl mx-auto hidden">
+  <h1 class="text-2xl font-bold text-green-700 mb-4">🥚 Eierhütten Assistent</h1>
+  <div id="chat-window" class="bg-white p-4 rounded shadow mb-4 h-96 overflow-y-auto"></div>
+  <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+  <div class="flex gap-2 mt-4">
+    <input id="chat-input" type="text" class="flex-grow p-2 border border-gray-300 rounded" placeholder="Antwort eingeben..." />
+    <button onclick="sendInput()" class="bg-blue-600 text-white px-4 py-2 rounded">Senden</button>
+  </div>
+</div>
+
+<div id="my-huts" class="max-w-4xl mx-auto mt-10 hidden">
+  <h2 class="text-xl font-bold mb-4">📋 Meine Eierhütten</h2>
+  <div id="hut-list" class="grid md:grid-cols-2 gap-4"></div>
+</div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.appspot.com",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+  measurementId: "G-16V6K5GXDT"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const auth = firebase.auth();
+
+let currentUser = null;
+let step = 0;
+let formData = {};
+
+function setProgress(p) {
+  document.getElementById('progress-fill').style.width = p + '%';
+}
+
+function addMessage(txt, sender = 'bot') {
+  const div = document.createElement('div');
+  div.className = 'mb-2';
+  div.innerHTML = '<span class="font-semibold">' + (sender === 'bot' ? '🤖' : '🧑') + '</span> ' + txt;
+  document.getElementById('chat-window').appendChild(div);
+  document.getElementById('chat-window').scrollTop = document.getElementById('chat-window').scrollHeight;
+}
+
+function sendInput() {
+  const val = document.getElementById('chat-input').value.trim();
+  if (!val) return;
+  addMessage(val, 'user');
+  processInput(val);
+  document.getElementById('chat-input').value = '';
+}
+
+function processInput(txt) {
+  if (step === 0) {
+    formData.name = txt; step = 1; setProgress(25);
+    addMessage("Hat die Hütte Sitzplätze? (Ja/Nein)");
+  } else if (step === 1) {
+    formData.sitzplaetze = txt; step = 2; setProgress(50);
+    addMessage("Gibt es Strom? (Ja/Nein)");
+  } else if (step === 2) {
+    formData.strom = txt; step = 3; setProgress(75);
+    addMessage("Gibt es Extras? (z. B. Kühlschrank, Kinderecke)");
+  } else if (step === 3) {
+    formData.extras = txt; step = 4; setProgress(100);
+    addMessage("Willst du deine Hütte jetzt einreichen? (Ja/Nein)");
+  } else if (step === 4 && txt.toLowerCase() === 'ja') {
+    submitHut();
+  } else {
+    resetChat();
+  }
+}
+
+function submitHut() {
+  const hut = {
+    name: formData.name,
+    sitzplaetze: formData.sitzplaetze,
+    strom: formData.strom,
+    extras: formData.extras,
+    status: 'offen',
+    userId: currentUser.uid,
+    erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  db.collection("eierhuetten").add(hut).then(() => {
+    addMessage("✅ Erfolgreich eingereicht!");
+    loadMyHuts();
+    resetChat();
+  });
+}
+
+function resetChat() {
+  step = 0; formData = {}; setProgress(0);
+  document.getElementById('chat-window').innerHTML = '';
+  addMessage("Wie soll deine neue Eierhütte heißen?");
+}
+
+function loadMyHuts() {
+  db.collection("eierhuetten").where("userId", "==", currentUser.uid).orderBy("erstelltAm", "desc").get().then(snapshot => {
+    const list = document.getElementById("hut-list");
+    list.innerHTML = "";
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      const card = document.createElement("div");
+      card.className = "bg-white p-4 rounded shadow";
+      card.innerHTML = `
+        <h3 class="font-bold text-lg mb-1">${d.name}</h3>
+        <p><strong>Sitzplätze:</strong> ${d.sitzplaetze}</p>
+        <p><strong>Strom:</strong> ${d.strom}</p>
+        <p><strong>Extras:</strong> ${d.extras}</p>
+        <p><strong>Status:</strong> ${d.status}</p>
+        <button onclick="deleteHut('${doc.id}')" class="mt-2 bg-red-100 text-red-800 px-3 py-1 rounded">🗑️ Löschen</button>
+      `;
+      list.appendChild(card);
+    });
+    document.getElementById("my-huts").classList.remove("hidden");
+  });
+}
+
+function deleteHut(id) {
+  if (confirm("❌ Diese Hütte wirklich löschen?")) {
+    db.collection("eierhuetten").doc(id).delete().then(loadMyHuts);
+  }
+}
+
+document.getElementById('google-login').onclick = () => {
+  auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+};
+
+auth.onAuthStateChanged(user => {
+  if (user) {
+    currentUser = user;
+    document.getElementById("login-section").classList.add("hidden");
+    document.getElementById("chat-area").classList.remove("hidden");
+    loadMyHuts();
+    resetChat();
+  }
+});
+</script>
+</body>
+</html>
