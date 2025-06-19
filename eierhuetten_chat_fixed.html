@@ -1,0 +1,151 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eierhütten Assistent Chat</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: sans-serif; }
+    .message { margin-bottom: 1rem; }
+    .progress-bar { height: 6px; background: #ddd; border-radius: 5px; margin-top: 0.5rem; }
+    .progress-fill { height: 100%; background: #4ade80; border-radius: 5px; width: 0%; transition: width 0.3s; }
+    .preview-box { background: #f0fdf4; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; }
+    .choice-btn { margin-right: 0.5rem; background: #e0f2fe; padding: 0.3rem 0.7rem; border-radius: 0.5rem; cursor: pointer; }
+  </style>
+</head>
+<body class="bg-gray-100 p-6">
+  <div id="chat-window" class="bg-white p-4 rounded shadow mb-4 max-w-2xl mx-auto"></div>
+  <div id="progress-container" class="progress-bar max-w-2xl mx-auto">
+    <div id="progress-fill" class="progress-fill"></div>
+  </div>
+  <div class="flex gap-2 mt-4 max-w-2xl mx-auto">
+    <input id="chat-input" type="text" class="flex-grow p-2 border border-gray-300 rounded" placeholder="Deine Eingabe..." />
+    <button onclick="sendInput()" class="bg-blue-600 text-white px-4 py-2 rounded">Senden</button>
+  </div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+    authDomain: "eierhuettentour.firebaseapp.com",
+    projectId: "eierhuettentour",
+    storageBucket: "eierhuettentour.appspot.com",
+    messagingSenderId: "348272135205",
+    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+    measurementId: "G-16V6K5GXDT"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+
+  let currentUser = { uid: 'demo-user', displayName: 'Gast' };
+  let step = 0;
+  let formData = {};
+
+  function setProgress(percent) {
+    document.getElementById('progress-fill').style.width = percent + '%';
+  }
+
+  function addMessage(text, sender = 'bot') {
+    const div = document.createElement('div');
+    div.className = 'message';
+    div.innerHTML = '<span class="font-semibold">' + (sender === 'bot' ? '🤖' : '🧑') + '</span> ' + text;
+    document.getElementById('chat-window').appendChild(div);
+    document.getElementById('chat-window').scrollTop = document.getElementById('chat-window').scrollHeight;
+  }
+
+  function addChoiceButtons(options, callback) {
+    const container = document.createElement('div');
+    container.classList.add('message');
+    options.forEach(opt => {
+      const btn = document.createElement('button');
+      btn.className = 'choice-btn';
+      btn.textContent = opt;
+      btn.onclick = () => {
+        addMessage(opt, 'user');
+        container.remove();
+        callback(opt.toLowerCase());
+      };
+      container.appendChild(btn);
+    });
+    document.getElementById('chat-window').appendChild(container);
+  }
+
+  function showPreview() {
+    const box = document.createElement('div');
+    box.className = 'preview-box';
+    box.innerHTML = `
+      <strong>Vorschau deiner Eingabe:</strong><br>
+      Name: ${formData.name}<br>
+      Sitzplätze: ${formData.sitzplaetze}<br>
+      Strom: ${formData.strom}<br>
+      Extras: ${formData.extras}<br><br>
+      <button onclick="submitData()" class="bg-green-600 text-white px-3 py-1 rounded">Einreichen</button>
+      <button onclick="startDialog()" class="bg-gray-300 text-black px-3 py-1 rounded">Abbrechen</button>
+    `;
+    document.getElementById('chat-window').appendChild(box);
+  }
+
+  function sendInput() {
+    const txt = document.getElementById('chat-input').value.trim();
+    if (!txt) return;
+    addMessage(txt, 'user');
+    processInput(txt);
+    document.getElementById('chat-input').value = '';
+  }
+
+  function processInput(txt) {
+    if (step === 0) {
+      formData.name = txt;
+      setProgress(25);
+      step = 1;
+      addMessage('Hat deine Hütte Sitzplätze?');
+      addChoiceButtons(['Ja', 'Nein'], ans => {
+        formData.sitzplaetze = ans;
+        setProgress(50);
+        step = 2;
+        addMessage('Gibt es Strom?');
+        addChoiceButtons(['Ja', 'Nein'], ans2 => {
+          formData.strom = ans2;
+          setProgress(75);
+          step = 3;
+          addMessage('Extras? (optional)');
+        });
+      });
+    } else if (step === 3) {
+      formData.extras = txt;
+      setProgress(100);
+      showPreview();
+    }
+  }
+
+  function submitData() {
+    const hut = {
+      name: formData.name,
+      sitzplaetze: formData.sitzplaetze,
+      strom: formData.strom,
+      extras: formData.extras || '',
+      userId: currentUser.uid,
+      erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+      status: 'offen'
+    };
+    db.collection('eierhuetten').add(hut).then(() => {
+      addMessage('🎉 Deine Hütte wurde erfolgreich eingereicht!');
+      step = 0;
+      formData = {};
+      setProgress(0);
+    });
+  }
+
+  function startDialog() {
+    document.getElementById('chat-window').innerHTML = '';
+    addMessage('Hallo! Ich bin dein Eierhütten-Assistent. Wie heißt deine neue Hütte?');
+  }
+
+  window.onload = startDialog;
+</script>
+</body>
+</html>
