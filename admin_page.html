@@ -14,15 +14,21 @@
     .minimap { height: 150px; width: 100%; border-radius: 0.5rem; margin-top: 0.5rem; }
     .editable-map { height: 300px; margin-top: 10px; border: 1px solid #ccc; border-radius: 0.5rem; }
     .preview-img { height: 150px; object-fit: cover; border-radius: 0.5rem; }
+    .progress-bar { width: 100%; background-color: #e5e7eb; border-radius: 0.5rem; margin-top: 5px; }
+    .progress-fill { height: 8px; background-color: #10b981; border-radius: 0.5rem; width: 0%; transition: width 0.3s; }
+    #notification { position: fixed; top: 1rem; right: 1rem; background: #38bdf8; color: white; padding: 1rem; border-radius: 0.5rem; display: none; z-index: 9999; }
   </style>
 </head>
 <body class="bg-gray-100">
+  <div id="notification"></div>
   <div id="login-section" class="flex items-center justify-center h-screen">
     <button id="login-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded">
       Admin Login mit Google
     </button>
-  </div>  <div id="dashboard" class="hidden p-6 max-w-7xl mx-auto">
+  </div>
+  <div id="dashboard" class="hidden p-6 max-w-7xl mx-auto">
     <h1 class="text-3xl font-bold mb-6 text-green-700">🥚 Eierhütten Admin Dashboard</h1>
+    <div id="stats" class="mb-6 text-gray-700"></div>
     <input id="search-input" type="text" placeholder="Suche..." class="mb-4 w-full p-3 rounded border border-gray-300">
     <div id="hut-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
   </div>  <script>
@@ -44,7 +50,15 @@
     const dashboard = document.getElementById('dashboard');
     const hutList = document.getElementById('hut-list');
     const searchInput = document.getElementById('search-input');
+    const notification = document.getElementById('notification');
+    const stats = document.getElementById('stats');
     let huts = [], currentUser = null;
+
+    function showNotification(message) {
+      notification.textContent = message;
+      notification.style.display = 'block';
+      setTimeout(() => notification.style.display = 'none', 4000);
+    }
 
     document.getElementById('login-btn').onclick = () => {
       auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
@@ -60,7 +74,10 @@
         }
         loginSection.classList.add('hidden');
         dashboard.classList.remove('hidden');
-        loadHuts();
+        db.collection('eierhuetten').onSnapshot(() => {
+          showNotification('🔄 Live-Update: Hüttendaten wurden aktualisiert.');
+          loadHuts();
+        });
       }
     });
 
@@ -74,130 +91,24 @@
       const snapshot = await db.collection('eierhuetten').orderBy('erstelltAm', 'desc').get();
       huts = await Promise.all(snapshot.docs.map(async doc => {
         const data = doc.data();
-        const logSnap = await db.collection('eierhuetten').doc(doc.id).collection('log').orderBy('zeitpunkt', 'desc').get();
-        const logCount = logSnap.size;
-        const lastEntry = logSnap.docs[0]?.data();
+        const logSnap = await db.collection('eierhuetten').doc(doc.id).collection('log').get();
         return {
           id: doc.id,
           ...data,
-          logCount,
-          lastEditor: lastEntry?.admin || '-',
-          lastChanged: lastEntry?.zeitpunkt?.toDate().toLocaleString() || '-',
+          logCount: logSnap.size,
           logs: logSnap.docs.map(d => d.data())
         };
       }));
       renderHuts(huts);
+      renderStats(huts);
     }
 
-    function renderHuts(list) {
-      hutList.innerHTML = '';
-      list.forEach(hut => {
-        const el = document.createElement('div');
-        el.className = 'bg-white p-4 rounded shadow space-y-2';
-        el.innerHTML = `
-          <h2 class="text-xl font-bold"><input type="text" value="${hut.name || ''}" data-old="${hut.name || ''}" onblur="updateFieldWithCommentLive('${hut.id}', 'name', this)" class="w-full font-bold" /></h2>
-          <p><strong>Status:</strong> <select onchange="updateFieldWithCommentLive('${hut.id}', 'status', this)" data-old="${hut.status || ''}" class="w-full">
-            <option value="offen" ${hut.status === 'offen' ? 'selected' : ''}>offen</option>
-            <option value="angenommen" ${hut.status === 'angenommen' ? 'selected' : ''}>angenommen</option>
-            <option value="abgelehnt" ${hut.status === 'abgelehnt' ? 'selected' : ''}>abgelehnt</option>
-          </select></p>
-          <p><strong>Sitzplätze:</strong> <select onchange="updateFieldWithCommentLive('${hut.id}', 'sitzplaetze', this)" data-old="${hut.sitzplaetze || ''}" class="w-full">
-            <option value="">-</option>
-            <option value="Ja" ${hut.sitzplaetze === 'Ja' ? 'selected' : ''}>Ja</option>
-            <option value="Nein" ${hut.sitzplaetze === 'Nein' ? 'selected' : ''}>Nein</option>
-          </select></p>
-          <p><strong>Strom:</strong> <select onchange="updateFieldWithCommentLive('${hut.id}', 'strom', this)" data-old="${hut.strom || ''}" class="w-full">
-            <option value="">-</option>
-            <option value="Ja" ${hut.strom === 'Ja' ? 'selected' : ''}>Ja</option>
-            <option value="Nein" ${hut.strom === 'Nein' ? 'selected' : ''}>Nein</option>
-          </select></p>
-          <p><strong>Besonderheiten:</strong> <textarea data-old="${hut.besonderheiten || ''}" onblur="updateFieldWithCommentLive('${hut.id}', 'besonderheiten', this)" class="w-full border rounded p-2">${hut.besonderheiten || ''}</textarea></p><p><strong>Öffnungszeiten:</strong> <input type="text" value="${hut.oeffnungszeiten || ''}" data-old="${hut.oeffnungszeiten || ''}" onblur="updateFieldWithCommentLive('${hut.id}', 'oeffnungszeiten', this)" class="w-full" placeholder="z. B. 08:00–20:00" /></p>
-      <p><strong>Standort:</strong></p>
-      <div id="map-${hut.id}" class="editable-map"></div>
-      <p><strong>Fotos:</strong></p>
-      <input type="file" accept="image/*" multiple onchange="uploadPhotos('${hut.id}', this.files)" class="mb-2" />
-      <div class="grid grid-cols-2 gap-2">${(hut.fotos || []).map(url => `<img src="${url}" class="preview-img" />`).join('')}</div>
-      <p class="text-sm text-gray-500"><strong>Änderungen:</strong> ${hut.logCount} · <strong>Letzte Änderung:</strong> ${hut.lastEditor} (${hut.lastChanged})</p>
-      <details class="text-sm text-gray-600"><summary class="cursor-pointer">Log anzeigen</summary><ul>${hut.logs.map(log => `<li>📌 ${log.aktion} – ${log.feld} – ${log.admin} (${log.zeitpunkt.toDate().toLocaleString()})<br><em>${log.kommentar}</em></li>`).join('')}</ul></details>
-    `;
-    hutList.appendChild(el);
-    if (hut.location?.latitude && hut.location?.longitude) {
-      const map = L.map(`map-${hut.id}`).setView([hut.location.latitude, hut.location.longitude], 13);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-      const marker = L.marker([hut.location.latitude, hut.location.longitude], { draggable: true }).addTo(map);
-      marker.on('dragend', async () => {
-        const pos = marker.getLatLng();
-        const kommentar = prompt('Kommentar zur Standortänderung:');
-        if (!kommentar) return;
-        await db.collection('eierhuetten').doc(hut.id).update({
-          location: { latitude: pos.lat, longitude: pos.lng },
-          adminZustaendig: currentUser.displayName || currentUser.email
-        });
-        await db.collection('eierhuetten').doc(hut.id).collection('log').add({
-          aktion: 'Standort geändert',
-          feld: 'location',
-          kommentar,
-          admin: currentUser.displayName || currentUser.email,
-          zeitpunkt: firebase.firestore.Timestamp.now()
-        });
-        loadHuts();
-      });
-      setTimeout(() => map.invalidateSize(), 200);
+    function renderStats(list) {
+      const total = list.length;
+      const withStrom = list.filter(h => h.strom === 'Ja').length;
+      const withFotos = list.filter(h => Array.isArray(h.fotos) && h.fotos.length > 0).length;
+      const count247 = list.filter(h => h.oeffnungszeiten === '24/7').length;
+      stats.innerHTML = `🔢 <strong>${total}</strong> Hütten · ⚡ ${withStrom} mit Strom · 🖼️ ${withFotos} mit Fotos · 🕒 ${count247} sind 24/7 geöffnet`;
     }
-  });
-}
-
-async function updateFieldWithCommentLive(id, field, inputEl) {
-  const oldValue = inputEl.getAttribute('data-old') || '';
-  const newValue = inputEl.value || inputEl.options?.[inputEl.selectedIndex]?.value || '';
-  if (newValue === oldValue) return;
-  const kommentar = prompt(`Kommentar zur Änderung von '${field}':`);
-  if (!kommentar) {
-    inputEl.value = oldValue;
-    return;
-  }
-  await db.collection('eierhuetten').doc(id).update({
-    [field]: newValue,
-    adminZustaendig: currentUser.displayName || currentUser.email
-  });
-  await db.collection('eierhuetten').doc(id).collection('log').add({
-    aktion: 'Feld geändert',
-    feld: field,
-    kommentar,
-    admin: currentUser.displayName || currentUser.email,
-    zeitpunkt: firebase.firestore.Timestamp.now()
-  });
-  loadHuts();
-}
-
-async function uploadPhotos(id, files) {
-  if (!files.length) return;
-  const kommentar = prompt('Kommentar zu den hochgeladenen Fotos:');
-  if (!kommentar) return;
-  const urls = [];
-  for (const file of files) {
-    if (!file.type.startsWith('image/')) continue;
-    const fileRef = storage.ref().child(`huettenfotos/${id}/${Date.now()}_${file.name}`);
-    await fileRef.put(file);
-    const url = await fileRef.getDownloadURL();
-    urls.push(url);
-  }
-  if (urls.length > 0) {
-    await db.collection('eierhuetten').doc(id).update({
-      fotos: firebase.firestore.FieldValue.arrayUnion(...urls),
-      adminZustaendig: currentUser.displayName || currentUser.email
-    });
-    await db.collection('eierhuetten').doc(id).collection('log').add({
-      aktion: 'Fotos hochgeladen',
-      feld: 'fotos',
-      kommentar,
-      admin: currentUser.displayName || currentUser.email,
-      zeitpunkt: firebase.firestore.Timestamp.now()
-    });
-    loadHuts();
-  }
-}
-
-  </script>
-</body>
+  </script></body>
 </html>
