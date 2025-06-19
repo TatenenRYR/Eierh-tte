@@ -130,31 +130,41 @@
       el.className = 'bg-white p-4 rounded shadow space-y-2';
 
       el.innerHTML = `
-        <input class="text-xl font-bold w-full" value="${hut.name || ''}" onchange="updateField('${hut.id}', 'name', this.value)">
+        <input class="text-xl font-bold w-full mb-2" value="${hut.name || ''}" onchange="updateField('${hut.id}', 'name', this.value)">
 
         <label>Status:
-          <select onchange="updateField('${hut.id}', 'status', this.value)" class="w-full">
+          <select onchange="updateField('${hut.id}', 'status', this.value)" class="w-full mb-2">
             ${['offen','angenommen','abgelehnt'].map(s => `<option ${s===hut.status?'selected':''}>${s}</option>`).join('')}
           </select>
         </label>
 
         <label>Öffnungszeiten:
-          <select onchange="updateField('${hut.id}', 'oeffnungszeiten', this.value)" class="w-full">
+          <select onchange="updateField('${hut.id}', 'oeffnungszeiten', this.value)" class="w-full mb-2">
             ${['08:00–20:00','24/7'].map(o => `<option ${o===hut.oeffnungszeiten?'selected':''}>${o}</option>`).join('')}
           </select>
         </label>
 
         <label>Strom:
-          <select onchange="updateField('${hut.id}', 'strom', this.value)" class="w-full">
+          <select onchange="updateField('${hut.id}', 'strom', this.value)" class="w-full mb-2">
             ${['Ja','Nein'].map(o => `<option ${o===hut.strom?'selected':''}>${o}</option>`).join('')}
           </select>
         </label>
 
         <label>Sitzplätze:
-          <select onchange="updateField('${hut.id}', 'sitzplaetze', this.value)" class="w-full">
+          <select onchange="updateField('${hut.id}', 'sitzplaetze', this.value)" class="w-full mb-2">
             ${['Ja','Nein'].map(o => `<option ${o===hut.sitzplaetze?'selected':''}>${o}</option>`).join('')}
           </select>
         </label>
+
+        <label>Fotos:</label>
+        <div class="flex flex-wrap gap-2 mb-2" id="fotos-container-${hut.id}">
+          ${Array.isArray(hut.fotos) ? hut.fotos.map(url => `
+            <div class="relative w-24 h-24 rounded overflow-hidden border border-gray-300">
+              <img src="${url}" alt="Foto" class="object-cover w-full h-full" />
+              <button onclick="deleteFoto('${hut.id}', '${url}')" title="Foto löschen" 
+                      class="absolute top-0 right-0 bg-red-600 text-white rounded-bl px-1 text-sm font-bold hover:bg-red-700">×</button>
+            </div>`).join('') : '<p class="text-gray-500">Keine Fotos</p>'}
+        </div>
 
         <label>Foto hochladen:
           <input type="file" accept="image/*" onchange="uploadFoto(this, '${hut.id}')">
@@ -166,9 +176,11 @@
         <details>
           <summary>Bearbeitungs-Log (${hut.logCount})</summary>
           <ul class="text-xs max-h-48 overflow-auto">
-            ${hut.logs.map(log => `<li><strong>${log.admin}</strong> hat <em>${log.feld}</em> auf <code>${log.wert}</code> geändert am ${new Date(log.zeitpunkt.seconds * 1000).toLocaleString()}</li>`).join('')}
+            ${hut.logs.map(log => `<li><strong>${log.admin}</strong> hat <em>${log.feld}</em> auf <code>${log.wert}</code>${log.kommentar ? ` (Kommentar: ${log.kommentar})` : ''} geändert am ${new Date(log.zeitpunkt.seconds * 1000).toLocaleString()}</li>`).join('')}
           </ul>
         </details>
+
+        <button onclick="deleteHut('${hut.id}', '${hut.name.replace(/'/g, "\\'")}')" class="bg-red-600 text-white px-2 py-1 rounded mt-3 w-full">Hütte löschen</button>
       `;
 
       hutList.appendChild(el);
@@ -191,18 +203,15 @@
           const newPos = e.target.getLatLng();
           const kommentar = prompt('Bitte Kommentar zur Standortänderung eingeben:');
           if (kommentar === null) {
-            // Abbruch - Marker zurücksetzen
             marker.setLatLng([hut.location.latitude, hut.location.longitude]);
             return;
           }
-          // Speichern der neuen Position
           await db.collection('eierhuetten').doc(hut.id).update({
             location: {
               latitude: newPos.lat,
               longitude: newPos.lng
             }
           });
-          // Loggen der Änderung mit Kommentar
           await db.collection('eierhuetten').doc(hut.id).collection('log').add({
             admin: currentUser.displayName || currentUser.email,
             feld: 'location',
@@ -219,13 +228,13 @@
   async function uploadFoto(input, hutId) {
     const file = input.files[0];
     if (!file) return;
-    const ref = storage.ref(`fotos/${hutId}/${file.name}`);
+    const ref = storage.ref(`fotos/${hutId}/${Date.now()}_${file.name}`);
     const task = ref.put(file);
     task.on('state_changed', snapshot => {
       const percent = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
       document.getElementById(`progress-${hutId}`).style.width = `${percent}%`;
     },
-    err => alert('Upload fehlgeschlagen'),
+    err => alert('Upload fehlgeschlagen: ' + err.message),
     async () => {
       const url = await task.snapshot.ref.getDownloadURL();
       await db.collection('eierhuetten').doc(hutId).update({
@@ -234,7 +243,67 @@
       updateField(hutId, 'fotos', url);
       showNotification('📸 Foto erfolgreich hochgeladen.');
       document.getElementById(`progress-${hutId}`).style.width = `0%`;
+      loadHuts();
     });
+  }
+
+  async function deleteFoto(hutId, url) {
+    // Mathe-Aufgabe generieren
+    const a = Math.floor(Math.random() * 10) + 1;
+    const b = Math.floor(Math.random() * 10) + 1;
+    const answer = a + b;
+
+    const userAnswer = prompt(`Bitte rechne zur Bestätigung: ${a} + ${b} = ?`);
+    if (userAnswer === null) return;
+    if (parseInt(userAnswer) !== answer) {
+      alert('Falsche Antwort. Foto wird nicht gelöscht.');
+      return;
+    }
+
+    if (!confirm('Foto wirklich löschen?')) return;
+
+    try {
+      await db.collection('eierhuetten').doc(hutId).update({
+        fotos: firebase.firestore.FieldValue.arrayRemove(url)
+      });
+      const storageRef = storage.refFromURL(url);
+      await storageRef.delete();
+
+      await db.collection('eierhuetten').doc(hutId).collection('log').add({
+        admin: currentUser.displayName || currentUser.email,
+        feld: 'fotos',
+        wert: `Foto gelöscht: ${url}`,
+        zeitpunkt: new Date()
+      });
+      showNotification('Foto wurde gelöscht.');
+      loadHuts();
+    } catch (e) {
+      alert('Fehler beim Löschen des Fotos: ' + e.message);
+    }
+  }
+
+  async function deleteHut(id, name) {
+    // Mathe-Aufgabe generieren
+    const a = Math.floor(Math.random() * 10) + 1;
+    const b = Math.floor(Math.random() * 10) + 1;
+    const answer = a + b;
+
+    const userAnswer = prompt(`Bitte rechne zur Bestätigung: ${a} + ${b} = ?`);
+    if (userAnswer === null) return;
+    if (parseInt(userAnswer) !== answer) {
+      alert('Falsche Antwort. Die Hütte wird nicht gelöscht.');
+      return;
+    }
+
+    if (!confirm(`Soll die Hütte "${name}" wirklich gelöscht werden?`)) return;
+
+    try {
+      await db.collection('eierhuetten').doc(id).delete();
+      showNotification(`Hütte "${name}" wurde gelöscht.`);
+      loadHuts();
+    } catch (e) {
+      alert('Fehler beim Löschen der Hütte: ' + e.message);
+    }
   }
 </script>
 </body>
