@@ -201,6 +201,77 @@ function showMap() {
   });
   setTimeout(() => map.invalidateSize(), 200);
 }
+  function showMyHuts() {
+  chatWindow.innerHTML = '';
+  db.collection('eierhuetten').where('userId', '==', currentUser.uid).get().then(snapshot => {
+    if (snapshot.empty) return addMessage('Du hast noch keine Hütten.', 'bot');
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      const id = doc.id;
+      const div = document.createElement('div');
+      div.className = 'message bot';
+      div.innerHTML = `
+        <div class='space-y-2 text-sm'>
+          <label>📍 Name:<br><input type='text' data-id='${id}' class='edit-name w-full border px-2 py-1 rounded' value='${d.name}' /></label><br>
+          <label>🪑 Sitzplätze:
+            <select data-id='${id}' class='edit-sitz border rounded px-2 py-1 ml-2'>
+              <option ${d.sitzplaetze === 'Ja' ? 'selected' : ''}>Ja</option>
+              <option ${d.sitzplaetze === 'Nein' ? 'selected' : ''}>Nein</option>
+            </select>
+          </label><br>
+          <label>🔌 Strom:
+            <select data-id='${id}' class='edit-strom border rounded px-2 py-1 ml-2'>
+              <option ${d.strom === 'Ja' ? 'selected' : ''}>Ja</option>
+              <option ${d.strom === 'Nein' ? 'selected' : ''}>Nein</option>
+            </select>
+          </label><br>
+          <label>✨ Extras:<br><input type='text' data-id='${id}' class='edit-extras w-full border px-2 py-1 rounded' value='${d.extras || ''}' /></label><br>
+          <label>🕒 Öffnungszeiten:<br><input type='text' data-id='${id}' class='edit-zeiten w-full border px-2 py-1 rounded' value='${d.oeffnungszeiten || ''}' /></label><br>
+          <button class='edit-btn' onclick='saveEdit("${id}")'>💾 Speichern</button>
+          <button class='delete-btn' onclick='deleteHut("${id}")'>🗑️ Löschen</button>
+          <div id='minimap-${id}' class='minimap'></div>
+        </div>`;
+      chatWindow.appendChild(div);
+
+      // Karte mit Marker
+      if (d.location?.latitude && d.location?.longitude) {
+        const m = L.map(`minimap-${id}`, { zoomControl: true }).setView([d.location.latitude, d.location.longitude], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
+        const marker = L.marker([d.location.latitude, d.location.longitude], { draggable: true }).addTo(m);
+        marker.on('dragend', e => {
+          const pos = e.target.getLatLng();
+          db.collection('eierhuetten').doc(id).update({ location: new firebase.firestore.GeoPoint(pos.lat, pos.lng) });
+          addMessage(`📍 Neuer Standort für ${d.name} gespeichert.`, 'bot');
+        });
+        setTimeout(() => m.invalidateSize(), 200);
+      }
+    });
+  });
+}
+
+function saveEdit(id) {
+  const name = document.querySelector(`.edit-name[data-id='${id}']`).value;
+  const sitz = document.querySelector(`.edit-sitz[data-id='${id}']`).value;
+  const strom = document.querySelector(`.edit-strom[data-id='${id}']`).value;
+  const extras = document.querySelector(`.edit-extras[data-id='${id}']`).value;
+  const zeiten = document.querySelector(`.edit-zeiten[data-id='${id}']`).value;
+  db.collection('eierhuetten').doc(id).update({
+    name,
+    sitzplaetze: sitz,
+    strom,
+    extras,
+    oeffnungszeiten: zeiten
+  }).then(() => addMessage('✅ Änderungen gespeichert.', 'bot'));
+}
+
+function deleteHut(id) {
+  if (confirm('Möchtest du diese Hütte wirklich löschen?')) {
+    db.collection('eierhuetten').doc(id).delete().then(() => {
+      addMessage('🗑️ Hütte gelöscht.', 'bot');
+      showMyHuts();
+    });
+  }
+}
 
 function submitNewHut() {
   if (!editingData.name || !editingData.location) {
