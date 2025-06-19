@@ -12,6 +12,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     .minimap { height: 150px; width: 100%; border-radius: 0.5rem; margin-top: 0.5rem; }
+    .editable-map { height: 300px; margin-top: 10px; border: 1px solid #ccc; border-radius: 0.5rem; }
   </style>
 </head>
 <body class="bg-gray-100">
@@ -43,16 +44,6 @@
     const hutList = document.getElementById('hut-list');
     const searchInput = document.getElementById('search-input');
     let huts = [], currentUser = null;
-
-    if ('Notification' in window && Notification.permission !== 'granted') {
-      Notification.requestPermission();
-    }
-
-    function notifyAdmins(title, text) {
-      if (Notification.permission === 'granted') {
-        new Notification(title, { body: text });
-      }
-    }
 
     document.getElementById('login-btn').onclick = () => {
       auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
@@ -90,7 +81,8 @@
           ...data,
           logCount,
           lastEditor: lastEntry?.admin || '-',
-          lastChanged: lastEntry?.zeitpunkt?.toDate().toLocaleString() || '-'
+          lastChanged: lastEntry?.zeitpunkt?.toDate().toLocaleString() || '-',
+          logs: logSnap.docs.map(d => d.data())
         };
       }));
       renderHuts(huts);
@@ -102,25 +94,44 @@
         const el = document.createElement('div');
         el.className = 'bg-white p-4 rounded shadow space-y-2';
         el.innerHTML = `
-          <h2 class="text-xl font-bold">${hut.name}</h2>
-          <p><strong>Status:</strong> ${hut.status}</p>
-          <p><strong>Sitzplätze:</strong> ${hut.sitzplaetze}</p>
-          <p><strong>Strom:</strong> ${hut.strom}</p>
-          <p><strong>Besonderheiten:</strong></p>
-          <textarea data-old="${hut.besonderheiten || ''}" onblur="updateFieldWithCommentLive('${hut.id}', 'besonderheiten', this)" class="w-full border rounded p-2">${hut.besonderheiten || ''}</textarea><p><strong>Öffnungszeiten:</strong></p>
-      <input type="text" value="${hut.oeffnungszeiten || ''}" data-old="${hut.oeffnungszeiten || ''}" class="w-full border rounded p-1" onblur="updateFieldWithCommentLive('${hut.id}', 'oeffnungszeiten', this)" />
-
+          <h2 class="text-xl font-bold"><input type="text" value="${hut.name || ''}" data-old="${hut.name || ''}" onblur="updateFieldWithCommentLive('${hut.id}', 'name', this)" class="w-full font-bold" /></h2>
+          <p><strong>Status:</strong> <input type="text" value="${hut.status || ''}" data-old="${hut.status || ''}" onblur="updateFieldWithCommentLive('${hut.id}', 'status', this)" class="w-full" /></p>
+          <p><strong>Sitzplätze:</strong> <select onchange="updateFieldWithCommentLive('${hut.id}', 'sitzplaetze', this)" data-old="${hut.sitzplaetze || ''}" class="w-full"><option value="">-</option><option value="Ja" ${hut.sitzplaetze === 'Ja' ? 'selected' : ''}>Ja</option><option value="Nein" ${hut.sitzplaetze === 'Nein' ? 'selected' : ''}>Nein</option></select></p>
+          <p><strong>Strom:</strong> <input type="text" value="${hut.strom || ''}" data-old="${hut.strom || ''}" onblur="updateFieldWithCommentLive('${hut.id}', 'strom', this)" class="w-full" /></p>
+          <p><strong>Besonderheiten:</strong> <textarea data-old="${hut.besonderheiten || ''}" onblur="updateFieldWithCommentLive('${hut.id}', 'besonderheiten', this)" class="w-full border rounded p-2">${hut.besonderheiten || ''}</textarea></p><p><strong>Öffnungszeiten:</strong> <input type="text" value="${hut.oeffnungszeiten || ''}" data-old="${hut.oeffnungszeiten || ''}" onblur="updateFieldWithCommentLive('${hut.id}', 'oeffnungszeiten', this)" class="w-full" /></p>
+      <p><strong>Standort:</strong></p>
+      <div id="map-${hut.id}" class="editable-map"></div>
       <p><strong>Foto:</strong></p>
       <input type="file" accept="image/*" onchange="uploadPhoto('${hut.id}', this.files[0])" class="mb-2" />
-      <input type="text" value="${hut.fotoUrl || ''}" data-old="${hut.fotoUrl || ''}" class="w-full border p-1 rounded mb-2" onblur="updateFieldWithCommentLive('${hut.id}', 'fotoUrl', this)" placeholder="Manuelle Bild-URL (optional)" />
+      <input type="text" value="${hut.fotoUrl || ''}" data-old="${hut.fotoUrl || ''}" onblur="updateFieldWithCommentLive('${hut.id}', 'fotoUrl', this)" class="w-full mb-2" placeholder="Manuelle Bild-URL (optional)" />
       ${hut.fotoUrl ? `<img src="${hut.fotoUrl}" class="w-full h-48 object-cover rounded mb-2" />` : ''}
-
-      <p class="text-sm text-gray-500">
-        <strong>Änderungen:</strong> ${hut.logCount} ·
-        <strong>Letzte Änderung:</strong> ${hut.lastEditor} (${hut.lastChanged})
-      </p>
+      <p class="text-sm text-gray-500"><strong>Änderungen:</strong> ${hut.logCount} · <strong>Letzte Änderung:</strong> ${hut.lastEditor} (${hut.lastChanged})</p>
+      <details class="text-sm text-gray-600"><summary class="cursor-pointer">Log anzeigen</summary><ul>${hut.logs.map(log => `<li>📌 ${log.aktion} – ${log.feld} – ${log.admin} (${log.zeitpunkt.toDate().toLocaleString()})<br><em>${log.kommentar}</em></li>`).join('')}</ul></details>
     `;
     hutList.appendChild(el);
+    if (hut.location?.latitude && hut.location?.longitude) {
+      const map = L.map(`map-${hut.id}`).setView([hut.location.latitude, hut.location.longitude], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      const marker = L.marker([hut.location.latitude, hut.location.longitude], { draggable: true }).addTo(map);
+      marker.on('dragend', async () => {
+        const pos = marker.getLatLng();
+        const kommentar = prompt('Kommentar zur Standortänderung:');
+        if (!kommentar) return;
+        await db.collection('eierhuetten').doc(hut.id).update({
+          location: { latitude: pos.lat, longitude: pos.lng },
+          adminZustaendig: currentUser.displayName || currentUser.email
+        });
+        await db.collection('eierhuetten').doc(hut.id).collection('log').add({
+          aktion: 'Standort geändert',
+          feld: 'location',
+          kommentar,
+          admin: currentUser.displayName || currentUser.email,
+          zeitpunkt: firebase.firestore.Timestamp.now()
+        });
+        loadHuts();
+      });
+      setTimeout(() => map.invalidateSize(), 200);
+    }
   });
 }
 
