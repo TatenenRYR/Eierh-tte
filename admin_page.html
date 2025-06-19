@@ -11,6 +11,9 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     .minimap { height: 150px; width: 100%; border-radius: 0.5rem; margin-top: 0.5rem; }
+    #map-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 1000; }
+    #map-modal .map-container { width: 90%; height: 80%; background: white; padding: 1rem; border-radius: 1rem; }
+    #edit-map { height: 100%; }
   </style>
 </head>
 <body class="bg-gray-100">
@@ -22,6 +25,15 @@
     <h1 class="text-3xl font-bold mb-6 text-green-700">🥚 Eierhütten Admin Dashboard</h1>
     <input id="search-input" type="text" placeholder="Suche nach Name, Extras oder Status..." class="mb-4 w-full p-3 rounded border border-gray-300">
     <div id="hut-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+  </div>  <div id="map-modal">
+    <div class="map-container">
+      <h2 class="text-lg font-bold mb-2">Standort bearbeiten</h2>
+      <div id="edit-map"></div>
+      <div class="flex justify-end gap-2 mt-2">
+        <button id="cancel-map" class="bg-gray-500 text-white px-4 py-2 rounded">Abbrechen</button>
+        <button id="save-map" class="bg-green-600 text-white px-4 py-2 rounded">Speichern</button>
+      </div>
+    </div>
   </div>  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
@@ -40,7 +52,10 @@
     const dashboard = document.getElementById('dashboard');
     const hutList = document.getElementById('hut-list');
     const searchInput = document.getElementById('search-input');
-    let huts = [], currentUser = null;
+    const mapModal = document.getElementById('map-modal');
+    const cancelMapBtn = document.getElementById('cancel-map');
+    const saveMapBtn = document.getElementById('save-map');
+    let huts = [], currentUser = null, currentHutId = null, editMap = null, marker = null;
 
     document.getElementById('login-btn').onclick = () => {
       auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
@@ -83,14 +98,20 @@
         el.className = 'bg-white p-4 rounded shadow space-y-2';
         el.innerHTML = `
           <h2 class="text-xl font-bold">${hut.name || 'Ohne Name'}</h2>
-          <p><strong>Status:</strong> ${hut.status || 'unbekannt'}</p>
-          <p><strong>Sitzplätze:</strong> ${hut.sitzplaetze || '–'}</p>
+          <p><strong>Status:</strong> 
+            <select onchange="updateField('${hut.id}', 'status', this.value)" class="border rounded p-1">
+              <option ${hut.status === 'offen' ? 'selected' : ''}>offen</option>
+              <option ${hut.status === 'angenommen' ? 'selected' : ''}>angenommen</option>
+              <option ${hut.status === 'abgelehnt' ? 'selected' : ''}>abgelehnt</option>
+            </select>
+          </p>
           <p><strong>Strom:</strong> ${hut.strom || '–'}</p>
           <p><strong>Extras:</strong> ${hut.extras || '–'}</p>
-          <p><strong>Erstellt von:</strong> ${hut.userId || 'Unbekannt'}</p>
+          <p><strong>Erstellt von:</strong> ${hut.einreicherName || hut.userId || 'Unbekannt'}</p>
           <p><strong>Erstellt am:</strong> ${hut.erstelltAm?.toDate?.().toLocaleString?.() || 'unbekannt'}</p>
           <div class="flex gap-2">
             <button onclick="editHut('${hut.id}')" class="bg-blue-500 text-white px-2 py-1 rounded">Bearbeiten</button>
+            <button onclick="openMap('${hut.id}', ${hut.location?.latitude || 52.5}, ${hut.location?.longitude || 13.4})" class="bg-indigo-600 text-white px-2 py-1 rounded">Standort</button>
             <button onclick="showLog('${hut.id}')" class="bg-gray-600 text-white px-2 py-1 rounded">Log</button>
             <button onclick="deleteHut('${hut.id}')" class="bg-red-500 text-white px-2 py-1 rounded">Löschen</button>
           </div>
@@ -114,6 +135,7 @@
       const newName = prompt('Neuer Name:', hut.name || '');
       const newExtras = prompt('Neue Extras:', hut.extras || '');
       const newStrom = prompt('Strom vorhanden? (ja/nein):', hut.strom || '');
+      const kommentar = prompt('Admin-Kommentar zur Änderung:');
 
       if (newName !== null && newExtras !== null && newStrom !== null) {
         await db.collection('eierhuetten').doc(id).update({
@@ -121,29 +143,55 @@
           extras: newExtras,
           strom: newStrom
         });
-
         await db.collection('eierhuetten').doc(id).collection('log').add({
           aktion: 'Bearbeitung',
           feld: 'name/extras/strom',
-          admin: currentUser.email,
+          kommentar: kommentar,
+          admin: currentUser.displayName || currentUser.email,
           zeitpunkt: firebase.firestore.Timestamp.now()
         });
-
         loadHuts();
       }
+    }
+
+    function updateField(id, field, value) {
+      db.collection('eierhuetten').doc(id).update({ [field]: value });
     }
 
     async function showLog(id) {
       const logSnap = await db.collection('eierhuetten').doc(id).collection('log').orderBy('zeitpunkt', 'desc').get();
       const logs = logSnap.docs.map(doc => doc.data());
       if (logs.length === 0) return alert('Keine Einträge vorhanden.');
-      alert(logs.map(log => `(${log.zeitpunkt.toDate().toLocaleString()}) ${log.admin}: ${log.aktion} (${log.feld})`).join('\n'));
+      alert(logs.map(log => `(${log.zeitpunkt.toDate().toLocaleString()}) ${log.admin}: ${log.aktion} (${log.feld})\nKommentar: ${log.kommentar || '-'}`).join('\n\n'));
     }
 
-    function deleteHut(id) {
-      if (confirm("Soll diese Hütte wirklich gelöscht werden?")) {
-        db.collection('eierhuetten').doc(id).delete().then(loadHuts);
-      }
+    function openMap(id, lat, lng) {
+      currentHutId = id;
+      mapModal.style.display = 'flex';
+      if (editMap) editMap.remove();
+      editMap = L.map('edit-map').setView([lat, lng], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(editMap);
+      marker = L.marker([lat, lng], { draggable: true }).addTo(editMap);
+    }
+
+    cancelMapBtn.onclick = () => {
+      mapModal.style.display = 'none';
+    };
+
+    saveMapBtn.onclick = async () => {
+      const { lat, lng } = marker.getLatLng();
+      await db.collection('eierhuetten').doc(currentHutId).update({
+        location: { latitude: lat, longitude: lng }
+      });
+      await db.collection('eierhuetten').doc(currentHutId).collection('log').add({
+        aktion: 'Standort geändert',
+        feld: 'location',
+        kommentar: 'Manuell über Karte verschoben',
+        admin: currentUser.displayName || currentUser.email,
+        zeitpunkt: firebase.firestore.Timestamp.now()
+      });
+      mapModal.style.display = 'none';
+      loadHuts();
     }
   </script></body>
 </html>
