@@ -1,0 +1,120 @@
+<!DOCTYPE html><html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eierhütten Admin-Dashboard</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .minimap { height: 150px; width: 100%; border-radius: 0.5rem; margin-top: 0.5rem; }
+  </style>
+</head>
+<body class="bg-gray-100">
+  <div id="login-section" class="flex items-center justify-center h-screen">
+    <button id="login-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded">
+      Admin Login mit Google
+    </button>
+  </div>  <div id="dashboard" class="hidden p-6 max-w-7xl mx-auto">
+    <h1 class="text-3xl font-bold mb-6 text-green-700">🥚 Eierhütten Admin Dashboard</h1>
+    <input id="search-input" type="text" placeholder="Suche nach Name, Extras oder Status..." class="mb-4 w-full p-3 rounded border border-gray-300">
+    <div id="hut-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+  </div>  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.appspot.com",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    const loginSection = document.getElementById('login-section');
+    const dashboard = document.getElementById('dashboard');
+    const hutList = document.getElementById('hut-list');
+    const searchInput = document.getElementById('search-input');
+    let huts = [];
+
+    document.getElementById('login-btn').onclick = () => {
+      auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    };
+
+    auth.onAuthStateChanged(async user => {
+      if (user) {
+        const adminDoc = await db.collection('admins').doc(user.email).get();
+        if (!adminDoc.exists) {
+          alert('Zugriff verweigert: Du bist kein Admin.');
+          return;
+        }
+        loginSection.classList.add('hidden');
+        dashboard.classList.remove('hidden');
+        loadHuts();
+      }
+    });
+
+    searchInput.addEventListener('input', () => {
+      const term = searchInput.value.toLowerCase();
+      const filtered = huts.filter(h =>
+        h.name.toLowerCase().includes(term) ||
+        h.status.toLowerCase().includes(term) ||
+        (h.extras && h.extras.toLowerCase().includes(term))
+      );
+      renderHuts(filtered);
+    });
+
+    async function loadHuts() {
+      const snapshot = await db.collection('eierhuetten').orderBy('erstelltAm', 'desc').get();
+      huts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderHuts(huts);
+    }
+
+    function renderHuts(list) {
+      hutList.innerHTML = '';
+      list.forEach(hut => {
+        const el = document.createElement('div');
+        el.className = 'bg-white p-4 rounded shadow space-y-2';
+        el.innerHTML = `
+          <h2 class="text-xl font-bold">${hut.name}</h2>
+          <p><strong>Status:</strong> <span class="text-sm">${hut.status}</span></p>
+          <p><strong>Sitzplätze:</strong> ${hut.sitzplaetze}</p>
+          <p><strong>Strom:</strong> ${hut.strom}</p>
+          <p><strong>Extras:</strong> ${hut.extras}</p>
+          <div class="minimap" id="map-${hut.id}"></div>
+          <div class="space-x-2">
+            <button onclick="changeStatus('${hut.id}')" class="bg-yellow-500 text-white px-2 py-1 rounded">Status ändern</button>
+            <button onclick="deleteHut('${hut.id}')" class="bg-red-500 text-white px-2 py-1 rounded">Löschen</button>
+          </div>
+        `;
+        hutList.appendChild(el);
+        if (hut.location && hut.location.latitude && hut.location.longitude) {
+          const map = L.map(`map-${hut.id}`, {
+            zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false
+          }).setView([hut.location.latitude, hut.location.longitude], 13);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+          L.marker([hut.location.latitude, hut.location.longitude]).addTo(map);
+          setTimeout(() => map.invalidateSize(), 200);
+        }
+      });
+    }
+
+    function changeStatus(id) {
+      const newStatus = prompt("Neuer Status (offen, angenommen, abgelehnt):");
+      if (newStatus) {
+        db.collection('eierhuetten').doc(id).update({ status: newStatus }).then(loadHuts);
+      }
+    }
+
+    function deleteHut(id) {
+      if (confirm("Soll diese Hütte wirklich gelöscht werden?")) {
+        db.collection('eierhuetten').doc(id).delete().then(loadHuts);
+      }
+    }
+  </script></body>
+</html>
