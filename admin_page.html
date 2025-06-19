@@ -15,6 +15,21 @@
     #map-modal .map-container { width: 90%; height: 80%; background: white; padding: 1rem; border-radius: 1rem; }
     #edit-map { height: 100%; }
   </style>
+
+  <script>
+  if ('Notification' in window && Notification.permission !== 'granted') {
+    Notification.requestPermission();
+  }
+
+  function notifyAdmins(titel, text) {
+    if (Notification.permission === 'granted') {
+      new Notification(titel, {
+        body: text,
+        icon: 'https://cdn-icons-png.flaticon.com/512/3285/3285716.png'
+      });
+    }
+  }
+  </script>
 </head>
 <body class="bg-gray-100">
   <div id="login-section" class="flex items-center justify-center h-screen">
@@ -87,11 +102,27 @@
     searchInput.addEventListener('input', renderFiltered);
     filterStatus.addEventListener('change', renderFiltered);
 
-    async function loadHuts() {
-      const snapshot = await db.collection('eierhuetten').orderBy('erstelltAm', 'desc').get();
-      huts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      renderFiltered();
+    
+    let lastLoadedIds = [];
+
+async function loadHuts() {
+  const snapshot = await db.collection("eierhuetten").orderBy("erstelltAm", "desc").get();
+  const newHuts = [];
+  snapshot.forEach((doc) => {
+    if (!lastLoadedIds.includes(doc.id)) {
+      newHuts.push({ id: doc.id, ...doc.data() });
     }
+  });
+
+  huts = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  renderFiltered();
+
+  newHuts.forEach(hut => {
+    notifyAdmins("Neue oder geänderte Hütte", `„${hut.name}“ wurde neu erstellt oder geändert.`);
+  });
+
+  lastLoadedIds = huts.map(h => h.id);
+}
 
     async function updateFieldWithCommentLive(id, field, inputEl) {
   const oldValue = inputEl.getAttribute('data-old') || '';
@@ -174,6 +205,22 @@
               <option ${hut.eben === 'steil' ? 'selected' : ''}>steil</option>
             </select>
           </p>
+
+          <p><strong>Öffnungszeiten:</strong>
+  <input type="text" value="${hut.oeffnungszeiten || ''}" data-old="${hut.oeffnungszeiten || ''}" class="border p-1 w-full"
+    oninput="updateFieldWithCommentLive('${hut.id}', 'oeffnungszeiten', this)" />
+</p>
+
+<p><strong>Foto-URL:</strong>
+  <input type="text" value="${hut.fotoUrl || ''}" data-old="${hut.fotoUrl || ''}" class="border p-1 w-full"
+    oninput="updateFieldWithCommentLive('${hut.id}', 'fotoUrl', this)" />
+</p>
+
+${hut.fotoUrl ? `<img src="${hut.fotoUrl}" class="w-full h-48 object-cover rounded" />` : ''}
+
+<p><strong>Besonderheiten:</strong>
+  <textarea class="w-full border p-2" data-old="${hut.besonderheiten || ''}" oninput="updateFieldWithCommentLive('${hut.id}', 'besonderheiten', this)">${hut.besonderheiten || ''}</textarea>
+</p>
 
           <textarea class="w-full border rounded p-2" placeholder="Extras" onchange="updateFieldWithCommentLive('${hut.id}', 'extras', this.value)">${hut.extras || ''}</textarea><p><strong>Erstellt von:</strong> ${hut.einreicherName || hut.userId || 'Unbekannt'}</p>
       <p><strong>Admin zuständig:</strong> ${hut.adminZustaendig || '-'}</p>
