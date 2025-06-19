@@ -23,7 +23,15 @@
     </button>
   </div>  <div id="dashboard" class="hidden p-6 max-w-7xl mx-auto">
     <h1 class="text-3xl font-bold mb-6 text-green-700">🥚 Eierhütten Admin Dashboard</h1>
-    <input id="search-input" type="text" placeholder="Suche nach Name, Extras oder Status..." class="mb-4 w-full p-3 rounded border border-gray-300">
+    <div class="flex gap-4 mb-4">
+      <input id="search-input" type="text" placeholder="🔍 Suche..." class="w-full p-3 rounded border border-gray-300">
+      <select id="filter-status" class="p-3 rounded border border-gray-300">
+        <option value="">Alle</option>
+        <option value="offen">Offen</option>
+        <option value="angenommen">Angenommen</option>
+        <option value="abgelehnt">Abgelehnt</option>
+      </select>
+    </div>
     <div id="hut-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
   </div>  <div id="map-modal">
     <div class="map-container">
@@ -52,6 +60,7 @@
     const dashboard = document.getElementById('dashboard');
     const hutList = document.getElementById('hut-list');
     const searchInput = document.getElementById('search-input');
+    const filterStatus = document.getElementById('filter-status');
     const mapModal = document.getElementById('map-modal');
     const cancelMapBtn = document.getElementById('cancel-map');
     const saveMapBtn = document.getElementById('save-map');
@@ -75,20 +84,26 @@
       }
     });
 
-    searchInput.addEventListener('input', () => {
-      const term = searchInput.value.toLowerCase();
-      const filtered = huts.filter(h =>
-        (h.name || '').toLowerCase().includes(term) ||
-        (h.status || '').toLowerCase().includes(term) ||
-        (h.extras || '').toLowerCase().includes(term)
-      );
-      renderHuts(filtered);
-    });
+    searchInput.addEventListener('input', renderFiltered);
+    filterStatus.addEventListener('change', renderFiltered);
 
     async function loadHuts() {
       const snapshot = await db.collection('eierhuetten').orderBy('erstelltAm', 'desc').get();
       huts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      renderHuts(huts);
+      renderFiltered();
+    }
+
+    function renderFiltered() {
+      const term = searchInput.value.toLowerCase();
+      const status = filterStatus.value;
+      const filtered = huts.filter(h => {
+        return (
+          (h.name || '').toLowerCase().includes(term) ||
+          (h.status || '').toLowerCase().includes(term) ||
+          (h.extras || '').toLowerCase().includes(term)
+        ) && (!status || h.status === status);
+      });
+      renderHuts(filtered);
     }
 
     function renderHuts(list) {
@@ -106,9 +121,17 @@
             </select>
           </p>
           <p><strong>Strom:</strong> ${hut.strom || '–'}</p>
+          <p><strong>Sitzplätze:</strong> ${hut.sitzplaetze || '–'}</p>
+          <p><strong>Ebenkeit:</strong>
+            <select onchange="updateField('${hut.id}', 'eben', this.value)" class="border rounded p-1">
+              <option ${hut.eben === 'flach' ? 'selected' : ''}>flach</option>
+              <option ${hut.eben === 'leicht geneigt' ? 'selected' : ''}>leicht geneigt</option>
+              <option ${hut.eben === 'steil' ? 'selected' : ''}>steil</option>
+            </select>
+          </p>
           <p><strong>Extras:</strong> ${hut.extras || '–'}</p>
           <p><strong>Erstellt von:</strong> ${hut.einreicherName || hut.userId || 'Unbekannt'}</p>
-          <p><strong>Erstellt am:</strong> ${hut.erstelltAm?.toDate?.().toLocaleString?.() || 'unbekannt'}</p>
+          <p><strong>Admin zuständig:</strong> ${hut.adminZustaendig || '-'}</p>
           <div class="flex gap-2">
             <button onclick="editHut('${hut.id}')" class="bg-blue-500 text-white px-2 py-1 rounded">Bearbeiten</button>
             <button onclick="openMap('${hut.id}', ${hut.location?.latitude || 52.5}, ${hut.location?.longitude || 13.4})" class="bg-indigo-600 text-white px-2 py-1 rounded">Standort</button>
@@ -135,17 +158,20 @@
       const newName = prompt('Neuer Name:', hut.name || '');
       const newExtras = prompt('Neue Extras:', hut.extras || '');
       const newStrom = prompt('Strom vorhanden? (ja/nein):', hut.strom || '');
+      const newSitzplaetze = prompt('Anzahl Sitzplätze:', hut.sitzplaetze || '');
       const kommentar = prompt('Admin-Kommentar zur Änderung:');
 
       if (newName !== null && newExtras !== null && newStrom !== null) {
         await db.collection('eierhuetten').doc(id).update({
           name: newName,
           extras: newExtras,
-          strom: newStrom
+          strom: newStrom,
+          sitzplaetze: newSitzplaetze,
+          adminZustaendig: currentUser.displayName || currentUser.email
         });
         await db.collection('eierhuetten').doc(id).collection('log').add({
           aktion: 'Bearbeitung',
-          feld: 'name/extras/strom',
+          feld: 'diverse',
           kommentar: kommentar,
           admin: currentUser.displayName || currentUser.email,
           zeitpunkt: firebase.firestore.Timestamp.now()
