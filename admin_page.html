@@ -1,35 +1,18 @@
 <!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Eierhütten Admin-Dashboard</title>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     .minimap { height: 150px; width: 100%; border-radius: 0.5rem; margin-top: 0.5rem; }
-    #map-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 1000; }
-    #map-modal .map-container { width: 90%; height: 80%; background: white; padding: 1rem; border-radius: 1rem; }
-    #edit-map { height: 100%; }
   </style>
-
-  <script>
-  if ('Notification' in window && Notification.permission !== 'granted') {
-    Notification.requestPermission();
-  }
-
-  function notifyAdmins(titel, text) {
-    if (Notification.permission === 'granted') {
-      new Notification(titel, {
-        body: text,
-        icon: 'https://cdn-icons-png.flaticon.com/512/3285/3285716.png'
-      });
-    }
-  }
-  </script>
 </head>
 <body class="bg-gray-100">
   <div id="login-section" class="flex items-center justify-center h-screen">
@@ -38,25 +21,8 @@
     </button>
   </div>  <div id="dashboard" class="hidden p-6 max-w-7xl mx-auto">
     <h1 class="text-3xl font-bold mb-6 text-green-700">🥚 Eierhütten Admin Dashboard</h1>
-    <div class="flex gap-4 mb-4">
-      <input id="search-input" type="text" placeholder="🔍 Suche..." class="w-full p-3 rounded border border-gray-300">
-      <select id="filter-status" class="p-3 rounded border border-gray-300">
-        <option value="">Alle</option>
-        <option value="offen">Offen</option>
-        <option value="angenommen">Angenommen</option>
-        <option value="abgelehnt">Abgelehnt</option>
-      </select>
-    </div>
+    <input id="search-input" type="text" placeholder="Suche..." class="mb-4 w-full p-3 rounded border border-gray-300">
     <div id="hut-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
-  </div>  <div id="map-modal">
-    <div class="map-container">
-      <h2 class="text-lg font-bold mb-2">Standort bearbeiten</h2>
-      <div id="edit-map"></div>
-      <div class="flex justify-end gap-2 mt-2">
-        <button id="cancel-map" class="bg-gray-500 text-white px-4 py-2 rounded">Abbrechen</button>
-        <button id="save-map" class="bg-green-600 text-white px-4 py-2 rounded">Speichern</button>
-      </div>
-    </div>
   </div>  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
@@ -70,16 +36,23 @@
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
     const db = firebase.firestore();
+    const storage = firebase.storage();
 
     const loginSection = document.getElementById('login-section');
     const dashboard = document.getElementById('dashboard');
     const hutList = document.getElementById('hut-list');
     const searchInput = document.getElementById('search-input');
-    const filterStatus = document.getElementById('filter-status');
-    const mapModal = document.getElementById('map-modal');
-    const cancelMapBtn = document.getElementById('cancel-map');
-    const saveMapBtn = document.getElementById('save-map');
-    let huts = [], currentUser = null, currentHutId = null, editMap = null, marker = null;
+    let huts = [], currentUser = null;
+
+    if ('Notification' in window && Notification.permission !== 'granted') {
+      Notification.requestPermission();
+    }
+
+    function notifyAdmins(title, text) {
+      if (Notification.permission === 'granted') {
+        new Notification(title, { body: text });
+      }
+    }
 
     document.getElementById('login-btn').onclick = () => {
       auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
@@ -99,69 +72,28 @@
       }
     });
 
-    searchInput.addEventListener('input', renderFiltered);
-    filterStatus.addEventListener('change', renderFiltered);
-
-    
-    let lastLoadedIds = [];
-
-async function loadHuts() {
-  const snapshot = await db.collection("eierhuetten").orderBy("erstelltAm", "desc").get();
-  const newHuts = [];
-  snapshot.forEach((doc) => {
-    if (!lastLoadedIds.includes(doc.id)) {
-      newHuts.push({ id: doc.id, ...doc.data() });
-    }
-  });
-
-  huts = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-  renderFiltered();
-
-  newHuts.forEach(hut => {
-    notifyAdmins("Neue oder geänderte Hütte", `„${hut.name}“ wurde neu erstellt oder geändert.`);
-  });
-
-  lastLoadedIds = huts.map(h => h.id);
-}
-
-    async function updateFieldWithCommentLive(id, field, inputEl) {
-  const oldValue = inputEl.getAttribute('data-old') || '';
-  const newValue = inputEl.value;
-  if (newValue === oldValue) return; // keine Änderung
-
-  const kommentar = prompt(`Kommentar zur Änderung von '${field}':`);
-  if (!kommentar) {
-    inputEl.value = oldValue; // zurücksetzen bei Abbruch
-    return;
-  }
-
-  await db.collection('eierhuetten').doc(id).update({
-    [field]: newValue,
-    adminZustaendig: currentUser.displayName || currentUser.email
-  });
-
-  await db.collection('eierhuetten').doc(id).collection('log').add({
-    aktion: 'Feld geändert',
-    feld: field,
-    kommentar,
-    admin: currentUser.displayName || currentUser.email,
-    zeitpunkt: firebase.firestore.Timestamp.now()
-  });
-
-  inputEl.setAttribute('data-old', newValue);
-  loadHuts();
-    }
-    function renderFiltered() {
+    searchInput.addEventListener('input', () => {
       const term = searchInput.value.toLowerCase();
-      const status = filterStatus.value;
-      const filtered = huts.filter(h => {
-        return (
-          (h.name || '').toLowerCase().includes(term) ||
-          (h.status || '').toLowerCase().includes(term) ||
-          (h.extras || '').toLowerCase().includes(term)
-        ) && (!status || h.status === status);
-      });
+      const filtered = huts.filter(h => h.name?.toLowerCase().includes(term));
       renderHuts(filtered);
+    });
+
+    async function loadHuts() {
+      const snapshot = await db.collection('eierhuetten').orderBy('erstelltAm', 'desc').get();
+      huts = await Promise.all(snapshot.docs.map(async doc => {
+        const data = doc.data();
+        const logSnap = await db.collection('eierhuetten').doc(doc.id).collection('log').orderBy('zeitpunkt', 'desc').get();
+        const logCount = logSnap.size;
+        const lastEntry = logSnap.docs[0]?.data();
+        return {
+          id: doc.id,
+          ...data,
+          logCount,
+          lastEditor: lastEntry?.admin || '-',
+          lastChanged: lastEntry?.zeitpunkt?.toDate().toLocaleString() || '-'
+        };
+      }));
+      renderHuts(huts);
     }
 
     function renderHuts(list) {
@@ -170,84 +102,39 @@ async function loadHuts() {
         const el = document.createElement('div');
         el.className = 'bg-white p-4 rounded shadow space-y-2';
         el.innerHTML = `
-          <input class="text-xl font-bold w-full border rounded px-2 py-1" onchange="updateFieldWithCommentLive('${hut.id}', 'name', this.value)" value="${hut.name || ''}" />
+          <h2 class="text-xl font-bold">${hut.name}</h2>
+          <p><strong>Status:</strong> ${hut.status}</p>
+          <p><strong>Sitzplätze:</strong> ${hut.sitzplaetze}</p>
+          <p><strong>Strom:</strong> ${hut.strom}</p>
+          <p><strong>Besonderheiten:</strong></p>
+          <textarea data-old="${hut.besonderheiten || ''}" onblur="updateFieldWithCommentLive('${hut.id}', 'besonderheiten', this)" class="w-full border rounded p-2">${hut.besonderheiten || ''}</textarea><p><strong>Öffnungszeiten:</strong></p>
+      <input type="text" value="${hut.oeffnungszeiten || ''}" data-old="${hut.oeffnungszeiten || ''}" class="w-full border rounded p-1" onblur="updateFieldWithCommentLive('${hut.id}', 'oeffnungszeiten', this)" />
 
-          <p><strong>Status:</strong>
-            <select onchange="updateFieldWithCommentLive²('${hut.id}', 'status', this.value)" class="border rounded p-1">
-              <option ${hut.status === 'offen' ? 'selected' : ''}>offen</option>
-              <option ${hut.status === 'angenommen' ? 'selected' : ''}>angenommen</option>
-              <option ${hut.status === 'abgelehnt' ? 'selected' : ''}>abgelehnt</option>
-            </select>
-          </p>
+      <p><strong>Foto:</strong></p>
+      <input type="file" accept="image/*" onchange="uploadPhoto('${hut.id}', this.files[0])" class="mb-2" />
+      <input type="text" value="${hut.fotoUrl || ''}" data-old="${hut.fotoUrl || ''}" class="w-full border p-1 rounded mb-2" onblur="updateFieldWithCommentLive('${hut.id}', 'fotoUrl', this)" placeholder="Manuelle Bild-URL (optional)" />
+      ${hut.fotoUrl ? `<img src="${hut.fotoUrl}" class="w-full h-48 object-cover rounded mb-2" />` : ''}
 
-          <p><strong>Strom:</strong>
-            <select onchange="updateFieldWithCommentLive('${hut.id}', 'strom', this.value)" class="border rounded p-1">
-              <option ${hut.strom === 'ja' ? 'selected' : ''}>ja</option>
-              <option ${hut.strom === 'nein' ? 'selected' : ''}>nein</option>
-            </select>
-          </p>
-
-          <p><strong>Sitzplätze:</strong>
-            <select
-            onchange="updateFieldWithCommentLive('${hut.id}', 'sitzplaetze', this)"
-            data-old="${hut.sitzplaetze || ''}"
-            class="border rounded p-1"
-           >
-            <option value="ja" ${hut.sitzplaetze === 'ja' ? 'selected' : ''}>ja</option>
-            <option value="nein" ${hut.sitzplaetze === 'nein' ? 'selected' : ''}>nein</option>
-            </select>
-          </p>
-
-          <p><strong>Ebenkeit:</strong>
-            <select onchange="updateFieldWithCommentLive('${hut.id}', 'eben', this.value)" class="border rounded p-1">
-              <option ${hut.eben === 'flach' ? 'selected' : ''}>flach</option>
-              <option ${hut.eben === 'leicht geneigt' ? 'selected' : ''}>leicht geneigt</option>
-              <option ${hut.eben === 'steil' ? 'selected' : ''}>steil</option>
-            </select>
-          </p>
-
-          <p><strong>Öffnungszeiten:</strong>
-  <input type="text" value="${hut.oeffnungszeiten || ''}" data-old="${hut.oeffnungszeiten || ''}" class="border p-1 w-full"
-    oninput="updateFieldWithCommentLive('${hut.id}', 'oeffnungszeiten', this)" />
-</p>
-
-<p><strong>Foto-URL:</strong>
-  <input type="text" value="${hut.fotoUrl || ''}" data-old="${hut.fotoUrl || ''}" class="border p-1 w-full"
-    oninput="updateFieldWithCommentLive('${hut.id}', 'fotoUrl', this)" />
-</p>
-
-${hut.fotoUrl ? `<img src="${hut.fotoUrl}" class="w-full h-48 object-cover rounded" />` : ''}
-
-<p><strong>Besonderheiten:</strong>
-  <textarea class="w-full border p-2" data-old="${hut.besonderheiten || ''}" oninput="updateFieldWithCommentLive('${hut.id}', 'besonderheiten', this)">${hut.besonderheiten || ''}</textarea>
-</p>
-
-          <textarea class="w-full border rounded p-2" placeholder="Extras" onchange="updateFieldWithCommentLive('${hut.id}', 'extras', this.value)">${hut.extras || ''}</textarea><p><strong>Erstellt von:</strong> ${hut.einreicherName || hut.userId || 'Unbekannt'}</p>
-      <p><strong>Admin zuständig:</strong> ${hut.adminZustaendig || '-'}</p>
-
-      <div class="flex gap-2">
-        <button onclick="openMap('${hut.id}', ${hut.location?.latitude || 52.5}, ${hut.location?.longitude || 13.4})" class="bg-indigo-600 text-white px-2 py-1 rounded">Standort</button>
-        <button onclick="showLog('${hut.id}')" class="bg-gray-600 text-white px-2 py-1 rounded">Log</button>
-      </div>
-
-      <div class="minimap" id="map-${hut.id}"></div>
+      <p class="text-sm text-gray-500">
+        <strong>Änderungen:</strong> ${hut.logCount} ·
+        <strong>Letzte Änderung:</strong> ${hut.lastEditor} (${hut.lastChanged})
+      </p>
     `;
     hutList.appendChild(el);
-
-    if (hut.location?.latitude && hut.location?.longitude) {
-      const map = L.map(`map-${hut.id}`, { zoomControl: false, dragging: false }).setView([hut.location.latitude, hut.location.longitude], 13);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-      L.marker([hut.location.latitude, hut.location.longitude]).addTo(map);
-      setTimeout(() => map.invalidateSize(), 200);
-    }
   });
 }
 
-async function updateFieldWithComment(id, field, value) {
-  const kommentar = prompt("Kommentar zur Änderung von '" + field + "':");
-  if (!kommentar) return;
+async function updateFieldWithCommentLive(id, field, inputEl) {
+  const oldValue = inputEl.getAttribute('data-old') || '';
+  const newValue = inputEl.value;
+  if (newValue === oldValue) return;
+  const kommentar = prompt(`Kommentar zur Änderung von '${field}':`);
+  if (!kommentar) {
+    inputEl.value = oldValue;
+    return;
+  }
   await db.collection('eierhuetten').doc(id).update({
-    [field]: value,
+    [field]: newValue,
     adminZustaendig: currentUser.displayName || currentUser.email
   });
   await db.collection('eierhuetten').doc(id).collection('log').add({
@@ -260,40 +147,27 @@ async function updateFieldWithComment(id, field, value) {
   loadHuts();
 }
 
-async function showLog(id) {
-  const logSnap = await db.collection('eierhuetten').doc(id).collection('log').orderBy('zeitpunkt', 'desc').get();
-  const logs = logSnap.docs.map(doc => doc.data());
-  if (logs.length === 0) return alert('Keine Einträge vorhanden.');
-  alert(logs.map(log => `(${log.zeitpunkt.toDate().toLocaleString()}) ${log.admin}: ${log.aktion} (${log.feld})\nKommentar: ${log.kommentar || '-'}`).join('\n\n'));
-}
-
-function openMap(id, lat, lng) {
-  currentHutId = id;
-  mapModal.style.display = 'flex';
-  if (editMap) editMap.remove();
-  editMap = L.map('edit-map').setView([lat, lng], 13);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(editMap);
-  marker = L.marker([lat, lng], { draggable: true }).addTo(editMap);
-}
-
-cancelMapBtn.onclick = () => {
-  mapModal.style.display = 'none';
-};
-
-saveMapBtn.onclick = async () => {
-  const { lat, lng } = marker.getLatLng();
-  await db.collection('eierhuetten').doc(currentHutId).update({
-    location: { latitude: lat, longitude: lng },
+async function uploadPhoto(id, file) {
+  if (!file || !file.type.startsWith('image/')) {
+    alert('Nur Bilddateien erlaubt.');
+    return;
+  }
+  const fileRef = storage.ref().child(`huettenfotos/${id}/${Date.now()}_${file.name}`);
+  await fileRef.put(file);
+  const url = await fileRef.getDownloadURL();
+  const kommentar = prompt('Kommentar zum Foto-Upload:');
+  if (!kommentar) return;
+  await db.collection('eierhuetten').doc(id).update({
+    fotoUrl: url,
     adminZustaendig: currentUser.displayName || currentUser.email
   });
-  await db.collection('eierhuetten').doc(currentHutId).collection('log').add({
-    aktion: 'Standort geändert',
-    feld: 'location',
-    kommentar: 'Manuell über Karte verschoben',
+  await db.collection('eierhuetten').doc(id).collection('log').add({
+    aktion: 'Foto hochgeladen',
+    feld: 'fotoUrl',
+    kommentar,
     admin: currentUser.displayName || currentUser.email,
     zeitpunkt: firebase.firestore.Timestamp.now()
   });
-  mapModal.style.display = 'none';
   loadHuts();
 }
 
