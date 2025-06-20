@@ -1,0 +1,212 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eierhütten Radtour - Vollversion</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    html, body { margin: 0; height: 100%; font-family: Arial, sans-serif; }
+    #map { position: absolute; top: 0; bottom: 0; width: 100%; z-index: 0; }
+    #bottomNav {
+      position: fixed; bottom: 0; left: 0;
+      width: 100%; height: 56px;
+      background: #f9f9f9; display: flex;
+      justify-content: space-around; z-index: 1001;
+      border-top: 1px solid #ccc;
+    }
+    #bottomNav button {
+      flex: 1; font-size: 22px; border: none;
+      background: none; padding: 10px;
+    }
+    #bottomSheet {
+      position: fixed; left: 0; right: 0; bottom: -80%;
+      height: 80%; background: white;
+      border-top-left-radius: 16px; border-top-right-radius: 16px;
+      box-shadow: 0 -2px 8px rgba(0,0,0,0.2);
+      transition: bottom 0.3s ease; z-index: 1002;
+    }
+    #bottomSheet.open { bottom: 56px; }
+    #sheetHandle { width: 40px; height: 5px; background: #ccc;
+      margin: 8px auto; border-radius: 3px;
+    }
+    #sheetContent { padding: 1em; overflow-y: auto; height: calc(80% - 20px); }
+    #routeList li { margin: 5px 0; }
+    #adminPanel {
+      position: fixed; top: 10px; right: 10px;
+      background: rgba(255,255,255,0.9); padding: 10px;
+      border-radius: 8px; z-index: 1003; max-width: 200px;
+    }
+    #chatbot {
+      position: fixed; bottom: 66px; right: 10px;
+      width: 300px; max-height: 400px; background: white;
+      border: 1px solid #ccc; border-radius: 8px;
+      display: none; flex-direction: column; z-index: 1003;
+    }
+    #chatHeader { padding: 8px; background: #f1f1f1; cursor: pointer; }
+    #chatMessages { flex: 1; padding: 8px; overflow-y: auto; }
+    #chatInput { display: flex; border-top: 1px solid #ccc; }
+    #chatInput input {
+      flex: 1; border: none; padding: 8px; font-size: 14px;
+    }
+    #chatInput button {
+      border: none; padding: 8px 12px; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <nav id="bottomNav">
+    <button id="menuBtn">☰</button>
+    <button id="followBtn">📍</button>
+    <button id="addBtn">➕</button>
+    <button id="gpxBtn">🗺️</button>
+    <button id="chatBtn">💬</button>
+  </nav>
+  <div id="bottomSheet">
+    <div id="sheetHandle"></div>
+    <div id="sheetContent">
+      <h3>🚴 Route</h3>
+      <ul id="routeList"></ul>
+      <button id="exportGpxBtn">GPX exportieren</button>
+    </div>
+  </div>
+  <div id="adminPanel">
+    <h4>Admin</h4>
+    <div>
+      Monatsabo (€): <input type="number" id="aboAmt" value="2" style="width: 60px;" />
+      <button id="saveAboBtn">Speichern</button>
+    </div>
+  </div>
+  <div id="chatbot">
+    <div id="chatHeader">IronBot 🤖</div>
+    <div id="chatMessages"></div>
+    <div id="chatInput">
+      <input id="chatTxt" placeholder="Nachricht..." />
+      <button id="sendBtn">Senden</button>
+    </div>
+  </div>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // Firebase Config (anpassen)
+    const firebaseConfig = { /* ...deine Firebase Config... */ };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // Karte initialisieren
+    const map = L.map('map').setView([52.52,13.4],12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    // Hütten laden
+    let allHuts = [];
+    let route = [];
+    const routeListEl = document.getElementById('routeList');
+    function renderRoute() {
+      routeListEl.innerHTML = '';
+      route.forEach((h, i) => {
+        const li = document.createElement('li');
+        li.textContent = h.name;
+        const btn = document.createElement('button');
+        btn.textContent = '✖';
+        btn.onclick = () => { route.splice(i,1); renderRoute(); };
+        li.appendChild(btn);
+        routeListEl.appendChild(li);
+      });
+    }
+    db.collection('eierhuetten').onSnapshot(snapshot => {
+      snapshot.forEach(doc => {
+        const h = doc.data(); h.id = doc.id;
+        allHuts.push(h);
+        const marker = L.marker([h.latitude,h.longitude]).addTo(map);
+        marker.bindPopup(\`<b>\${h.name}</b><br>\${h.beschreibung || ''}<br>
+          <button onclick="addToRoute('\${h.id}')">\${route.find(r=>r.id===h.id)?'Entfernen':'Hinzufügen'}</button>\`);
+      });
+    });
+
+    // Route verwalten
+    function addToRoute(id) {
+      const hut = allHuts.find(h=>h.id===id);
+      const idx = route.findIndex(r=>r.id===id);
+      if(idx>-1) route.splice(idx,1);
+      else route.push(hut);
+      renderRoute();
+      closeSheet(); openSheet();
+    }
+
+    // GPX Export (einfach)
+    function exportGpx() {
+      let gpx = '<?xml version="1.0"?><gpx><trk><name>Route</name><trkseg>';
+      route.forEach(h => {
+        gpx += '<trkpt lat="'+h.latitude+'" lon="'+h.longitude+'"></trkpt>';
+      });
+      gpx += '</trkseg></trk></gpx>';
+      const blob = new Blob([gpx], { type:'application/gpx+xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'route.gpx'; a.click();
+    }
+
+    // Compass (Richtungspfeil)
+    let compassMarker;
+    if(window.DeviceOrientationEvent) {
+      window.addEventListener('deviceorientation', e => {
+        const angle = e.alpha;
+        if(!compassMarker && window.userMarker) {
+          compassMarker = L.marker(userMarker.getLatLng(), {
+            icon: L.divIcon({html: '<div id="compass" style="transform:rotate('+angle+'deg)">🧭</div>'})
+          }).addTo(map);
+        }
+        if(compassMarker) {
+          compassMarker.setIcon(L.divIcon({html: '<div id="compass" style="transform:rotate('+angle+'deg)">🧭</div>'}));
+        }
+      });
+    }
+
+    // GPS-Ortung
+    let userMarker=null, follow=false;
+    map.locate({watch:true});
+    map.on('locationfound', e => {
+      if(!userMarker) userMarker=L.marker(e.latlng).addTo(map);
+      else userMarker.setLatLng(e.latlng);
+      if(follow) map.setView(e.latlng);
+    });
+
+    // Bottom-Sheet
+    document.getElementById('menuBtn').onclick = () => openSheet();
+    function openSheet() { document.getElementById('bottomSheet').classList.add('open'); }
+    function closeSheet() { document.getElementById('bottomSheet').classList.remove('open'); }
+    document.getElementById('sheetHandle').onclick = () => closeSheet();
+
+    // Buttons
+    document.getElementById('followBtn').onclick = ()=>follow=!follow;
+    document.getElementById('addBtn').onclick = ()=>openSheet();
+    document.getElementById('gpxBtn').onclick = exportGpx;
+
+    // Chatbot
+    const chatBox = document.getElementById('chatbot');
+    document.getElementById('chatBtn').onclick = ()=> {
+      chatBox.style.display = chatBox.style.display==='flex'?'none':'flex';
+    };
+    document.getElementById('chatHeader').onclick = ()=> chatBox.style.display='none';
+    document.getElementById('sendBtn').onclick = ()=>{
+      const txt = document.getElementById('chatTxt').value;
+      const msgEl = document.createElement('div'); msgEl.textContent = 'Du: '+txt;
+      document.getElementById('chatMessages').appendChild(msgEl);
+      // einfache Bot-Antwort
+      const botEl = document.createElement('div'); botEl.textContent = 'IronBot: ' + txt.split('').reverse().join('');
+      document.getElementById('chatMessages').appendChild(botEl);
+      document.getElementById('chatTxt').value='';
+    };
+
+    // Admin Abo speichern
+    document.getElementById('saveAboBtn').onclick = ()=>{
+      const amt = document.getElementById('aboAmt').value;
+      // hier in Firebase speichern...
+      alert('Abo Betrag auf '+amt+'€ gesetzt');
+    };
+  </script>
+</body>
+</html>
