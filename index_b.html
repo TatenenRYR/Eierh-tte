@@ -1,5 +1,4 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,179 +6,58 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
   <style>
-    :root {
-      --primary: #10b981;
-      --bg: #f9fafb;
-      --panel: #ffffff;
-      --text: #333;
+    html, body { margin:0; padding:0; height:100%; font-family:sans-serif; }
+    #map { position:absolute; top:0; bottom:0; width:100%; z-index:1; }
+    #menuBtn {
+      position:fixed; top:10px; left:10px;
+      background:#10b981; color:white; padding:10px 14px;
+      border:none; border-radius:10px; z-index:1001; cursor:pointer;
     }
-    html, body { margin:0; height:100%; font-family:sans-serif; background:var(--bg); }
-    #map { position:absolute; top:60px; left:0; right:0; bottom:0; z-index:0; }
-    #topbar {
-      position:fixed; top:0; left:0; right:0; height:60px; background:var(--primary); color:white;
-      display:flex; align-items:center; padding:0 1rem; z-index:1000;
+    #routeInfo {
+      position:fixed; bottom:10px; left:50%; transform:translateX(-50%);
+      background:white; padding:10px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.2);
+      z-index:1001; font-size:14px;
     }
-    #topbar h1 { flex:1; margin:0; font-size:1.2rem; }
-    #topbar a {
-      background: rgba(255,255,255,0.2); padding:0.5rem 1rem;
-      border-radius:6px; color:white; text-decoration:none;
-    }
-    #sidebar {
-      position:fixed; top:60px; left:0; bottom:0; width:260px; background:var(--panel);
-      box-shadow:2px 0 8px rgba(0,0,0,0.1); padding:1rem; overflow-y:auto; z-index:999;
-      transform: translateX(-100%); transition: transform 0.3s ease-in-out;
-    }
-    #sidebar.open { transform: translateX(0); }
-    .section { margin-bottom:1rem; }
-    .section h2 { margin:0 0 .5rem; font-size:1rem; }
-    .checkbox-list label { display:block; margin-bottom:.3rem; font-size:.9rem; }
-    .controls button {
-      width:100%; padding:.6rem; margin-bottom:.4rem;
-      border:none; border-radius:6px;
-      background:var(--primary); color:white; font-size:.9rem; cursor:pointer;
-    }
-    #routeInfo { font-size:.9rem; margin-top:.5rem; }
-    .floating-btn, #menuBtn {
-      position:fixed; bottom:1rem; right:1rem; background:var(--primary);
-      color:white; border:none; padding:.8rem 1rem; border-radius:9999px;
-      box-shadow:0 2px 6px rgba(0,0,0,0.2); cursor:pointer; font-size:1rem; z-index:1001;
-    }
-    #menuBtn { bottom:5rem; right:1rem; }
   </style>
 </head>
 <body>
-  <div id="topbar">
-    <h1>🥚 Eierhütten-Tour</h1>
-    <a href="chat.html">➕ Neue Hütte</a>
-  </div>
-  <div id="sidebar">
-    <div class="section">
-      <h2>Hütten-Auswahl</h2>
-      <div class="checkbox-list" id="hutList">Lade Hütten...</div>
-      <label><input type="checkbox" id="stromOnly"> Nur mit Strom 🔌</label>
-    </div>
-    <div class="section controls">
-      <button onclick="calculateRoute('normal')">📍 Normale Route</button>
-      <button onclick="calculateRoute('optimized')">🧭 Optimierte Route</button>
-      <button onclick="resetRoute()">🗑️ Zurücksetzen</button>
-      <button onclick="locateUser()">📌 Standort</button>
-    </div>
-    <div class="section" id="routeInfo"></div>
-  </div>
-  <div id="map"></div>
-  <button class="floating-btn" onclick="locateUser()">📍</button>
-  <button id="menuBtn" onclick="toggleSidebar()">☰</button>
+<button id="menuBtn" onclick="toggleSidebar()">☰</button>
+<div id="routeInfo"></div>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "...",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();const map = L.map('map').setView([51.5, 10.5], 6); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map); let userMarker, userAngle = 0; let hutMarkers = [], selectedHuts = [], routingControl;
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <script>
-    const firebaseConfig = {
-      apiKey: "...",
-      authDomain: "eierhuettentour.firebaseapp.com",
-      projectId: "eierhuettentour"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
+const arrowIcon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/883/883407.png', // Pfeil als Fahrrad-Symbol iconSize: [32, 32], iconAnchor: [16, 16] });
 
-    const map = L.map('map').setView([51.5, 10.5], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    let userMarker, routingControl;
-    let allHuts = [], hutMarkers = [];
+function locateUser() { navigator.geolocation.watchPosition(pos => { const latlng = [pos.coords.latitude, pos.coords.longitude]; if (!userMarker) { userMarker = L.marker(latlng, { icon: arrowIcon, rotationAngle: userAngle }).addTo(map); } else { userMarker.setLatLng(latlng); } map.setView(latlng, 15); checkProximity(latlng); }); }
 
-    function toggleSidebar() {
-      document.getElementById('sidebar').classList.toggle('open');
-    }
+if (window.DeviceOrientationEvent) { window.addEventListener("deviceorientationabsolute", e => { userAngle = e.alpha || 0; if (userMarker?.setRotationAngle) userMarker.setRotationAngle(userAngle); }, true); }
 
-    function locateUser() {
-      navigator.geolocation.getCurrentPosition(p => {
-        const c = [p.coords.latitude, p.coords.longitude];
-        if (!userMarker)
-          userMarker = L.marker(c, {
-            icon: L.icon({
-              iconUrl: 'https://cdn-icons-png.flaticon.com/512/854/854878.png',
-              iconSize: [32, 32]
-            })
-          }).addTo(map);
-        else userMarker.setLatLng(c);
-        map.setView(c, 14);
-      });
-    }
+function speak(text) { if (!window.speechSynthesis) return; const msg = new SpeechSynthesisUtterance(text); window.speechSynthesis.speak(msg); }
 
-    function hasStrom(v) {
-      return v === true || String(v).toLowerCase() === 'ja';
-    }
+function checkProximity(pos) { hutMarkers.forEach(h => { if (h.angesagt) return; const dist = map.distance(pos, h.getLatLng()); if (dist < 300) { h.angesagt = true; speak(Du näherst dich der Eierhütte ${h.options.name}. Noch ${Math.round(dist)} Meter.); } }); }
 
-    function loadHuts() {
-      const list = document.getElementById('hutList');
-      list.innerHTML = '';
-      db.collection('eierhuetten').get().then(snap => {
-        console.log("Geladene Hütten:", snap.size);
-        snap.forEach(doc => {
-          const d = doc.data();
-          if (!d.location?.latitude) return;
-          const hut = {
-            id: doc.id,
-            name: d.name || 'Hütte',
-            lat: d.location.latitude,
-            lng: d.location.longitude,
-            strom: hasStrom(d.strom),
-            extras: d.extras || '',
-            oeffnungen: d.oeffnungszeiten || ''
-          };
-          allHuts.push(hut);
-        });
-        renderHuts();
-      });
-    }
+function renderHut(hut) { const icon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/818/818769.png', iconSize: [30, 30], iconAnchor: [15, 30] }); const marker = L.marker([hut.lat, hut.lng], { icon, name: hut.name }).addTo(map); marker.bindPopup(<strong>${hut.name}</strong><br> 🔌 Strom: ${hut.strom ? 'Ja' : 'Nein'}<br> 🕒 Öffnungszeiten: ${hut.oeffnungszeiten || 'unbekannt'}<br> <button onclick="toggleSelection('${hut.id}')"> ${selectedHuts.includes(hut.id) ? '❌ Entfernen' : '✅ Zur Route'} </button>); hutMarkers.push(marker); }
 
-    function renderHuts() {
-      const list = document.getElementById('hutList');
-      list.innerHTML = '';
-      hutMarkers.forEach(m => map.removeLayer(m));
-      hutMarkers = [];
-      const stromOnly = document.getElementById('stromOnly').checked;
-      allHuts.forEach(h => {
-        if (stromOnly && !h.strom) return;
-        const lbl = document.createElement('label');
-        lbl.innerHTML = `<input type='checkbox' value='${h.id}' checked> ${h.name}`;
-        list.append(lbl);
-        const m = L.marker([h.lat, h.lng]).addTo(map);
-        m.bindPopup(`<div><strong>${h.name}</strong><br>🔌: ${h.strom ? 'Ja' : 'Nein'}<br>✨: ${h.extras}<br>🕒: ${h.oeffnungen}</div>`);
-        hutMarkers.push(m);
-      });
-    }
+function toggleSelection(id) { const idx = selectedHuts.indexOf(id); if (idx >= 0) selectedHuts.splice(idx, 1); else selectedHuts.push(id); recalculateRoute(); map.closePopup(); }
 
-    document.getElementById('stromOnly').addEventListener('change', renderHuts);
+function recalculateRoute() { if (!userMarker) return; const points = [userMarker.getLatLng()]; selectedHuts.forEach(id => { const hut = allHuts.find(h => h.id === id); if (hut) points.push(L.latLng(hut.lat, hut.lng)); }); if (routingControl) map.removeControl(routingControl); if (points.length < 2) return; routingControl = L.Routing.control({ waypoints: points, lineOptions: { styles: [{ color: '#10b981', weight: 5 }] }, createMarker: () => null, show: false }).addTo(map).on('routesfound', e => { const r = e.routes[0]; document.getElementById('routeInfo').innerText = 🚴 ${(r.summary.totalDistance/1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime/60)} min; }); }
 
-    function calculateRoute(mode) {
-      const sel = [...document.querySelectorAll('#hutList input:checked')].map(i => i.value);
-      const pts = allHuts.filter(h => sel.includes(h.id)).map(h => L.latLng(h.lat, h.lng));
-      if (pts.length < 2) return alert('Mind. 2 Hütten');
-      if (!userMarker) return alert('Standort setzen');
-      const start = userMarker.getLatLng();
-      let w = [...pts];
-      if (mode === 'optimized') w.sort((a, b) => a.lat - b.lat + a.lng - b.lng);
-      w.unshift(start);
-      if (routingControl) map.removeControl(routingControl);
-      routingControl = L.Routing.control({
-        waypoints: w,
-        lineOptions: { styles: [{ color: '#10b981', weight: 5 }] },
-        createMarker: () => null
-      }).addTo(map).on('routesfound', e => {
-        const r = e.routes[0];
-        document.getElementById('routeInfo').innerText = `🚴 ${(r.summary.totalDistance / 1000).toFixed(1)} km | ⏱ ${Math.round(r.summary.totalTime / 60)} min`;
-      });
-    }
+const allHuts = []; function loadHuts() { db.collection("eierhuetten").get().then(snap => { snap.forEach(doc => { const d = doc.data(); if (!d.location) return; const hut = { id: doc.id, name: d.name || 'Unbenannt', lat: d.location.latitude, lng: d.location.longitude, strom: d.strom === true || String(d.strom).toLowerCase() === 'ja', oeffnungszeiten: d.oeffnungszeiten || '' }; allHuts.push(hut); renderHut(hut); }); }); }
 
-    function resetRoute() {
-      if (routingControl) map.removeControl(routingControl);
-      document.getElementById('routeInfo').innerText = '';
-    }
+function toggleSidebar() { alert("In Zukunft könnte hier ein richtiges Menü erscheinen."); }
 
-    locateUser();
-    loadHuts();
-  </script>
+loadHuts(); locateUser(); </script>
+
 </body>
 </html>
