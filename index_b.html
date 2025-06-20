@@ -59,9 +59,22 @@
       background: url('https://cdn-icons-png.flaticon.com/512/892/892692.png') no-repeat center;
       background-size: contain;
     }
+    #loadingOverlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255, 255, 255, 0.95);
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5em;
+      font-weight: bold;
+      color: #10b981;
+    }
   </style>
 </head>
 <body>
+<div id="loadingOverlay">⏳ Karte wird geladen...</div>
 <button id="menuBtn" onclick="toggleSidebar()">☰</button>
 <button id="followBtn" onclick="enableAutoFollow()">📍 Folge mir</button>
 <div id="routeInfo"></div>
@@ -76,29 +89,14 @@
   <button class="submit-btn" onclick="window.location.href='chat.html'">➕ Neue Hütte einreichen</button>
 </div>
 <div id="map"></div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 <script>
   document.addEventListener("DOMContentLoaded", () => {
-    const firebaseConfig = {
-      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-      authDomain: "eierhuettentour.firebaseapp.com",
-      projectId: "eierhuettentour",
-      storageBucket: "eierhuettentour.appspot.com",
-      messagingSenderId: "348272135205",
-      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();const map = L.map('map').setView([51.5, 10.5], 6);
+    const ICONS = {
+      bike: './bike-icon.png',
+      egg: './file_00000000de6c61f8ad4432078ea06ea3.png',
+      eggSelected: './file_000000008694624687786cae69507aa3.png'
+    };const map = L.map('map').setView([51.5, 10.5], 6);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-const ICONS = {
-  bike: './bike-icon.png',
-  egg: './file_00000000de6c61f8ad4432078ea06ea3.png',
-  eggSelected: './file_000000008694624687786cae69507aa3.png'
-};
 
 const eggIcon = L.icon({ iconUrl: ICONS.egg, iconSize: [32, 32], iconAnchor: [16, 32] });
 const eggSelectedIcon = L.icon({ iconUrl: ICONS.eggSelected, iconSize: [36, 36], iconAnchor: [18, 36] });
@@ -109,6 +107,7 @@ let allHuts = [], hutMarkers = {}, selectedHuts = [], routingControl;
 
 const followBtn = document.getElementById("followBtn");
 const selectedList = document.getElementById("selectedList");
+const loader = document.getElementById("loadingOverlay");
 
 function updateSelectedList() {
   selectedList.innerHTML = '';
@@ -120,6 +119,12 @@ function updateSelectedList() {
       selectedList.appendChild(li);
     }
   });
+}
+
+function speak(text) {
+  if (!window.speechSynthesis) return;
+  const msg = new SpeechSynthesisUtterance(text);
+  window.speechSynthesis.speak(msg);
 }
 
 function enableAutoFollow() {
@@ -165,7 +170,7 @@ function locateUser() {
 }
 
 function loadHutsLive() {
-  db.collection("eierhuetten").onSnapshot(snap => {
+  firebase.firestore().collection("eierhuetten").onSnapshot(snap => {
     allHuts = [];
     Object.values(hutMarkers).forEach(m => map.removeLayer(m));
     hutMarkers = {};
@@ -185,6 +190,7 @@ function loadHutsLive() {
     });
     updateSelectedList();
     recalculateRoute();
+    loader.style.display = "none";
   });
 }
 
@@ -216,27 +222,33 @@ window.toggleSelection = function(id) {
 }
 
 function recalculateRoute() {
-  if (!userMarker) return;
-  const points = [userMarker.getLatLng()];
-  const routeMode = document.querySelector("input[name='routeMode']:checked").value;
-  const hutsToUse = [...selectedHuts];
-  if (routeMode === "optimized") hutsToUse.sort();
-  hutsToUse.forEach(id => {
-    const hut = allHuts.find(h => h.id === id);
-    if (hut) points.push(L.latLng(hut.lat, hut.lng));
-  });
-  if (routingControl) map.removeControl(routingControl);
-  if (points.length < 2) return;
-  const routeColor = (routeMode === 'optimized') ? 'orange' : '#10b981';
-  routingControl = L.Routing.control({
-    waypoints: points,
-    lineOptions: { styles: [{ color: routeColor, weight: 5 }] },
-    createMarker: () => null,
-    show: false
-  }).addTo(map).on('routesfound', e => {
-    const r = e.routes[0];
-    document.getElementById('routeInfo').innerText = `🚴 ${(r.summary.totalDistance/1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime/60)} min`;
-  });
+  try {
+    if (!userMarker) return;
+    const points = [userMarker.getLatLng()];
+    const routeMode = document.querySelector("input[name='routeMode']:checked").value;
+    const hutsToUse = [...selectedHuts];
+    if (routeMode === "optimized") hutsToUse.sort();
+    hutsToUse.forEach(id => {
+      const hut = allHuts.find(h => h.id === id);
+      if (hut) points.push(L.latLng(hut.lat, hut.lng));
+    });
+    if (routingControl && routingControl._container) {
+      map.removeControl(routingControl);
+    }
+    if (points.length < 2) return;
+    const routeColor = (routeMode === 'optimized') ? 'orange' : '#10b981';
+    routingControl = L.Routing.control({
+      waypoints: points,
+      lineOptions: { styles: [{ color: routeColor, weight: 5 }] },
+      createMarker: () => null,
+      show: false
+    }).addTo(map).on('routesfound', e => {
+      const r = e.routes[0];
+      document.getElementById('routeInfo').innerText = `🚴 ${(r.summary.totalDistance/1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime/60)} min`;
+    });
+  } catch (err) {
+    console.error("Fehler beim Neuberechnen der Route:", err);
+  }
 }
 
 function resetSelection() {
@@ -258,5 +270,11 @@ loadHutsLive();
 
 }); </script>
 
-</body>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script><script>
+  firebase.initializeApp({
+    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+    authDomain: "eierhuettentour.firebaseapp.com",
+    projectId: "eierhuettentour"
+  });
+</script></body>
 </html>
