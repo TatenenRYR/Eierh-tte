@@ -1,10 +1,10 @@
 <!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Eierhütten-Radtour</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css">
   <style>
     html, body { margin:0; padding:0; height:100%; font-family:sans-serif; }
     #map { position:absolute; top:0; bottom:0; width:100%; z-index:1; }
@@ -31,13 +31,8 @@
       box-shadow:0 2px 6px rgba(0,0,0,0.15);
       max-width: 300px;
     }
-    #menuPanel h3 {
-      margin-top: 0;
-    }
-    #menuPanel label {
-      display: block;
-      margin: 5px 0;
-    }
+    #menuPanel h3 { margin-top: 0; }
+    #menuPanel label { display: block; margin: 5px 0; }
     #menuPanel button {
       margin-top: 10px;
       width: 100%;
@@ -51,6 +46,14 @@
     #menuPanel .submit-btn {
       background: #ef4444;
       margin-top: 20px;
+    }
+    .direction-arrow {
+      width: 24px; height: 24px;
+      background-image: url('https://cdn-icons-png.flaticon.com/512/892/892692.png');
+      background-size: contain;
+      background-repeat: no-repeat;
+      transform-origin: center center;
+      z-index: 1002;
     }
   </style>
 </head>
@@ -71,34 +74,21 @@
 <div id="map"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 <script>
   document.addEventListener("DOMContentLoaded", () => {
-    const firebaseConfig = {
-      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-      authDomain: "eierhuettentour.firebaseapp.com",
-      projectId: "eierhuettentour",
-      storageBucket: "eierhuettentour.appspot.com",
-      messagingSenderId: "348272135205",
-      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();const map = L.map('map').setView([51.5, 10.5], 6);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-// INDIVIDUELLE ICON-URLs
-const ICONS = {
+    const map = L.map('map').setView([51.5, 10.5], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);const ICONS = {
   bike: './bike-icon.png',
   egg: './file_00000000de6c61f8ad4432078ea06ea3.png',
   eggSelected: './file_000000008694624687786cae69507aa3.png'
 };
+    
 
 const eggIcon = L.icon({ iconUrl: ICONS.egg, iconSize: [32, 32], iconAnchor: [16, 32] });
 const eggSelectedIcon = L.icon({ iconUrl: ICONS.eggSelected, iconSize: [36, 36], iconAnchor: [18, 36] });
 const bikeIcon = L.icon({ iconUrl: ICONS.bike, iconSize: [36, 36], iconAnchor: [18, 18] });
 
-let userMarker, autoFollow = true;
+let userMarker, arrowEl, autoFollow = true;
 let allHuts = [], hutMarkers = {}, selectedHuts = [], routingControl;
 
 const followBtn = document.getElementById("followBtn");
@@ -122,19 +112,6 @@ function speak(text) {
   window.speechSynthesis.speak(msg);
 }
 
-function locateUser() {
-  navigator.geolocation.watchPosition(pos => {
-    const latlng = [pos.coords.latitude, pos.coords.longitude];
-    if (!userMarker) {
-      userMarker = L.marker(latlng, { icon: bikeIcon }).addTo(map);
-    } else {
-      userMarker.setLatLng(latlng);
-    }
-    if (autoFollow) map.setView(latlng, 15);
-    checkProximity(latlng);
-  });
-}
-
 function enableAutoFollow() {
   autoFollow = true;
   followBtn.style.display = "none";
@@ -147,6 +124,32 @@ map.on('movestart', () => {
     followBtn.style.display = "block";
   }
 });
+
+function locateUser() {
+  navigator.geolocation.watchPosition(pos => {
+    const latlng = [pos.coords.latitude, pos.coords.longitude];
+    if (!userMarker) {
+      userMarker = L.marker(latlng, { icon: bikeIcon }).addTo(map);
+      // Pfeil hinzufügen
+      arrowEl = L.DomUtil.create('div', 'direction-arrow');
+      const arrowIcon = L.divIcon({ html: arrowEl, iconSize: [24, 24], className: '' });
+      L.marker(latlng, { icon: arrowIcon }).addTo(map).bindTooltip("Richtung");
+    } else {
+      userMarker.setLatLng(latlng);
+    }
+    if (autoFollow) map.setView(latlng, 15);
+    checkProximity(latlng);
+  });
+
+  if (window.DeviceOrientationEvent) {
+    window.addEventListener("deviceorientationabsolute" in window ? "deviceorientationabsolute" : "deviceorientation", e => {
+      if (arrowEl && e.alpha != null) {
+        const angle = e.alpha;
+        arrowEl.style.transform = `rotate(${angle}deg)`;
+      }
+    }, true);
+  }
+}
 
 function checkProximity(pos) {
   Object.values(hutMarkers).forEach(h => {
@@ -220,27 +223,14 @@ function resetSelection() {
 }
 
 function loadHutsLive() {
-  db.collection("eierhuetten").onSnapshot(snap => {
-    allHuts = [];
-    Object.values(hutMarkers).forEach(m => map.removeLayer(m));
-    hutMarkers = {};
-    snap.forEach(doc => {
-      const d = doc.data();
-      if (!d.location) return;
-      const hut = {
-        id: doc.id,
-        name: d.name || 'Unbenannt',
-        lat: d.location.latitude,
-        lng: d.location.longitude,
-        strom: d.strom === true || String(d.strom).toLowerCase() === 'ja',
-        oeffnungszeiten: d.oeffnungszeiten || ''
-      };
-      allHuts.push(hut);
-      renderHut(hut);
+  fetch('https://api.mocki.io/v2/79fb05cb') // Simuliertes Live-Update
+    .then(res => res.json())
+    .then(data => {
+      allHuts = data;
+      Object.values(hutMarkers).forEach(m => map.removeLayer(m));
+      hutMarkers = {};
+      data.forEach(renderHut);
     });
-    updateSelectedList();
-    recalculateRoute();
-  });
 }
 
 window.toggleSidebar = function () {
