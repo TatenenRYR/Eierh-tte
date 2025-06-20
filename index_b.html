@@ -74,7 +74,112 @@
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 <script>
-  // ... (der gesamte bisherige Scriptcode bleibt unverändert bis zur recalculateRoute-Funktion)function recalculateRoute() {
+  document.addEventListener("DOMContentLoaded", () => {
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.appspot.com",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();const map = L.map('map').setView([51.5, 10.5], 6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+const eggIcon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/3515/3515424.png', iconSize: [32, 32], iconAnchor: [16, 32] });
+const eggSelectedIcon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/2909/2909764.png', iconSize: [36, 36], iconAnchor: [18, 36] });
+const bikeIcon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/806/806956.png', iconSize: [36, 36], iconAnchor: [18, 18] });
+
+let userMarker, autoFollow = true;
+let allHuts = [], hutMarkers = {}, selectedHuts = [], routingControl;
+
+const followBtn = document.getElementById("followBtn");
+const selectedList = document.getElementById("selectedList");
+
+function updateSelectedList() {
+  selectedList.innerHTML = '';
+  selectedHuts.forEach(id => {
+    const hut = allHuts.find(h => h.id === id);
+    if (hut) {
+      const li = document.createElement('li');
+      li.textContent = hut.name;
+      selectedList.appendChild(li);
+    }
+  });
+}
+
+function speak(text) {
+  if (!window.speechSynthesis) return;
+  const msg = new SpeechSynthesisUtterance(text);
+  window.speechSynthesis.speak(msg);
+}
+
+function locateUser() {
+  navigator.geolocation.watchPosition(pos => {
+    const latlng = [pos.coords.latitude, pos.coords.longitude];
+    if (!userMarker) {
+      userMarker = L.marker(latlng, { icon: bikeIcon }).addTo(map);
+    } else {
+      userMarker.setLatLng(latlng);
+    }
+    if (autoFollow) map.setView(latlng, 15);
+    checkProximity(latlng);
+  });
+}
+
+function enableAutoFollow() {
+  autoFollow = true;
+  followBtn.style.display = "none";
+  if (userMarker) map.setView(userMarker.getLatLng(), 15);
+}
+
+map.on('movestart', () => {
+  if (autoFollow) {
+    autoFollow = false;
+    followBtn.style.display = "block";
+  }
+});
+
+function checkProximity(pos) {
+  Object.values(hutMarkers).forEach(h => {
+    if (h.angesagt) return;
+    const dist = map.distance(pos, h.getLatLng());
+    if (dist < 300) {
+      h.angesagt = true;
+      speak(`Du näherst dich der Eierhütte ${h.options.name}. Noch ${Math.round(dist)} Meter.`);
+    }
+  });
+}
+
+function renderHut(hut) {
+  const marker = L.marker([hut.lat, hut.lng], { icon: eggIcon, name: hut.name }).addTo(map);
+  marker.bindPopup(() => `
+    <strong>${hut.name}</strong><br>
+    🔌 Strom: ${hut.strom ? 'Ja' : 'Nein'}<br>
+    🕒 Öffnungszeiten: ${hut.oeffnungszeiten || 'unbekannt'}<br>
+    <button onclick="toggleSelection('${hut.id}')">
+      ${selectedHuts.includes(hut.id) ? '❌ Entfernen' : '✅ Zur Route'}
+    </button>
+  `);
+  hutMarkers[hut.id] = marker;
+}
+
+window.toggleSelection = function(id) {
+  const idx = selectedHuts.indexOf(id);
+  if (idx >= 0) {
+    selectedHuts.splice(idx, 1);
+    hutMarkers[id].setIcon(eggIcon);
+  } else {
+    selectedHuts.push(id);
+    hutMarkers[id].setIcon(eggSelectedIcon);
+  }
+  updateSelectedList();
+  recalculateRoute();
+  map.closePopup();
+}
+
+function recalculateRoute() {
   if (!userMarker) return;
   const points = [userMarker.getLatLng()];
   const routeMode = document.querySelector("input[name='routeMode']:checked").value;
@@ -86,9 +191,7 @@
   });
   if (routingControl) map.removeControl(routingControl);
   if (points.length < 2) return;
-
   const routeColor = (routeMode === 'optimized') ? 'orange' : '#10b981';
-
   routingControl = L.Routing.control({
     waypoints: points,
     lineOptions: { styles: [{ color: routeColor, weight: 5 }] },
@@ -100,7 +203,48 @@
   });
 }
 
-// ... (Rest bleibt gleich) </script>
+function resetSelection() {
+  selectedHuts.forEach(id => {
+    if (hutMarkers[id]) hutMarkers[id].setIcon(eggIcon);
+  });
+  selectedHuts = [];
+  updateSelectedList();
+  recalculateRoute();
+}
+
+function loadHutsLive() {
+  db.collection("eierhuetten").onSnapshot(snap => {
+    allHuts = [];
+    Object.values(hutMarkers).forEach(m => map.removeLayer(m));
+    hutMarkers = {};
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (!d.location) return;
+      const hut = {
+        id: doc.id,
+        name: d.name || 'Unbenannt',
+        lat: d.location.latitude,
+        lng: d.location.longitude,
+        strom: d.strom === true || String(d.strom).toLowerCase() === 'ja',
+        oeffnungszeiten: d.oeffnungszeiten || ''
+      };
+      allHuts.push(hut);
+      renderHut(hut);
+    });
+    updateSelectedList();
+    recalculateRoute();
+  });
+}
+
+window.toggleSidebar = function () {
+  const panel = document.getElementById("menuPanel");
+  panel.style.display = (panel.style.display === "block") ? "none" : "block";
+}
+
+locateUser();
+loadHutsLive();
+
+}); </script>
 
 </body>
 </html>
