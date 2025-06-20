@@ -1,50 +1,49 @@
 <!DOCTYPE html><html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Eierhütten Karte</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eierhütten Karte & Route</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
   <style>
-    html, body { margin: 0; height: 100%; font-family: sans-serif; }
-    #map { height: calc(100% - 50px); width: 100%; }
-    .custom-popup { font-size: 0.9rem; }
+    html, body { margin: 0; height: 100%; font-family: sans-serif; background: #f9fafb; }
+    #map { position: absolute; top: 60px; bottom: 0; width: 100%; }
     .topbar {
-      height: 50px;
-      background: #047857;
-      color: white;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 1rem;
-      font-size: 1rem;
+      height: 60px; background: #10b981; color: white;
+      display: flex; justify-content: space-between;
+      align-items: center; padding: 0 1rem; font-size: 1rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     .topbar a {
-      color: white;
-      text-decoration: none;
-      font-weight: bold;
-      background: #10b981;
-      padding: 0.4rem 0.8rem;
-      border-radius: 0.4rem;
+      color: white; text-decoration: none; font-weight: bold;
+      background: #059669; padding: 0.4rem 0.8rem; border-radius: 0.5rem;
     }
+    .floating-btn {
+      position: absolute; bottom: 1rem; right: 1rem;
+      background: #10b981; color: white;
+      padding: 0.75rem 1rem; border-radius: 9999px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      font-weight: bold; border: none; cursor: pointer;
+    }
+    .custom-popup { font-size: 0.9rem; }
     @media (max-width: 600px) {
-      .custom-popup { font-size: 0.8rem; }
       .topbar { font-size: 0.85rem; }
-      .topbar a { padding: 0.3rem 0.6rem; }
+      .floating-btn { font-size: 0.85rem; padding: 0.6rem 0.9rem; }
     }
   </style>
 </head>
 <body>
 <div class="topbar">
-  <div>📍 Eierhütten Karte</div>
+  <div>🥚 Eierhütten Karte</div>
   <a href="chat.html">➕ Neue Hütte einreichen</a>
 </div>
 <div id="map"></div>
-<script>
+<button class="floating-btn" onclick="locateUser()">📍 Standort</button><script>
+// Firebase Init
 const firebaseConfig = {
   apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
   authDomain: "eierhuettentour.firebaseapp.com",
@@ -54,37 +53,77 @@ const firebaseConfig = {
   appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
 };
 firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();const map = L.map('map').setView([51.5, 10.5], 6); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+const db = firebase.firestore();
 
-let huts = []; let routingControl = null;
+// Karte Initialisieren
+const map = L.map('map').setView([51.5, 10.5], 6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-function hasStrom(value) { if (typeof value === 'boolean') return value; return String(value).toLowerCase() === 'ja'; }
+let userMarker = null;
+let routingControl = null;
+let hutMarkers = [];
 
-function loadHuts() { db.collection("eierhuetten") .where("status", "==", "angenommen") .get() .then((querySnapshot) => { querySnapshot.forEach((doc) => { const data = doc.data(); if (!data.location?.latitude || !data.location?.longitude) return; const lat = data.location.latitude; const lng = data.location.longitude;
-
-const marker = L.marker([lat, lng]).addTo(map);
-    const strom = hasStrom(data.strom);
-    const popupContent = `
-      <div class="custom-popup">
-        <strong>${data.name || 'Unbenannte Hütte'}</strong><br>
-        🪑 Sitzplätze: ${data.sitzplaetze || '–'}<br>
-        🔌 Strom: ${strom ? '✅ Ja' : '❌ Nein'}<br>
-        ✨ Extras: ${data.extras || '–'}<br>
-        🕒 Öffnungszeiten: ${data.oeffnungszeiten || '–'}<br>
-        <button onclick="routeTo(${lat}, ${lng})">🧭 Route</button>
-      </div>
-    `;
-    marker.bindPopup(popupContent);
-
-    huts.push({ id: doc.id, name: data.name, lat, lng });
-  });
-});
-
+function hasStrom(val) {
+  if (typeof val === 'boolean') return val;
+  return String(val).toLowerCase() === 'ja';
 }
 
-function routeTo(lat, lng) { if (routingControl) map.removeControl(routingControl); navigator.geolocation.getCurrentPosition((pos) => { const start = L.latLng(pos.coords.latitude, pos.coords.longitude); const end = L.latLng(lat, lng); routingControl = L.Routing.control({ waypoints: [start, end], routeWhileDragging: false }).addTo(map); }); }
+function locateUser() {
+  navigator.geolocation.getCurrentPosition(pos => {
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    const userLatLng = L.latLng(lat, lng);
+    if (!userMarker) {
+      userMarker = L.marker(userLatLng, { title: 'Du bist hier' }).addTo(map);
+    } else {
+      userMarker.setLatLng(userLatLng);
+    }
+    map.setView(userLatLng, 14);
+  }, err => {
+    alert('Standort konnte nicht bestimmt werden.');
+  });
+}
 
-loadHuts(); </script>
+function routeTo(lat, lng) {
+  navigator.geolocation.getCurrentPosition(pos => {
+    const start = L.latLng(pos.coords.latitude, pos.coords.longitude);
+    const end = L.latLng(lat, lng);
+    if (routingControl) map.removeControl(routingControl);
+    routingControl = L.Routing.control({
+      waypoints: [start, end],
+      lineOptions: { styles: [{ color: '#10b981', weight: 6 }] },
+      routeWhileDragging: false,
+      show: false
+    }).addTo(map);
+  });
+}
 
-</body>
+function loadHuts() {
+  db.collection("eierhuetten").where("status", "==", "angenommen").get().then(snapshot => {
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      if (!d.location?.latitude || !d.location?.longitude) return;
+      const lat = d.location.latitude;
+      const lng = d.location.longitude;
+
+      const marker = L.marker([lat, lng]).addTo(map);
+      const popup = `
+        <div class="custom-popup">
+          <strong>${d.name || 'Unbenannt'}</strong><br>
+          🪑 Sitzplätze: ${d.sitzplaetze || '–'}<br>
+          🔌 Strom: ${hasStrom(d.strom) ? '✅ Ja' : '❌ Nein'}<br>
+          ✨ Extras: ${d.extras || '–'}<br>
+          🕒 Öffnungszeiten: ${d.oeffnungszeiten || '–'}<br>
+          <button onclick="routeTo(${lat}, ${lng})">🧭 Route</button>
+        </div>`;
+      marker.bindPopup(popup);
+      hutMarkers.push(marker);
+    });
+  });
+}
+
+// Start
+locateUser();
+loadHuts();
+</script></body>
 </html>
