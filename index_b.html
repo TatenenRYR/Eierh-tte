@@ -47,12 +47,17 @@
       background: #ef4444;
       margin-top: 20px;
     }
-    .arrow-overlay {
-      width: 40px; height: 40px;
+    .arrow-wrapper {
+      width: 80px; height: 80px;
+      position: relative;
+    }
+    .arrow-spike {
+      width: 20px; height: 20px;
+      position: absolute;
+      top: 0; left: 50%;
+      transform: translateX(-50%) rotate(0deg);
       background: url('https://cdn-icons-png.flaticon.com/512/892/892692.png') no-repeat center;
       background-size: contain;
-      transform-origin: center;
-      z-index: 1002;
     }
   </style>
 </head>
@@ -73,10 +78,23 @@
 <div id="map"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 <script>
   document.addEventListener("DOMContentLoaded", () => {
-    const map = L.map('map').setView([51.5, 10.5], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);const ICONS = {
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.appspot.com",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();const map = L.map('map').setView([51.5, 10.5], 6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+const ICONS = {
   bike: './bike-icon.png',
   egg: './file_00000000de6c61f8ad4432078ea06ea3.png',
   eggSelected: './file_000000008694624687786cae69507aa3.png'
@@ -104,12 +122,6 @@ function updateSelectedList() {
   });
 }
 
-function speak(text) {
-  if (!window.speechSynthesis) return;
-  const msg = new SpeechSynthesisUtterance(text);
-  window.speechSynthesis.speak(msg);
-}
-
 function enableAutoFollow() {
   autoFollow = true;
   followBtn.style.display = "none";
@@ -128,35 +140,51 @@ function locateUser() {
     const latlng = [pos.coords.latitude, pos.coords.longitude];
     if (!userMarker) {
       userMarker = L.marker(latlng, { icon: bikeIcon }).addTo(map);
-      const arrowEl = L.DomUtil.create('div', 'arrow-overlay');
-      const arrowIcon = L.divIcon({ html: arrowEl.outerHTML, iconSize: [40, 40], className: '' });
+      const wrapper = document.createElement('div');
+      wrapper.className = 'arrow-wrapper';
+      const arrow = document.createElement('div');
+      arrow.className = 'arrow-spike';
+      wrapper.appendChild(arrow);
+      const arrowIcon = L.divIcon({ html: wrapper.outerHTML, iconSize: [80, 80], className: '' });
       directionMarker = L.marker(latlng, { icon: arrowIcon }).addTo(map);
     } else {
       userMarker.setLatLng(latlng);
       directionMarker.setLatLng(latlng);
     }
     if (autoFollow) map.setView(latlng, 15);
-    checkProximity(latlng);
   });
 
   if (window.DeviceOrientationEvent) {
     window.addEventListener("deviceorientation", e => {
-      if (directionMarker && e.alpha != null) {
-        const arrow = document.querySelector('.arrow-overlay');
-        if (arrow) arrow.style.transform = `rotate(${e.alpha}deg)`;
+      const spike = document.querySelector('.arrow-spike');
+      if (spike && e.alpha != null) {
+        spike.style.transform = `translateX(-50%) rotate(${e.alpha}deg)`;
       }
     }, true);
   }
 }
 
-function checkProximity(pos) {
-  Object.values(hutMarkers).forEach(h => {
-    if (h.angesagt) return;
-    const dist = map.distance(pos, h.getLatLng());
-    if (dist < 300) {
-      h.angesagt = true;
-      speak(`Du näherst dich der Eierhütte ${h.options.name}. Noch ${Math.round(dist)} Meter.`);
-    }
+function loadHutsLive() {
+  db.collection("eierhuetten").onSnapshot(snap => {
+    allHuts = [];
+    Object.values(hutMarkers).forEach(m => map.removeLayer(m));
+    hutMarkers = {};
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (!d.location) return;
+      const hut = {
+        id: doc.id,
+        name: d.name || 'Unbenannt',
+        lat: d.location.latitude,
+        lng: d.location.longitude,
+        strom: d.strom === true || String(d.strom).toLowerCase() === 'ja',
+        oeffnungszeiten: d.oeffnungszeiten || ''
+      };
+      allHuts.push(hut);
+      renderHut(hut);
+    });
+    updateSelectedList();
+    recalculateRoute();
   });
 }
 
@@ -218,17 +246,6 @@ function resetSelection() {
   selectedHuts = [];
   updateSelectedList();
   recalculateRoute();
-}
-
-function loadHutsLive() {
-  fetch('https://api.mocki.io/v2/79fb05cb')
-    .then(res => res.json())
-    .then(data => {
-      allHuts = data;
-      Object.values(hutMarkers).forEach(m => map.removeLayer(m));
-      hutMarkers = {};
-      data.forEach(renderHut);
-    });
 }
 
 window.toggleSidebar = function () {
