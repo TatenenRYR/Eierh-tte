@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eierhütten Radtour</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    html, body { margin: 0; height: 100%; }
+    #map { position: absolute; top: 0; bottom: 0; width: 100%; z-index: 0; }
+    #bottomNav {
+      position: fixed; bottom: 0; left: 0;
+      width: 100%; height: 56px;
+      background: #f9f9f9;
+      display: flex;
+      justify-content: space-around;
+      z-index: 1001;
+      border-top: 1px solid #ccc;
+    }
+    #bottomNav button {
+      flex: 1;
+      font-size: 22px;
+      border: none;
+      background: none;
+      padding: 10px;
+    }
+    #bottomSheet {
+      position: fixed;
+      left: 0; right: 0; bottom: -80%;
+      height: 80%; background: white;
+      border-top-left-radius: 16px; border-top-right-radius: 16px;
+      box-shadow: 0 -2px 8px rgba(0,0,0,0.2);
+      transition: bottom 0.3s ease;
+      z-index: 1002;
+    }
+    #bottomSheet.open { bottom: 56px; }
+    #sheetHandle {
+      width: 40px; height: 5px; background: #ccc;
+      margin: 8px auto; border-radius: 3px;
+    }
+    #sheetContent {
+      padding: 1em;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <nav id="bottomNav">
+    <button id="menuBtn">☰</button>
+    <button id="followBtn">📍</button>
+    <button id="nextBtn">➡️</button>
+  </nav>
+
+  <div id="bottomSheet">
+    <div id="sheetHandle"></div>
+    <div id="sheetContent">
+      <h3>🚴 Deine Route</h3>
+      <ul id="routeList"></ul>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([52.52, 13.4], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    // Dummy Hütten
+    const allHuts = [
+      { name: "Hütte A", lat: 52.530, lng: 13.405, strom: true },
+      { name: "Hütte B", lat: 52.515, lng: 13.395, strom: false },
+      { name: "Hütte C", lat: 52.500, lng: 13.410, strom: true },
+    ];
+
+    // Marker
+    allHuts.forEach(h => {
+      const m = L.marker([h.lat, h.lng]).addTo(map);
+      m.bindPopup(`<b>${h.name}</b><br>Strom: ${h.strom ? "✅" : "❌"}`);
+    });
+
+    // GPS-Ortung
+    let userMarker = null;
+    let follow = false;
+
+    function locateUser() {
+      map.locate({ watch: true, setView: false });
+      map.on("locationfound", e => {
+        if (!userMarker) {
+          userMarker = L.marker(e.latlng, { icon: L.icon({ iconUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png", iconSize: [30, 30] }) }).addTo(map);
+        } else {
+          userMarker.setLatLng(e.latlng);
+        }
+        if (follow) map.setView(e.latlng);
+      });
+    }
+
+    // Routenvorschlag
+    function suggestNextHut() {
+      if (!userMarker) return alert("Standort nicht verfügbar");
+      const userPos = userMarker.getLatLng();
+      const candidates = allHuts.filter(h => h.strom);
+      candidates.sort((a, b) =>
+        userPos.distanceTo([a.lat, a.lng]) - userPos.distanceTo([b.lat, b.lng])
+      );
+      const next = candidates[0];
+      if (next) {
+        L.popup()
+          .setLatLng([next.lat, next.lng])
+          .setContent(`Nächste empfohlene Hütte: <b>${next.name}</b>`)
+          .openOn(map);
+        document.getElementById("routeList").innerHTML = `<li>${next.name} (mit Strom)</li>`;
+        openSheet();
+      }
+    }
+
+    // UI Events
+    document.getElementById("menuBtn").onclick = () =>
+      document.getElementById("bottomSheet").classList.toggle("open");
+    document.getElementById("followBtn").onclick = () => {
+      follow = !follow;
+      if (follow && userMarker) map.setView(userMarker.getLatLng());
+    };
+    document.getElementById("nextBtn").onclick = suggestNextHut;
+
+    function openSheet() {
+      document.getElementById("bottomSheet").classList.add("open");
+    }
+
+    locateUser();
+  </script>
+</body>
+</html>
