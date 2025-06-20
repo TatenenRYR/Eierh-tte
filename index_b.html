@@ -29,6 +29,24 @@
       padding:10px; border-radius:8px;
       z-index:1001; display:none;
       box-shadow:0 2px 6px rgba(0,0,0,0.15);
+      max-width: 300px;
+    }
+    #menuPanel h3 {
+      margin-top: 0;
+    }
+    #menuPanel label {
+      display: block;
+      margin: 5px 0;
+    }
+    #menuPanel button {
+      margin-top: 10px;
+      width: 100%;
+      background: #10b981;
+      color: white;
+      border: none;
+      padding: 8px;
+      border-radius: 6px;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -36,7 +54,15 @@
 <button id="menuBtn" onclick="toggleSidebar()">☰</button>
 <button id="followBtn" onclick="enableAutoFollow()">📍 Folge mir</button>
 <div id="routeInfo"></div>
-<div id="menuPanel">🚴 Menü<br><small>(Hier später Optionen)</small></div>
+<div id="menuPanel">
+  <h3>🚴 Menü</h3>
+  <strong>Ausgewählte Eierhütten:</strong>
+  <ul id="selectedList"></ul>
+  <label><input type="radio" name="routeMode" value="normal" checked> Normale Reihenfolge</label>
+  <label><input type="radio" name="routeMode" value="optimized"> Optimierte Route</label>
+  <button onclick="recalculateRoute()">🔄 Route neu berechnen</button>
+  <button onclick="resetSelection()">🗑 Auswahl zurücksetzen</button>
+</div>
 <div id="map"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
@@ -62,7 +88,7 @@ const eggIcon = L.icon({
 });
 
 const bikeIcon = L.icon({
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/809/809957.png', // besseres Fahrrad-Icon
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/809/809957.png',
   iconSize: [36, 36], iconAnchor: [18, 18]
 });
 
@@ -70,6 +96,19 @@ let userMarker, userAngle = 0, autoFollow = true;
 let allHuts = [], hutMarkers = [], selectedHuts = [], routingControl;
 
 const followBtn = document.getElementById("followBtn");
+const selectedList = document.getElementById("selectedList");
+
+function updateSelectedList() {
+  selectedList.innerHTML = '';
+  selectedHuts.forEach(id => {
+    const hut = allHuts.find(h => h.id === id);
+    if (hut) {
+      const li = document.createElement('li');
+      li.textContent = hut.name;
+      selectedList.appendChild(li);
+    }
+  });
+}
 
 function speak(text) {
   if (!window.speechSynthesis) return;
@@ -131,6 +170,7 @@ window.toggleSelection = function(id) {
   const idx = selectedHuts.indexOf(id);
   if (idx >= 0) selectedHuts.splice(idx, 1);
   else selectedHuts.push(id);
+  updateSelectedList();
   recalculateRoute();
   map.closePopup();
 }
@@ -138,7 +178,10 @@ window.toggleSelection = function(id) {
 function recalculateRoute() {
   if (!userMarker) return;
   const points = [userMarker.getLatLng()];
-  selectedHuts.forEach(id => {
+  const routeMode = document.querySelector("input[name='routeMode']:checked").value;
+  const hutsToUse = [...selectedHuts];
+  if (routeMode === "optimized") hutsToUse.sort();
+  hutsToUse.forEach(id => {
     const hut = allHuts.find(h => h.id === id);
     if (hut) points.push(L.latLng(hut.lat, hut.lng));
   });
@@ -153,6 +196,12 @@ function recalculateRoute() {
     const r = e.routes[0];
     document.getElementById('routeInfo').innerText = `🚴 ${(r.summary.totalDistance/1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime/60)} min`;
   });
+}
+
+function resetSelection() {
+  selectedHuts = [];
+  updateSelectedList();
+  recalculateRoute();
 }
 
 function loadHuts() {
