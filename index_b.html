@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Eierhütten-Radtour</title>
+  <title>Eierhütten-Radtour mit Gruppen-Trekking</title>
   <!-- Leaflet & Routing Machine CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
@@ -52,6 +52,17 @@
       background:url('https://cdn-icons-png.flaticon.com/512/892/892692.png') no-repeat center;
       background-size:contain;
     }
+
+    /* Gruppen-Tracking Toggle Style */
+    #groupTrackingToggle {
+      position: fixed; top: 110px; right: 10px;
+      background: white; padding: 8px 12px;
+      border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      z-index: 1004;
+      font-size: 14px;
+      cursor: pointer;
+      user-select: none;
+    }
   </style>
 
   <!-- Firebase SDKs -->
@@ -76,6 +87,11 @@
   <button id="followBtn" onclick="enableAutoFollow()">📍 Folgen</button>
   <button id="styleToggleBtn" onclick="toggleMapStyle()">🌓 Stil</button>
 
+  <!-- Gruppen-Tracking Toggle -->
+  <label id="groupTrackingToggle">
+    <input type="checkbox" id="groupTrackCheckbox" /> Gruppen-Trekking live
+  </label>
+
   <!-- Seitenleiste / Menü -->
   <div id="menuPanel">
     <h3>🚴 Menü</h3>
@@ -96,6 +112,7 @@
   <!-- Leaflet & Routing Machine JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+
   <script>
     // Karte & Layer
     const map = L.map('map');
@@ -134,20 +151,33 @@
     const bikeIcon = L.icon({ iconUrl: './bike-icon.png', iconSize: [36,36], iconAnchor: [18,18] });
     const eggIcon = L.icon({ iconUrl: './file_00000000de6c61f8ad4432078ea06ea3.png', iconSize: [32,32], iconAnchor: [16,32] });
     const eggSelectedIcon = L.icon({ iconUrl: './file_000000008694624687786cae69507aa3.png', iconSize: [36,36], iconAnchor: [18,36] });
+    const groupMemberIcon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/1946/1946429.png', iconSize: [32, 32], iconAnchor: [16, 32] });
 
     // State
     let userMarker, directionMarker, autoFollow = true;
     let allHuts = [], selectedHuts = [], hutMarkers = {}, routingControl;
 
-    // Sprachausgabe
+    // --- Gruppen-Trekking State ---
+    let groupTrackingEnabled = false;
+    let groupPositionsUnsub = null;
+    const groupMemberMarkers = {}; // id -> Marker
+
+    // Eindeutige Nutzer-ID (z.B. zufälliger String)
+    const userId = 'user-' + Math.random().toString(36).substring(2, 10);
+
+    // Sprachausgabe Toast
     function showToast(msg) {
       const t = document.getElementById('toast');
       t.innerText = msg; t.style.display = 'block';
       setTimeout(() => t.style.display = 'none', 3000);
     }
 
-    // Benutzer-Position & Pfeil
+    // Benutzer-Position & Pfeil + Gruppen-Position senden
     function locateUser() {
+      if (!navigator.geolocation) {
+        alert('Geolocation nicht unterstützt');
+        return;
+      }
       navigator.geolocation.watchPosition(pos => {
         const latlng = [pos.coords.latitude, pos.coords.longitude];
         if (!userMarker) {
@@ -164,7 +194,25 @@
           directionMarker.setLatLng(latlng);
         }
         if (autoFollow) map.setView(latlng, 15);
+
+        // Gruppenposition senden, falls aktiviert
+        if(groupTrackingEnabled) {
+          db.collection('group_positions').doc(userId).set({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            name: userId // Optional: hier kannst du z.B. ein Eingabefeld für Namen machen
+          });
+        }
+      }, err => {
+        console.error('Geolocation error:', err);
+        showToast('GPS nicht verfügbar');
+      }, {
+        enableHighAccuracy: true,
+        maximumAge: 10000,
+        timeout: 10000
       });
+
       // Blickrichtung via DeviceOrientation
       if (window.DeviceOrientationEvent) {
         window.addEventListener('deviceorientation', e => {
@@ -175,6 +223,62 @@
         }, true);
       }
     }
+
+    // Gruppenpositionen live aus Firebase laden
+    function startGroupTracking() {
+      if (groupPositionsUnsub) groupPositionsUnsub(); // vorherige Listener entfernen
+      groupPositionsUnsub = db.collection('group_positions')
+        .onSnapshot(snapshot => {
+          snapshot.docChanges().forEach(change => {
+            const doc = change.doc;
+            const data = doc.data();
+            if (!data.lat || !data.lng) return;
+            if (doc.id === userId) return; // Eigene Position ignorieren
+
+            if (change.type === 'added' || change.type === 'modified') {
+              // Marker aktualisieren oder erstellen
+              if (groupMemberMarkers[doc.id]) {
+                groupMemberMarkers[doc.id].setLatLng([data.lat, data.lng]);
+              } else {
+                const marker = L.marker([data.lat, data.lng], { icon: groupMemberIcon })
+                  .bindPopup(`Teilnehmer: ${doc.id}`);
+                marker.addTo(map);
+                groupMemberMarkers[doc.id] = marker;
+              }
+            } else if (change.type === 'removed') {
+              if (groupMemberMarkers[doc.id]) {
+                map.removeLayer(groupMemberMarkers[doc.id]);
+                delete groupMemberMarkers[doc.id];
+              }
+            }
+          });
+        });
+      showToast('Gruppen-Tracking aktiviert');
+    }
+
+    // Gruppen-Tracking stoppen
+    function stopGroupTracking() {
+      if (groupPositionsUnsub) {
+        groupPositionsUnsub();
+        groupPositionsUnsub = null;
+      }
+      // Marker entfernen
+      Object.values(groupMemberMarkers).forEach(m => map.removeLayer(m));
+      for (const id in groupMemberMarkers) delete groupMemberMarkers[id];
+      // Eigene Position aus der DB löschen
+      db.collection('group_positions').doc(userId).delete();
+      showToast('Gruppen-Tracking deaktiviert');
+    }
+
+    // Checkbox Listener
+    document.getElementById('groupTrackCheckbox').addEventListener('change', e => {
+      groupTrackingEnabled = e.target.checked;
+      if (groupTrackingEnabled) {
+        startGroupTracking();
+      } else {
+        stopGroupTracking();
+      }
+    });
 
     // Hütten aus Firebase laden
     function loadHutsLive() {
