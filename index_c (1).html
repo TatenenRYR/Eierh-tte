@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Eierhütten-Radtour mit Gruppen-Trekking</title>
+  <!-- Leaflet & Routing Machine CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+  <style>
+    html, body { margin:0; padding:0; height:100%; font-family:sans-serif; }
+    #map { position:absolute; top:0; bottom:0; width:100%; z-index:0; }
+    #loadingOverlay {
+      position:fixed; top:0; left:0; right:0; bottom:0;
+      background:white; color:#10b981;
+      font-size:1.5em; display:flex;
+      align-items:center; justify-content:center;
+      z-index:2000;
+    }
+    button {
+      position:fixed; padding:10px 14px; border:none;
+      border-radius:10px; z-index:1001; cursor:pointer; color:white;
+    }
+    #menuBtn { top:10px; left:10px; background:#10b981; }
+    #styleToggleBtn { top:10px; right:10px; background:#6366f1; }
+    #followBtn { top:60px; right:10px; background:#3b82f6; display:none; }
+    #enableVoiceBtn { top:110px; left:10px; background:#f59e0b; }
+    #saveFavoritesBtn { top:150px; left:10px; background:#facc15; }
+    #shareTourBtn { top:190px; left:10px; background:#3b82f6; }
+    /* Gruppen-Tracking Toggle Style */
+    #groupTrackingToggle {
+      position: fixed; top:230px; right: 10px;
+      background: white; padding: 8px 12px;
+      border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      z-index: 1004;
+      font-size: 14px;
+      cursor: pointer;
+      user-select: none;
+    }
+    #menuPanel {
+      position:fixed; top:60px; left:10px;
+      background:white; border:1px solid #ccc;
+      padding:10px; border-radius:8px;
+      display:none; z-index:1002; max-width:300px;
+    }
+    #routeInfo {
+      position:fixed; bottom:10px; left:50%;
+      transform:translateX(-50%);
+      background:white; padding:10px;
+      border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.2);
+      z-index:1001; font-size:14px;
+    }
+    .toast {
+      position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+      background:#10b981; color:white;
+      padding:8px 16px; border-radius:8px;
+      font-size:14px; display:none; z-index:1003;
+    }
+  </style>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script>
+    // Firebase initialisieren
+    firebase.initializeApp({
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour"
+    });
+    const db = firebase.firestore();
+  </script>
+</head>
+<body>
+  <!-- Ladebildschirm -->
+  <div id="loadingOverlay">⏳ Karte lädt...</div>
+
+  <!-- UI-Buttons -->
+  <button id="menuBtn" onclick="toggleSidebar()">☰ Menü</button>
+  <button id="styleToggleBtn" onclick="toggleMapStyle()">🌓 Stil</button>
+  <button id="followBtn" onclick="enableAutoFollow()">📍 Folgen</button>
+  <button id="enableVoiceBtn" onclick="toggleVoiceGuide()">🎤 Sprachführung: Aus</button>
+  <button id="saveFavoritesBtn" onclick="displayFavorites()">⭐ Favoriten</button>
+  <button id="shareTourBtn" onclick="shareTourLink()">🔗 Tour teilen</button>
+
+  <!-- Gruppen-Tracking Toggle -->
+  <label id="groupTrackingToggle">
+    <input type="checkbox" id="groupTrackCheckbox" /> Gruppen-Trekking live
+  </label>
+
+  <!-- Seitenleiste / Menü -->
+  <div id="menuPanel">
+    <h3>🚴 Menü</h3>
+    <ul id="selectedList"></ul>
+    <label><input type="radio" name="routeMode" value="normal" checked> Normale Reihenfolge</label><br>
+    <label><input type="radio" name="routeMode" value="optimized"> Optimiert</label><br>
+    <button onclick="recalculateRoute()">🔄 Route neu berechnen</button>
+    <button onclick="resetSelection()">🗑 Route löschen</button>
+  </div>
+
+  <!-- Routendetails -->
+  <div id="routeInfo"></div>
+  <div class="toast" id="toast"></div>
+
+  <!-- Karte -->
+  <div id="map"></div>
+
+  <!-- Leaflet & Routing Machine JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+
+  <script>
+    // Karte & Layer
+    const map = L.map('map');
+    const light = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '&copy; OSM contributors'
+    });
+    const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19, attribution: '&copy; OSM & Carto'
+    });
+    let currentStyle = 'light';
+    light.addTo(map);
+    map.setView([51.5, 10.5], 6);
+
+    // Lade-Indikator
+    let userLoaded = false, hutsLoaded = false;
+    function checkLoadingDone() {
+      if (userLoaded && hutsLoaded) {
+        document.getElementById('loadingOverlay').style.display = 'none';
+      }
+    }
+
+    // Stil-Wechsel
+    function toggleMapStyle() {
+      if (currentStyle === 'light') {
+        map.removeLayer(light);
+        dark.addTo(map);
+        currentStyle = 'dark';
+      } else {
+        map.removeLayer(dark);
+        light.addTo(map);
+        currentStyle = 'light';
+      }
+    }
+
+    // Marker-Icons
+    const bikeIcon = L.icon({ iconUrl: './bike-icon.png', iconSize: [36,36], iconAnchor: [18,18] });
+    const eggIcon = L.icon({ iconUrl: './file_00000000de6c61f8ad4432078ea06ea3.png', iconSize: [32,32], iconAnchor: [16,32] });
+    const eggSelectedIcon = L.icon({ iconUrl: './file_000000008694624687786cae69507aa3.png', iconSize: [36,36], iconAnchor: [18,36] });
+    const groupMemberIcon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/1946/1946429.png', iconSize: [32,32], iconAnchor: [16,32] });
+
+    // State
+    let userMarker, directionMarker, autoFollow = true;
+    let allHuts = [], selectedHuts = [], hutMarkers = {}, routingControl;
+    let voiceGuideEnabled = false, favorites = [];
+
+    // --- Gruppen-Trekking State ---
+    let groupTrackingEnabled = false;
+    let groupPositionsUnsub = null;
+    const groupMemberMarkers = {};
+
+    const userId = 'user-' + Math.random().toString(36).substring(2, 10);
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.innerText = msg; t.style.display = 'block';
+      setTimeout(() => t.style.display = 'none', 3000);
+    }
+
+    function activateVoiceGuide(message) {
+      if (voiceGuideEnabled && 'speechSynthesis' in window) {
+        const utterance = new SpeechSynthesisUtterance(message);
+        speechSynthesis.speak(utterance);
+      }
+    }
+
+    function toggleVoiceGuide() {
+      voiceGuideEnabled = !voiceGuideEnabled;
+      document.getElementById('enableVoiceBtn').innerText =
+        voiceGuideEnabled ? "🎤 Sprachführung: An" : "🎤 Sprachführung: Aus";
+    }
+
+    function displayFavorites() {
+      if (favorites.length === 0) {
+        alert("Keine Favoriten gespeichert.");
+      } else {
+        const names = favorites.map(id => {
+          const h = allHuts.find(hut => hut.id === id);
+          return h ? h.name : id;
+        });
+        alert("Favoriten:\n" + names.join("\n"));
+      }
+    }
+
+    function shareTourLink() {
+      const base = window.location.origin + window.location.pathname;
+      const link = `${base}?tour=${selectedHuts.join(',')}`;
+      prompt("Teile diesen Link mit deinen Freunden:", link);
+    }
+
+    // locateUser, startGroupTracking, loadHutsLive etc. remain the same...
+    
+    // Standort bestimmen
+    function locateUser() {
+      map.locate({ setView: true, watch: true, enableHighAccuracy: true });
+      map.on('locationfound', e => {
+        const { latitude, longitude } = e;
+        if (!userMarker) {
+          userMarker = L.marker([latitude, longitude], { icon: bikeIcon }).addTo(map);
+          directionMarker = L.marker([latitude, longitude], { icon: bikeIcon, rotationAngle: 0 }).addTo(map);
+        } else {
+          userMarker.setLatLng([latitude, longitude]);
+          directionMarker.setLatLng([latitude, longitude]);
+        }
+        updateUserPositionFirestore(latitude, longitude);
+        userLoaded = true;
+        checkLoadingDone();
+      });
+    }
+
+    function updateUserPositionFirestore(lat, lng) {
+      if (!groupTrackingEnabled) return;
+      db.collection("group_positions").doc(userId).set({
+        lat, lng, timestamp: Date.now()
+      });
+    }
+
+    function startGroupTracking() {
+      groupTrackingEnabled = true;
+      document.getElementById('followBtn').style.display = 'block';
+      groupPositionsUnsub = db.collection("group_positions").onSnapshot(snapshot => {
+        snapshot.docChanges().forEach(change => {
+          const id = change.doc.id;
+          const data = change.doc.data();
+          if (id === userId) return;
+          if (change.type === "removed") {
+            if (groupMemberMarkers[id]) {
+              map.removeLayer(groupMemberMarkers[id]);
+              delete groupMemberMarkers[id];
+            }
+          } else {
+            const marker = groupMemberMarkers[id] || L.marker([0, 0], { icon: groupMemberIcon }).addTo(map);
+            marker.setLatLng([data.lat, data.lng]);
+            groupMemberMarkers[id] = marker;
+          }
+        });
+      });
+    }
+
+    function stopGroupTracking() {
+      groupTrackingEnabled = false;
+      if (groupPositionsUnsub) groupPositionsUnsub();
+      Object.values(groupMemberMarkers).forEach(m => map.removeLayer(m));
+    }
+
+    // Gruppentracking Checkbox
+    document.getElementById("groupTrackCheckbox").addEventListener("change", function () {
+      if (this.checked) startGroupTracking(); else stopGroupTracking();
+    });
+
+    // Eierhütten laden
+    function loadHutsLive() {
+      db.collection("eierhuetten").where("status", "==", "aktiv").onSnapshot(snapshot => {
+        snapshot.docChanges().forEach(change => {
+          const id = change.doc.id;
+          const data = change.doc.data();
+          const pos = [data.location.latitude, data.location.longitude];
+          if (change.type === "added" || change.type === "modified") {
+            if (!hutMarkers[id]) {
+              const m = L.marker(pos, { icon: eggIcon }).addTo(map).on('click', () => toggleSelection(id));
+              hutMarkers[id] = m;
+            } else {
+              hutMarkers[id].setLatLng(pos);
+            }
+          }
+          if (change.type === "removed" && hutMarkers[id]) {
+            map.removeLayer(hutMarkers[id]);
+            delete hutMarkers[id];
+          }
+        });
+        allHuts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        hutsLoaded = true;
+        checkLoadingDone();
+      });
+    }
+
+    function toggleSelection(id) {
+      if (!selectedHuts.includes(id)) {
+        selectedHuts.push(id);
+        hutMarkers[id].setIcon(eggSelectedIcon);
+      } else {
+        selectedHuts = selectedHuts.filter(h => h !== id);
+        hutMarkers[id].setIcon(eggIcon);
+      }
+      updateSelectedList();
+    }
+
+    function updateSelectedList() {
+      const ul = document.getElementById("selectedList");
+      ul.innerHTML = "";
+      selectedHuts.forEach(id => {
+        const hut = allHuts.find(h => h.id === id);
+        if (hut) {
+          const li = document.createElement("li");
+          li.textContent = hut.name || id;
+          ul.appendChild(li);
+        }
+      });
+    }
+
+    function recalculateRoute() {
+      if (routingControl) map.removeControl(routingControl);
+      if (selectedHuts.length < 2) return;
+
+      const points = selectedHuts.map(id => {
+        const h = allHuts.find(h => h.id === id);
+        return L.latLng(h.location.latitude, h.location.longitude);
+      });
+
+      const mode = document.querySelector('input[name="routeMode"]:checked').value;
+      if (mode === 'optimized') {
+        points.sort((a, b) => a.distanceTo(map.getCenter()) - b.distanceTo(map.getCenter()));
+      }
+
+      routingControl = L.Routing.control({
+        waypoints: points,
+        routeWhileDragging: false
+      }).addTo(map);
+    }
+
+    function resetSelection() {
+      selectedHuts = [];
+      Object.values(hutMarkers).forEach(m => m.setIcon(eggIcon));
+      updateSelectedList();
+      if (routingControl) map.removeControl(routingControl);
+    }
+
+    function toggleSidebar() {
+      const panel = document.getElementById("menuPanel");
+      panel.style.display = panel.style.display === "none" ? "block" : "none";
+    }
+
+    function enableAutoFollow() {
+      autoFollow = true;
+      showToast("Automatisches Folgen aktiviert.");
+    }
+
+    map.on("movestart", () => autoFollow = false);
+
+    locateUser();
+    loadHutsLive();
+
+    // locateUser(), startGroupTracking(), stopGroupTracking(), loadHutsLive(),
+    // toggleSelection(), updateSelectedList(), recalculateRoute(), resetSelection(),
+    // toggleSidebar(), enableAutoFollow(), map movestart listener, and initial calls.
+
+  </script>
+</body>
+</html>
