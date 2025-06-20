@@ -3,18 +3,48 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Eierhütten Gruppen-Trekking</title>
+  <title>Eierhütten-Gruppen-Trekking</title>
+
+  <!-- Leaflet & Routing Machine CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+
   <style>
     html, body { margin:0; padding:0; height:100%; font-family:sans-serif; }
-    #map { position:absolute; top:0; bottom:0; width:100%; z-index:0; }
+    #map { position:absolute; top:0; bottom:0; width:100%; }
     #loadingOverlay {
-      position:fixed; top:0; left:0; right:0; bottom:0;
-      background:white; color:#10b981;
-      font-size:1.5em; display:flex;
+      position:fixed; inset:0;
+      background:white; display:flex;
       align-items:center; justify-content:center;
+      font-size:1.5em; color:#10b981;
       z-index:2000;
+    }
+    button {
+      position:fixed; padding:10px 14px;
+      border:none; border-radius:8px;
+      color:white; font-weight:bold; cursor:pointer;
+      box-shadow:0 2px 6px rgba(0,0,0,0.2);
+      z-index:1001;
+    }
+    #menuBtn { top:10px; left:10px; background:#10b981; }
+    #styleBtn { top:10px; right:10px; background:#6366f1; }
+    #loginBtn { top:60px; right:10px; background:#db4437; }
+    #logoutBtn { top:60px; right:10px; background:#888; display:none; }
+    #panel {
+      position:fixed; top:110px; left:10px;
+      background:white; padding:12px;
+      border-radius:8px; box-shadow:0 3px 10px rgba(0,0,0,0.2);
+      max-width:300px; display:none; z-index:1002;
+    }
+    #panel input, #panel button {
+      width:100%; margin-top:8px;
+    }
+    #toast {
+      position:fixed; bottom:20px; left:50%;
+      transform:translateX(-50%);
+      background:#10b981; color:white;
+      padding:8px 16px; border-radius:8px;
+      display:none; z-index:1003;
     }
   </style>
 
@@ -22,74 +52,165 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-
-  <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-      authDomain: "eierhuettentour.firebaseapp.com",
-      projectId: "eierhuettentour"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-    const auth = firebase.auth();
-  </script>
 </head>
+
 <body>
   <div id="loadingOverlay">⏳ Karte lädt...</div>
   <div id="map"></div>
 
+  <button id="menuBtn">☰ Menü</button>
+  <button id="styleBtn">🌓 Stil</button>
+  <button id="loginBtn">Login (Google)</button>
+  <button id="logoutBtn">Logout</button>
+
+  <div id="panel">
+    <h4>Gruppen-Trekking</h4>
+    <label>Raum-Link:</label>
+    <input type="text" id="shareUrl" readonly />
+    <label><input type="checkbox" id="trackToggle" /> Live-Tracking</label>
+    <ul id="userList" style="margin:8px 0; max-height:150px; overflow-y:auto;"></ul>
+    <button id="closePanel">Schließen</button>
+  </div>
+
+  <div id="toast"></div>
+
+  <!-- Leaflet & Routing Machine JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
 
   <script>
-    const map = L.map('map').setView([51.5, 10.5], 6);
-    const light = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
-    light.addTo(map);
+  // 1) Firebase initialisieren
+  const firebaseConfig = {
+    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+    authDomain: "eierhuettentour.firebaseapp.com",
+    projectId: "eierhuettentour"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db   = firebase.firestore();
 
-    // Ladebildschirm spätestens nach 5 Sekunden ausblenden
-    setTimeout(() => {
-      document.getElementById('loadingOverlay').style.display = 'none';
-    }, 5000);
+  // 2) Raum-ID und Share-URL
+  let roomId = new URL(location).searchParams.get("room");
+  if(!roomId) {
+    roomId = crypto.randomUUID().substring(0,8);
+    history.replaceState(null,"", location.pathname + "?room="+roomId);
+  }
+  document.getElementById("shareUrl").value = location.href;
 
-    // Google Login & Raum URL
-    const roomId = new URLSearchParams(window.location.search).get("room") || crypto.randomUUID();
-    let userData = {};
+  // 3) Karten-Setup
+  const map = L.map('map').setView([51.5,10.5],6);
+  const light = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19});
+  const dark  = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19});
+  light.addTo(map);
+  let style = 'light';
 
-    auth.onAuthStateChanged(user => {
-      if (user) {
-        userData = {
-          uid: user.uid,
-          name: user.displayName || "Nutzer",
-          lat: 0, lng: 0
-        };
-        locateAndSharePosition();
-      } else {
-        const provider = new firebase.auth.GoogleAuthProvider();
-        auth.signInWithPopup(provider).catch(e => alert("Login-Fehler: " + e.message));
-      }
-    });
+  // 4) UI-Elemente
+  const menuBtn     = document.getElementById("menuBtn");
+  const styleBtn    = document.getElementById("styleBtn");
+  const loginBtn    = document.getElementById("loginBtn");
+  const logoutBtn   = document.getElementById("logoutBtn");
+  const panel       = document.getElementById("panel");
+  const closePanel  = document.getElementById("closePanel");
+  const trackToggle = document.getElementById("trackToggle");
+  const userListEl  = document.getElementById("userList");
+  const toastEl     = document.getElementById("toast");
 
-    function locateAndSharePosition() {
-      navigator.geolocation.watchPosition(pos => {
-        const latlng = [pos.coords.latitude, pos.coords.longitude];
-        userData.lat = latlng[0];
-        userData.lng = latlng[1];
-        L.marker(latlng).addTo(map).bindPopup("Du").openPopup();
-        db.collection("rooms").doc(roomId).collection("users").doc(userData.uid).set(userData);
-        map.setView(latlng, 15);
-        document.getElementById('loadingOverlay').style.display = 'none';
-      });
+  menuBtn.onclick = () => panel.style.display = 'block';
+  closePanel.onclick = () => panel.style.display = 'none';
+  styleBtn.onclick = () => {
+    map.removeLayer(style==='light'?light:dark);
+    style = style==='light'?'dark':'light';
+    (style==='light'?light:dark).addTo(map);
+  };
+
+  function showToast(msg) {
+    toastEl.innerText = msg;
+    toastEl.style.display = 'block';
+    setTimeout(()=>toastEl.style.display='none',2000);
+  }
+
+  // 5) Auth-Flow
+  let me = null;
+  auth.onAuthStateChanged(u=>{
+    if(u){
+      me = u;
+      loginBtn.style.display  = 'none';
+      logoutBtn.style.display = 'block';
+      initTracking();
+    } else {
+      me = null;
+      loginBtn.style.display  = 'block';
+      logoutBtn.style.display = 'none';
+      clearMarkers();
     }
+  });
+  loginBtn.onclick = ()=> auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())
+                     .catch(e=>alert(e.message));
+  logoutBtn.onclick= ()=> auth.signOut();
 
-    // Live andere Nutzer im Raum anzeigen
-    db.collection("rooms").doc(roomId).collection("users").onSnapshot(snap => {
-      snap.forEach(doc => {
-        const u = doc.data();
-        if (u.uid !== userData.uid) {
-          L.marker([u.lat, u.lng]).addTo(map).bindPopup(u.name);
-        }
+  // 6) Live-Tracking
+  let watchId, unsubUsers;
+  const markers = {};
+
+  function initTracking(){
+    // a) GPS-Watch
+    if("geolocation" in navigator){
+      watchId = navigator.geolocation.watchPosition(p=>{
+        const lat=p.coords.latitude, lng=p.coords.longitude;
+        // eigenen Marker
+        if(markers[me.uid]) markers[me.uid].setLatLng([lat,lng]);
+        else markers[me.uid] = L.marker([lat,lng]).addTo(map).bindPopup("Du");
+        map.setView([lat,lng],15);
+        // in DB schreiben
+        db.collection("rooms").doc(roomId)
+          .collection("users").doc(me.uid)
+          .set({ uid:me.uid, name:me.displayName, lat, lng });
+        hideLoading();
+      }, e=>showToast("GPS-Fehler"), { enableHighAccuracy:true });
+    } else showToast("Kein GPS");
+
+    // b) DB-Listener für alle Nutzer
+    unsubUsers = db.collection("rooms").doc(roomId)
+      .collection("users")
+      .onSnapshot(snap=>{
+        userListEl.innerHTML = "";
+        snap.forEach(doc=>{
+          const u = doc.data();
+          // Marker
+          if(u.uid!==me.uid){
+            if(markers[u.uid]) {
+              markers[u.uid].setLatLng([u.lat,u.lng]);
+            } else {
+              markers[u.uid] = L.marker([u.lat,u.lng])
+                .addTo(map).bindPopup(u.name);
+            }
+            // Liste im Panel
+            const li = document.createElement("li");
+            li.innerText = u.name;
+            userListEl.append(li);
+          }
+        });
       });
-    });
+  }
+
+  function clearMarkers(){
+    if(watchId) navigator.geolocation.clearWatch(watchId);
+    if(unsubUsers) unsubUsers();
+    Object.values(markers).forEach(m=>map.removeLayer(m));
+  }
+
+  // 7) Ladebildschirm ausblenden, sobald GPS oder Map-Tiles geladen
+  function hideLoading(){
+    document.getElementById("loadingOverlay").style.display = "none";
+  }
+  map.on('load', hideLoading);
+
+  // wenn Tiles geparst sind
+  light.on('load', hideLoading);
+  dark.on('load', hideLoading);
+  // fallback nach 8s
+  setTimeout(hideLoading, 8000);
+
   </script>
 </body>
 </html>
