@@ -24,40 +24,142 @@
 <button id="menuBtn" onclick="toggleSidebar()">☰</button>
 <div id="routeInfo"></div>
 <div id="map"></div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js" defer></script>
 <script>
-const firebaseConfig = {
-  apiKey: "...",
-  authDomain: "eierhuettentour.firebaseapp.com",
-  projectId: "eierhuettentour"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();const map = L.map('map').setView([51.5, 10.5], 6); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map); let userMarker, userAngle = 0; let hutMarkers = [], selectedHuts = [], routingControl;
+  document.addEventListener("DOMContentLoaded", () => {
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.appspot.com",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();const map = L.map('map').setView([51.5, 10.5], 6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-const arrowIcon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/883/883407.png', // Pfeil als Fahrrad-Symbol iconSize: [32, 32], iconAnchor: [16, 16] });
+const arrowIcon = L.icon({
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/883/883407.png',
+  iconSize: [32, 32], iconAnchor: [16, 16]
+});
 
-function locateUser() { navigator.geolocation.watchPosition(pos => { const latlng = [pos.coords.latitude, pos.coords.longitude]; if (!userMarker) { userMarker = L.marker(latlng, { icon: arrowIcon, rotationAngle: userAngle }).addTo(map); } else { userMarker.setLatLng(latlng); } map.setView(latlng, 15); checkProximity(latlng); }); }
+let userMarker, userAngle = 0;
+let allHuts = [], hutMarkers = [], selectedHuts = [], routingControl;
 
-if (window.DeviceOrientationEvent) { window.addEventListener("deviceorientationabsolute", e => { userAngle = e.alpha || 0; if (userMarker?.setRotationAngle) userMarker.setRotationAngle(userAngle); }, true); }
+// Fahrrad anzeigen
+function locateUser() {
+  navigator.geolocation.watchPosition(pos => {
+    const latlng = [pos.coords.latitude, pos.coords.longitude];
+    if (!userMarker) {
+      userMarker = L.marker(latlng, { icon: arrowIcon, rotationAngle: userAngle }).addTo(map);
+    } else {
+      userMarker.setLatLng(latlng);
+    }
+    map.setView(latlng, 15);
+    checkProximity(latlng);
+  });
+}
 
-function speak(text) { if (!window.speechSynthesis) return; const msg = new SpeechSynthesisUtterance(text); window.speechSynthesis.speak(msg); }
+if (window.DeviceOrientationEvent) {
+  window.addEventListener("deviceorientationabsolute", e => {
+    userAngle = e.alpha || 0;
+    if (userMarker?.setRotationAngle) userMarker.setRotationAngle(userAngle);
+  }, true);
+}
 
-function checkProximity(pos) { hutMarkers.forEach(h => { if (h.angesagt) return; const dist = map.distance(pos, h.getLatLng()); if (dist < 300) { h.angesagt = true; speak(Du näherst dich der Eierhütte ${h.options.name}. Noch ${Math.round(dist)} Meter.); } }); }
+function speak(text) {
+  if (!window.speechSynthesis) return;
+  const msg = new SpeechSynthesisUtterance(text);
+  window.speechSynthesis.speak(msg);
+}
 
-function renderHut(hut) { const icon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/818/818769.png', iconSize: [30, 30], iconAnchor: [15, 30] }); const marker = L.marker([hut.lat, hut.lng], { icon, name: hut.name }).addTo(map); marker.bindPopup(<strong>${hut.name}</strong><br> 🔌 Strom: ${hut.strom ? 'Ja' : 'Nein'}<br> 🕒 Öffnungszeiten: ${hut.oeffnungszeiten || 'unbekannt'}<br> <button onclick="toggleSelection('${hut.id}')"> ${selectedHuts.includes(hut.id) ? '❌ Entfernen' : '✅ Zur Route'} </button>); hutMarkers.push(marker); }
+function checkProximity(pos) {
+  hutMarkers.forEach(h => {
+    if (h.angesagt) return;
+    const dist = map.distance(pos, h.getLatLng());
+    if (dist < 300) {
+      h.angesagt = true;
+      speak(`Du näherst dich der Eierhütte ${h.options.name}. Noch ${Math.round(dist)} Meter.`);
+    }
+  });
+}
 
-function toggleSelection(id) { const idx = selectedHuts.indexOf(id); if (idx >= 0) selectedHuts.splice(idx, 1); else selectedHuts.push(id); recalculateRoute(); map.closePopup(); }
+function renderHut(hut) {
+  const icon = L.icon({
+    iconUrl: 'https://cdn-icons-png.flaticon.com/512/818/818769.png',
+    iconSize: [30, 30], iconAnchor: [15, 30]
+  });
+  const marker = L.marker([hut.lat, hut.lng], { icon, name: hut.name }).addTo(map);
+  marker.bindPopup(`
+    <strong>${hut.name}</strong><br>
+    🔌 Strom: ${hut.strom ? 'Ja' : 'Nein'}<br>
+    🕒 Öffnungszeiten: ${hut.oeffnungszeiten || 'unbekannt'}<br>
+    <button onclick="toggleSelection('${hut.id}')">
+      ${selectedHuts.includes(hut.id) ? '❌ Entfernen' : '✅ Zur Route'}
+    </button>
+  `);
+  hutMarkers.push(marker);
+}
 
-function recalculateRoute() { if (!userMarker) return; const points = [userMarker.getLatLng()]; selectedHuts.forEach(id => { const hut = allHuts.find(h => h.id === id); if (hut) points.push(L.latLng(hut.lat, hut.lng)); }); if (routingControl) map.removeControl(routingControl); if (points.length < 2) return; routingControl = L.Routing.control({ waypoints: points, lineOptions: { styles: [{ color: '#10b981', weight: 5 }] }, createMarker: () => null, show: false }).addTo(map).on('routesfound', e => { const r = e.routes[0]; document.getElementById('routeInfo').innerText = 🚴 ${(r.summary.totalDistance/1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime/60)} min; }); }
+window.toggleSelection = function(id) {
+  const idx = selectedHuts.indexOf(id);
+  if (idx >= 0) selectedHuts.splice(idx, 1);
+  else selectedHuts.push(id);
+  recalculateRoute();
+  map.closePopup();
+}
 
-const allHuts = []; function loadHuts() { db.collection("eierhuetten").get().then(snap => { snap.forEach(doc => { const d = doc.data(); if (!d.location) return; const hut = { id: doc.id, name: d.name || 'Unbenannt', lat: d.location.latitude, lng: d.location.longitude, strom: d.strom === true || String(d.strom).toLowerCase() === 'ja', oeffnungszeiten: d.oeffnungszeiten || '' }; allHuts.push(hut); renderHut(hut); }); }); }
+function recalculateRoute() {
+  if (!userMarker) return;
+  const points = [userMarker.getLatLng()];
+  selectedHuts.forEach(id => {
+    const hut = allHuts.find(h => h.id === id);
+    if (hut) points.push(L.latLng(hut.lat, hut.lng));
+  });
+  if (routingControl) map.removeControl(routingControl);
+  if (points.length < 2) return;
+  routingControl = L.Routing.control({
+    waypoints: points,
+    lineOptions: { styles: [{ color: '#10b981', weight: 5 }] },
+    createMarker: () => null,
+    show: false
+  }).addTo(map).on('routesfound', e => {
+    const r = e.routes[0];
+    document.getElementById('routeInfo').innerText = `🚴 ${(r.summary.totalDistance/1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime/60)} min`;
+  });
+}
 
-function toggleSidebar() { alert("In Zukunft könnte hier ein richtiges Menü erscheinen."); }
+function loadHuts() {
+  db.collection("eierhuetten").get().then(snap => {
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (!d.location) return;
+      const hut = {
+        id: doc.id,
+        name: d.name || 'Unbenannt',
+        lat: d.location.latitude,
+        lng: d.location.longitude,
+        strom: d.strom === true || String(d.strom).toLowerCase() === 'ja',
+        oeffnungszeiten: d.oeffnungszeiten || ''
+      };
+      allHuts.push(hut);
+      renderHut(hut);
+    });
+  });
+}
 
-loadHuts(); locateUser(); </script>
+window.toggleSidebar = function () {
+  alert("In Zukunft erscheint hier ein Menü.");
+}
+
+locateUser();
+setTimeout(loadHuts, 1000);
+
+}); </script>
 
 </body>
 </html>
