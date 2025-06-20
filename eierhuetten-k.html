@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Eierhütten Gruppen-Trekking</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+  <style>
+    html, body { margin:0; padding:0; height:100%; font-family:sans-serif; }
+    #map { position:absolute; top:0; bottom:0; width:100%; z-index:0; }
+    #loadingOverlay {
+      position:fixed; top:0; left:0; right:0; bottom:0;
+      background:white; color:#10b981;
+      font-size:1.5em; display:flex;
+      align-items:center; justify-content:center;
+      z-index:2000;
+    }
+  </style>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const auth = firebase.auth();
+  </script>
+</head>
+<body>
+  <div id="loadingOverlay">⏳ Karte lädt...</div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+
+  <script>
+    const map = L.map('map').setView([51.5, 10.5], 6);
+    const light = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
+    light.addTo(map);
+
+    // Ladebildschirm spätestens nach 5 Sekunden ausblenden
+    setTimeout(() => {
+      document.getElementById('loadingOverlay').style.display = 'none';
+    }, 5000);
+
+    // Google Login & Raum URL
+    const roomId = new URLSearchParams(window.location.search).get("room") || crypto.randomUUID();
+    let userData = {};
+
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        userData = {
+          uid: user.uid,
+          name: user.displayName || "Nutzer",
+          lat: 0, lng: 0
+        };
+        locateAndSharePosition();
+      } else {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        auth.signInWithPopup(provider).catch(e => alert("Login-Fehler: " + e.message));
+      }
+    });
+
+    function locateAndSharePosition() {
+      navigator.geolocation.watchPosition(pos => {
+        const latlng = [pos.coords.latitude, pos.coords.longitude];
+        userData.lat = latlng[0];
+        userData.lng = latlng[1];
+        L.marker(latlng).addTo(map).bindPopup("Du").openPopup();
+        db.collection("rooms").doc(roomId).collection("users").doc(userData.uid).set(userData);
+        map.setView(latlng, 15);
+        document.getElementById('loadingOverlay').style.display = 'none';
+      });
+    }
+
+    // Live andere Nutzer im Raum anzeigen
+    db.collection("rooms").doc(roomId).collection("users").onSnapshot(snap => {
+      snap.forEach(doc => {
+        const u = doc.data();
+        if (u.uid !== userData.uid) {
+          L.marker([u.lat, u.lng]).addTo(map).bindPopup(u.name);
+        }
+      });
+    });
+  </script>
+</body>
+</html>
