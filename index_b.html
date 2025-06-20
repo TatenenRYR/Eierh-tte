@@ -1,75 +1,55 @@
-<!DOCTYPE html><html lang="de">
+<!DOCTYPE html>
+<html lang="de">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Eierhütten-Radtour</title>
+  <link rel="preload" as="image" href="./bike-icon.png">
+  <link rel="preload" as="image" href="./file_00000000de6c61f8ad4432078ea06ea3.png">
+  <link rel="preload" as="image" href="./file_000000008694624687786cae69507aa3.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css">
   <style>
-    html, body { margin:0; padding:0; height:100%; font-family:sans-serif; }
-    #map { position:absolute; top:0; bottom:0; width:100%; z-index:1; }
-    #menuBtn {
-      position:fixed; top:10px; left:10px;
-      background:#10b981; color:white; padding:10px 14px;
-      border:none; border-radius:10px; z-index:1001; cursor:pointer;
+    html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
+    #map { position: absolute; top: 0; bottom: 0; width: 100%; z-index: 1; }
+    #menuBtn, #followBtn {
+      position: fixed; background: #10b981; color: white; padding: 10px 14px;
+      border: none; border-radius: 10px; z-index: 1001; cursor: pointer;
     }
-    #followBtn {
-      position:fixed; top:60px; right:10px;
-      background:#3b82f6; color:white; padding:10px 14px;
-      border:none; border-radius:10px; z-index:1001; cursor:pointer; display: none;
-    }
+    #menuBtn { top: 10px; left: 10px; }
+    #followBtn { top: 60px; right: 10px; background: #3b82f6; display: none; }
     #routeInfo {
-      position:fixed; bottom:10px; left:50%; transform:translateX(-50%);
-      background:white; padding:10px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.2);
-      z-index:1001; font-size:14px;
+      position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+      background: white; padding: 10px; border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2); z-index: 1001; font-size: 14px;
     }
     #menuPanel {
-      position:fixed; top:60px; left:10px;
-      background:white; border:1px solid #ccc;
-      padding:10px; border-radius:8px;
-      z-index:1001; display:none;
-      box-shadow:0 2px 6px rgba(0,0,0,0.15);
+      position: fixed; top: 60px; left: 10px; background: white;
+      border: 1px solid #ccc; padding: 10px; border-radius: 8px;
+      z-index: 1001; display: none; box-shadow: 0 2px 6px rgba(0,0,0,0.15);
       max-width: 300px;
     }
     #menuPanel h3 { margin-top: 0; }
     #menuPanel label { display: block; margin: 5px 0; }
     #menuPanel button {
-      margin-top: 10px;
-      width: 100%;
-      background: #10b981;
-      color: white;
-      border: none;
-      padding: 8px;
-      border-radius: 6px;
-      cursor: pointer;
+      margin-top: 10px; width: 100%; background: #10b981; color: white;
+      border: none; padding: 8px; border-radius: 6px; cursor: pointer;
     }
-    #menuPanel .submit-btn {
-      background: #ef4444;
-      margin-top: 20px;
-    }
+    #menuPanel .submit-btn { background: #ef4444; margin-top: 20px; }
     .arrow-wrapper {
-      width: 80px; height: 80px;
-      position: relative;
+      width: 80px; height: 80px; position: relative;
     }
     .arrow-spike {
-      width: 20px; height: 20px;
-      position: absolute;
-      top: 0; left: 50%;
-      transform: translateX(-50%) rotate(0deg);
+      width: 20px; height: 20px; position: absolute;
+      top: 0; left: 50%; transform: translateX(-50%) rotate(0deg);
       background: url('https://cdn-icons-png.flaticon.com/512/892/892692.png') no-repeat center;
       background-size: contain;
     }
     #loadingOverlay {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(255, 255, 255, 0.95);
-      z-index: 2000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.5em;
-      font-weight: bold;
-      color: #10b981;
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255, 255, 255, 0.95); z-index: 2000;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5em; font-weight: bold; color: #10b981;
     }
   </style>
 </head>
@@ -89,192 +69,201 @@
   <button class="submit-btn" onclick="window.location.href='chat.html'">➕ Neue Hütte einreichen</button>
 </div>
 <div id="map"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 <script>
-  document.addEventListener("DOMContentLoaded", () => {
-    const ICONS = {
-      bike: './bike-icon.png',
-      egg: './file_00000000de6c61f8ad4432078ea06ea3.png',
-      eggSelected: './file_000000008694624687786cae69507aa3.png'
-    };const map = L.map('map').setView([51.5, 10.5], 6);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-const eggIcon = L.icon({ iconUrl: ICONS.egg, iconSize: [32, 32], iconAnchor: [16, 32] });
-const eggSelectedIcon = L.icon({ iconUrl: ICONS.eggSelected, iconSize: [36, 36], iconAnchor: [18, 36] });
-const bikeIcon = L.icon({ iconUrl: ICONS.bike, iconSize: [36, 36], iconAnchor: [18, 18] });
-
-let userMarker, directionMarker, autoFollow = true;
-let allHuts = [], hutMarkers = {}, selectedHuts = [], routingControl;
-
-const followBtn = document.getElementById("followBtn");
-const selectedList = document.getElementById("selectedList");
-const loader = document.getElementById("loadingOverlay");
-
-function updateSelectedList() {
-  selectedList.innerHTML = '';
-  selectedHuts.forEach(id => {
-    const hut = allHuts.find(h => h.id === id);
-    if (hut) {
-      const li = document.createElement('li');
-      li.textContent = hut.name;
-      selectedList.appendChild(li);
-    }
-  });
-}
-
-function speak(text) {
-  if (!window.speechSynthesis) return;
-  const msg = new SpeechSynthesisUtterance(text);
-  window.speechSynthesis.speak(msg);
-}
-
-function enableAutoFollow() {
-  autoFollow = true;
-  followBtn.style.display = "none";
-  if (userMarker) map.setView(userMarker.getLatLng(), 15);
-}
-
-map.on('movestart', () => {
-  if (autoFollow) {
-    autoFollow = false;
-    followBtn.style.display = "block";
-  }
+firebase.initializeApp({
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour"
 });
+</script>
 
-function locateUser() {
-  navigator.geolocation.watchPosition(pos => {
-    const latlng = [pos.coords.latitude, pos.coords.longitude];
-    if (!userMarker) {
-      userMarker = L.marker(latlng, { icon: bikeIcon }).addTo(map);
-      const wrapper = document.createElement('div');
-      wrapper.className = 'arrow-wrapper';
-      const arrow = document.createElement('div');
-      arrow.className = 'arrow-spike';
-      wrapper.appendChild(arrow);
-      const arrowIcon = L.divIcon({ html: wrapper.outerHTML, iconSize: [80, 80], className: '' });
-      directionMarker = L.marker(latlng, { icon: arrowIcon }).addTo(map);
-    } else {
-      userMarker.setLatLng(latlng);
-      directionMarker.setLatLng(latlng);
-    }
-    if (autoFollow) map.setView(latlng, 15);
-  });
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const map = L.map('map');
+  const loader = document.getElementById("loadingOverlay");
+  const followBtn = document.getElementById("followBtn");
+  const selectedList = document.getElementById("selectedList");
 
-  if (window.DeviceOrientationEvent) {
-    window.addEventListener("deviceorientation", e => {
-      const spike = document.querySelector('.arrow-spike');
-      if (spike && e.alpha != null) {
-        spike.style.transform = `translateX(-50%) rotate(${e.alpha}deg)`;
-      }
-    }, true);
+  const ICONS = {
+    bike: './bike-icon.png',
+    egg: './file_00000000de6c61f8ad4432078ea06ea3.png',
+    eggSelected: './file_000000008694624687786cae69507aa3.png'
+  };
+
+  L.tileLayer('https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}{r}.png', {
+    maxZoom: 20,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+  map.setView([51.5, 10.5], 6);
+  map.whenReady(() => startApp());
+
+  const eggIcon = L.icon({ iconUrl: ICONS.egg, iconSize: [32, 32], iconAnchor: [16, 32] });
+  const eggSelectedIcon = L.icon({ iconUrl: ICONS.eggSelected, iconSize: [36, 36], iconAnchor: [18, 36] });
+  const bikeIcon = L.icon({ iconUrl: ICONS.bike, iconSize: [36, 36], iconAnchor: [18, 18] });
+
+  let userMarker, directionMarker, autoFollow = true;
+  let allHuts = [], hutMarkers = {}, selectedHuts = [], routingControl;
+
+  function startApp() {
+    locateUser();
+    loadHutsLive();
   }
-}
 
-function loadHutsLive() {
-  firebase.firestore().collection("eierhuetten").onSnapshot(snap => {
-    allHuts = [];
-    Object.values(hutMarkers).forEach(m => map.removeLayer(m));
-    hutMarkers = {};
-    snap.forEach(doc => {
-      const d = doc.data();
-      if (!d.location) return;
-      const hut = {
-        id: doc.id,
-        name: d.name || 'Unbenannt',
-        lat: d.location.latitude,
-        lng: d.location.longitude,
-        strom: d.strom === true || String(d.strom).toLowerCase() === 'ja',
-        oeffnungszeiten: d.oeffnungszeiten || ''
-      };
-      allHuts.push(hut);
-      renderHut(hut);
+  function locateUser() {
+    navigator.geolocation.watchPosition(pos => {
+      const latlng = [pos.coords.latitude, pos.coords.longitude];
+      if (!userMarker) {
+        userMarker = L.marker(latlng, { icon: bikeIcon }).addTo(map);
+        const wrapper = document.createElement('div');
+        wrapper.className = 'arrow-wrapper';
+        const arrow = document.createElement('div');
+        arrow.className = 'arrow-spike';
+        wrapper.appendChild(arrow);
+        const arrowIcon = L.divIcon({ html: wrapper.outerHTML, iconSize: [80, 80], className: '' });
+        directionMarker = L.marker(latlng, { icon: arrowIcon }).addTo(map);
+      } else {
+        userMarker.setLatLng(latlng);
+        directionMarker.setLatLng(latlng);
+      }
+      if (autoFollow) map.setView(latlng, 15);
     });
+
+    if (window.DeviceOrientationEvent) {
+      window.addEventListener("deviceorientation", e => {
+        const spike = document.querySelector('.arrow-spike');
+        if (spike && e.alpha != null) {
+          spike.style.transform = `translateX(-50%) rotate(${e.alpha}deg)`;
+        }
+      }, true);
+    }
+  }
+
+  function loadHutsLive() {
+    firebase.firestore().collection("eierhuetten").onSnapshot(snap => {
+      allHuts = [];
+      Object.values(hutMarkers).forEach(m => map.removeLayer(m));
+      hutMarkers = {};
+      snap.forEach(doc => {
+        const d = doc.data();
+        if (!d.location) return;
+        const hut = {
+          id: doc.id,
+          name: d.name || 'Unbenannt',
+          lat: d.location.latitude,
+          lng: d.location.longitude,
+          strom: d.strom === true || String(d.strom).toLowerCase() === 'ja',
+          oeffnungszeiten: d.oeffnungszeiten || ''
+        };
+        allHuts.push(hut);
+        renderHut(hut);
+      });
+      updateSelectedList();
+      recalculateRoute();
+      loader.style.display = "none";
+    });
+  }
+
+  function renderHut(hut) {
+    const marker = L.marker([hut.lat, hut.lng], { icon: eggIcon, name: hut.name }).addTo(map);
+    marker.bindPopup(() => `
+      <strong>${hut.name}</strong><br>
+      🔌 Strom: ${hut.strom ? 'Ja' : 'Nein'}<br>
+      🕒 Öffnungszeiten: ${hut.oeffnungszeiten || 'unbekannt'}<br>
+      <button onclick="toggleSelection('${hut.id}')">
+        ${selectedHuts.includes(hut.id) ? '❌ Entfernen' : '✅ Zur Route'}
+      </button>
+    `);
+    hutMarkers[hut.id] = marker;
+  }
+
+  window.toggleSelection = function(id) {
+    const idx = selectedHuts.indexOf(id);
+    if (idx >= 0) {
+      selectedHuts.splice(idx, 1);
+      hutMarkers[id].setIcon(eggIcon);
+    } else {
+      selectedHuts.push(id);
+      hutMarkers[id].setIcon(eggSelectedIcon);
+    }
     updateSelectedList();
     recalculateRoute();
-    loader.style.display = "none";
-  });
-}
-
-function renderHut(hut) {
-  const marker = L.marker([hut.lat, hut.lng], { icon: eggIcon, name: hut.name }).addTo(map);
-  marker.bindPopup(() => `
-    <strong>${hut.name}</strong><br>
-    🔌 Strom: ${hut.strom ? 'Ja' : 'Nein'}<br>
-    🕒 Öffnungszeiten: ${hut.oeffnungszeiten || 'unbekannt'}<br>
-    <button onclick="toggleSelection('${hut.id}')">
-      ${selectedHuts.includes(hut.id) ? '❌ Entfernen' : '✅ Zur Route'}
-    </button>
-  `);
-  hutMarkers[hut.id] = marker;
-}
-
-window.toggleSelection = function(id) {
-  const idx = selectedHuts.indexOf(id);
-  if (idx >= 0) {
-    selectedHuts.splice(idx, 1);
-    hutMarkers[id].setIcon(eggIcon);
-  } else {
-    selectedHuts.push(id);
-    hutMarkers[id].setIcon(eggSelectedIcon);
+    map.closePopup();
   }
-  updateSelectedList();
-  recalculateRoute();
-  map.closePopup();
-}
 
-function recalculateRoute() {
-  try {
-    if (!userMarker) return;
-    const points = [userMarker.getLatLng()];
-    const routeMode = document.querySelector("input[name='routeMode']:checked").value;
-    const hutsToUse = [...selectedHuts];
-    if (routeMode === "optimized") hutsToUse.sort();
-    hutsToUse.forEach(id => {
+  function updateSelectedList() {
+    selectedList.innerHTML = '';
+    selectedHuts.forEach(id => {
       const hut = allHuts.find(h => h.id === id);
-      if (hut) points.push(L.latLng(hut.lat, hut.lng));
+      if (hut) {
+        const li = document.createElement('li');
+        li.textContent = hut.name;
+        selectedList.appendChild(li);
+      }
     });
-    if (routingControl && routingControl._container) {
-      map.removeControl(routingControl);
-    }
-    if (points.length < 2) return;
-    const routeColor = (routeMode === 'optimized') ? 'orange' : '#10b981';
-    routingControl = L.Routing.control({
-      waypoints: points,
-      lineOptions: { styles: [{ color: routeColor, weight: 5 }] },
-      createMarker: () => null,
-      show: false
-    }).addTo(map).on('routesfound', e => {
-      const r = e.routes[0];
-      document.getElementById('routeInfo').innerText = `🚴 ${(r.summary.totalDistance/1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime/60)} min`;
-    });
-  } catch (err) {
-    console.error("Fehler beim Neuberechnen der Route:", err);
   }
-}
 
-function resetSelection() {
-  selectedHuts.forEach(id => {
-    if (hutMarkers[id]) hutMarkers[id].setIcon(eggIcon);
+  function recalculateRoute() {
+    try {
+      if (!userMarker) return;
+      const points = [userMarker.getLatLng()];
+      const routeMode = document.querySelector("input[name='routeMode']:checked").value;
+      const hutsToUse = [...selectedHuts];
+      if (routeMode === "optimized") hutsToUse.sort();
+      hutsToUse.forEach(id => {
+        const hut = allHuts.find(h => h.id === id);
+        if (hut) points.push(L.latLng(hut.lat, hut.lng));
+      });
+      if (routingControl && routingControl._container) {
+        map.removeControl(routingControl);
+      }
+      if (points.length < 2) return;
+      const routeColor = (routeMode === 'optimized') ? 'orange' : '#10b981';
+      routingControl = L.Routing.control({
+        waypoints: points,
+        lineOptions: { styles: [{ color: routeColor, weight: 5 }] },
+        createMarker: () => null,
+        show: false
+      }).addTo(map).on('routesfound', e => {
+        const r = e.routes[0];
+        document.getElementById('routeInfo').innerText = `🚴 ${(r.summary.totalDistance/1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime/60)} min`;
+      });
+    } catch (err) {
+      console.error("Fehler bei Routenberechnung:", err);
+    }
+  }
+
+  function resetSelection() {
+    selectedHuts.forEach(id => {
+      if (hutMarkers[id]) hutMarkers[id].setIcon(eggIcon);
+    });
+    selectedHuts = [];
+    updateSelectedList();
+    recalculateRoute();
+  }
+
+  window.enableAutoFollow = function () {
+    autoFollow = true;
+    followBtn.style.display = "none";
+    if (userMarker) map.setView(userMarker.getLatLng(), 15);
+  }
+
+  window.toggleSidebar = function () {
+    const panel = document.getElementById("menuPanel");
+    panel.style.display = (panel.style.display === "block") ? "none" : "block";
+  }
+
+  map.on('movestart', () => {
+    if (autoFollow) {
+      autoFollow = false;
+      followBtn.style.display = "block";
+    }
   });
-  selectedHuts = [];
-  updateSelectedList();
-  recalculateRoute();
-}
-
-window.toggleSidebar = function () {
-  const panel = document.getElementById("menuPanel");
-  panel.style.display = (panel.style.display === "block") ? "none" : "block";
-}
-
-locateUser();
-loadHutsLive();
-
-}); </script>
-
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script><script>
-  firebase.initializeApp({
-    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-    authDomain: "eierhuettentour.firebaseapp.com",
-    projectId: "eierhuettentour"
-  });
-</script></body>
+});
+</script>
+</body>
 </html>
