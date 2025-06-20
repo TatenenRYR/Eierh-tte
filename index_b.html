@@ -8,11 +8,12 @@
   <style>
     html, body { margin:0; padding:0; height:100%; font-family:sans-serif; }
     #map { position:absolute; top:0; bottom:0; width:100%; z-index:1; }
-    #menuBtn {
+    #menuBtn, #followBtn {
       position:fixed; top:10px; left:10px;
       background:#10b981; color:white; padding:10px 14px;
       border:none; border-radius:10px; z-index:1001; cursor:pointer;
     }
+    #followBtn { left:auto; right:10px; top:10px; }
     #routeInfo {
       position:fixed; bottom:10px; left:50%; transform:translateX(-50%);
       background:white; padding:10px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.2);
@@ -22,12 +23,13 @@
 </head>
 <body>
 <button id="menuBtn" onclick="toggleSidebar()">☰</button>
+<button id="followBtn" onclick="enableAutoFollow()">📍 Folge mir</button>
 <div id="routeInfo"></div>
 <div id="map"></div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js" defer></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js" defer></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js" defer></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 <script>
   document.addEventListener("DOMContentLoaded", () => {
     const firebaseConfig = {
@@ -42,40 +44,46 @@
     const db = firebase.firestore();const map = L.map('map').setView([51.5, 10.5], 6);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-const arrowIcon = L.icon({
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/883/883407.png',
+const eggIcon = L.icon({
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/3515/3515424.png', // 🥚 Eier-Symbol
+  iconSize: [32, 32], iconAnchor: [16, 32]
+});
+
+const bikeIcon = L.icon({
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/1144/1144824.png', // 🚲 Fahrrad-Symbol
   iconSize: [32, 32], iconAnchor: [16, 16]
 });
 
-let userMarker, userAngle = 0;
+let userMarker, userAngle = 0, autoFollow = true;
 let allHuts = [], hutMarkers = [], selectedHuts = [], routingControl;
-
-// Fahrrad anzeigen
-function locateUser() {
-  navigator.geolocation.watchPosition(pos => {
-    const latlng = [pos.coords.latitude, pos.coords.longitude];
-    if (!userMarker) {
-      userMarker = L.marker(latlng, { icon: arrowIcon, rotationAngle: userAngle }).addTo(map);
-    } else {
-      userMarker.setLatLng(latlng);
-    }
-    map.setView(latlng, 15);
-    checkProximity(latlng);
-  });
-}
-
-if (window.DeviceOrientationEvent) {
-  window.addEventListener("deviceorientationabsolute", e => {
-    userAngle = e.alpha || 0;
-    if (userMarker?.setRotationAngle) userMarker.setRotationAngle(userAngle);
-  }, true);
-}
 
 function speak(text) {
   if (!window.speechSynthesis) return;
   const msg = new SpeechSynthesisUtterance(text);
   window.speechSynthesis.speak(msg);
 }
+
+function locateUser() {
+  navigator.geolocation.watchPosition(pos => {
+    const latlng = [pos.coords.latitude, pos.coords.longitude];
+    if (!userMarker) {
+      userMarker = L.marker(latlng, { icon: bikeIcon }).addTo(map);
+    } else {
+      userMarker.setLatLng(latlng);
+    }
+    if (autoFollow) map.setView(latlng, 15);
+    checkProximity(latlng);
+  });
+}
+
+function enableAutoFollow() {
+  autoFollow = true;
+  if (userMarker) map.setView(userMarker.getLatLng(), 15);
+}
+
+map.on('dragstart', () => {
+  autoFollow = false;
+});
 
 function checkProximity(pos) {
   hutMarkers.forEach(h => {
@@ -89,11 +97,7 @@ function checkProximity(pos) {
 }
 
 function renderHut(hut) {
-  const icon = L.icon({
-    iconUrl: 'https://cdn-icons-png.flaticon.com/512/818/818769.png',
-    iconSize: [30, 30], iconAnchor: [15, 30]
-  });
-  const marker = L.marker([hut.lat, hut.lng], { icon, name: hut.name }).addTo(map);
+  const marker = L.marker([hut.lat, hut.lng], { icon: eggIcon, name: hut.name }).addTo(map);
   marker.bindPopup(`
     <strong>${hut.name}</strong><br>
     🔌 Strom: ${hut.strom ? 'Ja' : 'Nein'}<br>
