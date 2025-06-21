@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eierhütten Tour</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    html, body { margin: 0; height: 100%; font-family: sans-serif; }
+    #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+    #bottomSheet {
+      position: fixed; left: 0; right: 0; bottom: -80%;
+      height: 60%; background: white; z-index: 1001;
+      border-top-left-radius: 16px; border-top-right-radius: 16px;
+      box-shadow: 0 -2px 6px rgba(0,0,0,0.2);
+      transition: bottom 0.3s ease;
+    }
+    #bottomSheet.open { bottom: 0; }
+    #bottomSheet .handle {
+      width: 40px; height: 5px; background: #ccc;
+      border-radius: 3px; margin: 10px auto;
+    }
+    #bottomSheet ul { padding: 1em; list-style: none; }
+    #bottomSheet li { margin: 5px 0; }
+    #bottomNav {
+      position: fixed; bottom: 0; left: 0; width: 100%;
+      height: 56px; background: #f9f9f9;
+      display: flex; justify-content: space-around;
+      border-top: 1px solid #ccc; z-index: 1002;
+    }
+    #bottomNav button {
+      flex: 1; font-size: 20px;
+      background: none; border: none; padding: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div id="bottomSheet">
+    <div class="handle"></div>
+    <ul id="routeList"></ul>
+  </div>
+
+  <nav id="bottomNav">
+    <button id="toggleSheet">🚴 Route</button>
+    <button id="followBtn">📍 Follow</button>
+  </nav>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // TODO: Eigene Firebase Config einfügen
+    const firebaseConfig = {
+      apiKey: "DEINE_API_KEY",
+      authDomain: "DEINE_DOMAIN.firebaseapp.com",
+      projectId: "DEIN_PROJECT_ID",
+      storageBucket: "DEIN_BUCKET.appspot.com",
+      messagingSenderId: "DEINE_SENDER_ID",
+      appId: "DEINE_APP_ID"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    const map = L.map('map').setView([52.52, 13.4], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    let userMarker = null;
+    let follow = false;
+    let route = [];
+
+    map.locate({ watch: true });
+    map.on("locationfound", e => {
+      if (!userMarker) {
+        userMarker = L.marker(e.latlng).addTo(map);
+      } else {
+        userMarker.setLatLng(e.latlng);
+      }
+      if (follow) map.setView(e.latlng);
+    });
+
+    const routeList = document.getElementById("routeList");
+    function updateRouteList() {
+      routeList.innerHTML = "";
+      route.forEach((h, i) => {
+        const li = document.createElement("li");
+        li.textContent = h.name + " ";
+        const btn = document.createElement("button");
+        btn.textContent = "✖";
+        btn.onclick = () => {
+          route.splice(i, 1);
+          updateRouteList();
+        };
+        li.appendChild(btn);
+        routeList.appendChild(li);
+      });
+    }
+
+    function toggleRoute(id) {
+      const hut = allHuts.find(h => h.id === id);
+      const idx = route.findIndex(r => r.id === id);
+      if (idx > -1) {
+        route.splice(idx, 1);
+      } else {
+        route.push(hut);
+      }
+      updateRouteList();
+    }
+
+    const allHuts = [];
+    db.collection("eierhuetten").onSnapshot(snapshot => {
+      snapshot.forEach(doc => {
+        const h = doc.data();
+        h.id = doc.id;
+        allHuts.push(h);
+        const marker = L.marker([h.latitude, h.longitude]).addTo(map);
+        marker.bindPopup(\`
+          <b>\${h.name}</b><br>
+          \${h.beschreibung || ""}<br>
+          <button onclick="toggleRoute('\${h.id}')">➕/➖ Route</button>
+        \`);
+      });
+    });
+
+    document.getElementById("toggleSheet").onclick = () => {
+      document.getElementById("bottomSheet").classList.toggle("open");
+    };
+    document.getElementById("followBtn").onclick = () => {
+      follow = !follow;
+      if (follow && userMarker) map.setView(userMarker.getLatLng());
+    };
+
+    window.toggleRoute = toggleRoute; // für Inline-Button
+  </script>
+</body>
+</html>
