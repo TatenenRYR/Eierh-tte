@@ -6,31 +6,66 @@
   <title>Eierhütten Tour</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    html, body { margin: 0; height: 100%; font-family: sans-serif; }
-    #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: sans-serif;
+    }
+    #map {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+    }
     #bottomSheet {
-      position: fixed; left: 0; right: 0; bottom: -80%;
-      height: 60%; background: white; z-index: 1001;
-      border-top-left-radius: 16px; border-top-right-radius: 16px;
+      position: fixed;
+      left: 0; right: 0; bottom: -70%;
+      height: 50%;
+      background: white;
+      border-top-left-radius: 16px;
+      border-top-right-radius: 16px;
       box-shadow: 0 -2px 6px rgba(0,0,0,0.2);
       transition: bottom 0.3s ease;
+      z-index: 1001;
     }
-    #bottomSheet.open { bottom: 0; }
+    #bottomSheet.open {
+      bottom: 0;
+    }
     #bottomSheet .handle {
-      width: 40px; height: 5px; background: #ccc;
-      border-radius: 3px; margin: 10px auto;
+      width: 40px;
+      height: 6px;
+      background: #ccc;
+      border-radius: 3px;
+      margin: 10px auto;
     }
-    #bottomSheet ul { padding: 1em; list-style: none; }
-    #bottomSheet li { margin: 5px 0; }
+    #bottomSheet ul {
+      list-style: none;
+      padding: 1em;
+      margin: 0;
+    }
+    #bottomSheet li {
+      margin: 5px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
     #bottomNav {
-      position: fixed; bottom: 0; left: 0; width: 100%;
-      height: 56px; background: #f9f9f9;
-      display: flex; justify-content: space-around;
-      border-top: 1px solid #ccc; z-index: 1002;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 56px;
+      background: #f9f9f9;
+      display: flex;
+      justify-content: space-around;
+      border-top: 1px solid #ccc;
+      z-index: 1002;
     }
     #bottomNav button {
-      flex: 1; font-size: 20px;
-      background: none; border: none; padding: 10px;
+      flex: 1;
+      font-size: 18px;
+      background: none;
+      border: none;
+      padding: 10px;
     }
   </style>
 </head>
@@ -46,34 +81,34 @@
     <button id="toggleSheet">🚴 Route</button>
     <button id="followBtn">📍 Follow</button>
   </nav>
-
+  <!-- Firebase & Leaflet -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script>
-    // TODO: Eigene Firebase Config einfügen
-    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-  authDomain: "eierhuettentour.firebaseapp.com",
-  projectId: "eierhuettentour",
-  storageBucket: "eierhuettentour.firebasestorage.app",
-  messagingSenderId: "348272135205",
-  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
-  measurementId: "G-16V6K5GXDT"
-};
 
+  <script>
+    // ✅ Deine echte Firebase-Konfiguration
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.firebasestorage.app",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
+    };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
-    const map = L.map('map').setView([52.52, 13.4], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const map = L.map('map').setView([52.52, 13.405], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap-Mitwirkende'
+    }).addTo(map);
 
+    // GPS-Ortung
     let userMarker = null;
     let follow = false;
-    let route = [];
-
-    map.locate({ watch: true });
+    map.locate({ watch: true, enableHighAccuracy: true });
     map.on("locationfound", e => {
       if (!userMarker) {
         userMarker = L.marker(e.latlng).addTo(map);
@@ -83,12 +118,16 @@ const firebaseConfig = {
       if (follow) map.setView(e.latlng);
     });
 
+    // Route-Logik
+    let route = [];
+    const allHuts = [];
     const routeList = document.getElementById("routeList");
+
     function updateRouteList() {
       routeList.innerHTML = "";
-      route.forEach((h, i) => {
+      route.forEach((hut, i) => {
         const li = document.createElement("li");
-        li.textContent = h.name + " ";
+        li.textContent = hut.name;
         const btn = document.createElement("button");
         btn.textContent = "✖";
         btn.onclick = () => {
@@ -100,41 +139,55 @@ const firebaseConfig = {
       });
     }
 
-    function toggleRoute(id) {
+    window.toggleRoute = function(id) {
       const hut = allHuts.find(h => h.id === id);
+      if (!hut) return;
       const idx = route.findIndex(r => r.id === id);
-      if (idx > -1) {
-        route.splice(idx, 1);
-      } else {
-        route.push(hut);
-      }
+      if (idx >= 0) route.splice(idx, 1);
+      else route.push(hut);
       updateRouteList();
-    }
+    };
 
-    const allHuts = [];
+    // Hütten aus Firestore laden
     db.collection("eierhuetten").onSnapshot(snapshot => {
+      allHuts.length = 0;
+      map.eachLayer(layer => {
+        if (layer instanceof L.Marker && layer !== userMarker) {
+          map.removeLayer(layer);
+        }
+      });
       snapshot.forEach(doc => {
         const h = doc.data();
         h.id = doc.id;
         allHuts.push(h);
-        const marker = L.marker([h.latitude, h.longitude]).addTo(map);
-        marker.bindPopup(\`
-          <b>\${h.name}</b><br>
-          \${h.beschreibung || ""}<br>
-          <button onclick="toggleRoute('\${h.id}')">➕/➖ Route</button>
-        \`);
+        if (h.location?.latitude && h.location?.longitude) {
+          const marker = L.marker([h.location.latitude, h.location.longitude]).addTo(map);
+          marker.bindPopup(`
+            <b>${h.name}</b><br>
+            ${h.extras || ""}<br>
+            <small>
+              Strom: ${h.strom || "?"} <br>
+              Sitzplätze: ${h.sitzplaetze || "?"} <br>
+              Öffnungszeiten: ${h.oeffnungszeiten || "?"}
+            </small><br><br>
+            <button onclick="toggleRoute('${h.id}')">
+              ${route.find(r => r.id === h.id) ? '✖ Entfernen' : '➕ Zur Route'}
+            </button>
+          `);
+        }
       });
     });
 
+    // Sheet & Follow-Button
     document.getElementById("toggleSheet").onclick = () => {
       document.getElementById("bottomSheet").classList.toggle("open");
     };
     document.getElementById("followBtn").onclick = () => {
       follow = !follow;
-      if (follow && userMarker) map.setView(userMarker.getLatLng());
+      if (follow && userMarker) {
+        map.setView(userMarker.getLatLng());
+      }
     };
-
-    window.toggleRoute = toggleRoute; // für Inline-Button
   </script>
 </body>
 </html>
