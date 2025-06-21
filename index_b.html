@@ -63,24 +63,25 @@
       cursor: pointer;
       user-select: none;
     }
+    #controls { position: absolute; top: 10px; left: 10px; background: white; padding: 10px; border-radius: 10px; z-index: 1000; }
+ 
   </style>
 
   <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <script>
-    // Firebase initialisieren
-    firebase.initializeApp({
-      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-      authDomain: "eierhuettentour.firebaseapp.com",
-      projectId: "eierhuettentour"
-    });
-    const db = firebase.firestore();
-  </script>
+
 </head>
 <body>
   <!-- Ladebildschirm -->
   <div id="loadingOverlay">⏳ Karte lädt...</div>
+<div id="controls">
+  <div id="auth">
+    <button onclick="login()">Mit Google anmelden</button>
+    <button onclick="logout()">Abmelden</button>
+    <div id="userInfo"></div>
+  </div>
+</div>
 
   <!-- UI-Buttons -->
   <button id="menuBtn" onclick="toggleSidebar()">☰ Menü</button>
@@ -108,12 +109,53 @@
 
   <!-- Karte -->
   <div id="map"></div>
-
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+  import { getFirestore, collection, doc, setDoc, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+</script>
   <!-- Leaflet & Routing Machine JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
 
   <script>
+    // Firebase config
+  const firebaseConfig = {
+    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+    authDomain: "eierhuettentour.firebaseapp.com",
+    projectId: "eierhuettentour"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const auth = getAuth(app);
+  const provider = new GoogleAuthProvider();
+
+
+
+    // Login/Logout
+  window.login = async () => {
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (e) {
+      alert("Login fehlgeschlagen");
+      console.error(e);
+    }
+  };
+
+  window.logout = async () => {
+    await signOut(auth);
+  };
+
+  // Benutzerstatus anzeigen
+  onAuthStateChanged(auth, user => {
+    const info = document.getElementById('userInfo');
+    if (user) {
+      info.innerHTML = `Angemeldet als <strong>${user.displayName}</strong> (${user.email})`;
+    } else {
+      info.innerHTML = "Nicht angemeldet";
+    }
+  });
     // Karte & Layer
     const map = L.map('map');
     const light = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
