@@ -1,0 +1,80 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Eierhütten Radtour</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; }
+    #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+    #loadingOverlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: white; color: #10b981;
+      font-size: 1.5em; display: flex;
+      align-items: center; justify-content: center;
+      z-index: 2000;
+    }
+  </style>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+  <div id="loadingOverlay">⏳ Lade Karte...</div>
+  <div id="map"></div>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const auth = firebase.auth();
+    const provider = new firebase.auth.GoogleAuthProvider();
+
+    auth.onAuthStateChanged(user => {
+      if (user) initApp(user);
+      else auth.signInWithRedirect(provider);
+    });
+
+    function initApp(user) {
+      const map = L.map('map').setView([51.5, 10.5], 6);
+      const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap',
+        maxZoom: 19
+      }).addTo(map);
+
+      const bikeIcon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png', iconSize: [32,32], iconAnchor: [16,16] });
+      const eggIcon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/616/616408.png', iconSize: [32,32], iconAnchor: [16,32] });
+      let userMarker;
+
+      navigator.geolocation.watchPosition(pos => {
+        const latlng = [pos.coords.latitude, pos.coords.longitude];
+        if (!userMarker) {
+          userMarker = L.marker(latlng, { icon: bikeIcon }).addTo(map);
+          map.setView(latlng, 15);
+        } else {
+          userMarker.setLatLng(latlng);
+        }
+        document.getElementById("loadingOverlay").style.display = "none";
+      }, err => {
+        console.error("GPS Fehler:", err);
+      }, { enableHighAccuracy: true });
+
+      db.collection("eierhuetten").onSnapshot(snap => {
+        snap.forEach(doc => {
+          const d = doc.data();
+          if (!d.location) return;
+          L.marker([d.location.latitude, d.location.longitude], { icon: eggIcon })
+            .addTo(map)
+            .bindPopup(`<b>${d.name || "Unbenannt"}</b>`);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
