@@ -1,21 +1,23 @@
-
 <!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Eierhütten-Radtour – Visuell</title>
+  <title>Eierhütten-Radtour SMART</title>
+
+  <!-- Leaflet & Plugins CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
   <style>
     body {
       margin: 0;
       font-family: sans-serif;
       background: #f4f4f4;
-    }
-    #map {
-      height: 100vh;
-      width: 100%;
     }
     .controls {
       position: absolute;
@@ -26,72 +28,168 @@
       padding: 10px;
       border-radius: 10px;
       box-shadow: 0 0 10px rgba(0,0,0,0.2);
+      width: calc(100% - 20px);
+      max-width: 360px;
     }
-    button {
+    .controls input, .controls button {
+      width: 100%;
+      margin: .3rem 0;
+      padding: .8rem;
       font-size: 1.2rem;
-      padding: 0.6rem 1rem;
-      margin: 0.2rem;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+    .controls button {
+      background: #4caf50;
+      color: white;
+      border: none;
+    }
+    .controls button:hover {
+      background: #388e3c;
+    }
+    #map {
+      height: 100vh;
       width: 100%;
     }
   </style>
+
+  <script>
+    // Firebase initialisieren
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.firebasestorage.app",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+  </script>
 </head>
 <body>
+
   <div class="controls">
     <button onclick="ladeUndFiltereHuetten()">🔍 Hütten laden</button>
-    <button onclick="starteFahrradroutenplanung()">🚴 Route starten</button>
+    <button onclick="starteFahrradroutenplanung()">🚴 Route planen</button>
+    <button onclick="erstelleTourLink()">🔗 Tour-Link</button>
+    <button onclick="speichereRoute()">💾 Route speichern</button>
+    <input id="tourIdInput" type="text" placeholder="Tour-ID laden" />
+    <button onclick="ladeRoute(document.getElementById('tourIdInput').value)">📥 Route laden</button>
   </div>
+
   <div id="map"></div>
 
+  <!-- Leaflet & Plugins JS -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+
   <script>
-    const map = L.map('map').setView([51, 10], 7);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // Karte & Cluster
+    const map = L.map('map').setView([51,10], 7);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
       attribution: '© OpenStreetMap'
     }).addTo(map);
+    const markerCluster = L.markerClusterGroup().addTo(map);
 
-    const markerCluster = L.markerClusterGroup();
-    const routenpunkte = [];
-
-    navigator.geolocation.getCurrentPosition(pos => {
-      const userLat = pos.coords.latitude;
-      const userLng = pos.coords.longitude;
-      map.setView([userLat, userLng], 12);
-      L.circle([userLat, userLng], { radius: 5000, color: '#4caf50' }).addTo(map);
+    // Umkreis-Kreis (5 km)
+    const umkreis = L.circle([0,0],{ radius:0, color:'#4caf50', fillOpacity:0.1 }).addTo(map);
+    navigator.geolocation.getCurrentPosition(pos=>{
+      const lat=pos.coords.latitude, lng=pos.coords.longitude;
+      map.setView([lat,lng],12);
+      umkreis.setLatLng([lat,lng]).setRadius(5000);
     });
 
-    function ladeUndFiltereHuetten() {
+    // State
+    const routenpunkte = [];
+    let routingControl = null;
+
+    // Beispiel-Daten (hier ersetzen durch Firestore-Abfrage)
+    const huetten = [
+      /* Hier Firestore laden, aktuell Dummy: */
+      { id:'a', name:'Hütte A', lat:51.05, lng:10.05 },
+      { id:'b', name:'Hütte B', lat:51.1, lng:10.1 },
+      { id:'c', name:'Hütte C', lat:51.15, lng:10.2 }
+    ];
+
+    // Hütten laden & Klick-Handler
+    function ladeUndFiltereHuetten(){
       markerCluster.clearLayers();
-      routenpunkte.length = 0;
-
-      const huetten = [
-        { name: "Hütte A", lat: 51.1, lng: 10.1 },
-        { name: "Hütte B", lat: 51.2, lng: 10.2 }
-      ];
-
-      huetten.forEach(h => {
-        const marker = L.marker([h.lat, h.lng]).bindPopup(h.name);
-        marker.on('click', () => {
-          routenpunkte.push(L.latLng(h.lat, h.lng));
-          alert(h.name + " zur Route hinzugefügt.");
+      routenpunkte.length=0;
+      huetten.forEach(h=>{
+        const m = L.marker([h.lat,h.lng]).bindPopup(h.name);
+        m.on('click',()=>{
+          const idx = routenpunkte.findIndex(p=>p.id===h.id);
+          if(idx===-1){
+            routenpunkte.push({ id:h.id, lat:h.lat, lng:h.lng });
+            alert(h.name+' hinzugefügt');
+          } else {
+            routenpunkte.splice(idx,1);
+            alert(h.name+' entfernt');
+          }
         });
-        markerCluster.addLayer(marker);
+        markerCluster.addLayer(m);
       });
-
-      map.addLayer(markerCluster);
     }
 
-    function starteFahrradroutenplanung() {
-      if (!routenpunkte.length) return alert("Bitte mindestens eine Hütte auswählen.");
-      if (window.routingControl) map.removeControl(window.routingControl);
-      window.routingControl = L.Routing.control({
-        waypoints: routenpunkte,
-        router: L.Routing.osrmv1({ profile: 'bike' }),
-        lineOptions: { styles: [{ color: 'green', weight: 5 }] },
-        show: false
+    // Fahrrad-Routenplanung
+    function starteFahrradroutenplanung(){
+      if(routenpunkte.length===0) return alert('Wähle zuerst Hütten aus');
+      if(routingControl) map.removeControl(routingControl);
+      routingControl = L.Routing.control({
+        waypoints: routenpunkte.map(p=>L.latLng(p.lat,p.lng)),
+        router: L.Routing.osrmv1({profile:'bike'}),
+        lineOptions:{styles:[{color:'green',weight:5}]},
+        show:false
       }).addTo(map);
     }
+
+    // Tour-Link generieren
+    function erstelleTourLink(){
+      if(!routenpunkte.length) return alert('Keine Route!');
+      const coords = routenpunkte.map(p=>`${p.lat},${p.lng}`).join(';');
+      prompt('Teile diesen Link:', `${location.origin+location.pathname}?tour=${encodeURIComponent(coords)}`);
+    }
+
+    // Firestore: Route speichern
+    function speichereRoute(){
+      if(!routenpunkte.length) return alert('Keine Route!');
+      const tourId = 'tour_'+Date.now();
+      db.collection('touren').doc(tourId).set({
+        erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+        punkte: routenpunkte
+      })
+      .then(()=>alert('Gespeichert: '+tourId))
+      .catch(e=>alert('Error: '+e));
+    }
+
+    // Firestore: Route laden
+    function ladeRoute(id){
+      if(!id) return alert('Gib eine Tour-ID ein');
+      db.collection('touren').doc(id).get()
+        .then(doc=>{
+          if(!doc.exists) return alert('Nicht gefunden');
+          const data = doc.data().punkte;
+          routenpunkte.length=0;
+          data.forEach(p=>routenpunkte.push(p));
+          starteFahrradroutenplanung();
+        })
+        .catch(e=>alert('Error: '+e));
+    }
+
+    // Wenn URL ?tour=... Parameter
+    const param = new URLSearchParams(location.search).get('tour');
+    if(param){
+      const arr = decodeURIComponent(param).split(';');
+      arr.forEach(s=>{
+        const [lat,lng]=s.split(',').map(Number);
+        routenpunkte.push({lat,lng});
+      });
+      starteFahrradroutenplanung();
+    }
   </script>
+
 </body>
 </html>
