@@ -112,6 +112,7 @@
   <!-- Leaflet & Routing Machine JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-openrouteservice/dist/leaflet-routing-openrouteservice.min.js"></script>
 
   <script>
 
@@ -351,28 +352,35 @@
         }
       });
     }
+const ORS_API_KEY = '5b3ce3597851110001cf624893412fe92e0448e493663f2482a80572'; // <-- Hier deinen eigenen API-Key einfügen
 
-    // Route berechnen
-    function recalculateRoute() {
-      if(!userMarker||selectedHuts.length===0) return;
-      const pts=[userMarker.getLatLng()];
-      const mode=document.querySelector('input[name="routeMode"]:checked').value;
-      const arr=[...selectedHuts];
-      if(mode==='optimized') arr.sort();
-      arr.forEach(id=>{
-        const h=allHuts.find(x=>x.id===id);
-        if(h) pts.push([h.lat,h.lng]);
-      });
-      if(routingControl) map.removeControl(routingControl);
-      routingControl=L.Routing.control({
-        waypoints:pts, createMarker:()=>null, show:false,
-        lineOptions:{ styles:[{ color:mode==='optimized'?'orange':'#10b981', weight:5 }] }
-      }).addTo(map).on('routesfound',e=>{
-        const r=e.routes[0];
-        document.getElementById('routeInfo').innerText=
-          `🚴 ${(r.summary.totalDistance/1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime/60)} min`;
-      });
-    }
+function recalculateRoute() {
+  if(!userMarker||selectedHuts.length===0) return;
+  const pts=[userMarker.getLatLng()];
+  const mode=document.querySelector('input[name="routeMode"]:checked').value;
+  const arr=[...selectedHuts];
+  if(mode==='optimized') arr.sort();
+  arr.forEach(id=>{
+    const h=allHuts.find(x=>x.id===id);
+    if(h) pts.push([h.lat,h.lng]);
+  });
+  if(routingControl) map.removeControl(routingControl);
+
+  routingControl = L.Routing.control({
+    waypoints: pts,
+    router: L.Routing.openrouteservice(ORS_API_KEY, {
+      profile: 'cycling-regular'
+    }),
+    createMarker: () => null,
+    show: false,
+    lineOptions: { styles: [{ color: mode === 'optimized' ? 'orange' : '#10b981', weight: 5 }] }
+  }).addTo(map).on('routesfound', e => {
+    const r = e.routes[0];
+    document.getElementById('routeInfo').innerText =
+      `🚴 ${(r.summary.totalDistance / 1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime / 60)} min`;
+  });
+}
+
 
     // Route löschen
     function resetSelection(){
