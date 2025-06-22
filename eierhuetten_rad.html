@@ -1,0 +1,144 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Eierhütten-Radtour</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+  <style>
+    body { margin: 0; font-family: sans-serif; background: #f0f0f0; }
+    #map { height: 100vh; width: 100vw; }
+    .controls {
+      position: absolute;
+      top: 10px; left: 10px;
+      z-index: 1000;
+      background: white;
+      padding: 10px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+      max-width: 320px;
+    }
+    .controls button, .controls input {
+      width: 100%;
+      margin: 5px 0;
+      padding: 14px;
+      font-size: 1.2rem;
+      border-radius: 6px;
+    }
+    .dark-mode .controls { background: #222; color: white; }
+    .dark-mode .controls button { background: #333; color: white; }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <button onclick="ladeHuetten()">🔍 Hütten laden</button>
+    <button onclick="planeRoute()">🚴 Route planen</button>
+    <button onclick="speichereTour()">💾 Tour speichern</button>
+    <input id="tourId" placeholder="Tour-ID eingeben..." />
+    <button onclick="ladeTour()">📥 Tour laden</button>
+    <button onclick="tourTeilen()">🔗 Tour-Link</button>
+    <button onclick="toggleDarkMode()">🌓 Dark Mode</button>
+  </div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script>
+    // Firebase Init
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.firebasestorage.app",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    const map = L.map('map').setView([51, 10], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    let routingControl, circle;
+    const huetten = [];
+    const routenpunkte = [];
+    const markerCluster = L.markerClusterGroup().addTo(map);
+
+    navigator.geolocation.getCurrentPosition(pos => {
+      const { latitude, longitude } = pos.coords;
+      const location = [latitude, longitude];
+      map.setView(location, 13);
+      circle = L.circle(location, { radius: 3000, color: 'green' }).addTo(map);
+    });
+
+    function ladeHuetten() {
+      markerCluster.clearLayers();
+      db.collection("eierhuetten").where("status", "==", "aktiv").get().then(snapshot => {
+        snapshot.forEach(doc => {
+          const h = doc.data();
+          const marker = L.marker([h.latitude, h.longitude]);
+          marker.bindPopup(`<b>${h.name}</b><br><button onclick="toggleHütte('${doc.id}', ${h.latitude}, ${h.longitude})">➕ / ➖ Zur Route</button>`);
+          markerCluster.addLayer(marker);
+          huetten.push({ id: doc.id, lat: h.latitude, lng: h.longitude, name: h.name });
+        });
+      });
+    }
+
+    function toggleHütte(id, lat, lng) {
+      const index = routenpunkte.findIndex(p => p.id === id);
+      if (index === -1) routenpunkte.push({ id, lat, lng });
+      else routenpunkte.splice(index, 1);
+    }
+
+    function planeRoute() {
+      if (routingControl) map.removeControl(routingControl);
+      routingControl = L.Routing.control({
+        waypoints: routenpunkte.map(p => L.latLng(p.lat, p.lng)),
+        router: L.Routing.osrmv1({ profile: 'bike' }),
+        show: false
+      }).addTo(map);
+    }
+
+    function speichereTour() {
+      const id = "tour_" + Date.now();
+      db.collection("touren").doc(id).set({ punkte: routenpunkte, erstellt: new Date() }).then(() => alert("Gespeichert: " + id));
+    }
+
+    function ladeTour() {
+      const id = document.getElementById("tourId").value;
+      db.collection("touren").doc(id).get().then(doc => {
+        if (doc.exists) {
+          routenpunkte.length = 0;
+          doc.data().punkte.forEach(p => routenpunkte.push(p));
+          planeRoute();
+        } else alert("Nicht gefunden!");
+      });
+    }
+
+    function tourTeilen() {
+      const coords = routenpunkte.map(p => `${p.lat},${p.lng}`).join(";");
+      const url = `${location.origin + location.pathname}?tour=${encodeURIComponent(coords)}`;
+      prompt("Tour-Link:", url);
+    }
+
+    function toggleDarkMode() {
+      document.body.classList.toggle("dark-mode");
+    }
+
+    const param = new URLSearchParams(location.search).get('tour');
+    if (param) {
+      param.split(";").forEach(s => {
+        const [lat, lng] = s.split(",").map(Number);
+        routenpunkte.push({ lat, lng });
+      });
+      planeRoute();
+    }
+  </script>
+</body>
+</html>
