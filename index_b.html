@@ -75,6 +75,37 @@
 
   <!-- OpenRouteService Plugin für Leaflet Routing Machine -->
   <script src="https://unpkg.com/leaflet-routing-openrouteservice/dist/leaflet-routing-openrouteservice.min.js"></script>
+</head>
+<body>
+  <!-- Ladebildschirm -->
+  <div id="loadingOverlay">⏳ Karte lädt...</div>
+
+  <!-- UI-Buttons -->
+  <button id="menuBtn" onclick="toggleSidebar()">☰ Menü</button>
+  <button id="followBtn" onclick="enableAutoFollow()">📍 Folgen</button>
+  <button id="styleToggleBtn" onclick="toggleMapStyle()">🌓 Stil</button>
+
+  <!-- Gruppen-Tracking Toggle -->
+  <label id="groupTrackingToggle">
+    <input type="checkbox" id="groupTrackCheckbox" /> Gruppen-Trekking live
+  </label>
+
+  <!-- Seitenleiste / Menü -->
+  <div id="menuPanel">
+    <h3>🚴 Menü</h3>
+    <ul id="selectedList"></ul>
+    <label><input type="radio" name="routeMode" value="normal" checked> Normale Reihenfolge</label><br>
+    <label><input type="radio" name="routeMode" value="optimized"> Optimiert</label><br>
+    <button onclick="recalculateRoute()">🔄 Route neu berechnen</button>
+    <button onclick="resetSelection()">🗑 Route löschen</button>
+  </div>
+
+  <!-- Routendetails -->
+  <div id="routeInfo"></div>
+  <div class="toast" id="toast"></div>
+
+  <!-- Karte -->
+  <div id="map"></div>
 
   <script>
     // Firebase initialisieren
@@ -181,7 +212,7 @@
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
             timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-            name: userId // Optional: hier kannst du z.B. ein Eingabefeld für Namen machen
+            name: userId
           });
         }
       }, err => {
@@ -286,7 +317,8 @@
           hutMarkers[hut.id] = m;
         });
         hutsLoaded = true; checkLoadingDone();
-        updateSelectedList(); recalculateRoute();
+        updateSelectedList();
+        recalculateRoute();
       });
     }
 
@@ -302,7 +334,8 @@
         hutMarkers[id].setIcon(eggSelectedIcon);
         showToast('Hütte hinzugefügt');
       }
-      updateSelectedList(); recalculateRoute();
+      updateSelectedList();
+      recalculateRoute();
     }
 
     // Liste aktualisieren
@@ -319,41 +352,58 @@
       });
     }
 
-    // OpenRouteService API-Key (bitte hier deinen Key einfügen)
+    // OpenRouteService API-Key (deinen eigenen eintragen)
     const ORS_API_KEY = '5b3ce3597851110001cf624893412fe92e0448e493663f2482a80572';
 
-    // Route berechnen mit ORS Fahrradprofil
-    function recalculateRoute() {
-      if(!userMarker||selectedHuts.length===0) return;
-      const pts=[userMarker.getLatLng()];
-      const mode=document.querySelector('input[name="routeMode"]:checked').value;
-      const arr=[...selectedHuts];
-      if(mode==='optimized') arr.sort();
-      arr.forEach(id=>{
-        const h=allHuts.find(x=>x.id===id);
-        if(h) pts.push([h.lat,h.lng]);
-      });
-      if(routingControl) map.removeControl(routingControl);
+    // Route berechnen mit OpenRouteService Fahrradprofil
+    async function recalculateRoute() {
+      if(!userMarker || selectedHuts.length === 0) return;
 
+      const mode = document.querySelector('input[name="routeMode"]:checked').value;
+      let points = [userMarker.getLatLng()];
+      let hutsOrder = [...selectedHuts];
+
+      if (mode === 'optimized') {
+        // Einfache Optimierung: Sortiere nach Entfernung zum Start (kannst du erweitern)
+        hutsOrder.sort((a,b) => {
+          const ha = allHuts.find(h => h.id === a);
+          const hb = allHuts.find(h => h.id === b);
+          if(!ha || !hb) return 0;
+          const distA = map.distance(points[0], L.latLng(ha.lat, ha.lng));
+          const distB = map.distance(points[0], L.latLng(hb.lat, hb.lng));
+          return distA - distB;
+        });
+      }
+
+      hutsOrder.forEach(id => {
+        const h = allHuts.find(x => x.id === id);
+        if(h) points.push(L.latLng(h.lat, h.lng));
+      });
+
+      // Entferne alten Routing-Control
+      if (routingControl) map.removeControl(routingControl);
+
+      // Routing über OpenRouteService (Fahrrad)
       routingControl = L.Routing.control({
-        waypoints: pts,
-        router: L.Routing.openrouteservice(ORS_API_KEY, {
-          profile: 'cycling-regular'
-        }),
-        createMarker: () => null,
+        waypoints: points,
+        router: L.Routing.openrouteservice(ORS_API_KEY, { profile: 'cycling-regular' }),
         show: false,
+        createMarker: () => null,
         lineOptions: { styles: [{ color: mode === 'optimized' ? 'orange' : '#10b981', weight: 5 }] }
       }).addTo(map).on('routesfound', e => {
         const r = e.routes[0];
         document.getElementById('routeInfo').innerText =
-          `🚴 ${(r.summary.totalDistance / 1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime / 60)} min`;
+          `🚴 ${(r.summary.totalDistance/1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime/60)} min`;
+      }).on('routingerror', e => {
+        showToast('Routing-Fehler: ' + e.error.message);
       });
     }
 
     // Route löschen
     function resetSelection(){
       selectedHuts.forEach(id=>hutMarkers[id]?.setIcon(eggIcon));
-      selectedHuts=[]; updateSelectedList();
+      selectedHuts=[];
+      updateSelectedList();
       if(routingControl) map.removeControl(routingControl);
       document.getElementById('routeInfo').innerText='';
       showToast('Route gelöscht');
@@ -362,21 +412,21 @@
     // Menü ein/aus
     function toggleSidebar(){
       const p=document.getElementById('menuPanel');
-      p.style.display=(p.style.display==='block'?'none':'block');
+      p.style.display = (p.style.display==='block' ? 'none' : 'block');
     }
 
     // Auto-Follow aktivieren
     function enableAutoFollow(){
-      autoFollow=true;
-      document.getElementById('followBtn').style.display='none';
-      if(userMarker) map.setView(userMarker.getLatLng(),15);
+      autoFollow = true;
+      document.getElementById('followBtn').style.display = 'none';
+      if(userMarker) map.setView(userMarker.getLatLng(), 15);
     }
 
-    // Beobachte Kartenbewegung
-    map.on('movestart',()=>{
+    // Beobachte Kartenbewegung, um Auto-Follow auszuschalten
+    map.on('movestart', () => {
       if(autoFollow){
-        autoFollow=false;
-        document.getElementById('followBtn').style.display='block';
+        autoFollow = false;
+        document.getElementById('followBtn').style.display = 'block';
       }
     });
 
@@ -385,7 +435,7 @@
     loadHutsLive();
 
     // Automatische Neuberechnung beim Modus-Wechsel
-    document.querySelectorAll('input[name="routeMode"]').forEach(r=>r.addEventListener('change', recalculateRoute));
+    document.querySelectorAll('input[name="routeMode"]').forEach(r => r.addEventListener('change', recalculateRoute));
   </script>
 </body>
 </html>
