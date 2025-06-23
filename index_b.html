@@ -63,6 +63,11 @@
       cursor: pointer;
       user-select: none;
     }
+    .warn-icon {
+  font-size: 20px;
+  text-align: center;
+  line-height: 20px;
+    }
   </style>
 
   <!-- Firebase SDKs -->
@@ -378,11 +383,17 @@ map.addLayer(clusterGroup);
 
   if (routingControl) map.removeControl(routingControl);
 
+  // Alte Warnsymbole entfernen
+  if (window.warnMarkers) {
+    window.warnMarkers.forEach(m => map.removeLayer(m));
+  }
+  window.warnMarkers = [];
+
   routingControl = L.Routing.control({
     waypoints: pts,
     router: L.Routing.osrmv1({
       serviceUrl: 'https://router.project-osrm.org/route/v1',
-      profile: 'car' // 'bike' wäre ignoriert bei öffentlichem Server
+      profile: 'car'
     }),
     createMarker: () => null,
     show: false,
@@ -391,23 +402,31 @@ map.addLayer(clusterGroup);
     }
   }).addTo(map).on('routesfound', e => {
     const r = e.routes[0];
-
-    // 🚨 Zusätzliche Prüfung auf ungeeignete Straßen (z. B. Autobahn)
-    const badTypes = ['motorway', 'trunk']; // ggf. erweitern
-    let unsafe = false;
-
-    r.instructions = r.instructions || [];
-    r.instructions.forEach(instr => {
-      if (instr.road && badTypes.includes(instr.road_class)) {
-        unsafe = true;
-      }
-    });
-
     document.getElementById('routeInfo').innerText =
       `🚴 ${(r.summary.totalDistance / 1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime / 60)} min`;
 
+    const badTypes = ['motorway', 'trunk'];
+    let unsafe = false;
+
+    // Schritt-für-Schritt prüfen
+    r.instructions.forEach(instr => {
+      if (instr.road_class && badTypes.includes(instr.road_class)) {
+        unsafe = true;
+
+        const m = L.marker(instr.latLng, {
+          icon: L.divIcon({
+            className: 'warn-icon',
+            html: '⚠️',
+            iconSize: [20, 20]
+          })
+        }).bindPopup(`⚠️ Achtung: ${instr.road} (${instr.road_class})`);
+        m.addTo(map);
+        window.warnMarkers.push(m);
+      }
+    });
+
     if (unsafe) {
-      showToast("⚠️ Achtung: Die Route enthält ggf. ungeeignete Straßen für Fahrräder (z. B. Autobahn)");
+      showToast("⚠️ Achtung: Die Route enthält ungeeignete Straßen für Fahrräder.");
     }
   });
 }
