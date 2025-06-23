@@ -361,8 +361,43 @@ map.addLayer(clusterGroup);
         }
       });
     }
-
     function recalculateRoute() {
+  if (!userMarker || selectedHuts.length === 0) return;
+
+  const points = [userMarker.getLatLng()];
+  const mode = document.querySelector('input[name="routeMode"]:checked').value;
+  const arr = [...selectedHuts];
+
+  if (mode === 'optimized') arr.sort();
+
+  arr.forEach(id => {
+    const hut = allHuts.find(h => h.id === id);
+    if (hut) points.push([hut.lat, hut.lng]);
+  });
+
+  if (routingControl) map.removeControl(routingControl);
+
+  routingControl = L.Routing.control({
+    waypoints: points,
+    router: new L.Routing.OpenRouteService({
+      serviceUrl: 'https://api.openrouteservice.org/v2/directions/cycling-regular',
+      apiKey: '5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87', // <--- WICHTIG!
+      profile: 'cycling-regular',
+      timeout: 30 * 1000
+    }),
+    createMarker: () => null,
+    show: false,
+    lineOptions: {
+      styles: [{ color: mode === 'optimized' ? 'orange' : '#10b981', weight: 5 }]
+    }
+  }).addTo(map).on('routesfound', e => {
+    const r = e.routes[0];
+    document.getElementById('routeInfo').innerText =
+      `🚴 ${(r.summary.totalDistance / 1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime / 60)} min`;
+  });
+    }
+
+  /*  function recalculateRoute() {
   if (!userMarker || selectedHuts.length === 0) return;
 
   const points = [userMarker.getLatLng()];
@@ -391,7 +426,7 @@ map.addLayer(clusterGroup);
     document.getElementById('routeInfo').innerText =
       `🚴 ${(r.summary.totalDistance / 1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime / 60)} min`;
   });
-}
+}*/
     
     // Route löschen
     function resetSelection(){
