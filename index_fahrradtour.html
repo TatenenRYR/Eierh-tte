@@ -1,172 +1,32 @@
 <!DOCTYPE html>
-<html lang="de">
+<html>
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
+  <title>ORS Routing Test</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Eierhütten-Radtour mit Gruppen-Trekking</title>
-
-  <!-- Leaflet & Routing Machine CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
-
-  <!-- MarkerCluster CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
-
-  <style>
-    html, body { margin:0; padding:0; height:100%; font-family:sans-serif; }
-    #map { position:absolute; top:0; bottom:0; width:100%; z-index:0; }
-    /* restliches CSS unverändert... */
-  </style>
-
-  <!-- Firebase SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <script>
-    firebase.initializeApp({
-      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-      authDomain: "eierhuettentour.firebaseapp.com",
-      projectId: "eierhuettentour"
-    });
-    const db = firebase.firestore();
-  </script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
 </head>
 <body>
-  <!-- Ladebildschirm -->
-  <div id="loadingOverlay">⏳ Karte lädt...</div>
+  <div id="map" style="width:100%;height:100vh;"></div>
 
-  <!-- UI-Buttons, Sidebar, Toasts, etc. wie gehabt... -->
-
-  <div id="map"></div>
-
-  <!-- Leaflet & Routing Machine JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
-
-  <!-- MarkerCluster JS -->
-  <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
-
+  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+  <script src="https://unpkg.com/lrm-openrouteservice@1.1.1/dist/lrm-openrouteservice.min.js"></script>
   <script>
-    // Karte & Layer (unverändert)
-    const map = L.map('map');
-    const light = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19, attribution: '&copy; OSM contributors'
-    });
-    light.addTo(map);
-    map.setView([51.5, 10.5], 6);
+    const map = L.map('map').setView([49.41461, 8.681495], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    // MarkerCluster-Gruppe initialisieren
-    const markerCluster = L.markerClusterGroup();
-    map.addLayer(markerCluster);
-
-    // Icons unverändert...
-    const bikeIcon = L.icon({ iconUrl: './bike-icon.png', iconSize: [36,36], iconAnchor: [18,18] });
-    const eggIcon = L.icon({ iconUrl: './file_00000000de6c61f8ad4432078ea06ea3.png', iconSize: [32,32], iconAnchor: [16,32] });
-    const eggSelectedIcon = L.icon({ iconUrl: './file_000000008694624687786cae69507aa3.png', iconSize: [36,36], iconAnchor: [18,36] });
-    const groupMemberIcon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/1946/1946429.png', iconSize: [32, 32], iconAnchor: [16, 32] });
-
-    // State
-    let userMarker, directionMarker, autoFollow = true;
-    let allHuts = [], selectedHuts = [], hutMarkers = {}, routingControl;
-
-    // Gruppen-Tracking, locateUser() etc. unverändert...
-    locateUser();
-
-    // Hütten live laden und in Cluster packen
-    function loadHutsLive() {
-      db.collection('eierhuetten').onSnapshot(snap => {
-        allHuts = [];
-        // entferne alte Marker
-        markerCluster.clearLayers();
-        hutMarkers = {};
-
-        snap.forEach(doc => {
-          const d = doc.data();
-          if (!d.location) return;
-          const hut = {
-            id: doc.id,
-            name: d.name || 'Unbenannt',
-            lat: d.location.latitude,
-            lng: d.location.longitude,
-            strom: (d.strom === true || String(d.strom).toLowerCase() === 'ja'),
-            oeffnungszeiten: d.oeffnungszeiten || ''
-          };
-          allHuts.push(hut);
-
-          const m = L.marker([hut.lat, hut.lng], { icon: eggIcon });
-          m.bindPopup(`
-            <strong>${hut.name}</strong><br>
-            🔌 Strom: ${hut.strom ? 'Ja' : 'Nein'}<br>
-            🕒 Öffnungszeiten: ${hut.oeffnungszeiten}<br>
-            <button onclick="toggleSelection('${hut.id}')">
-              ${selectedHuts.includes(hut.id) ? '❌ Entfernen' : '✅ Zur Route'}
-            </button>
-          `);
-          markerCluster.addLayer(m);
-          hutMarkers[hut.id] = m;
-        });
-
-        // Karte laden abgeschlossen
-        document.getElementById('loadingOverlay').style.display = 'none';
-        updateSelectedList();
-        recalculateRoute();
-      });
-    }
-
-    // Auswahl umschalten (unverändert)
-    function toggleSelection(id) {
-      const i = selectedHuts.indexOf(id);
-      if (i >= 0) {
-        selectedHuts.splice(i, 1);
-        hutMarkers[id].setIcon(eggIcon);
-      } else {
-        selectedHuts.push(id);
-        hutMarkers[id].setIcon(eggSelectedIcon);
-      }
-      updateSelectedList();
-      recalculateRoute();
-    }
-
-    // Listen-Update wie gehabt...
-    function updateSelectedList() { /* ... */ }
-
-    // **Verbesserte Fahrrad-Routenberechnung** mit OSRM-Bike-Profil
-    function recalculateRoute() {
-      if (!userMarker || selectedHuts.length === 0) return;
-      const waypoints = [userMarker.getLatLng()];
-      selectedHuts.forEach(id => {
-        const h = allHuts.find(x => x.id === id);
-        if (h) waypoints.push(L.latLng(h.lat, h.lng));
-      });
-
-      if (routingControl) map.removeControl(routingControl);
-      routingControl = L.Routing.control({
-        waypoints: waypoints,
-        createMarker: () => null,
-        lineOptions: { styles: [{ color: '#10b981', weight: 5 }] },
-        router: L.Routing.osrmv1({
-          serviceUrl: 'https://router.project-osrm.org/route/v1',
-          profile: 'bike'
-        }),
-        show: false
-      }).addTo(map).on('routesfound', e => {
-        const r = e.routes[0];
-        document.getElementById('routeInfo').innerText =
-          `🚴 ${(r.summary.totalDistance / 1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime / 60)} min`;
-      });
-    }
-
-    // Restliche Funktionen: resetSelection(), toggleSidebar(), etc. bleiben unverändert...
-
-    // Automatische Fallback-Ausblendung des Loaders nach 10s
-    window.onload = () => {
-      setTimeout(() => {
-        document.getElementById('loadingOverlay').style.display = 'none';
-      }, 10000);
-    };
-
-    // Initialisierung
-    loadHutsLive();
+    L.Routing.control({
+      waypoints: [
+        L.latLng(49.41461, 8.681495),
+        L.latLng(49.420318, 8.687872)
+      ],
+      router: new L.Routing.OpenRouteService({
+        apiKey: '5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87'
+      }),
+      createMarker: () => null
+    }).addTo(map);
   </script>
 </body>
 </html>
