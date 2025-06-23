@@ -77,8 +77,6 @@
 <script src="https://unpkg.com/lrm-openrouteservice/dist/lrm-openrouteservice.min.js"></script>
 
 
-
-  
   <!-- im <head> oder vor deinem Skript -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
@@ -369,35 +367,48 @@ map.addLayer(clusterGroup);
   function recalculateRoute() {
   if (!userMarker || selectedHuts.length === 0) return;
 
-  const start = userMarker.getLatLng();
-  const mode = document.querySelector('input[name="routeMode"]:checked')?.value || 'normal';
-
+  const pts = [userMarker.getLatLng()];
+  const mode = document.querySelector('input[name="routeMode"]:checked').value;
   const arr = [...selectedHuts];
   if (mode === 'optimized') arr.sort();
-
-  const waypoints = [start];
   arr.forEach(id => {
     const h = allHuts.find(x => x.id === id);
-    if (h) waypoints.push(L.latLng(h.lat, h.lng));
+    if (h) pts.push([h.lat, h.lng]);
   });
 
   if (routingControl) map.removeControl(routingControl);
 
   routingControl = L.Routing.control({
-    waypoints,
-    router: new L.Routing.OpenRouteService('5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87', {
-      profile: 'cycling-regular', // 🚴 Fahrrad!
-      format: 'geojson'
+    waypoints: pts,
+    router: L.Routing.osrmv1({
+      serviceUrl: 'https://router.project-osrm.org/route/v1',
+      profile: 'car' // 'bike' wäre ignoriert bei öffentlichem Server
     }),
     createMarker: () => null,
     show: false,
     lineOptions: {
-      styles: [{ color: 'green', weight: 5 }]
+      styles: [{ color: mode === 'optimized' ? 'orange' : '#10b981', weight: 5 }]
     }
   }).addTo(map).on('routesfound', e => {
     const r = e.routes[0];
+
+    // 🚨 Zusätzliche Prüfung auf ungeeignete Straßen (z. B. Autobahn)
+    const badTypes = ['motorway', 'trunk']; // ggf. erweitern
+    let unsafe = false;
+
+    r.instructions = r.instructions || [];
+    r.instructions.forEach(instr => {
+      if (instr.road && badTypes.includes(instr.road_class)) {
+        unsafe = true;
+      }
+    });
+
     document.getElementById('routeInfo').innerText =
       `🚴 ${(r.summary.totalDistance / 1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime / 60)} min`;
+
+    if (unsafe) {
+      showToast("⚠️ Achtung: Die Route enthält ggf. ungeeignete Straßen für Fahrräder (z. B. Autobahn)");
+    }
   });
 }
     
