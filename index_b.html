@@ -445,29 +445,43 @@ document.getElementById('routeInfo').innerText =
   });
 }*/
     function getBRouterRoute(coordsArray) {
-  const profile = "trekking"; // Alternativen: "fastbike", "mtb", "shortest"
+  if (coordsArray.length < 2) {
+    showToast("Mindestens 2 Punkte für die Route nötig.");
+    return;
+  }
+
+  const profile = "trekking";
   const url = "https://brouter.de/brouter?output=geojson&profile=" + profile +
-              "&lonlats=" + coordsArray.map(c => c.lng + "," + c.lat).join("|");
+              "&lonlats=" + coordsArray.map(c => `${c.lng},${c.lat}`).join("|");
 
   fetch(url)
-    .then(res => res.json())
+    .then(res => {
+      if (!res.ok) throw new Error("Antwortfehler von BRouter");
+      return res.json();
+    })
     .then(geojson => {
+      if (!geojson.features || geojson.features.length === 0) {
+        showToast("❌ Keine Route gefunden");
+        return;
+      }
+
       if (window.brouterLayer) map.removeLayer(window.brouterLayer);
       window.brouterLayer = L.geoJSON(geojson, {
         style: { color: '#10b981', weight: 5 }
       }).addTo(map);
 
-      const totalLength = geojson.features[0].properties["track-length"];
-      const timeMinutes = geojson.features[0].properties["total-time"] / 60;
+      const props = geojson.features[0].properties;
+      const distKm = (props["track-length"] || 0) / 1000;
+      const mins = (props["total-time"] || 0) / 60;
 
       document.getElementById('routeInfo').innerText =
-        `🚴 ${(totalLength / 1000).toFixed(1)} km · ⏱ ${Math.round(timeMinutes)} min`;
+        `🚴 ${distKm.toFixed(1)} km · ⏱ ${Math.round(mins)} min`;
     })
     .catch(err => {
       console.error("BRouter Fehler:", err);
-      showToast("❌ Route konnte nicht berechnet werden " + err);
+      showToast("❌ Route konnte nicht berechnet werden");
     });
-    } 
+}
     function recalculateRoute() {
   if (!userMarker || selectedHuts.length === 0) return;
 
