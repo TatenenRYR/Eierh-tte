@@ -379,7 +379,7 @@ map.addLayer(clusterGroup);
         }
       });
     }
-  function recalculateRoute() {
+ /* function recalculateRoute() {
   if (!userMarker || selectedHuts.length === 0) return;
 
   const pts = [userMarker.getLatLng()];
@@ -443,7 +443,42 @@ document.getElementById('routeInfo').innerText =
       showToast("⚠️ Achtung: Die Route enthält ungeeignete Straßen für Fahrräder.");
     }
   });
-}
+}*/
+    function getBRouterRoute(coordsArray) {
+  const profile = "trekking"; // Alternativen: "fastbike", "mtb", "shortest"
+  const url = "https://brouter.de/brouter?output=geojson&profile=" + profile +
+              "&lonlats=" + coordsArray.map(c => c.lng + "," + c.lat).join("|");
+
+  fetch(url)
+    .then(res => res.json())
+    .then(geojson => {
+      if (window.brouterLayer) map.removeLayer(window.brouterLayer);
+      window.brouterLayer = L.geoJSON(geojson, {
+        style: { color: '#10b981', weight: 5 }
+      }).addTo(map);
+
+      const totalLength = geojson.features[0].properties["track-length"];
+      const timeMinutes = geojson.features[0].properties["total-time"] / 60;
+
+      document.getElementById('routeInfo').innerText =
+        `🚴 ${(totalLength / 1000).toFixed(1)} km · ⏱ ${Math.round(timeMinutes)} min`;
+    })
+    .catch(err => {
+      console.error("BRouter Fehler:", err);
+      showToast("❌ Route konnte nicht berechnet werden");
+    });
+    } 
+    function recalculateRoute() {
+  if (!userMarker || selectedHuts.length === 0) return;
+
+  const pts = [userMarker.getLatLng()];
+  selectedHuts.forEach(id => {
+    const h = allHuts.find(x => x.id === id);
+    if (h) pts.push({ lat: h.lat, lng: h.lng });
+  });
+
+  getBRouterRoute(pts);
+    }
     
     // Route löschen
     function resetSelection(){
