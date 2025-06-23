@@ -352,53 +352,47 @@
       });
     }
 
-    // OpenRouteService API-Key (deinen eigenen eintragen)
     const ORS_API_KEY = '5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87';
 
-    // Route berechnen mit OpenRouteService Fahrradprofil
-    async function recalculateRoute() {
-      if(!userMarker || selectedHuts.length === 0) return;
+    function recalculateRoute(){
+      if(!userMarker || selectedHuts.length===0) return;
 
-      const mode = document.querySelector('input[name="routeMode"]:checked').value;
-      let points = [userMarker.getLatLng()];
-      let hutsOrder = [selectedHuts];
+      const mode=document.querySelector('input[name="routeMode"]:checked').value;
+      const origin = userMarker.getLatLng();
+      const hutsOrder = [...selectedHuts];
 
-      if (mode === 'optimized') {
-        // Einfache Optimierung: Sortiere nach Entfernung zum Start (kannst du erweitern)
-        hutsOrder.sort((a,b) => {
+      if(mode==='optimized'){
+        hutsOrder.sort((a, b) => {
           const ha = allHuts.find(h => h.id === a);
           const hb = allHuts.find(h => h.id === b);
           if(!ha || !hb) return 0;
-          const distA = map.distance(points[0], L.latLng(ha.lat, ha.lng));
-          const distB = map.distance(points[0], L.latLng(hb.lat, hb.lng));
-          return distA - distB;
+          return origin.distanceTo(L.latLng(ha.lat, ha.lng)) - origin.distanceTo(L.latLng(hb.lat, hb.lng));
         });
       }
 
-      hutsOrder.forEach(id => {
-        const h = allHuts.find(x => x.id === id);
-        if(h) points.push(L.latLng(h.lat, h.lng));
-      });
+      const waypoints = [origin].concat(hutsOrder.map(id => {
+        const h=allHuts.find(x=>x.id===id);
+        return h? L.latLng(h.lat, h.lng) : null;
+      }).filter(Boolean));
 
-      // Entferne alten Routing-Control
-      if (routingControl) map.removeControl(routingControl);
+      if(routingControl) map.removeControl(routingControl);
 
-      // Routing über OpenRouteService (Fahrrad)
       routingControl = L.Routing.control({
-        waypoints: points,
+        waypoints: waypoints,
         router: L.Routing.openrouteservice(ORS_API_KEY, { profile: 'cycling-regular' }),
         show: false,
         createMarker: () => null,
         lineOptions: { styles: [{ color: mode === 'optimized' ? 'orange' : '#10b981', weight: 5 }] }
-      }).addTo(map).on('routesfound', e => {
-        const r = e.routes[0];
+      }).addTo(map).on('routesfound', e=>{
+        const r=e.routes[0];
         document.getElementById('routeInfo').innerText =
           `🚴 ${(r.summary.totalDistance/1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime/60)} min`;
-      }).on('routingerror', e => {
-        showToast('Routing-Fehler: ' + e.error.message);
+      }).on('routingerror', e=>{
+        console.error(e);
+        showToast('Routing-Fehler: ' + (e.error?.message || e.message));
       });
     }
-
+    
     // Route löschen
     function resetSelection(){
       selectedHuts.forEach(id=>hutMarkers[id]?.setIcon(eggIcon));
