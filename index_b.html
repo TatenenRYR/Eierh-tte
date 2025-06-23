@@ -352,46 +352,36 @@
       });
     }
 
-    const ORS_API_KEY = '5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87';
+    function recalculateRoute() {
+  if (!userMarker || selectedHuts.length === 0) return;
 
-    function recalculateRoute(){
-      if(!userMarker || selectedHuts.length===0) return;
+  const points = [userMarker.getLatLng()];
+  const mode = document.querySelector('input[name="routeMode"]:checked').value;
+  const arr = [...selectedHuts];
 
-      const mode=document.querySelector('input[name="routeMode"]:checked').value;
-      const origin = userMarker.getLatLng();
-      const hutsOrder = [...selectedHuts];
+  if (mode === 'optimized') arr.sort();
 
-      if(mode==='optimized'){
-        hutsOrder.sort((a, b) => {
-          const ha = allHuts.find(h => h.id === a);
-          const hb = allHuts.find(h => h.id === b);
-          if(!ha || !hb) return 0;
-          return origin.distanceTo(L.latLng(ha.lat, ha.lng)) - origin.distanceTo(L.latLng(hb.lat, hb.lng));
-        });
-      }
+  arr.forEach(id => {
+    const hut = allHuts.find(h => h.id === id);
+    if (hut) points.push([hut.lat, hut.lng]);
+  });
 
-      const waypoints = [origin].concat(hutsOrder.map(id => {
-        const h=allHuts.find(x=>x.id===id);
-        return h? L.latLng(h.lat, h.lng) : null;
-      }).filter(Boolean));
+  if (routingControl) map.removeControl(routingControl);
 
-      if(routingControl) map.removeControl(routingControl);
-
-      routingControl = L.Routing.control({
-        waypoints: waypoints,
-        router: L.Routing.openrouteservice(ORS_API_KEY, { profile: 'cycling-regular' }),
-        show: false,
-        createMarker: () => null,
-        lineOptions: { styles: [{ color: mode === 'optimized' ? 'orange' : '#10b981', weight: 5 }] }
-      }).addTo(map).on('routesfound', e=>{
-        const r=e.routes[0];
-        document.getElementById('routeInfo').innerText =
-          `🚴 ${(r.summary.totalDistance/1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime/60)} min`;
-      }).on('routingerror', e=>{
-        console.error(e);
-        showToast('Routing-Fehler: ' + (e.error?.message || e.message));
-      });
+  routingControl = L.Routing.control({
+    waypoints: points,
+    router: L.Routing.osrmv1({ profile: 'bike' }),  // <<< NEU: OSRM statt ORS
+    createMarker: () => null,
+    show: false,
+    lineOptions: {
+      styles: [{ color: mode === 'optimized' ? 'orange' : '#10b981', weight: 5 }]
     }
+  }).addTo(map).on('routesfound', e => {
+    const r = e.routes[0];
+    document.getElementById('routeInfo').innerText =
+      `🚴 ${(r.summary.totalDistance / 1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime / 60)} min`;
+  });
+}
     
     // Route löschen
     function resetSelection(){
