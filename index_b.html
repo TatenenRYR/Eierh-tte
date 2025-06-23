@@ -73,13 +73,13 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
 
-  <!-- OpenRouteService Plugin für Leaflet Routing Machine -->
-  <script src="https://unpkg.com/leaflet-routing-openrouteservice/dist/leaflet-routing-openrouteservice.min.js"></script>
-  <!-- Leaflet Routing Machine -->
+ <!-- Leaflet Routing Machine -->
 <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
 
-<!-- ORS-Plugin für LRM -->
-<script src="https://unpkg.com/lrm-openrouteservice@1.1.1/dist/lrm-openrouteservice.min.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+<script src="https://www.unpkg.com/lrm-valhalla/dist/lrm-valhalla.min.js"></script>
+
+  
   <!-- im <head> oder vor deinem Skript -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
@@ -366,72 +366,42 @@ map.addLayer(clusterGroup);
         }
       });
     }
-    function recalculateRoute() {
+  function recalculateRoute() {
   if (!userMarker || selectedHuts.length === 0) return;
 
-  const points = [userMarker.getLatLng()];
+  const start = userMarker.getLatLng();
   const mode = document.querySelector('input[name="routeMode"]:checked').value;
   const arr = [...selectedHuts];
-
   if (mode === 'optimized') arr.sort();
 
+  const points = [start];
   arr.forEach(id => {
     const hut = allHuts.find(h => h.id === id);
-    if (hut) points.push([hut.lat, hut.lng]);
+    if (hut) points.push(L.latLng(hut.lat, hut.lng));
   });
 
   if (routingControl) map.removeControl(routingControl);
 
   routingControl = L.Routing.control({
     waypoints: points,
-    router: new L.Routing.OpenRouteService({
-      serviceUrl: 'https://api.openrouteservice.org/v2/directions/cycling-regular',
-      apiKey: '5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87', // <--- WICHTIG!
-      profile: 'cycling-regular',
-      timeout: 30 * 1000
+    router: new L.Routing.Valhalla({
+      serviceUrl: "https://valhalla1.openstreetmap.de/route",
+      routingProfile: "bicycle"
     }),
     createMarker: () => null,
     show: false,
     lineOptions: {
-      styles: [{ color: mode === 'optimized' ? 'orange' : '#10b981', weight: 5 }]
+      styles: [{
+        color: (mode === 'optimized' ? 'orange' : '#10b981'),
+        weight: 5
+      }]
     }
   }).addTo(map).on('routesfound', e => {
     const r = e.routes[0];
     document.getElementById('routeInfo').innerText =
       `🚴 ${(r.summary.totalDistance / 1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime / 60)} min`;
   });
-    }
-
-  /*  function recalculateRoute() {
-  if (!userMarker || selectedHuts.length === 0) return;
-
-  const points = [userMarker.getLatLng()];
-  const mode = document.querySelector('input[name="routeMode"]:checked').value;
-  const arr = [...selectedHuts];
-
-  if (mode === 'optimized') arr.sort();
-
-  arr.forEach(id => {
-    const hut = allHuts.find(h => h.id === id);
-    if (hut) points.push([hut.lat, hut.lng]);
-  });
-
-  if (routingControl) map.removeControl(routingControl);
-
-  routingControl = L.Routing.control({
-    waypoints: points,
-    router: L.Routing.osrmv1({ profile: 'bike' }),  // <<< NEU: OSRM statt ORS
-    createMarker: () => null,
-    show: false,
-    lineOptions: {
-      styles: [{ color: mode === 'optimized' ? 'orange' : '#10b981', weight: 5 }]
-    }
-  }).addTo(map).on('routesfound', e => {
-    const r = e.routes[0];
-    document.getElementById('routeInfo').innerText =
-      `🚴 ${(r.summary.totalDistance / 1000).toFixed(1)} km · ⏱ ${Math.round(r.summary.totalTime / 60)} min`;
-  });
-}*/
+}
     
     // Route löschen
     function resetSelection(){
