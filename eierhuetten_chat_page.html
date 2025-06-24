@@ -318,27 +318,43 @@ function showMyHuts() {
         setTimeout(() => m.invalidateSize(), 200);
       }
 
-      // PayPal einbinden
-      if (d.status === 'angenommen' && !d.aboAutorisiert) {
-        setTimeout(() => {
-          paypal.Buttons({
-            createSubscription: function(data, actions) {
-              return actions.subscription.create({
-                plan_id: 'P-8FW856935P327350TNBNISHA' // ← DEIN PLAN HIER!
-              });
-            },
-            onApprove: function(data, actions) {
-              db.collection('eierhuetten').doc(id).update({
-                aboAutorisiert: true,
-                aboStart: new Date(),
-                aboMonate: 1 // Standard für Test oder Startmonat
-              }).then(() => {
-                addMessage('✅ Abo autorisiert. Die Hütte ist jetzt aktiv.', 'bot');
-                showMyHuts(); // neu laden
-              });
-            }
-          }).render(`#paypal-button-${id}`);
-        }, 500);
+      //PayPal
+      if (d.status === 'angenommen' && !d.aboStart) {
+  const infoDiv = document.createElement('div');
+  infoDiv.innerHTML = `
+    <div class="text-sm text-blue-600 mt-2">
+      ✅ Die Hütte wurde freigegeben. Bitte autorisiere nun das Abo über PayPal.
+    </div>
+    <div id="paypal-button-${id}" class="my-2"></div>
+  `;
+  div.appendChild(infoDiv);
+
+  setTimeout(() => {
+    if (window.paypal) {
+      paypal.Buttons({
+        style: {
+          shape: 'pill',
+          color: 'blue',
+          layout: 'horizontal',
+          label: 'subscribe'
+        },
+        createSubscription: function(data, actions) {
+          return actions.subscription.create({
+            plan_id: 'P-8FW856935P327350TNBNISHA'
+          });
+        },
+        onApprove: function(data, actions) {
+          db.collection('eierhuetten').doc(id).update({
+            aboStart: firebase.firestore.Timestamp.now(),
+            aboId: data.subscriptionID
+          }).then(() => {
+            alert('✅ Abo erfolgreich autorisiert! Die Hütte ist nun sichtbar.');
+            location.reload();
+          });
+        }
+      }).render(`#paypal-button-${id}`);
+    }
+  }, 300);
       }
     });
   });
