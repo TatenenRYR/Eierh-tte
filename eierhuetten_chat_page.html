@@ -10,7 +10,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://www.paypal.com/sdk/js?client-id=AYN6R-W27fvCPW0gt7G_8zvi2ASieKNVuKWkSFahCa48fV5Zk_MQzm_qk3bLiV7_ewaWv4L7OQRO2-6J&components=buttons&vault=true&intent=subscription"></script>
+  <script src="https://www.paypal.com/sdk/js?client-id=AbXUuLNk3Ce8lmrNkjJJRPbDXJDHypIV9MHMvPU9eawI7Cc4GNIzBGFC9Hmh_782bx7IGzgDPT7L6djw&components=buttons&vault=true&intent=subscription"></script>
   <style>
     body { background: #f3f4f6; font-family: Arial, sans-serif; }
     #chat-window { height: 500px; overflow-y: auto; padding: 1rem; background: #fff; border-radius: 0.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
@@ -301,32 +301,60 @@ function showMyHuts() {
           draggable: d.status === 'angenommen'
         }).addTo(m);
 
-        if (d.status === 'angenommen' && !d.aboStart && window.paypal) {
-  setTimeout(() => {
-    paypal.Buttons({
-      style: {
-        shape: 'pill',
-        color: 'blue',
-        layout: 'horizontal',
-        label: 'subscribe'
-      },
-      createSubscription: function (data, actions) {
-        return actions.subscription.create({
-          plan_id: 'P-7JN53102VN225364TMXLUTHA' // ← Dein Test-Plan
-        });
-      },
-      onApprove: function (data, actions) {
-        alert('✅ Abo erfolgreich abgeschlossen!\nSubscription ID: ' + data.subscriptionID);
-        db.collection('eierhuetten').doc(id).update({
-          aboStart: new Date(),
-          aboSubscriptionId: data.subscriptionID
-        }).then(() => {
-          location.reload();
-        });
+        if (d.status === 'angenommen') {
+          marker.on('dragend', e => {
+            const pos = e.target.getLatLng();
+            db.collection('eierhuetten').doc(id).update({
+              location: new firebase.firestore.GeoPoint(pos.lat, pos.lng)
+            }).then(() => {
+              addMessage(`📍 Neuer Standort für "${d.name}" gespeichert.`, 'bot');
+            });
+          });
+        } else {
+          const info = L.popup().setContent(`🔒 Standortänderung nur nach Freigabe möglich.`);
+          marker.bindPopup(info).openPopup();
+        }
+
+        setTimeout(() => m.invalidateSize(), 200);
       }
-    }).render(`#paypal-button-container-${id}`);
+
+      //PayPal
+      if (d.status === 'angenommen' && !d.aboStart) {
+  const infoDiv = document.createElement('div');
+  infoDiv.innerHTML = `
+    <div class="text-sm text-blue-600 mt-2">
+      ✅ Die Hütte wurde freigegeben. Bitte autorisiere nun das Abo über PayPal.
+    </div>
+    <div id="paypal-button-${id}" class="my-2"></div>
+  `;
+  div.appendChild(infoDiv);
+
+  setTimeout(() => {
+    if (window.paypal) {
+      paypal.Buttons({
+        style: {
+          shape: 'pill',
+          color: 'blue',
+          layout: 'horizontal',
+          label: 'subscribe'
+        },
+        createSubscription: function(data, actions) {
+          return actions.subscription.create({
+            plan_id: 'P-8FW856935P327350TNBNISHA'
+          });
+        },
+        onApprove: function(data, actions) {
+          db.collection('eierhuetten').doc(id).update({
+            aboStart: firebase.firestore.Timestamp.now(),
+            aboId: data.subscriptionID
+          }).then(() => {
+             location.reload();
+          });
+        }
+      }).render(`#paypal-button-${id}`);
+    }
   }, 300);
-  }
+      }
     });
   });
 }
