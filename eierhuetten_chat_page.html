@@ -312,19 +312,29 @@ if (shouldReject) {
         </div>`;*/
       chatWindow.appendChild(div);
 
-      // Karte mit Marker
       if (d.location?.latitude && d.location?.longitude) {
-        const m = L.map(`minimap-${id}`, { zoomControl: true }).setView([d.location.latitude, d.location.longitude], 13);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
-        const marker = L.marker([d.location.latitude, d.location.longitude], { draggable: true }).addTo(m);
-        marker.on('dragend', e => {
-          const pos = e.target.getLatLng();
-          db.collection('eierhuetten').doc(id).update({ location: new firebase.firestore.GeoPoint(pos.lat, pos.lng) });
-          addMessage(`📍 Neuer Standort für ${d.name} gespeichert.`, 'bot');
-        });
-        setTimeout(() => m.invalidateSize(), 200);
-      }
+  const m = L.map(`minimap-${id}`, { zoomControl: true }).setView([d.location.latitude, d.location.longitude], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
+  const marker = L.marker([d.location.latitude, d.location.longitude], {
+    draggable: d.status === 'angenommen'
+  }).addTo(m);
 
+  if (d.status === 'angenommen') {
+    marker.on('dragend', e => {
+      const pos = e.target.getLatLng();
+      db.collection('eierhuetten').doc(id).update({
+        location: new firebase.firestore.GeoPoint(pos.lat, pos.lng)
+      }).then(() => {
+        addMessage(`📍 Neuer Standort für "${d.name}" gespeichert.`, 'bot');
+      });
+    });
+  } else {
+    const info = L.popup().setContent(`🔒 Standortänderung nur nach Freigabe möglich.`);
+    marker.bindPopup(info).openPopup();
+  }
+
+  setTimeout(() => m.invalidateSize(), 200);
+}
 
       
     });
