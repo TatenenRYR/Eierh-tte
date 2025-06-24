@@ -201,9 +201,149 @@ function showMap() {
   });
   setTimeout(() => map.invalidateSize(), 200);
 }
+function showMyHuts() {
+  chatWindow.innerHTML = '';
+  db.collection('eierhuetten').where('userId', '==', currentUser.uid).get().then(snapshot => {
+    if (snapshot.empty) return addMessage('Du hast noch keine Hütten.', 'bot');
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      const id = doc.id;
+      const div = document.createElement('div');
+      const now = new Date();
+      let aboInfo = '';
+      let shouldReject = false;
 
+      if (d.aboStart && d.aboMonate) {
+        const start = d.aboStart.toDate();
+        const end = new Date(start);
+        end.setMonth(end.getMonth() + d.aboMonate);
+        const diffTage = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+        if (diffTage > 0) {
+          aboInfo = `💳 Abo aktiv bis: ${end.toLocaleDateString()} (noch ${diffTage} Tage)`;
+        } else {
+          aboInfo = '💳 Abo abgelaufen';
+          if (d.status === 'angenommen') shouldReject = true;
+        }
+      } else if (d.aboStart) {
+        const start = d.aboStart.toDate();
+        const testEnd = new Date(start);
+        testEnd.setDate(testEnd.getDate() + 14);
+        const diffTage = Math.ceil((testEnd - now) / (1000 * 60 * 60 * 24));
+        if (diffTage > 0) {
+          aboInfo = `🧪 Testphase aktiv (noch ${diffTage} Tage)`;
+        } else {
+          aboInfo = '🧪 Testphase beendet';
+          if (d.status === 'angenommen') shouldReject = true;
+        }
+      } else {
+        aboInfo = '🧪 Testphase noch nicht gestartet';
+      }
+
+      if (shouldReject) {
+        db.collection('eierhuetten').doc(id).update({ status: 'abgelehnt' });
+        db.collection('eierhuetten').doc(id).collection('log').add({
+          admin: 'System',
+          feld: 'status',
+          wert: 'abgelehnt',
+          kommentar: 'Abo oder Testphase abgelaufen',
+          zeitpunkt: new Date()
+        });
+        addMessage(`⚠️ Die Hütte "${d.name}" wurde automatisch deaktiviert, da das Abo/Testphase abgelaufen ist.`, 'bot');
+      }
+
+      div.className = 'message bot';
+      div.innerHTML = `
+        <div class='space-y-2 text-sm'>
+          <div class='font-bold'>${d.name}</div>
+          <div class='font-bold'>📌 Status: ${d.status}</div>
+          <div>${aboInfo}</div>
+
+          ${d.status === 'angenommen' ? `
+            <label>📍 Name:<br><input type='text' data-id='${id}' class='edit-name w-full border px-2 py-1 rounded' value='${d.name}' /></label><br>
+            <label>🪑 Sitzplätze:
+              <select data-id='${id}' class='edit-sitz border rounded px-2 py-1 ml-2'>
+                <option ${d.sitzplaetze === 'Ja' ? 'selected' : ''}>Ja</option>
+                <option ${d.sitzplaetze === 'Nein' ? 'selected' : ''}>Nein</option>
+              </select>
+            </label><br>
+            <label>🔌 Strom:
+              <select data-id='${id}' class='edit-strom border rounded px-2 py-1 ml-2'>
+                <option ${d.strom === 'Ja' ? 'selected' : ''}>Ja</option>
+                <option ${d.strom === 'Nein' ? 'selected' : ''}>Nein</option>
+              </select>
+            </label><br>
+            <label>✨ Extras:<br><input type='text' data-id='${id}' class='edit-extras w-full border px-2 py-1 rounded' value='${d.extras || ''}' /></label><br>
+            <label>🕒 Öffnungszeiten:<br><input type='text' data-id='${id}' class='edit-zeiten w-full border px-2 py-1 rounded' value='${d.oeffnungszeiten || ''}' /></label><br>
+            <button class='edit-btn' onclick='saveEdit("${id}")'>💾 Speichern</button>
+            <button class='delete-btn' onclick='deleteHut("${id}")'>🗑️ Löschen</button>
+          ` : `<div class="text-gray-500 italic">⛔ Änderungen sind nur möglich, wenn die Hütte angenommen wurde.</div>`}
+
+          <div id='minimap-${id}' class='minimap'></div>
+
+          ${d.status === 'angenommen' && !d.aboAutorisiert ? `
+            <div class='bg-yellow-100 text-yellow-800 p-3 rounded my-3'>
+              <strong>🔔 Deine Hütte wurde angenommen!</strong><br>
+              Bitte autorisiere jetzt dein Abo, um sie sichtbar zu machen.<br><br>
+              <div id="paypal-button-${id}"></div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+
+      chatWindow.appendChild(div);
+
+      // Karte
+      if (d.location?.latitude && d.location?.longitude) {
+        const m = L.map(`minimap-${id}`, { zoomControl: true }).setView([d.location.latitude, d.location.longitude], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
+        const marker = L.marker([d.location.latitude, d.location.longitude], {
+          draggable: d.status === 'angenommen'
+        }).addTo(m);
+
+        if (d.status === 'angenommen') {
+          marker.on('dragend', e => {
+            const pos = e.target.getLatLng();
+            db.collection('eierhuetten').doc(id).update({
+              location: new firebase.firestore.GeoPoint(pos.lat, pos.lng)
+            }).then(() => {
+              addMessage(`📍 Neuer Standort für "${d.name}" gespeichert.`, 'bot');
+            });
+          });
+        } else {
+          const info = L.popup().setContent(`🔒 Standortänderung nur nach Freigabe möglich.`);
+          marker.bindPopup(info).openPopup();
+        }
+
+        setTimeout(() => m.invalidateSize(), 200);
+      }
+
+      // PayPal einbinden
+      if (d.status === 'angenommen' && !d.aboAutorisiert) {
+        setTimeout(() => {
+          paypal.Buttons({
+            createSubscription: function(data, actions) {
+              return actions.subscription.create({
+                plan_id: 'EHtAqGxS2LXHn5gvLMDDdQHpiYWdXPod2FdoEZP4SDW2ycrnTw69ERYLqqKjzNx8re1Y2FvEDWKDBP4P' // ← DEIN PLAN HIER!
+              });
+            },
+            onApprove: function(data, actions) {
+              db.collection('eierhuetten').doc(id).update({
+                aboAutorisiert: true,
+                aboStart: new Date(),
+                aboMonate: 1 // Standard für Test oder Startmonat
+              }).then(() => {
+                addMessage('✅ Abo autorisiert. Die Hütte ist jetzt aktiv.', 'bot');
+                showMyHuts(); // neu laden
+              });
+            }
+          }).render(`#paypal-button-${id}`);
+        }, 500);
+      }
+    });
+  });
+}
   
-  function showMyHuts() {
+/*  function showMyHuts() {
   chatWindow.innerHTML = '';
   db.collection('eierhuetten').where('userId', '==', currentUser.uid).get().then(snapshot => {
     if (snapshot.empty) return addMessage('Du hast noch keine Hütten.', 'bot');
@@ -339,7 +479,7 @@ if (shouldReject) {
       
     });
   });
-}
+}*/
 
 function saveEdit(id) {
   const name = document.querySelector(`.edit-name[data-id='${id}']`).value;
