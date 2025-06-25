@@ -197,6 +197,17 @@ function showMyHuts() {
       let aboInfo = '';
       let shouldReject = false;
 
+// Falls Paypal-Abo vorhanden aber aboMonate fehlt → automatisch setzen
+if (d.paypalSubscriptionId && !d.aboMonate) {
+  db.collection('eierhuetten').doc(id).update({
+    aboMonate: 1
+  }).then(() => {
+    console.log(`ℹ️ aboMonate=1 automatisch gesetzt für Hütte "${d.name}" (${id})`);
+    d.aboMonate = 1; // damit Anzeige sofort korrekt ist
+  });
+}
+
+      
       // Falls Abo-Start fehlt, aber die Hütte bestätigt ist und PayPal ID vorhanden → jetzt nachtragen
 if (d.status === 'angenommen' && !d.aboStart && d.paypalSubscriptionId) {
   const now = new Date();
@@ -308,24 +319,42 @@ if (d.status === 'angenommen' && !d.aboStart && d.paypalSubscriptionId) {
               });
             },
             onApprove: function (data, actions) {
-  db.collection('eierhuetten').doc(id).update({
-    paypalSubscriptionId: data.subscriptionID,
-    aboStart: firebase.firestore.Timestamp.fromDate(new Date())
-  }).then(() => {
-    chatWindow.innerHTML = '';
-    addMessage(`✅ Abo für "${d.name}" wurde gestartet.`, 'bot');
+  db.collection('eierhuetten').doc(id).get().then(doc => {
+    if (!doc.exists) return;
 
-    const successBox = document.createElement('div');
-    successBox.className = 'message bot';
-    successBox.innerHTML = `
-      <div class="text-green-700 font-semibold mb-2">🎉 Vielen Dank!</div>
-      <div>Deine Hütte wurde erfolgreich registriert. Die Testphase wurde über PayPal aktiviert.</div>
-      <button class="choice-btn mt-2" onclick="showMyHuts()">🔄 Zur Übersicht</button>
-    `;
-    chatWindow.appendChild(successBox);
-    chatWindow.scrollTop = chatWindow.scrollHeight;
+    const hut = doc.data();
+    const updates = {
+      paypalSubscriptionId: data.subscriptionID,
+    };
+
+    // Falls kein aboStart gesetzt ist → jetzt starten
+    if (!hut.aboStart) {
+      updates.aboStart = new Date();
+    }
+
+    // Falls keine aboMonate vorhanden → 1 Monat eintragen
+    if (!hut.aboMonate) {
+      updates.aboMonate = 1;
+    }
+
+    // Update durchführen
+    db.collection('eierhuetten').doc(id).update(updates).then(() => {
+      chatWindow.innerHTML = '';
+      addMessage(`✅ Abo für "${hut.name}" wurde gestartet.`, 'bot');
+
+      const successBox = document.createElement('div');
+      successBox.className = 'message bot';
+      successBox.innerHTML = `
+        <div class="text-green-700 font-semibold mb-2">🎉 Vielen Dank!</div>
+        <div>Deine Hütte wurde erfolgreich registriert. Die Testphase über PayPal läuft jetzt.</div>
+        <div class="text-xs text-gray-500 mt-2">Hinweis: Eine Kündigung ist nur über dein PayPal-Konto möglich.</div>
+        <button class="choice-btn mt-2" onclick="showMyHuts()">🔄 Zur Übersicht</button>
+      `;
+      chatWindow.appendChild(successBox);
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+    });
   });
-            }
+}
           }).render(`#${paypalContainerId}`);
         }, 500);
       }
