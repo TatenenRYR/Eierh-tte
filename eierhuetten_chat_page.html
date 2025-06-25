@@ -379,7 +379,46 @@ function updateAboInfoFallback(subId, el) {
     }
   });
 }
-  
+ async function checkAndUpdateHutFromPaypal(hutId) {
+  try {
+    const doc = await db.collection('eierhuetten').doc(hutId).get();
+    if (!doc.exists) return;
+
+    const hut = doc.data();
+    const subId = hut.paypalSubscriptionId;
+    if (!subId) return;
+
+    const info = await getPayPalInfo(subId);
+    const isAktiv = info?.status === 'ACTIVE';
+
+    const updates = {};
+
+    if (!isAktiv) {
+      // Abo wurde gekündigt oder inaktiv → ablehnen
+      updates.status = 'abgelehnt';
+      updates.history = firebase.firestore.FieldValue.arrayUnion(
+        new Date().toLocaleString('de-DE') + ': automatisch abgelehnt wegen inaktivem Abo'
+      );
+      await db.collection('eierhuetten').doc(hutId).update(updates);
+      console.warn(`⛔ Hütte "${hut.name}" wurde wegen inaktivem Abo abgelehnt.`);
+    } else {
+      // Aktives Abo → sicherstellen, dass alle Felder gesetzt sind
+      if (!hut.aboStart) updates.aboStart = new Date();
+      if (!hut.aboMonate) updates.aboMonate = 1;
+      if (!hut.status || hut.status === 'abgelehnt') updates.status = 'angenommen';
+
+      if (Object.keys(updates).length > 0) {
+        updates.history = firebase.firestore.FieldValue.arrayUnion(
+          new Date().toLocaleString('de-DE') + ': automatisch korrigiert nach erfolgreicher Abo-Prüfung'
+        );
+        await db.collection('eierhuetten').doc(hutId).update(updates);
+        console.log(`✅ Hütte "${hut.name}" wurde automatisch aktualisiert.`);
+      }
+    }
+  } catch (err) {
+    console.error(`💥 Fehler bei Abo-Check für Hütte ${hutId}`, err);
+  }
+ } 
 // Standortwahl
 function showMyHuts() {
   chatWindow.innerHTML = '';
@@ -538,20 +577,13 @@ chatWindow.appendChild(statsBar);
 
     const hut = doc.data();
     const updates = {
-      paypalSubscriptionId: data.subscriptionID,
+      paypalSubscriptionId: data.subscriptionID
     };
 
-    // Falls kein aboStart gesetzt ist → jetzt starten
-    if (!hut.aboStart) {
-      updates.aboStart = new Date();
-    }
+    if (!hut.aboStart) updates.aboStart = new Date();
+    if (!hut.aboMonate) updates.aboMonate = 1;
+    if (hut.status !== 'angenommen') updates.status = 'angenommen';
 
-    // Falls keine aboMonate vorhanden → 1 Monat eintragen
-    if (!hut.aboMonate) {
-      updates.aboMonate = 1;
-    }
-
-    // Update durchführen
     db.collection('eierhuetten').doc(id).update(updates).then(() => {
       chatWindow.innerHTML = '';
       addMessage(`✅ Abo für "${hut.name}" wurde gestartet.`, 'bot');
@@ -566,6 +598,9 @@ chatWindow.appendChild(statsBar);
       `;
       chatWindow.appendChild(successBox);
       chatWindow.scrollTop = chatWindow.scrollHeight;
+
+      // Bonus: prüfe direkt noch mal die PayPal-Abo-Gültigkeit
+      checkAndUpdateHutFromPaypal(id);
     });
   });
 }
