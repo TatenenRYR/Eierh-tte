@@ -156,7 +156,12 @@ function startDialog() {
 
 function handleIntent(input) {
   const txt = input.toLowerCase();
-  if (txt.includes('meine')) return showMyHuts();
+  if (txt.includes('meine')) {
+    korrigiereFehlendeAbos().then(() => {
+      showMyHuts();
+    });
+                             
+  }
   if (txt.includes('neu')) {
     step = 1;
     editingData = {};
@@ -344,6 +349,37 @@ function updateAboInfoFallback(subId, el) {
     }
   }
   }
+
+  async function korrigiereFehlendeAbos() {
+  const snapshot = await db.collection('eierhuetten')
+    .where('userId', '==', currentUser.uid)
+    .where('status', '==', 'angenommen')
+    .get();
+
+  snapshot.forEach(async (doc) => {
+    const d = doc.data();
+    const id = doc.id;
+
+    const keinAbo = !d.aboStart && !d.paypalSubscriptionId;
+
+    if (keinAbo) {
+      await db.collection('eierhuetten').doc(id).update({
+        status: 'abgelehnt'
+      });
+
+      await db.collection('eierhuetten').doc(id).collection('log').add({
+        admin: 'System',
+        feld: 'status',
+        wert: 'abgelehnt',
+        kommentar: 'Automatisch deaktiviert: Kein Abo oder Testphase',
+        zeitpunkt: new Date()
+      });
+
+      console.warn(`❌ Hütte "${d.name}" wurde automatisch deaktiviert wegen fehlendem Abo/Test.`);
+    }
+  });
+}
+  
 // Standortwahl
 function showMyHuts() {
   chatWindow.innerHTML = '';
@@ -586,7 +622,10 @@ function deleteHut(id) {
   if (confirm('Möchtest du diese Hütte wirklich löschen?')) {
     db.collection('eierhuetten').doc(id).delete().then(() => {
       addMessage('🗑️ Hütte gelöscht.', 'bot');
-      showMyHuts();
+      korrigiereFehlendeAbos().then(() => {
+ 
+        showMyHuts();
+      });
     });
   }
 }
