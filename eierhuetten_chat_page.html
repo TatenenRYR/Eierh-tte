@@ -224,8 +224,7 @@ function updateAboInfoFallback(subId, el) {
           </div>
         `;
 
-        // Starte kleines Feuerwerk 🎇
-        firework(`firework-${subId}`);
+        
       } else {
         el.innerHTML = '❌ Abo nicht aktiv oder wurde gekündigt.';
       }
@@ -276,6 +275,71 @@ function updateAboInfoFallback(subId, el) {
           zeitpunkt: new Date()
         });
         addMessage(`⚠️ Die Hütte "${hutData.name}" wurde deaktiviert, da keine Abo-Info abrufbar war und die Testzeit überschritten ist.`, 'bot');
+      }
+    }
+  }
+  }
+
+  async function analyseUndAktualisiereHuette(hutId, hutData) {
+  const updates = {};
+  let ablehnen = false;
+  let grund = '';
+  const now = new Date();
+
+  try {
+    // Wenn PayPal vorhanden → prüfen
+    if (hutData.paypalSubscriptionId) {
+      const info = await getPayPalInfo(hutData.paypalSubscriptionId);
+      const status = info?.status;
+
+      if (status === 'ACTIVE') {
+        // Automatisch ergänzen, falls fehlt
+        if (!hutData.aboStart) updates.aboStart = new Date();
+        if (!hutData.aboMonate) updates.aboMonate = 1;
+      } else {
+        ablehnen = true;
+        grund = 'PayPal-Abo inaktiv oder gekündigt.';
+      }
+
+    } else if (hutData.aboStart) {
+      // Kein PayPal → Testphase prüfen
+      const testEnd = new Date(hutData.aboStart.toDate());
+      testEnd.setDate(testEnd.getDate() + 14);
+      if (now > testEnd) {
+        ablehnen = true;
+        grund = 'Testphase abgelaufen. Kein aktives Abo.';
+      }
+    } else {
+      // Weder Abo noch Testphase → nicht anzeigen, aber keine Ablehnung
+      return;
+    }
+
+    if (ablehnen && hutData.status === 'angenommen') {
+      updates.status = 'abgelehnt';
+      await db.collection('eierhuetten').doc(hutId).collection('log').add({
+        admin: 'System',
+        feld: 'status',
+        wert: 'abgelehnt',
+        kommentar: grund,
+        zeitpunkt: now
+      });
+      addMessage(`❌ Deine Hütte „${hutData.name}“ wurde deaktiviert: ${grund}`, 'bot');
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await db.collection('eierhuetten').doc(hutId).update(updates);
+    }
+
+  } catch (err) {
+    console.error('🛑 Fehler bei Analyse der Hütte:', hutId, err);
+
+    // Optionaler Fallback
+    if (hutData.aboStart) {
+      const testEnd = new Date(hutData.aboStart.toDate());
+      testEnd.setDate(testEnd.getDate() + 14);
+      if (now > testEnd && hutData.status === 'angenommen') {
+        await db.collection('eierhuetten').doc(hutId).update({ status: 'abgelehnt' });
+        addMessage(`⚠️ Deine Hütte „${hutData.name}“ wurde vorsorglich deaktiviert. Abo konnte nicht geprüft werden.`, 'bot');
       }
     }
   }
@@ -335,7 +399,7 @@ if (d.status === 'angenommen' && !d.aboStart && d.paypalSubscriptionId) {
      // später nachladen
       const el = document.getElementById(aboInfoElementId);
       updateAboInfoFallback(d.paypalSubscriptionId, el);
-      checkAboStatus(id, d); // Prüft Abo-Status unabhängig, aber mit Wirkung
+      analyseUndAktualisiereHuette(id, d); // Prüft Abo-Status unabhängig, aber mit Wirkung
    // renderHut(); // Funktion zum Anzeigen der Hütte
   
 
