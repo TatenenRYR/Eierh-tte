@@ -183,7 +183,37 @@ function processUserInput(txt) {
     return;
   }
 }
+// Neue Funktion mit Fallback
+function updateAboInfoFallback(subId, el) {
+  if (!subId || !el) {
+    el.innerHTML = '❌ Keine Abo-Information verfügbar.';
+    return;
+  }
 
+  getPayPalInfo(subId).then(info => {
+    try {
+      if (info?.status === 'ACTIVE' && info?.start_time) {
+        const startDate = new Date(info.start_time);
+        const testEnd = new Date(startDate);
+        testEnd.setDate(testEnd.getDate() + 14);
+        const now = new Date();
+        const diff = Math.max(0, Math.ceil((testEnd - now) / (1000 * 60 * 60 * 24)));
+        el.innerHTML = `
+          🧪 Testphase aktiv – endet in ${diff} Tagen<br>
+          <span class="text-xs text-gray-500">🔒 Kündigung über dein PayPal-Konto.</span>
+        `;
+      } else {
+        el.innerHTML = '❌ Abo nicht aktiv oder wurde gekündigt.';
+      }
+    } catch (err) {
+      console.warn('⚠️ Fehler in PayPal-Abo-Verarbeitung:', err);
+      el.innerHTML = '⚠️ Testphase läuft – genaues Datum unbekannt.';
+    }
+  }).catch(err => {
+    console.error('❌ PayPal API nicht erreichbar oder fehlerhaft:', err);
+    el.innerHTML = '⚠️ Testphase läuft – PayPal-Abo konnte nicht überprüft werden.';
+  });
+}
 // Standortwahl
 function showMyHuts() {
   chatWindow.innerHTML = '';
@@ -236,43 +266,8 @@ if (d.status === 'angenommen' && !d.aboStart && d.paypalSubscriptionId) {
       }
     
   // später nachladen
-getPayPalInfo(d.paypalSubscriptionId)
-  .then(info => {
-    const el = document.getElementById(aboInfoElementId);
-    if (!el) return;
-
-    try {
-      if (info && info.status === 'ACTIVE' && info.start_time) {
-        const startDate = new Date(info.start_time);
-        if (!isNaN(startDate)) {
-          const testEnd = new Date(startDate);
-          testEnd.setDate(testEnd.getDate() + 14);
-
-          const now = new Date();
-          const diff = Math.max(0, Math.ceil((testEnd - now) / (1000 * 60 * 60 * 24)));
-
-          el.innerHTML = `
-            🧪 Testphase aktiv – endet in ${diff} Tagen<br>
-            <span class="text-xs text-gray-500">🔒 Kündigung über dein PayPal-Konto.</span>
-          `;
-          return;
-        }
-      }
-
-      // Fallback bei inkorrekten Daten
-      el.innerHTML = '🧪 Testphase läuft (genaues Enddatum unbekannt)';
-    } catch (e) {
-      console.warn('Fehler beim Verarbeiten der PayPal-Info:', e);
-      el.innerHTML = '⚠️ Testphase läuft – Infos konnten nicht geladen werden';
-    }
-  })
-  .catch(err => {
-    console.error('Fehler beim Abruf von PayPal-Infos:', err);
-    const el = document.getElementById(aboInfoElementId);
-    if (el) {
-      el.innerHTML = '⚠️ Abo-Infos konnten nicht abgerufen werden – bitte später erneut versuchen.';
-    }
-  });
+const el = document.getElementById(aboInfoElementId);
+updateAboInfoFallback(d.paypalSubscriptionId, el);
    // renderHut(); // Funktion zum Anzeigen der Hütte
   
 
