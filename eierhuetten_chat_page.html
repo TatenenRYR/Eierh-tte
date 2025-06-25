@@ -238,6 +238,48 @@ function updateAboInfoFallback(subId, el) {
     el.innerHTML = '⚠️ PayPal-Abo nicht abrufbar. Bitte später erneut versuchen.';
   });
 }
+  async function checkAboStatus(hutId, hutData) {
+  try {
+    if (!hutData.paypalSubscriptionId) return;
+
+    const info = await getPayPalInfo(hutData.paypalSubscriptionId);
+    const status = info?.status;
+
+    if (status !== 'ACTIVE') {
+      // Abo ist nicht aktiv → automatisch deaktivieren
+      await db.collection('eierhuetten').doc(hutId).update({ status: 'abgelehnt' });
+      await db.collection('eierhuetten').doc(hutId).collection('log').add({
+        admin: 'System',
+        feld: 'status',
+        wert: 'abgelehnt',
+        kommentar: 'Abo über PayPal wurde gekündigt oder ist nicht aktiv',
+        zeitpunkt: new Date()
+      });
+      addMessage(`⚠️ Die Hütte "${hutData.name}" wurde deaktiviert, da das Abo nicht mehr aktiv ist.`, 'bot');
+    }
+  } catch (error) {
+    console.warn(`⚠️ Fehler beim Abo-Check für "${hutData.name}":`, error);
+
+    // Fallback: Prüfe lokale Testzeit (wenn kein Zugriff auf PayPal möglich)
+    if (hutData.aboStart && hutData.status === 'angenommen') {
+      const start = hutData.aboStart.toDate();
+      const now = new Date();
+      const testEnd = new Date(start);
+      testEnd.setDate(testEnd.getDate() + 14);
+      if (now > testEnd) {
+        await db.collection('eierhuetten').doc(hutId).update({ status: 'abgelehnt' });
+        await db.collection('eierhuetten').doc(hutId).collection('log').add({
+          admin: 'System',
+          feld: 'status',
+          wert: 'abgelehnt',
+          kommentar: 'Abo konnte nicht geprüft werden – Fallback: Testzeitraum überschritten',
+          zeitpunkt: new Date()
+        });
+        addMessage(`⚠️ Die Hütte "${hutData.name}" wurde deaktiviert, da keine Abo-Info abrufbar war und die Testzeit überschritten ist.`, 'bot');
+      }
+    }
+  }
+  }
 // Standortwahl
 function showMyHuts() {
   chatWindow.innerHTML = '';
@@ -255,47 +297,8 @@ function showMyHuts() {
 
 
       // Wenn Paypal-ID vorhanden, prüfe Status
+checkAboStatus(id, d); // Prüft Abo-Status unabhängig, aber mit Wirkung
 
-
-// Prüfe Abo nur, wenn eine PayPal-Subscription-ID existiert
-if (d.paypalSubscriptionId) {
-  getPayPalInfo(d.paypalSubscriptionId).then(info => {
-    const status = info?.status;
-    if (status !== 'ACTIVE') {
-      // Abo nicht aktiv → automatisch ablehnen
-      db.collection('eierhuetten').doc(id).update({ status: 'abgelehnt' });
-      db.collection('eierhuetten').doc(id).collection('log').add({
-        admin: 'System',
-        feld: 'status',
-        wert: 'abgelehnt',
-        kommentar: 'Abo über PayPal wurde gekündigt oder ist nicht aktiv',
-        zeitpunkt: new Date()
-      });
-      addMessage(`⚠️ Die Hütte "${d.name}" wurde deaktiviert, da das Abo nicht mehr aktiv ist.`, 'bot');
-    }
-  }).catch(error => {
-    console.warn(`⚠️ Fehler beim PayPal-Abo-Check für "${d.name}":`, error);
-
-    // Fallback: Wenn kein Status ermittelbar ist, aber ein AboStart existiert, prüfe ob über 14 Tage alt
-    if (d.aboStart && d.status === 'angenommen') {
-      const start = d.aboStart.toDate();
-      const testEnd = new Date(start);
-      testEnd.setDate(testEnd.getDate() + 14);
-      const now = new Date();
-      if (now > testEnd) {
-        db.collection('eierhuetten').doc(id).update({ status: 'abgelehnt' });
-        db.collection('eierhuetten').doc(id).collection('log').add({
-          admin: 'System',
-          feld: 'status',
-          wert: 'abgelehnt',
-          kommentar: 'Abo konnte nicht geprüft werden – Fallback: Testzeitraum überschritten',
-          zeitpunkt: new Date()
-        });
-        addMessage(`⚠️ Die Hütte "${d.name}" wurde deaktiviert, da keine Abo-Info abrufbar war und die Testzeit überschritten ist.`, 'bot');
-      }
-    }
-  });
-}
 
 
       
