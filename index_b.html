@@ -260,44 +260,105 @@ map.addLayer(clusterGroup);
         document.getElementById('loadingOverlay').style.display = 'none';
       }
     }
-
 let rainLayerGroup = null;
 let rainFrameIndex = 0;
 let rainFrames = [];
 let rainViewerTimer = null;
+let rainScanInterval = null;
+let rainAnimationRunning = false;
 
-async function toggleRainRadar(autoStart = false) {
-  if (rainLayerGroup) {
-    clearTimeout(rainViewerTimer);
-    map.removeLayer(rainLayerGroup);
-    rainLayerGroup = null;
-    showToast("🌤️ Regenradar deaktiviert");
-    return;
-  }
-
-  showToast("☁️ Regenradar wird geladen...");
-
+async function startRainMonitoring() {
   try {
+    showToast("☁️ Wetter wird geprüft…");
     const res = await fetch("https://tilecache.rainviewer.com/api/maps.json");
     rainFrames = await res.json();
 
     if (!rainFrames || rainFrames.length === 0) {
-      showToast("⚠️ Keine Regenbilder verfügbar");
+      showToast("⚠️ Keine Wetterdaten");
       return;
     }
 
-    rainLayerGroup = L.layerGroup().addTo(map);
-    rainFrameIndex = 0;
-    animateRainRadar();
-    showToast(autoStart ? "🌧️ Regenradar automatisch aktiviert" : "🌧️ Regenradar aktiviert");
+    const frame = rainFrames[rainFrames.length - 1];
+    const tileTest = `https://tilecache.rainviewer.com/v2/radar/${frame}/256/{z}/{x}/{y}/2/1_1.png`;
+
+    // Regen prüfen über kleinen Ausschnitt in der Nähe
+    const bounds = map.getBounds();
+    const center = bounds.getCenter();
+
+    // Direkt Tiles im Sichtbereich checken (bruteforce Methode)
+    const rainDetected = await checkRainTile(center.lat, center.lng, frame);
+    if (rainDetected) {
+      showToast("☔ Achtung: Regen in der Nähe!");
+      activateRainRadar();
+    } else {
+      showToast("✅ Kein Regen in der Nähe");
+    }
+
+    // Alle 10 Minuten erneut prüfen
+    rainScanInterval = setInterval(startRainMonitoring, 10 * 60 * 1000);
   } catch (err) {
-    console.error("❌ RainViewer Fehler:", err);
-    showToast("❌ Regenradar konnte nicht geladen werden");
+    console.error("RainViewer-Fehler:", err);
+    showToast("❌ Regenradar-Fehler");
   }
 }
 
+async function checkRainTile(lat, lng, frame) {
+  const z = 8; // Zoomlevel zum Testen
+  const tileX = long2tile(lng, z);
+  const tileY = lat2tile(lat, z);
+  const tileUrl = `https://tilecache.rainviewer.com/v2/radar/${frame}/256/${z}/${tileX}/${tileY}/2/1_1.png`;
+
+  try {
+    const img = await loadImage(tileUrl);
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const imgData = ctx.getImageData(0, 0, img.width, img.height).data;
+
+    for (let i = 0; i < imgData.length; i += 4) {
+      const alpha = imgData[i + 3];
+      if (alpha > 0) return true; // Pixel mit Regen gefunden
+    }
+    return false;
+  } catch (e) {
+    console.warn("❗️Bildanalyse fehlgeschlagen", e);
+    return false;
+  }
+}
+
+function long2tile(lon, zoom) {
+  return Math.floor(((lon + 180) / 360) * Math.pow(2, zoom));
+}
+function lat2tile(lat, zoom) {
+  return Math.floor(
+    ((1 - Math.log(Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180)) / Math.PI) / 2) *
+    Math.pow(2, zoom)
+  );
+}
+
+function loadImage(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+    function activateRainRadar() {
+  if (rainLayerGroup) return; // Schon aktiv
+
+  rainLayerGroup = L.layerGroup().addTo(map);
+  rainFrameIndex = 0;
+  rainAnimationRunning = true;
+  animateRainRadar();
+  showToast("🌧️ Regenradar aktiviert");
+}
+
 function animateRainRadar() {
-  if (!rainLayerGroup || rainFrames.length === 0) return;
+  if (!rainLayerGroup || !rainFrames.length || !rainAnimationRunning) return;
 
   rainLayerGroup.clearLayers();
 
@@ -725,7 +786,7 @@ if (selectedHuts.length > 0 && data.features[0].properties.segments[0]) {
     // Initialisierung
     locateUser();
     loadHutsLive();
-
+startRainMonitoring();
     // Automatische Neuberechnung beim Modus-Wechsel
     document.querySelectorAll('input[name="routeMode"]').forEach(r => r.addEventListener('change', recalculateRoute));
   </script>
