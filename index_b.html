@@ -159,9 +159,7 @@ button {
   text-align: center;
   color: #f43f5e;
 }
-    .leaflet-rainviewer-layer {
-  z-index: 999 !important;
-    }
+    
   </style>
 
   <!-- Firebase SDKs -->
@@ -189,7 +187,6 @@ button {
 
   <!-- UI-Buttons -->
   <button id="menuBtn" onclick="toggleSidebar()">☰ Menü</button>
-  <button id="rainToggleBtn" onclick="toggleRainRadar()">🌧 Regenradar</button>
   <button id="followBtn" onclick="enableAutoFollow()">📍 Folgen</button>
   <button id="styleToggleBtn" onclick="toggleMapStyle()">🌓 Stil</button>
 
@@ -265,8 +262,6 @@ map.addLayer(clusterGroup);
     }
 
 const WEATHER_API_KEY = "8168db7d486b0fa308fbb013d364fd65";
-let rainWarned = false;
-
 async function checkWeatherForecast() {
   if (!userMarker) {
     showToast("📍 Keine Position für Wettercheck");
@@ -293,68 +288,23 @@ async function checkWeatherForecast() {
       if (rain > 0 && !rainWarned) {
         showToast(`☔ Achtung: In ca. ${i * 30 + 10} Min könnte es regnen!`);
         rainWarned = true;
-        if (!rainViewerInstance) toggleRainRadar();
+
+        // Regenradar automatisch aktivieren
+        if (!rainRadarLayer) toggleRainRadar();
         return;
       }
     }
 
+    // Kein Regen erwartet
     rainWarned = false;
     showToast("✅ Kein Regen in den nächsten 60 Minuten");
+
+    // Optional: Radar deaktivieren, wenn aktiv
+    if (rainRadarLayer) toggleRainRadar();
 
   } catch (err) {
     console.error("Wetter-API Fehler:", err);
     showToast("❌ Fehler beim Abrufen der Wetterdaten");
-  }
-}
-    
-let rainViewerInstance = null;
-
-function toggleRainRadar() {
-  if (rainViewerInstance) {
-    rainViewerInstance.remove();
-    rainViewerInstance = null;
-    showToast("🌤️ Regenradar deaktiviert");
-    return;
-  }
-
-  showToast("☁️ Regenradar: Initialisierung...");
-
-  try {
-    const p = RainViewer.showRadar(map, {
-      animation: true,
-      colorScheme: 3,
-      smooth: true,
-      snow: false
-    });
-
-    if (!p || typeof p.then !== 'function') {
-      showToast("❌ RainViewer: kein Promise zurückgegeben");
-      console.error("RainViewer returned:", p);
-      return;
-    }
-
-    p.then(rv => {
-      if (!rv) {
-        showToast("⚠️ RainViewer: Keine Instanz erhalten");
-        return;
-      }
-      rainViewerInstance = rv;
-      showToast("🌧️ Regenradar erfolgreich aktiviert");
-    }).catch(err => {
-      console.error("RainViewer Fehler:", err);
-      showToast("❌ Fehler beim Laden des Regenradars");
-    });
-
-    // Timeout-Fallback (falls Promise hängt)
-    setTimeout(() => {
-      if (!rainViewerInstance) {
-        showToast("⏳ RainViewer lädt zu lange oder blockiert");
-      }
-    }, 5000);
-
-  } catch (err) {
-    console.error("RainViewer Setup Fehler:", err);
-    showToast("❌ RainViewer konnte nicht initialisiert werden");
   }
 }
 
@@ -763,6 +713,9 @@ if (selectedHuts.length > 0 && data.features[0].properties.segments[0]) {
         document.getElementById('followBtn').style.display = 'block';
       }
     });
+
+    setInterval(checkWeatherForecast, 10 * 60 * 1000);
+checkWeatherForecast(); // sofort beim Start prüfen
 
     // Initialisierung
     locateUser();
