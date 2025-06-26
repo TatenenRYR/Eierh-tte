@@ -261,52 +261,58 @@ map.addLayer(clusterGroup);
       }
     }
 
-const WEATHER_API_KEY = "63c2dca53c5b6ab3a887e8c91fd494a6";
-async function checkWeatherForecast() {
-  if (!userMarker) {
-    showToast("📍 Keine Position für Wettercheck");
+let rainLayerGroup = null;
+let rainFrameIndex = 0;
+let rainFrames = [];
+let rainViewerTimer = null;
+
+async function toggleRainRadar(autoStart = false) {
+  if (rainLayerGroup) {
+    clearTimeout(rainViewerTimer);
+    map.removeLayer(rainLayerGroup);
+    rainLayerGroup = null;
+    showToast("🌤️ Regenradar deaktiviert");
     return;
   }
 
-  const { lat, lng } = userMarker.getLatLng();
-  showToast("🔍 Wettervorhersage wird geprüft...");
+  showToast("☁️ Regenradar wird geladen...");
 
   try {
-       const res = await fetch(`https://api.openweathermap.org/data/2.5/onecall?lat=${lat}&lon=${lng}&exclude=current,daily,minutely,alerts&appid=${WEATHER_API_KEY}&units=metric`);
-    const data = await res.json();
+    const res = await fetch("https://tilecache.rainviewer.com/api/maps.json");
+    rainFrames = await res.json();
 
-showToast("🌦 Wetterdaten von OWM:" + JSON.stringify(data, null, 2));
-    const hourly = data?.hourly;
-    if (!hourly) {
-    //  showToast("⚠️ Keine Wetterdaten erhalten");
+    if (!rainFrames || rainFrames.length === 0) {
+      showToast("⚠️ Keine Regenbilder verfügbar");
       return;
     }
 
-    for (let i = 0; i < 2; i++) {
-      const rain = hourly[i]?.rain?.['1h'] || 0;
-      showToast(`⏱ In ${i * 30}–${(i + 1) * 30} Min: ${rain} mm Regen`);
-
-      if (rain > 0 && !rainWarned) {
-        showToast(`☔ Achtung: In ca. ${i * 30 + 10} Min könnte es regnen!`);
-        rainWarned = true;
-
-        // Regenradar automatisch aktivieren
-        if (!rainRadarLayer) toggleRainRadar();
-        return;
-      }
-    }
-
-    // Kein Regen erwartet
-    rainWarned = false;
-    showToast("✅ Kein Regen in den nächsten 60 Minuten");
-
-    // Optional: Radar deaktivieren, wenn aktiv
-    if (rainRadarLayer) toggleRainRadar();
-
+    rainLayerGroup = L.layerGroup().addTo(map);
+    rainFrameIndex = 0;
+    animateRainRadar();
+    showToast(autoStart ? "🌧️ Regenradar automatisch aktiviert" : "🌧️ Regenradar aktiviert");
   } catch (err) {
-    console.error("Wetter-API Fehler:", err);
-    showToast("❌ Fehler beim Abrufen der Wetterdaten");
+    console.error("❌ RainViewer Fehler:", err);
+    showToast("❌ Regenradar konnte nicht geladen werden");
   }
+}
+
+function animateRainRadar() {
+  if (!rainLayerGroup || rainFrames.length === 0) return;
+
+  rainLayerGroup.clearLayers();
+
+  const frame = rainFrames[rainFrameIndex];
+  const tileUrl = `https://tilecache.rainviewer.com/v2/radar/${frame}/256/{z}/{x}/{y}/2/1_1.png`;
+
+  const rainTile = L.tileLayer(tileUrl, {
+    opacity: 0.6,
+    zIndex: 999
+  });
+
+  rainLayerGroup.addLayer(rainTile);
+
+  rainFrameIndex = (rainFrameIndex + 1) % rainFrames.length;
+  rainViewerTimer = setTimeout(animateRainRadar, 800);
 }
 
     // Stil-Wechsel
@@ -715,14 +721,7 @@ if (selectedHuts.length > 0 && data.features[0].properties.segments[0]) {
       }
     });
 
-    // Sobald Position erkannt wurde, starte Wetterprüfung
-const waitForUserPosition = setInterval(() => {
-  if (userMarker) {
-    clearInterval(waitForUserPosition);
-    checkWeatherForecast(); // erste Prüfung sofort
-    setInterval(checkWeatherForecast, 10 * 60 * 1000); // alle 10 Min erneut
-  }
-}, 1000);
+
     // Initialisierung
     locateUser();
     loadHutsLive();
