@@ -11,11 +11,9 @@
     html, body, #map { margin:0; padding:0; height:100%; font-family:sans-serif; }
     #map { position:absolute; inset:0; }
     #loadingOverlay {
-      position:fixed; inset:0;
-      background:#fff; display:flex;
-      align-items:center; justify-content:center;
-      font-size:1.5rem; color:#10b981;
-      z-index:2000;
+      position:fixed; inset:0; background:#fff;
+      display:flex; align-items:center; justify-content:center;
+      font-size:1.5rem; color:#10b981; z-index:2000;
     }
     #fab { position:fixed; bottom:20px; right:20px; width:56px; height:56px; border-radius:50%; background:#10b981; color:#fff; display:flex; align-items:center; justify-content:center; font-size:1.5rem; cursor:pointer; z-index:1001; box-shadow:0 4px 6px rgba(0,0,0,0.2); }
     #fabMenu { position:fixed; bottom:90px; right:20px; display:none; flex-direction:column; gap:10px; z-index:1001; }
@@ -41,116 +39,78 @@
   <div class="toast" id="toast"></div>
   <div id="routeInfo"></div>
   <div id="nextStopInfo" style="display:none;"></div>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>  <script src="https://unpkg.com/lrm-openrouteservice/dist/lrm-openrouteservice.min.js"></script>  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>  <script>
-    let map = L.map('map').setView([51.5, 10.5], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+    // State
+    let map, userMarker=null, autoFollow=true, userLoaded=false;
+    let rainFrames=[], rainIdx=0, rainLayerGroup=null;
+    let routingControl=null;
+    let selectedPoints=[];
 
-    let userMarker = null, autoFollow = true, userLoaded = false;
-    let rainFrames = [], rainIdx = 0, rainLayerGroup = null;
-    let routingControl = null;
-    let selectedPoints = [], hutMarkers = [], hutsLoaded = false;
+    // UI Elements
+    const toast = id('toast');
+    const routeInfo = id('routeInfo');
+    const nextStopInfo = id('nextStopInfo');
+    function id(x){return document.getElementById(x)}
 
-    const toast = document.getElementById('toast');
-    const routeInfo = document.getElementById('routeInfo');
-    const nextStopInfo = document.getElementById('nextStopInfo');
+    // Toast
+    function showToast(msg){ toast.innerText=msg; toast.style.display='block'; setTimeout(()=>toast.style.display='none',3000);}    
 
-    function showToast(msg) {
-      toast.innerText = msg;
-      toast.style.display = 'block';
-      setTimeout(() => toast.style.display = 'none', 3000);
+    // Init Map
+    function initMap(){
+      map = L.map('map').setView([51.5,10.5],6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19})
+        .on('load',()=>{userLoaded=true; hideLoading();})
+        .addTo(map);
     }
 
-    function checkLoadingDone() {
-      if (userLoaded && hutsLoaded) document.getElementById('loadingOverlay').style.display = 'none';
+    // Loading
+    function hideLoading(){ if(userLoaded) id('loadingOverlay').style.display='none'; }
+
+    // Geolocation
+    function startGeolocation(){
+      if(!navigator.geolocation){ showToast('GPS nicht verfügbar'); userLoaded=true; hideLoading(); return; }
+      navigator.geolocation.watchPosition(pos=>{
+        const latlng=[pos.coords.latitude,pos.coords.longitude];
+        if(!userMarker){ userMarker=L.marker(latlng).addTo(map); userLoaded=true; hideLoading(); }
+        else userMarker.setLatLng(latlng);
+        if(autoFollow) map.setView(latlng,15);
+      }, err=>{ showToast('GPS-Fehler'); userLoaded=true; hideLoading(); },{enableHighAccuracy:true,timeout:10000});
     }
 
-    function startGeolocation() {
-      if (!navigator.geolocation) {
-        showToast('GPS nicht verfügbar');
-        userLoaded = true; checkLoadingDone();
-        return;
-      }
-      navigator.geolocation.watchPosition(pos => {
-        const latlng = [pos.coords.latitude, pos.coords.longitude];
-        if (!userMarker) {
-          userMarker = L.marker(latlng).addTo(map);
-          userLoaded = true; checkLoadingDone();
-        } else {
-          userMarker.setLatLng(latlng);
-        }
-        if (autoFollow) map.setView(latlng, 15);
-      }, err => {
-        showToast('GPS-Fehler');
-        userLoaded = true; checkLoadingDone();
-      }, { enableHighAccuracy: true, timeout: 10000 });
+    // RainViewer
+    function initRain(){ fetch('https://tilecache.rainviewer.com/api/maps.json')
+        .then(res=>res.json()).then(json=>{rainFrames=json.slice(-10);playRain();})
+        .catch(()=>showToast('Radar-Fehler')); }
+    function playRain(){ if(!rainLayerGroup) rainLayerGroup=L.layerGroup().addTo(map);
+      const ts=rainFrames[rainIdx],url=`https://tilecache.rainviewer.com/v2/radar/${ts}/256/{z}/{x}/{y}/2/1_1.png`;
+      L.tileLayer(url,{opacity:0.5,interactive:false}).addTo(rainLayerGroup);
+      rainIdx=(rainIdx+1)%rainFrames.length;
+      setTimeout(()=>{rainLayerGroup.clearLayers();playRain();},800);
     }
 
-    function initRain() {
-      fetch('https://tilecache.rainviewer.com/api/maps.json')
-        .then(res => res.json())
-        .then(json => { rainFrames = json.slice(-10); playRain(); })
-        .catch(() => showToast('Radar-Fehler'));
+    // Routing
+    function calculateRoute(){
+      if(!userMarker||!selectedPoints.length)return;
+      const wps=[userMarker.getLatLng(),...selectedPoints];
+      if(routingControl)map.removeControl(routingControl);
+      routingControl=L.Routing.control({ waypoints:wps,createMarker:()=>null,show:false,
+        lineOptions:{styles:[{color:'#10b981',weight:5}]},
+        router:L.Routing.openrouteservice('YOUR_ORS_KEY') }).addTo(map)
+        .on('routesfound',e=>{
+          const r=e.routes[0],km=r.summary.totalDistance/1000,min=r.summary.totalTime/60;
+          routeInfo.innerText=`🚴 ${km.toFixed(1)} km · ⏱ ${Math.round(min)} Min`;
+        });
     }
+    function clearRoute(){ selectedPoints=[]; if(routingControl)map.removeControl(routingControl); routeInfo.innerText=''; }
 
-    function playRain() {
-      if (!rainLayerGroup) rainLayerGroup = L.layerGroup().addTo(map);
-      const ts = rainFrames[rainIdx];
-      const url = `https://tilecache.rainviewer.com/v2/radar/${ts}/256/{z}/{x}/{y}/2/1_1.png`;
-      const tile = L.tileLayer(url, { opacity: 0.5, interactive: false }).addTo(rainLayerGroup);
-      rainIdx = (rainIdx + 1) % rainFrames.length;
-      setTimeout(() => { rainLayerGroup.clearLayers(); playRain(); }, 800);
-    }
+    // FAB actions
+    id('fab').onclick=_=>{ const m=id('fabMenu');m.style.display=m.style.display==='flex'?'none':'flex'; };
+    id('btnToggleRain').onclick=_=>{ rainLayerGroup&&map.removeLayer(rainLayerGroup)?rainLayerGroup=null:initRain(); };
+    id('btnFollow').onclick=_=>{ autoFollow=true; if(userMarker)map.setView(userMarker.getLatLng(),15); };
+    id('btnRecalc').onclick=calculateRoute;
+    id('btnClear').onclick=clearRoute;
 
-    function calculateRoute() {
-      if (!userMarker || selectedPoints.length === 0) return;
-      const waypoints = [userMarker.getLatLng(), ...selectedPoints];
-      if (routingControl) map.removeControl(routingControl);
-      routingControl = L.Routing.control({
-        waypoints,
-        createMarker: () => null,
-        show: false,
-        lineOptions: { styles: [{ color: '#10b981', weight: 5 }] },
-        router: L.Routing.openrouteservice('5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87')
-      }).addTo(map).on('routesfound', e => {
-        const r = e.routes[0];
-        const km = r.summary.totalDistance / 1000;
-        const min = r.summary.totalTime / 60;
-        routeInfo.innerText = `🚴 ${km.toFixed(1)} km · ⏱ ${Math.round(min)} Min`;
-      });
-    }
-
-    function clearRoute() {
-      selectedPoints = [];
-      if (routingControl) map.removeControl(routingControl);
-      routeInfo.innerText = '';
-    }
-
-    document.getElementById('fab').onclick = () => {
-      const m = document.getElementById('fabMenu');
-      m.style.display = m.style.display === 'flex' ? 'none' : 'flex';
-    };
-    document.getElementById('btnToggleRain').onclick = () => {
-      if (rainLayerGroup) {
-        map.removeLayer(rainLayerGroup);
-        rainLayerGroup = null;
-      } else {
-        initRain();
-      }
-    };
-    document.getElementById('btnFollow').onclick = () => {
-      autoFollow = true;
-      if (userMarker) map.setView(userMarker.getLatLng(), 15);
-    };
-    document.getElementById('btnRecalc').onclick = calculateRoute;
-    document.getElementById('btnClear').onclick = clearRoute;
-
-    startGeolocation();
-    checkLoadingDone();
-    setTimeout(() => {
-      if (!userLoaded) {
-        userLoaded = true;
-        showToast("⚠️ GPS nicht verfügbar");
-        checkLoadingDone();
-      }
-    }, 10000);
+    // Start
+    initMap(); startGeolocation();
+    setTimeout(()=>{if(!userLoaded){userLoaded=true;showToast('Teilladung');hideLoading();}},10000);
   </script></body>
 </html>
