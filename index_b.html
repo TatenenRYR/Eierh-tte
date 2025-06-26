@@ -262,9 +262,53 @@ map.addLayer(clusterGroup);
         document.getElementById('loadingOverlay').style.display = 'none';
       }
     }
+
+
+    
     let rainRadarOn = false;
 let rainViewerInstance = null;
 
+
+const WEATHER_API_KEY = "8168db7d486b0fa308fbb013d364fd65";
+let rainWarned = false;
+
+async function checkWeatherForecast() {
+  if (!userMarker) return;
+  const { lat, lng } = userMarker.getLatLng();
+
+  try {
+    const res = await fetch(`https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lng}&exclude=current,daily,minutely,alerts&appid=${WEATHER_API_KEY}&units=metric`);
+    const data = await res.json();
+
+    const hourly = data?.hourly;
+    if (!hourly || hourly.length === 0) return;
+
+    // Nächste 60 Minuten prüfen
+    for (let i = 0; i < 2; i++) {
+      const h = hourly[i];
+      const rain = h?.rain?.['1h'] || 0;
+
+      if (rain > 0 && !rainWarned) {
+        showToast(`☔ Achtung: In ca. ${i * 30 + 10} Minuten könnte es regnen!`);
+        rainWarned = true;
+
+        // Radar automatisch aktivieren
+        if (!rainRadarOn) toggleRainRadar();
+        break;
+      }
+    }
+
+    // Wenn kein Regen, dann Warnung zurücksetzen
+    if (hourly.slice(0, 2).every(h => (h?.rain?.['1h'] || 0) === 0)) {
+      rainWarned = false;
+    }
+
+  } catch (err) {
+    console.error("🌧 Wetterprüfung fehlgeschlagen:", err);
+  }
+}
+
+    
 function toggleRainRadar() {
   if (!rainRadarOn) {
     // Radar aktivieren
