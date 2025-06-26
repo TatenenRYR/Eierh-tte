@@ -177,7 +177,8 @@ button {
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-
+<script src="https://unpkg.com/leaflet-rainviewer"></script>
+  
 </head>
 <body>
   <!-- Ladebildschirm -->
@@ -192,6 +193,10 @@ button {
   <label id="groupTrackingToggle">
     <input type="checkbox" id="groupTrackCheckbox" /> Gruppen-Trekking live
   </label>
+
+  <button id="rainToggleBtn" onclick="toggleRainRadar()" style="top:160px; right:10px; background:#0ea5e9;">
+   🌧 Regenradar
+  </button>
 
   <!-- Seitenleiste / Menü -->
   <div id="menuPanel">
@@ -257,6 +262,30 @@ map.addLayer(clusterGroup);
         document.getElementById('loadingOverlay').style.display = 'none';
       }
     }
+    let rainRadarOn = false;
+let rainViewerInstance = null;
+
+function toggleRainRadar() {
+  if (!rainRadarOn) {
+    // Radar aktivieren
+    RainViewer.showRadar(map, {
+      colorScheme: 3, // Blau-grün-gelb-rot für Regenstärke
+      smooth: true,
+      snow: false,
+      animation: true
+    }).then((rv) => {
+      rainViewerInstance = rv;
+    });
+
+    rainRadarOn = true;
+    showToast("🌧 Regenradar aktiviert");
+  } else {
+    // Radar entfernen
+    if (rainViewerInstance) rainViewerInstance.remove();
+    rainRadarOn = false;
+    showToast("☀️ Regenradar deaktiviert");
+  }
+}
 
     // Stil-Wechsel
     function toggleMapStyle() {
@@ -421,8 +450,25 @@ map.addLayer(clusterGroup);
         Object.values(hutMarkers).forEach(m=>map.removeLayer(m));
         hutMarkers = {};
         snap.forEach(doc => {
-          const d = doc.data();
-          if (!d.location) return;
+  const d = doc.data();
+  if (!d.location) return;
+
+  // ✅ Abo-Zeitraum berechnen
+  const start = d.aboStart?.toDate?.();
+  const monate = d.aboMonate || 0;
+  if (!start || monate <= 0) return;
+
+  const jetzt = new Date();
+  const ablauf = new Date(start);
+  ablauf.setMonth(ablauf.getMonth() + monate);
+  if (ablauf < jetzt) return; // Abo abgelaufen
+
+  // ✅ PayPal-Abo vorhanden?
+  if (!d.paypalSubscriptionId || d.paypalSubscriptionId.trim() === "") return;
+
+  // ✅ Status muss "angenommen" sein
+  if (d.status !== 'angenommen') return;
+          
           const hut = { id:doc.id, name:d.name||'Unbenannt',
                         lat:d.location.latitude, lng:d.location.longitude,
                         strom:(d.strom===true||String(d.strom).toLowerCase()==='ja'),
