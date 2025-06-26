@@ -264,73 +264,72 @@ map.addLayer(clusterGroup);
       }
     }
 
-
-    
-    let rainRadarOn = false;
-let rainViewerInstance = null;
-
-
 const WEATHER_API_KEY = "8168db7d486b0fa308fbb013d364fd65";
 let rainWarned = false;
 
 async function checkWeatherForecast() {
-  if (!userMarker) return;
+  if (!userMarker) {
+    showToast("📍 Keine Position für Wettercheck");
+    return;
+  }
+
   const { lat, lng } = userMarker.getLatLng();
+  showToast("🔍 Wettervorhersage wird geprüft...");
 
   try {
     const res = await fetch(`https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lng}&exclude=current,daily,minutely,alerts&appid=${WEATHER_API_KEY}&units=metric`);
     const data = await res.json();
 
     const hourly = data?.hourly;
-    if (!hourly || hourly.length === 0) return;
+    if (!hourly) {
+      showToast("⚠️ Keine Wetterdaten erhalten");
+      return;
+    }
 
-    // Nächste 60 Minuten prüfen
     for (let i = 0; i < 2; i++) {
-      const h = hourly[i];
-      const rain = h?.rain?.['1h'] || 0;
+      const rain = hourly[i]?.rain?.['1h'] || 0;
+      showToast(`⏱ In ${i * 30}–${(i + 1) * 30} Min: ${rain} mm Regen`);
 
       if (rain > 0 && !rainWarned) {
-        showToast(`☔ Achtung: In ca. ${i * 30 + 10} Minuten könnte es regnen!`);
+        showToast(`☔ Achtung: In ca. ${i * 30 + 10} Min könnte es regnen!`);
         rainWarned = true;
-
-        // Radar automatisch aktivieren
-        if (!rainRadarOn) toggleRainRadar();
-        break;
+        if (!rainViewerInstance) toggleRainRadar();
+        return;
       }
     }
 
-    // Wenn kein Regen, dann Warnung zurücksetzen
-    if (hourly.slice(0, 2).every(h => (h?.rain?.['1h'] || 0) === 0)) {
-      rainWarned = false;
-    }
+    rainWarned = false;
+    showToast("✅ Kein Regen in den nächsten 60 Minuten");
 
   } catch (err) {
-    console.error("🌧 Wetterprüfung fehlgeschlagen:", err);
+    console.error("Wetter-API Fehler:", err);
+    showToast("❌ Fehler beim Abrufen der Wetterdaten");
   }
 }
-
     
-function toggleRainRadar() {
-  if (!rainRadarOn) {
-    // Radar aktivieren
-    RainViewer.showRadar(map, {
-      colorScheme: 3, // Blau-grün-gelb-rot für Regenstärke
-      smooth: true,
-      snow: false,
-      animation: true
-    }).then((rv) => {
-      rainViewerInstance = rv;
-    });
+let rainViewerInstance = null;
 
-    rainRadarOn = true;
-    showToast("🌧 Regenradar aktiviert");
+function toggleRainRadar() {
+  if (rainViewerInstance) {
+    rainViewerInstance.remove();
+    rainViewerInstance = null;
+    showToast("🌤️ Regenradar deaktiviert");
   } else {
-    // Radar entfernen
-    if (rainViewerInstance) rainViewerInstance.remove();
-    rainRadarOn = false;
-    showToast("☀️ Regenradar deaktiviert");
+    showToast("☁️ Regenradar wird geladen...");
+    RainViewer.showRadar(map, {
+      animation: true,
+      colorScheme: 3,
+      smooth: true,
+      snow: false
+    }).then(rv => {
+      rainViewerInstance = rv;
+      showToast("🌧️ Regenradar aktiviert");
+    }).catch(err => {
+      console.error("RainViewer Fehler:", err);
+      showToast("❌ Regenradar konnte nicht geladen werden");
+    });
   }
-}
+    }
 
     // Stil-Wechsel
     function toggleMapStyle() {
