@@ -261,12 +261,12 @@ map.addLayer(clusterGroup);
       }
     }
 
-
-let rainViewerFrames = [];
-let currentRainIndex = 0;
-let rainOverlayA, rainOverlayB;
-let usingOverlayA = true;
-let rainAnimationRunning = false;
+let rainFrames = [];
+let rainIndex = 0;
+let rainOverlayA = null;
+let rainOverlayB = null;
+let usingA = true;
+let rainRunning = false;
 
 async function startRainMonitoring() {
   if (!userMarker) {
@@ -274,76 +274,73 @@ async function startRainMonitoring() {
     return;
   }
 
+  showToast("☁️ Regenradar wird initialisiert...");
+
   try {
     const res = await fetch("https://tilecache.rainviewer.com/api/maps.json");
-    rainViewerFrames = await res.json();
-    if (!rainViewerFrames || rainViewerFrames.length === 0) return;
+    const json = await res.json();
 
-    startRainViewerAnimation();
+    if (!Array.isArray(json) || json.length === 0) {
+      showToast("⚠️ Keine Radarframes empfangen");
+      return;
+    }
+
+    rainFrames = json.slice(-10); // nur die letzten 10 Frames
+    rainRunning = true;
+    rainIndex = 0;
+
+    playRainFrames();
+
   } catch (err) {
-    console.error("RainViewer API Fehler:", err);
+    console.error("🌧️ RainViewer Fehler:", err);
+    showToast("❌ Regenradar konnte nicht geladen werden");
   }
 }
 
-function startRainViewerAnimation() {
-  if (rainAnimationRunning) return;
-  rainAnimationRunning = true;
-  currentRainIndex = 0;
-
-  animateRainViewer();
+function getRainImageUrl(ts) {
+  return `https://tilecache.rainviewer.com/v2/radar/${ts}/512/{z}/{x}/{y}/2/1_1.png`;
 }
 
-function animateRainViewer() {
-  if (!rainAnimationRunning || rainViewerFrames.length === 0) return;
+function playRainFrames() {
+  if (!rainRunning || rainFrames.length === 0) return;
 
-  const frame = rainViewerFrames[currentRainIndex];
-  const url = getRainViewerFrameUrl(frame);
+  const ts = rainFrames[rainIndex];
+  const url = getRainImageUrl(ts);
 
-  const bounds = map.getBounds();
-
-  const imageBounds = [
-    [bounds.getSouth(), bounds.getWest()],
-    [bounds.getNorth(), bounds.getEast()],
-  ];
-
-  const newOverlay = L.imageOverlay(url, imageBounds, {
+  const overlay = L.tileLayer(url, {
     opacity: 0,
-    zIndex: 998,
+    zIndex: 300,
+    transparent: true
   });
 
-  newOverlay.addTo(map);
-
-  const fadeInDuration = 500;
+  overlay.addTo(map);
 
   setTimeout(() => {
-    // Fade in neuer Overlay
-    newOverlay.setOpacity(0.6);
+    overlay.setOpacity(0.6);
 
-    // Entferne alten
-    if (usingOverlayA && rainOverlayA) map.removeLayer(rainOverlayA);
-    if (!usingOverlayA && rainOverlayB) map.removeLayer(rainOverlayB);
+    if (usingA && rainOverlayA) map.removeLayer(rainOverlayA);
+    if (!usingA && rainOverlayB) map.removeLayer(rainOverlayB);
 
-    // Umschalten
-    if (usingOverlayA) rainOverlayA = newOverlay;
-    else rainOverlayB = newOverlay;
+    if (usingA) rainOverlayA = overlay;
+    else rainOverlayB = overlay;
 
-    usingOverlayA = !usingOverlayA;
+    usingA = !usingA;
 
-    currentRainIndex = (currentRainIndex + 1) % rainViewerFrames.length;
+    rainIndex = (rainIndex + 1) % rainFrames.length;
 
-    setTimeout(animateRainViewer, 700); // Framewechsel alle 700 ms
-  }, fadeInDuration);
+    // Info anzeigen
+    const date = new Date(ts * 1000).toLocaleTimeString();
+    showToast(`🌧️ Radar: ${date}`);
+
+    setTimeout(playRainFrames, 800); // nächster Frame
+  }, 200); // Fade-Effekt
 }
 
-function stopRainViewerAnimation() {
-  rainAnimationRunning = false;
+function stopRainMonitoring() {
+  rainRunning = false;
   if (rainOverlayA) map.removeLayer(rainOverlayA);
   if (rainOverlayB) map.removeLayer(rainOverlayB);
   rainOverlayA = rainOverlayB = null;
-}
-
-function getRainViewerFrameUrl(timestamp) {
-  return `https://tilecache.rainviewer.com/v2/radar/${timestamp}/512/{z}/{x}/{y}/2/1_1.png`;
 }
 
     // Stil-Wechsel
