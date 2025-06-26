@@ -1,116 +1,130 @@
 <!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Eierhütten-Radtour</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
   <style>
-    html, body, #map { margin:0; padding:0; height:100%; font-family:sans-serif; }
+    html, body, #map { height:100%; margin:0; padding:0; font-family:sans-serif; }
     #map { position:absolute; inset:0; }
     #loadingOverlay {
-      position:fixed; inset:0; background:#fff;
-      display:flex; align-items:center; justify-content:center;
-      font-size:1.5rem; color:#10b981; z-index:2000;
+      position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+      background:white; font-size:1.4rem; color:#10b981; z-index:9999;
     }
-    #fab { position:fixed; bottom:20px; right:20px; width:56px; height:56px; border-radius:50%; background:#10b981; color:#fff; display:flex; align-items:center; justify-content:center; font-size:1.5rem; cursor:pointer; z-index:1001; box-shadow:0 4px 6px rgba(0,0,0,0.2); }
-    #fabMenu { position:fixed; bottom:90px; right:20px; display:none; flex-direction:column; gap:10px; z-index:1001; }
-    .fab-btn { background:#fff; color:#333; border:none; padding:8px 12px; border-radius:8px; font-size:1rem; box-shadow:0 2px 4px rgba(0,0,0,0.15); cursor:pointer; }
-    .toast { position:fixed; bottom:100px; left:50%; transform:translateX(-50%); background:#10b981; color:#fff; padding:10px 20px; border-radius:12px; font-size:1rem; display:none; z-index:1002; }
+    #fab, #fabMenu button {
+      font-size:1rem; padding:10px 14px; border:none; border-radius:10px;
+      box-shadow:0 2px 4px rgba(0,0,0,0.2); cursor:pointer; z-index:1001;
+    }
+    #fab { position:fixed; bottom:20px; right:20px; background:#10b981; color:white; width:56px; height:56px; border-radius:50%; display:flex; align-items:center; justify-content:center; }
+    #fabMenu {
+      position:fixed; bottom:90px; right:20px; display:none; flex-direction:column; gap:8px; z-index:1002;
+    }
+    .toast {
+      position:fixed; bottom:120px; left:50%; transform:translateX(-50%);
+      background:#10b981; color:white; padding:10px 16px; border-radius:8px; display:none;
+      z-index:2000;
+    }
     #routeInfo, #nextStopInfo {
       position:fixed; bottom:10px; left:50%; transform:translateX(-50%);
-      background:rgba(255,255,255,0.9); padding:10px 14px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.15);
-      font-size:14px; z-index:1001; white-space:pre-wrap;
+      background:white; padding:8px 12px; border-radius:8px;
+      box-shadow:0 2px 6px rgba(0,0,0,0.2); z-index:1001; font-size:14px;
     }
   </style>
 </head>
 <body>
-  <div id="loadingOverlay">⏳ Karte lädt …</div>
+  <div id="loadingOverlay">⏳ Karte wird geladen...</div>
   <div id="map"></div>
   <div id="fab">☰</div>
   <div id="fabMenu">
-    <button class="fab-btn" id="btnToggleRain">🌧️ Regenradar</button>
-    <button class="fab-btn" id="btnFollow">📍 Folgen</button>
-    <button class="fab-btn" id="btnRecalc">🔄 Route</button>
-    <button class="fab-btn" id="btnClear">🗑 Route löschen</button>
+    <button onclick="toggleRain()">🌧 Regenradar</button>
+    <button onclick="enableFollow()">📍 Folgen</button>
+    <button onclick="calculateRoute()">🔁 Route berechnen</button>
+    <button onclick="clearRoute()">🗑 Route löschen</button>
   </div>
   <div class="toast" id="toast"></div>
   <div id="routeInfo"></div>
-  <div id="nextStopInfo" style="display:none;"></div>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>  <script src="https://unpkg.com/lrm-openrouteservice/dist/lrm-openrouteservice.min.js"></script>  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>  <script>
-    // State
-    let map, userMarker=null, autoFollow=true, userLoaded=false;
-    let rainFrames=[], rainIdx=0, rainLayerGroup=null;
-    let routingControl=null;
-    let selectedPoints=[];
+  <div id="nextStopInfo" style="display:none;"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script>
+    let map = L.map('map').setView([51.5, 10.5], 6);
+    let userMarker = null, autoFollow = true, rainLayer = null;
+    let routeControl = null, selectedPoints = [], rainFrames = [], rainIndex = 0;
+    const toast = document.getElementById('toast');L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 })
+  .addTo(map)
+  .on('load', () => document.getElementById('loadingOverlay').style.display = 'none');
 
-    // UI Elements
-    const toast = id('toast');
-    const routeInfo = id('routeInfo');
-    const nextStopInfo = id('nextStopInfo');
-    function id(x){return document.getElementById(x)}
+function showToast(msg) {
+  toast.innerText = msg;
+  toast.style.display = 'block';
+  setTimeout(() => toast.style.display = 'none', 3000);
+}
 
-    // Toast
-    function showToast(msg){ toast.innerText=msg; toast.style.display='block'; setTimeout(()=>toast.style.display='none',3000);}    
+navigator.geolocation.watchPosition(pos => {
+  const latlng = [pos.coords.latitude, pos.coords.longitude];
+  if (!userMarker) {
+    userMarker = L.marker(latlng).addTo(map);
+  } else {
+    userMarker.setLatLng(latlng);
+  }
+  if (autoFollow) map.setView(latlng, 15);
+}, () => showToast('⚠️ GPS nicht verfügbar'), { enableHighAccuracy: true });
 
-    // Init Map
-    function initMap(){
-      map = L.map('map').setView([51.5,10.5],6);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19})
-        .on('load',()=>{userLoaded=true; hideLoading();})
-        .addTo(map);
-    }
+document.getElementById('fab').onclick = () => {
+  const m = document.getElementById('fabMenu');
+  m.style.display = m.style.display === 'flex' ? 'none' : 'flex';
+};
 
-    // Loading
-    function hideLoading(){ if(userLoaded) id('loadingOverlay').style.display='none'; }
+function enableFollow() {
+  autoFollow = true;
+  if (userMarker) map.setView(userMarker.getLatLng(), 15);
+}
 
-    // Geolocation
-    function startGeolocation(){
-      if(!navigator.geolocation){ showToast('GPS nicht verfügbar'); userLoaded=true; hideLoading(); return; }
-      navigator.geolocation.watchPosition(pos=>{
-        const latlng=[pos.coords.latitude,pos.coords.longitude];
-        if(!userMarker){ userMarker=L.marker(latlng).addTo(map); userLoaded=true; hideLoading(); }
-        else userMarker.setLatLng(latlng);
-        if(autoFollow) map.setView(latlng,15);
-      }, err=>{ showToast('GPS-Fehler'); userLoaded=true; hideLoading(); },{enableHighAccuracy:true,timeout:10000});
-    }
+function toggleRain() {
+  if (rainLayer) {
+    map.removeLayer(rainLayer);
+    rainLayer = null;
+    return;
+  }
+  fetch('https://tilecache.rainviewer.com/api/maps.json')
+    .then(res => res.json())
+    .then(json => {
+      rainFrames = json.slice(-10);
+      showRainFrame();
+    });
+}
 
-    // RainViewer
-    function initRain(){ fetch('https://tilecache.rainviewer.com/api/maps.json')
-        .then(res=>res.json()).then(json=>{rainFrames=json.slice(-10);playRain();})
-        .catch(()=>showToast('Radar-Fehler')); }
-    function playRain(){ if(!rainLayerGroup) rainLayerGroup=L.layerGroup().addTo(map);
-      const ts=rainFrames[rainIdx],url=`https://tilecache.rainviewer.com/v2/radar/${ts}/256/{z}/{x}/{y}/2/1_1.png`;
-      L.tileLayer(url,{opacity:0.5,interactive:false}).addTo(rainLayerGroup);
-      rainIdx=(rainIdx+1)%rainFrames.length;
-      setTimeout(()=>{rainLayerGroup.clearLayers();playRain();},800);
-    }
+function showRainFrame() {
+  const ts = rainFrames[rainIndex];
+  const url = `https://tilecache.rainviewer.com/v2/radar/${ts}/256/{z}/{x}/{y}/2/1_1.png`;
+  if (rainLayer) map.removeLayer(rainLayer);
+  rainLayer = L.tileLayer(url, { opacity: 0.5, interactive: false }).addTo(map);
+  rainIndex = (rainIndex + 1) % rainFrames.length;
+  setTimeout(showRainFrame, 1000);
+}
 
-    // Routing
-    function calculateRoute(){
-      if(!userMarker||!selectedPoints.length)return;
-      const wps=[userMarker.getLatLng(),...selectedPoints];
-      if(routingControl)map.removeControl(routingControl);
-      routingControl=L.Routing.control({ waypoints:wps,createMarker:()=>null,show:false,
-        lineOptions:{styles:[{color:'#10b981',weight:5}]},
-        router:L.Routing.openrouteservice('YOUR_ORS_KEY') }).addTo(map)
-        .on('routesfound',e=>{
-          const r=e.routes[0],km=r.summary.totalDistance/1000,min=r.summary.totalTime/60;
-          routeInfo.innerText=`🚴 ${km.toFixed(1)} km · ⏱ ${Math.round(min)} Min`;
-        });
-    }
-    function clearRoute(){ selectedPoints=[]; if(routingControl)map.removeControl(routingControl); routeInfo.innerText=''; }
+function calculateRoute() {
+  if (!userMarker || selectedPoints.length === 0) return;
+  const wp = [userMarker.getLatLng(), ...selectedPoints];
+  if (routeControl) map.removeControl(routeControl);
+  routeControl = L.Routing.control({
+    waypoints: wp,
+    createMarker: () => null,
+    show: false,
+    lineOptions: { styles: [{ color: '#10b981', weight: 5 }] }
+  }).addTo(map);
+}
 
-    // FAB actions
-    id('fab').onclick=_=>{ const m=id('fabMenu');m.style.display=m.style.display==='flex'?'none':'flex'; };
-    id('btnToggleRain').onclick=_=>{ rainLayerGroup&&map.removeLayer(rainLayerGroup)?rainLayerGroup=null:initRain(); };
-    id('btnFollow').onclick=_=>{ autoFollow=true; if(userMarker)map.setView(userMarker.getLatLng(),15); };
-    id('btnRecalc').onclick=calculateRoute;
-    id('btnClear').onclick=clearRoute;
+function clearRoute() {
+  if (routeControl) map.removeControl(routeControl);
+  selectedPoints = [];
+  document.getElementById('routeInfo').innerText = '';
+}
 
-    // Start
-    initMap(); startGeolocation();
-    setTimeout(()=>{if(!userLoaded){userLoaded=true;showToast('Teilladung');hideLoading();}},10000);
-  </script></body>
+  </script>
+</body>
 </html>
