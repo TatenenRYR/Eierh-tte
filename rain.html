@@ -1,32 +1,72 @@
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
-  <title>RainViewer Test</title>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RainViewer Test</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-rainviewer"></script>
   <style>
     html, body, #map { height: 100%; margin: 0; }
+    .toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: #10b981; color: white; padding: 10px 16px;
+      border-radius: 10px; font-size: 16px; z-index: 9999;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+      display: none;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <div id="toast" class="toast"></div>
+
   <script>
-    const map = L.map('map').setView([51, 10], 6);
+    const map = L.map('map').setView([51.3, 10.1], 6); // Mitte Deutschland
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
+      maxZoom: 19
     }).addTo(map);
 
-    RainViewer.showRadar(map, {
-      animation: true
-    }).then(() => {
-      alert("✅ RainViewer geladen!");
-    }).catch(err => {
-      alert("❌ RainViewer Fehler: " + err.message);
-      console.error(err);
-    });
+    function showToast(message) {
+      const t = document.getElementById('toast');
+      t.innerText = message;
+      t.style.display = 'block';
+      setTimeout(() => t.style.display = 'none', 4000);
+    }
+
+    async function loadRainViewerWithCheck() {
+      showToast("☁️ Regenradar wird geladen...");
+
+      try {
+        const radar = await RainViewer.showRadar(map, {
+          animation: true,
+          colorScheme: 3,
+          smooth: true,
+          snow: false
+        });
+
+        // Prüfe, ob Kacheln geladen wurden
+        let tilesFound = false;
+        map.eachLayer(layer => {
+          if (layer._url && layer._url.includes("rainviewer")) {
+            tilesFound = true;
+          }
+        });
+
+        if (tilesFound) {
+          showToast("🌧️ Regenradar aktiviert – Niederschlag sichtbar");
+        } else {
+          showToast("☀️ Kein Regen aktuell in der Region");
+        }
+      } catch (err) {
+        console.error("RainViewer Fehler:", err);
+        showToast("❌ Regenradar konnte nicht geladen werden");
+      }
+    }
+
+    // Starte automatisch
+    loadRainViewerWithCheck();
   </script>
 </body>
 </html>
