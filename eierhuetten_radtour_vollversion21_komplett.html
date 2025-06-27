@@ -58,13 +58,195 @@
     <button onclick="resetRoute()">🗑 Route löschen</button>
   </div>
 
-  <!-- Scripts -->
+  <!-- SDKs -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 
-  <!-- Dein kompletter JavaScript-Code müsste hier folgen... -->
+  <!-- JavaScript -->
+  <script>
+    // Firebase
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.firebasestorage.app",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // Map & Layer
+    const map = L.map('map').setView([51.5, 10.5], 7);
+    const light = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png');
+
+    function toggleDarkMode() {
+      map.hasLayer(light) ? (map.removeLayer(light), dark.addTo(map)) : (map.removeLayer(dark), light.addTo(map));
+    }
+
+    // Geschwindigkeit
+    navigator.geolocation.watchPosition(pos => {
+      const kmh = (pos.coords.speed || 0) * 3.6;
+      document.getElementById("speedDisplay").textContent = `🚴 ${kmh.toFixed(1)} km/h`;
+    }, () => {}, { enableHighAccuracy: true });
+
+    // Gruppen-ID
+    let gruppe = new URLSearchParams(location.search).get("gruppe") || crypto.randomUUID();
+    history.replaceState(null, "", "?gruppe=" + gruppe);
+    const userId = crypto.randomUUID();
+
+    // Fahrrad-Position
+    let userMarker = null;
+    navigator.geolocation.watchPosition(pos => {
+      const data = { lat: pos.coords.latitude, lng: pos.coords.longitude, time: Date.now() };
+      db.collection("gruppenpositionen").doc(gruppe).collection("users").doc(userId).set(data);
+      if (!userMarker) {
+        userMarker = L.marker([data.lat, data.lng], {
+          icon: L.icon({ iconUrl: "https://cdn-icons-png.flaticon.com/512/1946/1946429.png", iconSize: [32, 32] })
+        }).addTo(map);
+      } else {
+        userMarker.setLatLng([data.lat, data.lng]);
+      }
+    });
+
+    // Gruppenmitglieder
+    db.collection("gruppenpositionen").doc(gruppe).collection("users").onSnapshot(snapshot => {
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        if (doc.id !== userId) {
+          L.marker([d.lat, d.lng], {
+            icon: L.icon({ iconUrl: "https://cdn-icons-png.flaticon.com/512/149/149071.png", iconSize: [28, 28] })
+          }).addTo(map);
+        }
+      });
+    });
+
+    // Routing
+    let routeControl, routeCoords = [], riddenLine, remainLine;
+    function resetRoute() {
+      if (routeControl) map.removeControl(routeControl);
+      routeCoords = [];
+      riddenLine.setLatLngs([]); remainLine.setLatLngs([]);
+    }
+
+    function setupRoute(from, to) {
+      if (routeControl) map.removeControl(routeControl);
+      routeControl = L.Routing.control({
+        waypoints: [from, to],
+        router: L.Routing.openrouteservice('5b3ce3597851110001cf6248'),
+        routeWhileDragging: false,
+        createMarker: () => null
+      }).addTo(map).on('routesfound', e => {
+        routeCoords = e.routes[0].coordinates.map(p => [p.lat, p.lng]);
+        riddenLine.setLatLngs([]); remainLine.setLatLngs(routeCoords);
+      });
+    }
+
+    riddenLine = L.polyline([], { color: 'green', weight: 5 }).addTo(map);
+    remainLine = L.polyline([], { color: 'gray', weight: 4, dashArray: '5,10' }).addTo(map);
+
+    map.on('moveend', () => {
+      if (!routeCoords.length) return;
+      const center = map.getCenter();
+      let nearestIndex = 0, minDist = Infinity;
+      routeCoords.forEach((pt, i) => {
+        const d = map.distance(center, pt);
+        if (d < minDist) { minDist = d; nearestIndex = i; }
+      });
+      riddenLine.setLatLngs(routeCoords.slice(0, nearestIndex + 1));
+      remainLine.setLatLngs(routeCoords.slice(nearestIndex));
+    });
+
+    // Hütten laden
+    const cluster = L.markerClusterGroup().addTo(map);
+    db.collection("eierhuetten").where("freigabe", "==", true).onSnapshot(snap => {
+      cluster.clearLayers();
+      snap.forEach(doc => {
+        const d = doc.data();
+        const marker = L.marker([d.location.latitude, d.location.longitude], {
+          icon: L.icon({ iconUrl: "1000076402.png", iconSize: [32, 32] }),
+          title: d.name || "Hütte"
+        }).on("click", () => {
+          if (userMarker) setupRoute(userMarker.getLatLng(), marker.getLatLng());
+        });
+        cluster.addLayer(marker);
+      });
+    });
+
+    // RainViewer
+    let rainRunning = false, rainFrames = [], rainIndex = 0, rainLayer;
+    async function loadRainViewer() {
+      const res = await fetch("https://tilecache.rainviewer.com/api/maps.json");
+      rainFrames = (await res.json()).slice(-12);
+      rainRunning = true; playRain();
+    }
+    function playRain() {
+      if (!rainRunning || !rainFrames.length) return;
+      const url = `https://tilecache.rainviewer.com/v2/radar/${rainFrames[rainIndex]}/512/{z}/{x}/{y}/2/1_1.png`;
+      if (rainLayer) map.removeLayer(rainLayer);
+      rainLayer = L.tileLayer(url, { opacity: 0.5, zIndex: 300 }).addTo(map);
+      rainIndex = (rainIndex + 1) % rainFrames.length;
+      setTimeout(playRain, 1000);
+    }
+    function toggleRain() {
+      if (rainRunning) {
+        rainRunning = false;
+        if (rainLayer) map.removeLayer(rainLayer);
+      } else {
+        loadRainViewer();
+      }
+    }
+
+    // Tropfenanimation
+    let regenCanvas, regenCtx, regenDrops = [];
+    function createTropfen() {
+      regenCanvas = document.createElement("canvas");
+      regenCanvas.style.position = "fixed";
+      regenCanvas.style.top = 0;
+      regenCanvas.style.left = 0;
+      regenCanvas.style.width = "100%";
+      regenCanvas.style.height = "100%";
+      regenCanvas.style.pointerEvents = "none";
+      regenCanvas.style.zIndex = 1000;
+      regenCanvas.width = window.innerWidth;
+      regenCanvas.height = window.innerHeight;
+      document.body.appendChild(regenCanvas);
+      regenCtx = regenCanvas.getContext("2d");
+      for (let i = 0; i < 100; i++) {
+        regenDrops.push({ x: Math.random()*regenCanvas.width, y: Math.random()*regenCanvas.height, r: Math.random()*2+1, v: Math.random()*3+2 });
+      }
+      requestAnimationFrame(drawTropfen);
+    }
+
+    function drawTropfen() {
+      if (!regenCanvas) return;
+      regenCtx.clearRect(0, 0, regenCanvas.width, regenCanvas.height);
+      regenCtx.fillStyle = "rgba(0,0,255,0.2)";
+      regenDrops.forEach(d => {
+        regenCtx.beginPath();
+        regenCtx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+        regenCtx.fill();
+        d.y += d.v;
+        if (d.y > regenCanvas.height) d.y = 0;
+      });
+      requestAnimationFrame(drawTropfen);
+    }
+
+    let tropfenAktiv = false;
+    function toggleTropfen() {
+      if (tropfenAktiv) {
+        if (regenCanvas) regenCanvas.remove();
+        tropfenAktiv = false;
+      } else {
+        createTropfen();
+        tropfenAktiv = true;
+      }
+    }
+  </script>
 </body>
 </html>
