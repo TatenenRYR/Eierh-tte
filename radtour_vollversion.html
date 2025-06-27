@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eierhütten Radtour App – Vollversion</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
+    #map { height: calc(100% - 40px); }
+    #speedDisplay {
+      height: 40px;
+      line-height: 40px;
+      background: white;
+      font-weight: bold;
+      text-align: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      z-index: 1001;
+    }
+    #floatingMenuBtn {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1002;
+      background: #10b981;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 60px;
+      height: 60px;
+      font-size: 1.8em;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+      cursor: pointer;
+    }
+    #popupMenu {
+      position: fixed;
+      bottom: 90px;
+      right: 20px;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      padding: 10px 14px;
+      z-index: 1002;
+      display: none;
+      min-width: 220px;
+    }
+    #popupMenu button {
+      display: block;
+      width: 100%;
+      margin: 6px 0;
+      padding: 10px;
+      background: #f0fdf4;
+      border: none;
+      border-radius: 10px;
+      text-align: left;
+      font-weight: 500;
+      font-size: 1em;
+      cursor: pointer;
+    }
+    #popupMenu button:hover { background: #d1fae5; }
+  </style>
+  <script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+</head>
+<body>
+  <div id="speedDisplay">🚴‍♂️ – km/h</div>
+  <div id="map"></div>
+
+  <button id="floatingMenuBtn">☰</button>
+  <div id="popupMenu">
+    <button onclick="toggleMapStyle()">🌓 Kartenstil</button>
+    <button onclick="toggleSidebar()">📋 Routenliste</button>
+    <button onclick="toggleGroupTracking()()">👥 Gruppen-Tracking</button>
+    <button onclick="toggleRainViewer()">🌧️ Regenradar</button>
+    <button onclick="saveTour()">💾 Tour speichern</button>
+    <button onclick="shareTour()">🔗 Tour teilen</button>
+    <button onclick="resetSelection()">🗑 Route löschen</button>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "DEINE_API_KEY",
+      authDomain: "DEIN_PROJEKT.firebaseapp.com",
+      projectId: "DEIN_PROJEKT",
+      storageBucket: "DEIN_PROJEKT.appspot.com",
+      messagingSenderId: "...",
+      appId: "..."
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    const map = L.map('map').setView([51.5, 10.5], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    let routeCoords = [], currentTourID = null;
+    let riddenLine = L.polyline([], { color: 'green', weight: 6 }).addTo(map);
+    let remainingLine = L.polyline([], { color: 'gray', weight: 4, dashArray: '6,8' }).addTo(map);
+
+    function updateProgressLine(currentLatLng) {
+      if (!routeCoords.length) return;
+      let nearestIndex = 0;
+      let minDist = Infinity;
+      routeCoords.forEach((pt, i) => {
+        const dist = map.distance(currentLatLng, pt);
+        if (dist < minDist) {
+          minDist = dist;
+          nearestIndex = i;
+        }
+      });
+      const ridden = routeCoords.slice(0, nearestIndex + 1);
+      const remaining = routeCoords.slice(nearestIndex);
+      riddenLine.setLatLngs(ridden);
+      remainingLine.setLatLngs(remaining);
+    }
+
+    function speak(text) {
+      if ('speechSynthesis' in window) {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'de-DE';
+        speechSynthesis.speak(utterance);
+      }
+    }
+
+    function saveTour() {
+      const tour = { route: routeCoords, timestamp: Date.now() };
+      db.collection('touren').add(tour).then(doc => {
+        currentTourID = doc.id;
+        alert('Tour gespeichert: ' + doc.id);
+      });
+    }
+
+    function shareTour() {
+      if (!currentTourID) return alert('Bitte zuerst Tour speichern.');
+      const url = location.origin + location.pathname + '?tour=' + currentTourID;
+      navigator.clipboard.writeText(url);
+      alert('Tour-Link kopiert: ' + url);
+    }
+
+    function loadTour(tourID) {
+      db.collection('touren').doc(tourID).get().then(doc => {
+        if (!doc.exists) return alert('Tour nicht gefunden.');
+        routeCoords = doc.data().route;
+        riddenLine.setLatLngs([]);
+        remainingLine.setLatLngs(routeCoords);
+      });
+    }
+
+    window.addEventListener('load', () => {
+      const params = new URLSearchParams(location.search);
+      const tid = params.get('tour');
+      if (tid) loadTour(tid);
+    });
+
+    const menuBtn = document.getElementById('floatingMenuBtn');
+    const menuBox = document.getElementById('popupMenu');
+    menuBtn.onclick = () => {
+      menuBox.style.display = (menuBox.style.display === 'block') ? 'none' : 'block';
+    };
+
+    function toggleMapStyle() { alert('Kartenstil wechseln'); }
+    function toggleSidebar() { alert('Routenliste anzeigen'); }
+    function toggleGroupTracking() { alert('Gruppenfunktion'); }
+    function toggleRainViewer() { alert('RainViewer toggeln'); }
+    function resetSelection() {
+      routeCoords = [];
+      riddenLine.setLatLngs([]);
+      remainingLine.setLatLngs([]);
+      alert('Route gelöscht');
+    }
+  </script>
+</body>
+</html>
