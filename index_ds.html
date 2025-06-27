@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>RadlMap</title>
+
+  <!-- Leaflet & Routing Machine CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+
+  <style>
+    html, body {
+      display: flex;
+      flex-direction: column;
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: 'Segoe UI', Roboto, sans-serif;
+      background: #f0fdf4;
+    }
+
+    #map {
+      flex: 1 !important;
+      height: auto !important;
+      position: absolute;
+      top: 0; bottom: 0; left: 0; right: 0;
+      z-index: 0;
+    }
+
+    #loadingOverlay {
+      position: fixed;
+      inset: 0;
+      background: white;
+      color: #10b981;
+      font-size: 1.8em;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+    }
+
+    .button-group {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 1001;
+    }
+
+    .button-group button,
+    #groupTrackingToggle {
+      width: auto;
+      max-width: 220px;
+      padding: 10px 12px;
+      font-size: 1em;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      border: none;
+      color: white;
+      cursor: pointer;
+    }
+
+    #groupTrackingToggle {
+      background: #10b981;
+      color: white;
+    }
+
+    #menuBtn {
+      position: fixed;
+      top: 14px;
+      left: 14px;
+      background: #10b981;
+      color: white;
+      padding: 14px 18px;
+      border: none;
+      border-radius: 14px;
+      z-index: 1001;
+      font-size: 1.2em;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      cursor: pointer;
+    }
+
+    #speedDisplay {
+      background: white;
+      padding: 8px 16px;
+      font-weight: bold;
+      font-size: 1.1em;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      text-align: center;
+      z-index: 1001;
+      position: fixed;
+      top: 90px;
+      left: 14px;
+      border-radius: 10px;
+    }
+
+    #routeInfo, #nextStopInfo {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      background: white;
+      padding: 10px 18px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      font-size: 1.1em;
+      font-weight: 500;
+      z-index: 1001;
+      text-align: center;
+    }
+
+    #routeInfo { bottom: 20px; }
+    #nextStopInfo { bottom: 80px; display: none; }
+
+    .toast {
+      position: fixed;
+      bottom: 140px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #10b981;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 12px;
+      font-size: 1em;
+      font-weight: 500;
+      z-index: 1003;
+      display: none;
+    }
+
+    #menuPanel {
+      position: fixed;
+      top: 90px;
+      left: 14px;
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      max-width: 320px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 1002;
+      display: none;
+    }
+
+    #menuPanel h3 {
+      margin-top: 0;
+      font-size: 1.4em;
+      color: #10b981;
+    }
+
+    #menuPanel ul {
+      padding-left: 20px;
+      margin-bottom: 10px;
+    }
+
+    #menuPanel button {
+      margin-top: 10px;
+      width: 100%;
+      background: #10b981;
+      color: white;
+      border: none;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 1em;
+    }
+  </style>
+</head>
+<body>
+  <div id="speedDisplay">🚴‍♂️ – km/h</div>
+  <div id="loadingOverlay">⏳ Karte lädt...</div>
+  <button id="menuBtn" onclick="toggleSidebar()">☰ Menü</button>
+  <div class="button-group">
+    <button id="styleToggleBtn" onclick="toggleMapStyle()">🌓 Stil</button>
+    <button id="followBtn" onclick="enableAutoFollow()" style="display:none;">📍 Folgen</button>
+    <label id="groupTrackingToggle">
+      <input type="checkbox" id="groupTrackCheckbox" /> Gruppen-Tracking
+    </label>
+    <button onclick="copyGroupLink()" style="background:#3b82f6;">🔗 Link teilen</button>
+  </div>
+  <div id="menuPanel">
+    <h3>🚴 Menü</h3>
+    <ul id="selectedList"></ul>
+    <label><input type="radio" name="routeMode" value="normal" checked> Normale Reihenfolge</label><br>
+    <label><input type="radio" name="routeMode" value="optimized"> Optimiert</label><br>
+    <button onclick="recalculateRoute()">🔄 Route neu berechnen</button>
+    <button onclick="resetSelection()">🗑 Route löschen</button>
+  </div>
+  <div id="routeInfo"></div>
+  <div id="nextStopInfo"></div>
+  <div class="toast" id="toast"></div>
+  <div id="map"></div>
+
+  <!-- Firebase & Leaflet Scripts -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+  <script src="https://unpkg.com/lrm-openrouteservice/dist/lrm-openrouteservice.min.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="https://unpkg.com/leaflet-rainviewer"></script>
+
+  <script>
+    // ✅ NEU: Gruppen-ID aus URL lesen
+    function getGroupIdFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const groupId = params.get('group');
+      return groupId && groupId.trim() !== '' ? groupId : null;
+    }
+    // ✅ NEU: UUID generieren
+    function generateGroupId() {
+      return 'xxxxxxxx'.replace(/x/g, () =>
+        Math.floor(Math.random() * 16).toString(16)
+      );
+    }
+    // ✅ NEU: Link kopieren
+    function copyGroupLink() {
+      const current = window.location.origin + window.location.pathname;
+      const url = current + '?group=' + (groupId || generateGroupId());
+      navigator.clipboard.writeText(url);
+      showToast('📎 Link kopiert: ' + url);
+    }
+    const groupId = getGroupIdFromUrl();
+
+    // Firebase initialisieren
+    firebase.initializeApp({
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour"
+    });
+    const db = firebase.firestore();
+
+    // Benutzername laden oder abfragen
+    let userName = localStorage.getItem('userName');
+    if (!userName) { userName = prompt("Bitte gib deinen Namen ein:") || "Gast"; localStorage.setItem('userName', userName); }
+    console.log("Angemeldet als:", userName);
+
+    const userId = 'user-' + Math.random().toString(36).substring(2, 10);
+
+    const map = L.map('map');
+    const light = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'© OSM contributors'});
+    const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19, attribution:'© OSM & Carto'});
+    let currentStyle='light'; light.addTo(map); map.setView([51.5,10.5],6);
+    const clusterGroup = L.markerClusterGroup(); map.addLayer(clusterGroup);
+
+    const bikeIcon = L.icon({ iconUrl: './bike-icon.png', iconSize:[36,36], iconAnchor:[18,18] });
+    const eggIcon = L.icon({ iconUrl: './1000076402.png', iconSize:[32,32], iconAnchor:[32,32] });
+    const eggSelectedIcon = L.icon({ iconUrl: './1000076401.png', iconSize:[36,36], iconAnchor:[36,36] });
+    const groupMemberIcon = L.icon({ iconUrl:'https://cdn-icons-png.flaticon.com/512/1946/1946429.png', iconSize:[32,32], iconAnchor:[16,32] });
+
+    let userMarker, directionMarker, autoFollow=true, allHuts=[],selectedHuts=[],hutMarkers={},routingControl;
+    let groupTrackingEnabled=false, groupPositionsUnsub=null;
+    const groupMemberMarkers={};
+
+    function startGroupTracking() {
+      if (!groupId) { showToast("❌ Gruppen-ID fehlt in der URL"); return; }
+      if (groupPositionsUnsub) groupPositionsUnsub();
+      groupPositionsUnsub = db.collection('group_positions').doc(groupId).collection('members')
+        .onSnapshot(snap => {
+          snap.docChanges().forEach(change => {
+            const doc = change.doc; const data = doc.data();
+            if (!data.lat||!data.lng||doc.id===userId) return;
+            if (change.type==='added'||change.type==='modified') {
+              if (groupMemberMarkers[doc.id]) { groupMemberMarkers[doc.id].setLatLng([data.lat,data.lng]); }
+              else {
+                const m=L.marker([data.lat,data.lng],{icon:groupMemberIcon}).bindPopup(`👤 ${data.name||doc.id}`);
+                m.addTo(map); groupMemberMarkers[doc.id]=m;
+              }
+            } else if (change.type==='removed') {
+              if (groupMemberMarkers[doc.id]) { map.removeLayer(groupMemberMarkers[doc.id]); delete groupMemberMarkers[doc.id]; }
+            }
+          });
+        });
+      showToast("👥 Gruppen-Tracking aktiv");
+    }
+
+    function stopGroupTracking() {
+      if (groupPositionsUnsub) { groupPositionsUnsub(); groupPositionsUnsub=null; }
+      Object.values(groupMemberMarkers).forEach(m=>map.removeLayer(m));
+      for (const id in groupMemberMarkers) delete groupMemberMarkers[id];
+      if (groupId) { db.collection('group_positions').doc(groupId).collection('members').doc(userId).delete(); }
+      showToast("Gruppen-Tracking deaktiviert");
+    }
+
+    document.getElementById('groupTrackCheckbox').addEventListener('change', e => {
+      groupTrackingEnabled=e.target.checked;
+      groupTrackingEnabled?startGroupTracking():stopGroupTracking();
+    });
+
+    function locateUser() {
+      if (!navigator.geolocation) { showToast('❌ Geolocation wird nicht unterstützt'); return; }
+      navigator.geolocation.watchPosition(pos => {
+        const latlng=[pos.coords.latitude,pos.coords.longitude];
+        if (!userMarker) { userMarker=L.marker(latlng,{icon:bikeIcon}).addTo(map); directionMarker=L.marker(latlng).addTo(map); }
+        else { userMarker.setLatLng(latlng); directionMarker.setLatLng(latlng); }
+        if (autoFollow) map.setView(latlng,15);
+        if (groupTrackingEnabled&&groupId) {
+          db.collection('group_positions').doc(groupId).collection('members').doc(userId).set({
+            lat:pos.coords.latitude,lng:pos.coords.longitude,
+            timestamp:firebase.firestore.FieldValue.serverTimestamp(),name:userName
+          });
+        }
+      }, err=>{ console.error('❌ Geolocation-Fehler:', err); showToast('⚠️ GPS nicht verfügbar'); },{
+        enableHighAccuracy:true,timeout:10000,maximumAge:10000
+      });
+    }
+
+    locateUser();
+    if (groupId) {
+      document.getElementById("groupTrackCheckbox").checked=true;
+      groupTrackingEnabled=true;
+      startGroupTracking();
+    }
+
+    function showToast(msg) {
+      const t=document.getElementById('toast');t.innerText=msg;t.style.display='block';
+      setTimeout(()=>t.style.display='none',3000);
+    }
+  </script>
+</body>
+</html>
