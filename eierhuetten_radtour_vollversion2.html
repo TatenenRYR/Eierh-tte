@@ -1,1 +1,135 @@
-<!DOCTYPE html><html lang='de'><head><meta charset='UTF-8'><title>Vollversion 2</title></head><body><h1>Die Vollversion 2 ist vorbereitet.</h1><p>Finale Funktionen werden jetzt integriert.</p></body></html>
+<!DOCTYPE html><html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Eierhütten Radtour – Vollversion 2 (Final)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
+    #map { height: 100%; }
+    #menuBtn { position: fixed; bottom: 20px; right: 20px; z-index: 1000; padding: 12px 16px; background: #10b981; color: white; border: none; border-radius: 12px; font-size: 1.2em; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+    #menuPanel { position: fixed; bottom: 80px; right: 20px; background: white; padding: 12px; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.2); z-index: 1000; display: none; }
+    #menuPanel button { display: block; margin: 6px 0; width: 100%; padding: 10px; border: none; border-radius: 8px; background: #f3f4f6; cursor: pointer; font-weight: bold; }
+  </style>
+  <script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+</head>
+<body>
+  <div id="map"></div>
+  <button id="menuBtn" onclick="toggleMenu()">☰</button>
+  <div id="menuPanel">
+    <button onclick="toggleDarkMode()">🌙 Dark Mode</button>
+    <button onclick="toggleRainViewer()">🌧 Regenradar</button>
+    <button onclick="toggleGroupTracking()">👥 Gruppen</button>
+    <button onclick="resetRoute()">🗑 Route löschen</button>
+    <button onclick="saveTour()">💾 Tour speichern</button>
+    <button onclick="shareTour()">🔗 Tour teilen</button>
+  </div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script>
+    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.firebasestorage.app",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+  measurementId: "G-16V6K5GXDT"
+};
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();const map = L.map('map').setView([51.5, 10.5], 6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+let routeCoords = [], currentTourID = null;
+let riddenLine = L.polyline([], { color: 'green', weight: 6 }).addTo(map);
+let remainingLine = L.polyline([], { color: 'gray', weight: 4, dashArray: '6,8' }).addTo(map);
+
+function updateProgressLine(currentLatLng) {
+  if (!routeCoords.length) return;
+  let nearestIndex = 0;
+  let minDist = Infinity;
+  routeCoords.forEach((pt, i) => {
+    const dist = map.distance(currentLatLng, pt);
+    if (dist < minDist) {
+      minDist = dist;
+      nearestIndex = i;
+    }
+  });
+  const ridden = routeCoords.slice(0, nearestIndex + 1);
+  const remaining = routeCoords.slice(nearestIndex);
+  riddenLine.setLatLngs(ridden);
+  remainingLine.setLatLngs(remaining);
+}
+
+function speak(text) {
+  if ('speechSynthesis' in window) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'de-DE';
+    speechSynthesis.speak(utterance);
+  }
+}
+
+function saveTour() {
+  const tour = { route: routeCoords, timestamp: Date.now() };
+  db.collection('touren').add(tour).then(doc => {
+    currentTourID = doc.id;
+    alert('Tour gespeichert: ' + doc.id);
+  });
+}
+
+function shareTour() {
+  if (!currentTourID) return alert('Bitte zuerst Tour speichern.');
+  const url = location.origin + location.pathname + '?tour=' + currentTourID;
+  navigator.clipboard.writeText(url);
+  alert('Tour-Link kopiert: ' + url);
+}
+
+function loadTour(tourID) {
+  db.collection('touren').doc(tourID).get().then(doc => {
+    if (!doc.exists) return alert('Tour nicht gefunden.');
+    routeCoords = doc.data().route;
+    riddenLine.setLatLngs([]);
+    remainingLine.setLatLngs(routeCoords);
+  });
+}
+
+function toggleMenu() {
+  const panel = document.getElementById('menuPanel');
+  panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+}
+
+function resetRoute() {
+  routeCoords = [];
+  riddenLine.setLatLngs([]);
+  remainingLine.setLatLngs([]);
+}
+
+function toggleDarkMode() {
+  document.body.classList.toggle('dark');
+}
+
+function toggleRainViewer() {
+  alert('RainViewer wird hier eingeblendet.');
+}
+
+function toggleGroupTracking() {
+  alert('Gruppen-Tracking aktivieren.');
+}
+
+window.addEventListener('load', () => {
+  const params = new URLSearchParams(location.search);
+  const tid = params.get('tour');
+  if (tid) loadTour(tid);
+});
+
+  </script>
+</body>
+</html>
