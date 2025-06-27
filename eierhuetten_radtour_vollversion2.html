@@ -1,197 +1,244 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Eierhütten Radtour – Vollversion 2.1</title>
-
-  <!-- Styles -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+  <meta charset="UTF-8">
+  <title>Eierhütten Radtour</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Leaflet + Routing + MarkerCluster + Styles -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <style>
-    html, body { margin:0; padding:0; height:100%; font-family: sans-serif; }
-    #speedDisplay { position: absolute; top:0; left:0; right:0; height:36px; line-height:36px;
-      background:white; text-align:center; z-index:1000; font-weight:bold; }
-    #map { position:absolute; top:36px; bottom:0; left:0; right:0; }
-    #menuBtn { position: fixed; bottom: 20px; right:20px; z-index:1001;
-      width:50px; height:50px; border:none; border-radius:25px; background:#10b981;
-      color:white; font-size:1.5em; cursor:pointer; }
-    #menuPanel { position:fixed; bottom:80px; right:20px; z-index:1001;
-      background:white; padding:10px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.2);
-      display:none; width:200px; }
-    #menuPanel button { width:100%; margin:6px 0; padding:8px; border:none;
-      border-radius:8px; background:#f0fdf4; cursor:pointer; font-weight:500; }
-    #menuPanel button:hover { background:#d1fae5; }
-    .leaflet-container { touch-action: none; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    #map { height: 100%; width: 100%; }
+    .menu { position: fixed; top: 10px; left: 10px; background: white; padding: 10px; z-index: 1000; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
+    .menu button { margin: 4px 0; display: block; width: 100%; }
+    .speed { position: fixed; top: 0; left: 0; right: 0; height: 40px; line-height: 40px; background: white; text-align: center; font-weight: bold; z-index: 999; }
   </style>
-
-  <!-- Firebase SDK -->
-  <script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
-  <div id="speedDisplay">🚴‍♂️ – km/h</div>
+  <div class="speed" id="speed">🚴 0 km/h</div>
   <div id="map"></div>
-  <button id="menuBtn">☰</button>
-  <div id="menuPanel">
-    <button id="btnDark">🌓 Dark Mode</button>
-    <button id="btnRain">🌧 Regenradar</button>
-    <button id="btnGroup">👥 Gruppen-Tracking</button>
-    <button id="btnHuts">🥚 Hütten laden</button>
-    <button id="btnSave">💾 Tour speichern</button>
-    <button id="btnShare">🔗 Tour teilen</button>
-    <button id="btnClear">🗑 Route löschen</button>
+  <div class="menu" id="menu">
+    <button onclick="toggleDarkMode()">🌓 Dark Mode</button>
+    <button onclick="toggleRain()">🌧️ Regenradar</button>
+    <button onclick="toggleTropfen()">💧 Regenanimation</button>
+    <button onclick="resetRoute()">🗑️ Route löschen</button>
   </div>
 
-  <!-- Leaflet & Plugins -->
+  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-  <script src="https://unpkg.com/leaflet-rainviewer"></script>
 
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+  <!-- App Logic -->
   <script>
-  // === Firebase Setup ===
-  const firebaseConfig = {
-    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-    authDomain: "eierhuettentour.firebaseapp.com",
-    projectId: "eierhuettentour",
-    storageBucket: "eierhuettentour.firebasestorage.app",
-    messagingSenderId: "348272135205",
-    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
-    measurementId: "G-16V6K5GXDT"
-  };
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.firestore();
-
-  // === Map Initialization ===
-  const map = L.map('map').setView([51.5,10.5],7);
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour",
+      storageBucket: "eierhuettentour.firebasestorage.app",
+      messagingSenderId: "348272135205",
+      appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+      measurementId: "G-16V6K5GXDT"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    
+  const map = L.map('map').setView([51.5, 10.5], 7);
   const light = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
   const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png');
 
-  // === UI Elements ===
-  const menuBtn = document.getElementById('menuBtn');
-  const menuPanel = document.getElementById('menuPanel');
-  menuBtn.onclick = ()=> menuPanel.style.display = menuPanel.style.display==='block'?'none':'block';
-  document.getElementById('btnDark').onclick = ()=> {
-    map.hasLayer(light)?(map.removeLayer(light),dark.addTo(map)):(map.removeLayer(dark),light.addTo(map));
-  };
+  // 🌓 Dark Mode Toggle
+  function toggleDarkMode() {
+    if (map.hasLayer(light)) {
+      map.removeLayer(light); dark.addTo(map);
+    } else {
+      map.removeLayer(dark); light.addTo(map);
+    }
+  }
 
-  // === Speed Display ===
-  navigator.geolocation.watchPosition(p=>{
-    const kmh = p.coords.speed*3.6||0;
-    document.getElementById('speedDisplay').textContent = `🚴‍♂️ ${kmh.toFixed(1)} km/h`;
-  },()=>{}, {enableHighAccuracy:true});
+  // 🚴 Geschwindigkeit anzeigen
+  navigator.geolocation.watchPosition(pos => {
+    const speed = (pos.coords.speed || 0) * 3.6;
+    document.getElementById('speed').textContent = `🚴 ${speed.toFixed(1)} km/h`;
+  }, () => {}, { enableHighAccuracy: true });
 
-  // === Routing & Progress ===
-  let routeCtrl, routeCoords=[],
-      ridden = L.polyline([], {color:'green',weight:6}).addTo(map),
-      remain = L.polyline([], {color:'gray',weight:4,dashArray:'6,8'}).addTo(map);
-  function calcRoute(pts){
-    if(routeCtrl) map.removeControl(routeCtrl);
-    routeCtrl = L.Routing.control({
-      waypoints:pts,
+  // 🗺 Routing + Fortschrittslinie
+  let routeControl, routeCoords = [], riddenLine, remainLine;
+
+  function resetRoute() {
+    if (routeControl) map.removeControl(routeControl);
+    routeCoords = [];
+    riddenLine.setLatLngs([]);
+    remainLine.setLatLngs([]);
+  }
+
+  function setupRoute(from, to) {
+    if (routeControl) map.removeControl(routeControl);
+    routeControl = L.Routing.control({
+      waypoints: [from, to],
       router: L.Routing.openrouteservice('5b3ce3597851110001cf6248'),
-      createMarker:()=>null,
-      lineOptions:{styles:[{color:'#10b981',weight:5}]}
-    }).addTo(map).on('routesfound',e=>{
-      routeCoords = e.routes[0].coordinates.map(c=>[c.lat,c.lng]);
-      remain.setLatLngs(routeCoords);
+      routeWhileDragging: false
+    }).addTo(map).on('routesfound', e => {
+      routeCoords = e.routes[0].coordinates.map(p => [p.lat, p.lng]);
+      riddenLine.setLatLngs([]); remainLine.setLatLngs(routeCoords);
     });
   }
-  map.on('moveend',()=>{
-    const latlng = map.getCenter();
-    let idx=0,md=1e9;
-    routeCoords.forEach((pt,i)=>{
-      const d=map.distance(latlng,pt);
-      if(d<md){md=d;idx=i;}
+
+  riddenLine = L.polyline([], { color: 'green', weight: 5 }).addTo(map);
+  remainLine = L.polyline([], { color: 'gray', weight: 4, dashArray: '5,10' }).addTo(map);
+
+  // 📍 Fortschrittslinie aktualisieren
+  map.on('moveend', () => {
+    if (!routeCoords.length) return;
+    const center = map.getCenter();
+    let nearestIndex = 0, minDist = Infinity;
+    routeCoords.forEach((pt, i) => {
+      const d = map.distance(center, pt);
+      if (d < minDist) { minDist = d; nearestIndex = i; }
     });
-    ridden.setLatLngs(routeCoords.slice(0,idx+1));
-    remain.setLatLngs(routeCoords.slice(idx));
+    riddenLine.setLatLngs(routeCoords.slice(0, nearestIndex + 1));
+    remainLine.setLatLngs(routeCoords.slice(nearestIndex));
   });
 
-  // === Group Tracking via UUID URL ===
-  let groupId = new URLSearchParams(location.search).get('gruppe');
-  if(!groupId){
-    groupId = crypto.randomUUID();
-    history.replaceState(null,null,location.pathname+'?gruppe='+groupId);
+
+  // 🌧️ RainViewer Regenradar
+  let rainRunning = false, rainFrames = [], rainIndex = 0, rainLayer = null;
+
+  async function loadRainViewer() {
+    const res = await fetch("https://tilecache.rainviewer.com/api/maps.json");
+    rainFrames = (await res.json()).slice(-12);
+    rainRunning = true;
+    playRain();
   }
-  const userId = crypto.randomUUID();
-  let userMarker;
-  navigator.geolocation.watchPosition(pos=>{
-    const d={lat:pos.coords.latitude,lng:pos.coords.longitude,time:Date.now()};
-    db.collection('gruppenpositionen').doc(groupId).collection('users').doc(userId).set(d);
-    if(!userMarker) userMarker=L.marker([d.lat,d.lng],{icon:L.icon({iconUrl:'https://cdn-icons-png.flaticon.com/512/1946/1946429.png',iconSize:[32,32]})}).addTo(map);
-    else userMarker.setLatLng([d.lat,d.lng]);
-  });
-  db.collection('gruppenpositionen').doc(groupId).collection('users')
-    .onSnapshot(snap=>snap.forEach(ch=>{
-      const d=ch.doc.data();
-      if(d.id!==userId) L.marker([d.lat,d.lng],{icon:L.icon({iconUrl:'https://cdn-icons-png.flaticon.com/512/149/149071.png',iconSize:[28,28]})}).addTo(map);
-    }));
 
-  // === Huts from Firestore ===
-  const hutCluster = L.markerClusterGroup().addTo(map);
-  document.getElementById('btnHuts').onclick = ()=>{
-    hutCluster.clearLayers();
-    db.collection('eierhuetten').get().then(snap=>{
-      snap.forEach(doc=>{
-        const d=doc.data();
-        const m=L.marker([d.location.latitude,d.location.longitude],{
-          icon:L.icon({iconUrl:'1000076402.png',iconSize:[32,32]})
-        }).on('click',()=>{
-          calcRoute([map.getCenter(),m.getLatLng()]);
-        });
-        hutCluster.addLayer(m);
-      });
-    });
-  };
-
-  // === RainViewer ===
-  let rainRunning=false,frames=[],idx=0,ov;
-  async function loadRain(){
-    const resp=await fetch('https://tilecache.rainviewer.com/api/maps.json');
-    frames=(await resp.json()).slice(-12); rainRunning=true;playRain();
+  function playRain() {
+    if (!rainRunning || !rainFrames.length) return;
+    const url = `https://tilecache.rainviewer.com/v2/radar/${rainFrames[rainIndex]}/512/{z}/{x}/{y}/2/1_1.png`;
+    if (rainLayer) map.removeLayer(rainLayer);
+    rainLayer = L.tileLayer(url, { opacity: 0.6, zIndex: 200 }).addTo(map);
+    rainIndex = (rainIndex + 1) % rainFrames.length;
+    setTimeout(playRain, 1000);
   }
-  function playRain(){
-    if(!rainRunning) return;
-    const url=`https://tilecache.rainviewer.com/v2/radar/${frames[idx]}/512/{z}/{x}/{y}/2/1_1.png`;
-    if(ov) map.removeLayer(ov);
-    ov=L.tileLayer(url,{opacity:0.6,zIndex:300}).addTo(map);
-    idx=(idx+1)%frames.length;
-    setTimeout(playRain,1200);
+
+  function toggleRain() {
+    if (rainRunning) {
+      rainRunning = false;
+      if (rainLayer) map.removeLayer(rainLayer);
+    } else {
+      loadRainViewer();
+    }
   }
-  document.getElementById('btnRain').onclick=()=>{
-    rainRunning?rainRunning=false:(loadRain());
-  };
 
-  // === Save & Share Tour ===
-  document.getElementById('btnSave').onclick=()=>{
-    db.collection('touren').add({route:routeCoords,t:Date.now()})
-      .then(doc=>alert('Tour saved: '+doc.id));
-  };
-  document.getElementById('btnShare').onclick=()=>{
-    const url=location.origin+location.pathname+'?tour='+location.search.split('=')[1];
-    navigator.clipboard.writeText(url);alert('Link copied');
-  };
+  // 💧 Regenanimation (Tropfen)
+  let regenCanvas, regenCtx, regenDrops = [];
 
-  // === Load Tour on param ===
-  window.onload=()=>{
-    const t=new URLSearchParams(location.search).get('tour');
-    if(t){
-      db.collection('touren').doc(t).get().then(doc=>{
-        routeCoords=doc.data().route;
-        remain.setLatLngs(routeCoords);
+  function createTropfen() {
+    regenCanvas = document.createElement("canvas");
+    regenCanvas.style.position = "fixed";
+    regenCanvas.style.top = 0;
+    regenCanvas.style.left = 0;
+    regenCanvas.style.width = "100%";
+    regenCanvas.style.height = "100%";
+    regenCanvas.style.pointerEvents = "none";
+    regenCanvas.width = window.innerWidth;
+    regenCanvas.height = window.innerHeight;
+    regenCanvas.style.zIndex = 500;
+    document.body.appendChild(regenCanvas);
+    regenCtx = regenCanvas.getContext("2d");
+
+    for (let i = 0; i < 100; i++) {
+      regenDrops.push({
+        x: Math.random() * regenCanvas.width,
+        y: Math.random() * regenCanvas.height,
+        r: Math.random() * 2 + 1,
+        v: Math.random() * 3 + 2
       });
     }
-    speak('App geladen');
-  };
 
-  // === Clear Route ===
-  document.getElementById('btnClear').onclick=()=>{
-    routeCoords=[];ridden.setLatLngs([]);remain.setLatLngs([]);
-  };
-  </script>
+    requestAnimationFrame(drawTropfen);
+  }
+
+  function drawTropfen() {
+    regenCtx.clearRect(0, 0, regenCanvas.width, regenCanvas.height);
+    regenCtx.fillStyle = "rgba(0,0,255,0.3)";
+    regenDrops.forEach(d => {
+      regenCtx.beginPath();
+      regenCtx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+      regenCtx.fill();
+      d.y += d.v;
+      if (d.y > regenCanvas.height) d.y = 0;
+    });
+    if (regenCanvas) requestAnimationFrame(drawTropfen);
+  }
+
+  let tropfenAktiv = false;
+  function toggleTropfen() {
+    if (tropfenAktiv) {
+      if (regenCanvas) regenCanvas.remove();
+      tropfenAktiv = false;
+    } else {
+      createTropfen();
+      tropfenAktiv = true;
+    }
+  }
+
+  // 👥 Gruppen-Tracking mit Firestore
+  const gruppe = new URLSearchParams(location.search).get("gruppe") || crypto.randomUUID();
+  history.replaceState(null, "", "?gruppe=" + gruppe);
+  const userId = crypto.randomUUID();
+
+  let userMarker = null;
+  navigator.geolocation.watchPosition(pos => {
+    const data = {
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+      time: Date.now()
+    };
+    db.collection("gruppenpositionen").doc(gruppe).collection("users").doc(userId).set(data);
+
+    if (!userMarker) {
+      userMarker = L.marker([data.lat, data.lng], {
+        icon: L.icon({ iconUrl: "https://cdn-icons-png.flaticon.com/512/1946/1946429.png", iconSize: [32, 32] })
+      }).addTo(map);
+    } else {
+      userMarker.setLatLng([data.lat, data.lng]);
+    }
+  });
+
+  db.collection("gruppenpositionen").doc(gruppe).collection("users")
+    .onSnapshot(snapshot => {
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        if (doc.id !== userId) {
+          L.marker([d.lat, d.lng], {
+            icon: L.icon({ iconUrl: "https://cdn-icons-png.flaticon.com/512/149/149071.png", iconSize: [28, 28] })
+          }).addTo(map);
+        }
+      });
+    });
+
+  // 🥚 Eierhütten laden + Marker
+  const cluster = L.markerClusterGroup().addTo(map);
+  db.collection("eierhuetten").where("freigabe", "==", true).onSnapshot(snap => {
+    cluster.clearLayers();
+    snap.forEach(doc => {
+      const d = doc.data();
+      const m = L.marker([d.location.latitude, d.location.longitude], {
+        icon: L.icon({ iconUrl: "1000076402.png", iconSize: [32, 32] }),
+        title: d.name || "Hütte"
+      }).on("click", () => {
+        setupRoute(userMarker.getLatLng(), m.getLatLng());
+      });
+      cluster.addLayer(m);
+    });
+  });
+</script>
 </body>
 </html>
