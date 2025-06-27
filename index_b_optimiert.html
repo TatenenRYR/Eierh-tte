@@ -422,6 +422,24 @@ function hideRainEffect() {
   }
 });
 
+    // UUID aus URL (DS-Inscript) lesen
+function getGroupIdFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const groupId = params.get('group');
+  return groupId && groupId.trim() !== '' ? groupId : null;
+}
+
+// Zufällige UUID generieren (einfach)
+function generateGroupId() {
+  return 'xxxxxxxx'.replace(/x/g, () =>
+    Math.floor(Math.random() * 16).toString(16)
+  );
+}
+
+const groupId = getGroupIdFromUrl(); // globale Gruppen-ID
+
+
+
     // Stil-Wechsel
     function toggleMapStyle() {
       if (currentStyle === 'light') {
@@ -506,14 +524,18 @@ function locateUser() {
     if (autoFollow) map.setView(latlng, 15);
 
     // Gruppenposition senden
-    if (groupTrackingEnabled) {
-      db.collection('group_positions').doc(userId).set({
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-        name: userId
-      });
-    }
+if (groupTrackingEnabled && groupId) {
+  db.collection('group_positions')
+    .doc(groupId)
+    .collection('members')
+    .doc(userId)
+    .set({
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+      name: userName
+    });
+}
 
     firstUpdate = false;
 
@@ -547,49 +569,62 @@ function locateUser() {
 
     // Gruppenpositionen live aus Firebase laden
     function startGroupTracking() {
-      if (groupPositionsUnsub) groupPositionsUnsub(); // vorherige Listener entfernen
-      groupPositionsUnsub = db.collection('group_positions')
-        .onSnapshot(snapshot => {
-          snapshot.docChanges().forEach(change => {
-            const doc = change.doc;
-            const data = doc.data();
-            if (!data.lat || !data.lng) return;
-            if (doc.id === userId) return; // Eigene Position ignorieren
+  if (!groupId) {
+    showToast("❌ Gruppen-ID fehlt in der URL");
+    return;
+  }
 
-            if (change.type === 'added' || change.type === 'modified') {
-              // Marker aktualisieren oder erstellen
-              if (groupMemberMarkers[doc.id]) {
-                groupMemberMarkers[doc.id].setLatLng([data.lat, data.lng]);
-              } else {
-                const marker = L.marker([data.lat, data.lng], { icon: groupMemberIcon })
-                  .bindPopup(`Teilnehmer: ${doc.id}`);
-                marker.addTo(map);
-                groupMemberMarkers[doc.id] = marker;
-              }
-            } else if (change.type === 'removed') {
-              if (groupMemberMarkers[doc.id]) {
-                map.removeLayer(groupMemberMarkers[doc.id]);
-                delete groupMemberMarkers[doc.id];
-              }
-            }
-          });
-        });
-      showToast('Gruppen-Tracking aktiviert');
-    }
+  if (groupPositionsUnsub) groupPositionsUnsub();
 
-    // Gruppen-Tracking stoppen
-    function stopGroupTracking() {
-      if (groupPositionsUnsub) {
-        groupPositionsUnsub();
-        groupPositionsUnsub = null;
-      }
-      // Marker entfernen
-      Object.values(groupMemberMarkers).forEach(m => map.removeLayer(m));
-      for (const id in groupMemberMarkers) delete groupMemberMarkers[id];
-      // Eigene Position aus der DB löschen
-      db.collection('group_positions').doc(userId).delete();
-      showToast('Gruppen-Tracking deaktiviert');
+  groupPositionsUnsub = db.collection('group_positions')
+    .doc(groupId)
+    .collection('members')
+    .onSnapshot(snapshot => {
+      snapshot.docChanges().forEach(change => {
+        const doc = change.doc;
+        const data = doc.data();
+        if (!data.lat || !data.lng || doc.id === userId) return;
+
+        if (change.type === 'added' || change.type === 'modified') {
+          if (groupMemberMarkers[doc.id]) {
+            groupMemberMarkers[doc.id].setLatLng([data.lat, data.lng]);
+          } else {
+            const marker = L.marker([data.lat, data.lng], { icon: groupMemberIcon })
+              .bindPopup(`👤 ${data.name || doc.id}`);
+            marker.addTo(map);
+            groupMemberMarkers[doc.id] = marker;
+          }
+        } else if (change.type === 'removed') {
+          if (groupMemberMarkers[doc.id]) {
+            map.removeLayer(groupMemberMarkers[doc.id]);
+            delete groupMemberMarkers[doc.id];
+          }
+        }
+      });
+    });
+
+  showToast("👥 Gruppen-Tracking aktiv");
     }
+function stopGroupTracking() {
+  if (groupPositionsUnsub) {
+    groupPositionsUnsub();
+    groupPositionsUnsub = null;
+  }
+
+  Object.values(groupMemberMarkers).forEach(m => map.removeLayer(m));
+  for (const id in groupMemberMarkers) delete groupMemberMarkers[id];
+
+  if (groupId) {
+    db.collection('group_positions')
+      .doc(groupId)
+      .collection('members')
+      .doc(userId)
+      .delete();
+  }
+
+  showToast('Gruppen-Tracking deaktiviert');
+}
+
 
     // Checkbox Listener
     document.getElementById('groupTrackCheckbox').addEventListener('change', e => {
@@ -867,7 +902,11 @@ map.on('moveend', () => {
 
 
   startRainMonitoring(); // dein Aktivierungscode
-
+if (groupId) {
+  document.getElementById("groupTrackCheckbox").checked = true;
+  groupTrackingEnabled = true;
+  startGroupTracking();
+}
     // Automatische Neuberechnung beim Modus-Wechsel
     document.querySelectorAll('input[name="routeMode"]').forEach(r => r.addEventListener('change', recalculateRoute));
   </script>
