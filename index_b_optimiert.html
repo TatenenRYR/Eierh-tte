@@ -592,7 +592,7 @@ function locateUser() {
 
   navigator.geolocation.watchPosition(pos => {
     const latlng = [pos.coords.latitude, pos.coords.longitude];
-
+    updateProgressLine(L.latLng(latlng));
     // Geschwindigkeit messen
     const speed = pos.coords.speed;
     if (speed != null && !isNaN(speed)) {
@@ -881,6 +881,9 @@ document.getElementById('routeInfo').innerText =
     }
   });
 }*/
+    let fullRouteLayer = null;      // ganze Route (grau)
+let progressRouteLayer = null;  // Fortschrittsteil (farbig)
+let routeCoordinates = [];      // Koordinaten der Route
     async function recalculateRoute() {
   if (!userMarker || selectedHuts.length === 0) return;
 
@@ -909,6 +912,26 @@ document.getElementById('routeInfo').innerText =
 
     if (!data || !data.features || !data.features[0]) throw new Error('Keine Route gefunden');
 localStorage.setItem('lastRoute', JSON.stringify(data));
+
+// --- Route speichern ---
+routeCoordinates = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]); // lng,lat => lat,lng
+
+// Ganze Route grau anzeigen
+if (fullRouteLayer) map.removeLayer(fullRouteLayer);
+fullRouteLayer = L.polyline(routeCoordinates, {
+  color: '#aaa',
+  weight: 5,
+  opacity: 0.7,
+  dashArray: '4,8'
+}).addTo(map);
+
+// Fortschritt-Layer zurücksetzen
+if (progressRouteLayer) {
+  map.removeLayer(progressRouteLayer);
+  progressRouteLayer = null;
+}
+
+    
     if (routingControl) map.removeLayer(routingControl);
 
     routingControl = L.geoJSON(data, {
@@ -972,6 +995,31 @@ if (selectedHuts.length > 0 && data.features[0].properties.segments[0]) {
   }
   }
 }
+
+    function updateProgressLine(currentPos) {
+  if (!routeCoordinates.length) return;
+
+  // Schritt für Schritt vergleichen, wie weit man gekommen ist
+  let progress = [];
+  for (let i = 0; i < routeCoordinates.length; i++) {
+    const point = L.latLng(routeCoordinates[i]);
+    const dist = point.distanceTo(currentPos);
+    if (dist < 50) {
+      // 50 Meter in der Nähe ⇒ bis hierher gefahren
+      progress = routeCoordinates.slice(0, i + 1);
+    }
+  }
+
+  // Alte Linie entfernen
+  if (progressRouteLayer) map.removeLayer(progressRouteLayer);
+
+  // Neue Linie rendern (je nach Modus)
+  const mode = document.querySelector('input[name="routeMode"]:checked')?.value;
+  progressRouteLayer = L.polyline(progress, {
+    color: mode === 'optimized' ? 'orange' : '#10b981',
+    weight: 6
+  }).addTo(map);
+    }
     
     // Route löschen
     function resetSelection(){
