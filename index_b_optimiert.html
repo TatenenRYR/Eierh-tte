@@ -311,6 +311,7 @@ button {
 
   <!-- Seitenleiste / Menü -->
   <div id="menuPanel">
+    <label><input type="checkbox" id="lowPowerToggle" /> 🔋 Energiesparmodus</label><br>
     <h3>🚴 Menü</h3>
     <ul id="selectedList"></ul>
     <label><input type="radio" name="routeMode" value="normal" checked> Normale Reihenfolge</label><br>
@@ -373,7 +374,19 @@ map.addLayer(clusterGroup);
         document.getElementById('loadingOverlay').style.display = 'none';
       }
     }
+let lowPowerMode = false;
+document.getElementById('lowPowerToggle').addEventListener('change', e => {
+  lowPowerMode = e.target.checked;
+  showToast(lowPowerMode ? "🔋 Energiesparmodus aktiviert" : "⚡ Normalmodus");
 
+  if (lowPowerMode) {
+    stopRainMonitoring?.();
+    if (groupTrackingEnabled) stopGroupTracking();
+  } else {
+    startRainMonitoring?.();
+    if (groupTrackingEnabled) startGroupTracking();
+  }
+});
 let rainFrames = [];
 let rainIndex = 0;
 let rainOverlayA = null;
@@ -638,10 +651,11 @@ if (groupTrackingEnabled && groupId) {
 
     userLoaded = true;
     checkLoadingDone();
+  
   }, {
-    enableHighAccuracy: true,
-    timeout: 10000,
-    maximumAge: 10000
+    enableHighAccuracy: !lowPowerMode,
+    timeout: lowPowerMode ? 15000 : 8000,
+    maximumAge: lowPowerMode ? 60000 : 10000
   });
 
   // Kompass aktivieren
@@ -894,7 +908,7 @@ document.getElementById('routeInfo').innerText =
     const data = await response.json();
 
     if (!data || !data.features || !data.features[0]) throw new Error('Keine Route gefunden');
-
+localStorage.setItem('lastRoute', JSON.stringify(data));
     if (routingControl) map.removeLayer(routingControl);
 
     routingControl = L.geoJSON(data, {
@@ -937,9 +951,25 @@ if (selectedHuts.length > 0 && data.features[0].properties.segments[0]) {
   document.getElementById('nextStopInfo').style.display = 'none';
 }
     
-  } catch (err) {
-    console.error(err);
-    showToast('❌ Route konnte nicht berechnet werden');
+
+} catch (err) {
+  console.error(err);
+  const fallback = localStorage.getItem('lastRoute');
+  if (fallback) {
+    const data = JSON.parse(fallback);
+    if (routingControl) map.removeLayer(routingControl);
+
+    routingControl = L.geoJSON(data, {
+      style: {
+        color: '#ccc',
+        weight: 4,
+        dashArray: '4,6'
+      }
+    }).addTo(map);
+    document.getElementById('routeInfo').innerText = "📴 Letzte gespeicherte Route geladen (offline)";
+  } else {
+    showToast('⚠️ Route konnte nicht geladen werden.');
+  }
   }
 }
     
