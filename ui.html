@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="de">
+<!DOCTYPE html>
+<html lang="de">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -32,37 +33,6 @@
       z-index: 1001;
       min-width: 120px;
       text-align: center;
-      transition: background 0.3s, color 0.3s;
-    }
-    #routeInfo {
-      position: fixed;
-      top: 80px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 1001;
-      background: white;
-      padding: 8px 16px;
-      border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-      font-size: 1em;
-    }
-    .toast {
-      position: fixed;
-      top: calc(14px + 44px + 10px);
-      left: 50%;
-      transform: translateX(-50%);
-      background: #10b981;
-      color: white;
-      padding: 10px 20px;
-      border-radius: 12px;
-      font-size: 1em;
-      font-weight: 500;
-      z-index: 1003;
-      display: none;
-      max-width: 90%;
-      width: fit-content;
-      white-space: nowrap;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.25);
     }
     .guide-overlay {
       position: fixed;
@@ -77,6 +47,10 @@
       font-size: 1.2em;
       text-align: center;
       flex-direction: column;
+      pointer-events: none;
+    }
+    .guide-step, .guide-button {
+      pointer-events: auto;
     }
     .guide-step {
       max-width: 500px;
@@ -101,84 +75,64 @@
 <body>
   <div id="map"></div>
   <div id="speedDisplay">🚴 – km/h</div>
-  <div id="routeInfo"></div>
-  <div id="toast" class="toast"></div>
   <div id="guide" class="guide-overlay" style="display:none">
-    <div class="guide-step" id="guideText">Willkommen bei RadlMap! 🚴‍♀️<br><br>Hier planen wir zusammen deine erste Eierhütten-Tour.</div>
+    <div class="guide-step" id="guideText">Willkommen bei RadlMap!</div>
     <button class="guide-button" id="guideNext">Weiter</button>
   </div>
   <button id="positionBtn" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:999;background:#10b981;color:white;padding:12px 20px;border:none;border-radius:10px;font-size:1em;">📍 Position anzeigen</button>
-  <button id="optRoute" style="display:none;position:fixed;bottom:60px;left:20px;z-index:999;background:#10b981;color:white;padding:10px 16px;border:none;border-radius:10px;font-size:0.9em;">🔀 Optimierte Route</button>
-  <button id="normalRoute" style="display:none;position:fixed;bottom:20px;left:20px;z-index:999;background:#10b981;color:white;padding:10px 16px;border:none;border-radius:10px;font-size:0.9em;">📏 Normale Route</button>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script>
-    const map = L.map('map').setView([51, 10], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    let mainRouteLayer = null;
-    let passedRouteLayer = null;
-    let routeCoordinates = [];
-
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
     const guideSteps = [
-      { text: 'Willkommen bei RadlMap! 🚴‍♀️<br><br>Hier planen wir zusammen deine erste Eierhütten-Tour.', action: null },
-      { text: 'Tippe unten auf "📍 Position anzeigen", um deinen aktuellen Standort anzuzeigen.', action: () => {
+      { text: 'Willkommen bei RadlMap! Hier planen wir zusammen deine erste Eierhütten-Tour.', action: null },
+      { text: 'Tippe auf \"📍 Position anzeigen\", um deinen Standort zu aktivieren.', action: () => {
         document.getElementById('positionBtn').classList.add('highlight');
       }, waitFor: 'positionBtn' },
-      { text: 'Super! Jetzt kannst du auf der Karte nach Hütten suchen und sie antippen.', action: () => {
+      { text: 'Super! Jetzt kannst du Eierhütten antippen, um eine Tour zu planen.', action: () => {
         document.getElementById('positionBtn').classList.remove('highlight');
       }},
-      { text: 'Wenn du zwei oder mehr Punkte hast, wird automatisch eine Route berechnet.', action: null },
-      { text: 'Möchtest du eine optimierte Route? Tippe auf "🔀 Optimierte Route".', action: () => {
-        document.getElementById('optRoute').style.display = 'block';
-        document.getElementById('optRoute').classList.add('highlight');
-      }, waitFor: 'optRoute' },
-      { text: 'Oder lieber normal der Reihe nach? Dann drücke "📏 Normale Route".', action: () => {
-        document.getElementById('optRoute').classList.remove('highlight');
-        document.getElementById('normalRoute').style.display = 'block';
-        document.getElementById('normalRoute').classList.add('highlight');
-      }, waitFor: 'normalRoute' },
-      { text: 'Die Route ist grün. Wenn du sie abfährst, wird der zurückgelegte Teil grau angezeigt.', action: () => {
-        document.getElementById('normalRoute').classList.remove('highlight');
-      }},
-      { text: 'Fertig! Viel Spaß bei deiner Tour und beim Eier entdecken 🥚🚴', action: null }
+      { text: 'Wähle zwischen 🔀 Optimiert oder 📏 Normal. Die Route färbt sich beim Abfahren grau.', action: null },
+      { text: 'Fertig! Viel Spaß bei deiner Tour 🥚🚴', action: null }
     ];
 
-    let guideStepIndex = 0;
-    const guideOverlay = document.getElementById('guide');
-    const guideText = document.getElementById('guideText');
-    const guideNext = document.getElementById('guideNext');
+    let step = 0;
+    const guide = document.getElementById('guide');
+    const text = document.getElementById('guideText');
+    const next = document.getElementById('guideNext');
 
     function nextGuideStep() {
-      guideStepIndex++;
-      if (guideStepIndex >= guideSteps.length) {
-        guideOverlay.style.display = 'none';
+      step++;
+      if (step >= guideSteps.length) {
+        guide.style.display = 'none';
         localStorage.setItem('guideDone', '1');
         return;
       }
-      const step = guideSteps[guideStepIndex];
-      guideText.innerHTML = step.text;
-      if (step.action) step.action();
-
-      if (step.waitFor) {
-        guideNext.style.display = 'none';
-        const el = document.getElementById(step.waitFor);
+      const s = guideSteps[step];
+      text.innerHTML = s.text;
+      if (s.action) s.action();
+      if (s.waitFor) {
+        next.style.display = 'none';
+        const btn = document.getElementById(s.waitFor);
         const handler = () => {
-          el.removeEventListener('click', handler);
-          guideNext.style.display = 'inline-block';
+          btn.removeEventListener('click', handler);
+          next.style.display = 'inline-block';
           nextGuideStep();
         };
-        el.addEventListener('click', handler);
+        btn.addEventListener('click', handler);
       } else {
-        guideNext.style.display = 'inline-block';
+        next.style.display = 'inline-block';
       }
     }
 
     if (!localStorage.getItem('guideDone')) {
-      guideOverlay.style.display = 'flex';
-      guideText.innerHTML = guideSteps[0].text;
-      guideNext.onclick = nextGuideStep;
+      guide.style.display = 'flex';
+      text.innerHTML = guideSteps[0].text;
+      next.onclick = nextGuideStep;
     }
 
     document.getElementById('positionBtn').addEventListener('click', () => {
-      map.locate({ setView: true, maxZoom: 16 });
+      alert("Position aktiviert (Beispiel)");
     });
-  </script></body>
+  </script>
+</body>
 </html>
