@@ -91,6 +91,11 @@
       font-size: 1em;
       cursor: pointer;
     }
+    .highlight {
+      outline: 3px solid #facc15;
+      border-radius: 10px;
+      z-index: 1500;
+    }
   </style>
 </head>
 <body>
@@ -99,121 +104,81 @@
   <div id="routeInfo"></div>
   <div id="toast" class="toast"></div>
   <div id="guide" class="guide-overlay" style="display:none">
-    <div class="guide-step" id="guideText">Willkommen bei RadlMap! 🚴‍♀️<br><br>Hier findest du deine Radtour, Position und nahegelegene Eierhütten.</div>
-    <button class="guide-button" onclick="nextGuideStep()">Weiter</button>
-  </div>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script>
+    <div class="guide-step" id="guideText">Willkommen bei RadlMap! 🚴‍♀️<br><br>Hier planen wir zusammen deine erste Eierhütten-Tour.</div>
+    <button class="guide-button" id="guideNext">Weiter</button>
+  </div>
+  <button id="positionBtn" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:999;background:#10b981;color:white;padding:12px 20px;border:none;border-radius:10px;font-size:1em;">📍 Position anzeigen</button>
+  <button id="optRoute" style="display:none;position:fixed;bottom:60px;left:20px;z-index:999;background:#10b981;color:white;padding:10px 16px;border:none;border-radius:10px;font-size:0.9em;">🔀 Optimierte Route</button>
+  <button id="normalRoute" style="display:none;position:fixed;bottom:20px;left:20px;z-index:999;background:#10b981;color:white;padding:10px 16px;border:none;border-radius:10px;font-size:0.9em;">📏 Normale Route</button>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script>
     const map = L.map('map').setView([51, 10], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: 'Map data © <a href="https://openstreetmap.org">OpenStreetMap</a> contributors'
-    }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     let mainRouteLayer = null;
     let passedRouteLayer = null;
     let routeCoordinates = [];
 
     const guideSteps = [
-      'Willkommen bei RadlMap! 🚴‍♀️<br><br>Hier findest du deine Radtour, Position und nahegelegene Eierhütten.',
-      '📍 Tippe unten auf „Route berechnen“, um deine Strecke zu starten.',
-      '🗺 Du kannst die Karte bewegen und Hütten direkt antippen, um sie zur Route hinzuzufügen.',
-      '✅ Deine Route ist farbig – und wird beim Abfahren grau. So siehst du deinen Fortschritt live.',
-      '📦 Viel Spaß beim Erkunden und Eier sammeln!'
+      { text: 'Willkommen bei RadlMap! 🚴‍♀️<br><br>Hier planen wir zusammen deine erste Eierhütten-Tour.', action: null },
+      { text: 'Tippe unten auf "📍 Position anzeigen", um deinen aktuellen Standort anzuzeigen.', action: () => {
+        document.getElementById('positionBtn').classList.add('highlight');
+      }, waitFor: 'positionBtn' },
+      { text: 'Super! Jetzt kannst du auf der Karte nach Hütten suchen und sie antippen.', action: () => {
+        document.getElementById('positionBtn').classList.remove('highlight');
+      }},
+      { text: 'Wenn du zwei oder mehr Punkte hast, wird automatisch eine Route berechnet.', action: null },
+      { text: 'Möchtest du eine optimierte Route? Tippe auf "🔀 Optimierte Route".', action: () => {
+        document.getElementById('optRoute').style.display = 'block';
+        document.getElementById('optRoute').classList.add('highlight');
+      }, waitFor: 'optRoute' },
+      { text: 'Oder lieber normal der Reihe nach? Dann drücke "📏 Normale Route".', action: () => {
+        document.getElementById('optRoute').classList.remove('highlight');
+        document.getElementById('normalRoute').style.display = 'block';
+        document.getElementById('normalRoute').classList.add('highlight');
+      }, waitFor: 'normalRoute' },
+      { text: 'Die Route ist grün. Wenn du sie abfährst, wird der zurückgelegte Teil grau angezeigt.', action: () => {
+        document.getElementById('normalRoute').classList.remove('highlight');
+      }},
+      { text: 'Fertig! Viel Spaß bei deiner Tour und beim Eier entdecken 🥚🚴', action: null }
     ];
-    let currentGuide = 0;
+
+    let guideStepIndex = 0;
+    const guideOverlay = document.getElementById('guide');
+    const guideText = document.getElementById('guideText');
+    const guideNext = document.getElementById('guideNext');
+
     function nextGuideStep() {
-      currentGuide++;
-      const guide = document.getElementById('guide');
-      if (currentGuide < guideSteps.length) {
-        document.getElementById('guideText').innerHTML = guideSteps[currentGuide];
+      guideStepIndex++;
+      if (guideStepIndex >= guideSteps.length) {
+        guideOverlay.style.display = 'none';
+        localStorage.setItem('guideDone', '1');
+        return;
+      }
+      const step = guideSteps[guideStepIndex];
+      guideText.innerHTML = step.text;
+      if (step.action) step.action();
+
+      if (step.waitFor) {
+        guideNext.style.display = 'none';
+        const el = document.getElementById(step.waitFor);
+        const handler = () => {
+          el.removeEventListener('click', handler);
+          guideNext.style.display = 'inline-block';
+          nextGuideStep();
+        };
+        el.addEventListener('click', handler);
       } else {
-        guide.style.display = 'none';
-        localStorage.setItem('guideShown', '1');
+        guideNext.style.display = 'inline-block';
       }
     }
-    if (!localStorage.getItem('guideShown')) {
-      document.getElementById('guide').style.display = 'flex';
+
+    if (!localStorage.getItem('guideDone')) {
+      guideOverlay.style.display = 'flex';
+      guideText.innerHTML = guideSteps[0].text;
+      guideNext.onclick = nextGuideStep;
     }
 
-    function showToast(msg) {
-      const t = document.getElementById('toast');
-      const speedBox = document.getElementById('speedDisplay');
-      const rect = speedBox.getBoundingClientRect();
-      t.innerText = msg;
-      t.style.top = (rect.bottom + 10) + "px";
-      t.style.display = "block";
-      setTimeout(() => t.style.display = 'none', 3000);
-    }
-
-    function recalculateRoute() {
-      fetch('https://api.openrouteservice.org/v2/directions/cycling-regular?api_key=DEMO&start=8.681495,49.41461&end=8.687872,49.420318')
-        .then(res => res.json())
-        .then(data => {
-          const coords = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
-          routeCoordinates = coords;
-
-          if (mainRouteLayer) map.removeLayer(mainRouteLayer);
-
-          mainRouteLayer = L.polyline(coords, {
-            color: '#10b981',
-            weight: 5
-          }).addTo(map);
-
-          map.fitBounds(mainRouteLayer.getBounds(), { padding: [50, 50] });
-
-          const dist = data.features[0].properties.summary.distance / 1000;
-          const dur = data.features[0].properties.summary.duration / 60;
-          const h = Math.floor(dur / 60);
-          const m = Math.round(dur % 60);
-          const timeStr = h > 0 ? `${h} Std ${m} Min` : `${m} Min`;
-          const avgSpeed = dist / (dur / 60);
-
-          document.getElementById('routeInfo').innerText =
-            `🚴 ${dist.toFixed(1)} km · ⏱ ${timeStr} · ⬆️ Schnitt: ${avgSpeed.toFixed(1)} km/h`;
-        });
-    }
-
-    function updateProgressLine(currentPos) {
-      if (!routeCoordinates.length) return;
-      let progress = [];
-      for (let i = 0; i < routeCoordinates.length; i++) {
-        const point = L.latLng(routeCoordinates[i]);
-        const dist = point.distanceTo(currentPos);
-        if (dist < 50) {
-          progress = routeCoordinates.slice(0, i + 1);
-        }
-      }
-      if (passedRouteLayer) map.removeLayer(passedRouteLayer);
-      passedRouteLayer = L.polyline(progress, {
-        color: '#888',
-        weight: 6
-      }).addTo(map);
-    }
-
-    navigator.geolocation.watchPosition(pos => {
-      const latlng = [pos.coords.latitude, pos.coords.longitude];
-      const speed = pos.coords.speed || 0;
-      const kmh = speed * 3.6;
-      const displaySpeed = Math.max(0, Math.min(60, kmh));
-      const speedEl = document.getElementById("speedDisplay");
-      speedEl.innerText = `🚴 ${displaySpeed.toFixed(1)} km/h`;
-
-      if (displaySpeed < 10) {
-        speedEl.style.color = "#f43f5e";
-      } else if (displaySpeed < 20) {
-        speedEl.style.color = "#facc15";
-      } else {
-        speedEl.style.color = "#10b981";
-      }
-
-      updateProgressLine(L.latLng(latlng));
-    }, err => {
-      console.error('❌ Geolocation-Fehler:', err);
-      showToast('⚠️ GPS nicht verfügbar');
-    }, {
-      enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 10000
+    document.getElementById('positionBtn').addEventListener('click', () => {
+      map.locate({ setView: true, maxZoom: 16 });
     });
-
-    recalculateRoute();
   </script></body>
 </html>
