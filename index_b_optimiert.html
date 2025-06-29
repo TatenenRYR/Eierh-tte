@@ -27,8 +27,8 @@
   position: absolute;
   top: 0; bottom: 0; left: 0; right: 0;
   z-index: 0;
-  height: 100%;
-  width: 100%;
+  flex: 1 !important;
+  height: auto !important;
 }
 
 /* Ladebildschirm */
@@ -119,21 +119,14 @@ button {
 
 /* Speed-Anzeige nach oben fixieren */
 #speedDisplay {
-  position: fixed;
+  padding: 12px 20px;
+  border-radius: 14px;
   top: 14px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 10px 20px;
-  font-size: 1.4em;
-  font-weight: bold;
-  color: #10b981;
-  background: white;
-  border-radius: 14px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  position: fixed;
+  font-size: 1.2em;
   z-index: 1001;
-  min-width: 120px;
-  text-align: center;
-  transition: background 0.3s, color 0.3s;
 }
   #bottomButtons {
   position: fixed;
@@ -599,24 +592,14 @@ function locateUser() {
 
   navigator.geolocation.watchPosition(pos => {
     const latlng = [pos.coords.latitude, pos.coords.longitude];
-    updateProgressLine(L.latLng(latlng));
+
     // Geschwindigkeit messen
     const speed = pos.coords.speed;
     if (speed != null && !isNaN(speed)) {
       const kmh = speed * 3.6;
-window.currentBikeSpeed = Math.max(0, Math.min(60, kmh));
-
-const speedEl = document.getElementById("speedDisplay");
-speedEl.innerText = `🚴 ${window.currentBikeSpeed.toFixed(1)} km/h`;
-
-// Farbliche Reaktion (optional)
-if (window.currentBikeSpeed < 10) {
-  speedEl.style.color = "#f43f5e"; // rot
-} else if (window.currentBikeSpeed < 20) {
-  speedEl.style.color = "#facc15"; // gelb
-} else {
-  speedEl.style.color = "#10b981"; // grün
-}
+      window.currentBikeSpeed = Math.max(8, Math.min(25, kmh));
+      console.log(`🚴 Geschwindigkeit: ${window.currentBikeSpeed.toFixed(1)} km/h`);
+  document.getElementById("speedDisplay").innerText = `🚴‍♂️ ${window.currentBikeSpeed.toFixed(1)} km/h`;
     }
 
     // Erstes Mal: Marker + Pfeil erstellen
@@ -898,9 +881,6 @@ document.getElementById('routeInfo').innerText =
     }
   });
 }*/
-    let fullRouteLayer = null;      // ganze Route (grau)
-let progressRouteLayer = null;  // Fortschrittsteil (farbig)
-let routeCoordinates = [];      // Koordinaten der Route
     async function recalculateRoute() {
   if (!userMarker || selectedHuts.length === 0) return;
 
@@ -929,38 +909,25 @@ let routeCoordinates = [];      // Koordinaten der Route
 
     if (!data || !data.features || !data.features[0]) throw new Error('Keine Route gefunden');
 localStorage.setItem('lastRoute', JSON.stringify(data));
+    if (routingControl) map.removeLayer(routingControl);
 
-// --- Route speichern ---
-routeCoordinates = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]); // lng,lat => lat,lng
-
-// Ganze Route grau anzeigen
-if (fullRouteLayer) map.removeLayer(fullRouteLayer);
-fullRouteLayer = L.polyline(routeCoordinates, {
-  color: '#aaa',
-  weight: 5,
-  opacity: 0.7,
-  dashArray: '4,8'
-}).addTo(map);
-
-// Fortschritt-Layer zurücksetzen
-if (progressRouteLayer) {
-  map.removeLayer(progressRouteLayer);
-  progressRouteLayer = null;
-}
+    routingControl = L.geoJSON(data, {
+      style: {
+        color: mode === 'optimized' ? 'orange' : '#10b981',
+        weight: 5
+      }
+    }).addTo(map);
 
     const dist = data.features[0].properties.summary.distance / 1000; // in km
-const dur = data.features[0].properties.summary.duration / 60;    // in Minuten
+    const dur = data.features[0].properties.summary.duration / 60; // in min
 
-const h = Math.floor(dur / 60);
+    const h = Math.floor(dur / 60);
 const m = Math.round(dur % 60);
 const timeStr = h > 0 ? `${h} Std ${m} Min` : `${m} Min`;
 
-// Durchschnittliche Geschwindigkeit berechnen
-const avgSpeed = dist / (dur / 60); // km/h
-const speedStr = `${avgSpeed.toFixed(1)} km/h`;
+document.getElementById('routeInfo').innerText =
+  `🚴 ${dist.toFixed(1)} km · ⏱ ${timeStr}`;
 
-document.getElementById('routeInfo').innerHTML =
-  `<strong>🚴 ${dist.toFixed(1)} km</strong> · ⏱ ${timeStr} · ⬆️ Schnitt: ${speedStr}`;
 
 
 
@@ -990,44 +957,21 @@ if (selectedHuts.length > 0 && data.features[0].properties.segments[0]) {
   const fallback = localStorage.getItem('lastRoute');
   if (fallback) {
     const data = JSON.parse(fallback);
-    routeCoordinates = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
-if (fullRouteLayer) map.removeLayer(fullRouteLayer);
-fullRouteLayer = L.polyline(routeCoordinates, {
-  color: '#ccc',
-  weight: 4,
-  dashArray: '4,6'
-}).addTo(map);
+    if (routingControl) map.removeLayer(routingControl);
+
+    routingControl = L.geoJSON(data, {
+      style: {
+        color: '#ccc',
+        weight: 4,
+        dashArray: '4,6'
+      }
+    }).addTo(map);
     document.getElementById('routeInfo').innerText = "📴 Letzte gespeicherte Route geladen (offline)";
   } else {
     showToast('⚠️ Route konnte nicht geladen werden.');
   }
   }
 }
-
-    function updateProgressLine(currentPos) {
-  if (!routeCoordinates.length) return;
-
-  // Schritt für Schritt vergleichen, wie weit man gekommen ist
-  let progress = [];
-  for (let i = 0; i < routeCoordinates.length; i++) {
-    const point = L.latLng(routeCoordinates[i]);
-    const dist = point.distanceTo(currentPos);
-    if (dist < 50) {
-      // 50 Meter in der Nähe ⇒ bis hierher gefahren
-      progress = routeCoordinates.slice(0, i + 1);
-    }
-  }
-
-  // Alte Linie entfernen
-  if (progressRouteLayer) map.removeLayer(progressRouteLayer);
-
-  // Neue Linie rendern (je nach Modus)
-  const mode = document.querySelector('input[name="routeMode"]:checked')?.value;
-  progressRouteLayer = L.polyline(progress, {
-    color: mode === 'optimized' ? 'orange' : '#10b981',
-    weight: 6
-  }).addTo(map);
-    }
     
     // Route löschen
     function resetSelection(){
@@ -1068,9 +1012,7 @@ map.on('moveend', () => {
   }
 });
 
-window.addEventListener('resize', () => {
-  setTimeout(() => map.invalidateSize(), 200);
-});
+
     // Initialisierung
     locateUser();
     loadHutsLive();
