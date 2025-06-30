@@ -997,6 +997,132 @@ document.getElementById('routeInfo').innerText =
     }
   });
 }*/
+
+
+let fullRouteLayer = null;      // ganze Route (grau)
+let progressRouteLayer = null;  // Fortschrittsteil (farbig)
+let routeCoordinates = [];      // Koordinaten der Route
+
+async function recalculateRoute() {
+  if (!userMarker || selectedHuts.length === 0) return;
+
+  const mode = document.querySelector('input[name="routeMode"]:checked').value;
+  const start = userMarker.getLatLng();
+  const arr = [...selectedHuts];
+  if (mode === 'optimized') arr.sort();
+
+  const coords = [start, ...arr.map(id => {
+    const h = allHuts.find(x => x.id === id);
+    return h ? L.latLng(h.lat, h.lng) : null;
+  })].filter(Boolean);
+
+  const coordinates = coords.map(p => [p.lng, p.lat]); // ORS expects [lng, lat]
+
+  try {
+    const response = await fetch('https://api.openrouteservice.org/v2/directions/cycling-regular/geojson', {
+      method: 'POST',
+      headers: {
+        'Authorization': '5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ coordinates })
+    });
+    const data = await response.json();
+
+    if (!data || !data.features || !data.features[0]) throw new Error('Keine Route gefunden');
+    localStorage.setItem('lastRoute', JSON.stringify(data));
+
+    // --- Route speichern ---
+    routeCoordinates = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]); // lng,lat => lat,lng
+
+    // Ganze Route grau anzeigen (stabil)
+    if (!fullRouteLayer) {
+      fullRouteLayer = L.polyline(routeCoordinates, {
+        color: '#aaa',
+        weight: 5,
+        opacity: 0.7,
+        dashArray: '4,8'
+      }).addTo(map);
+    } else {
+      fullRouteLayer.setLatLngs(routeCoordinates);
+    }
+
+    // leicht verzögert zentrieren, um Ruckeln zu vermeiden
+    setTimeout(() => {
+      map.fitBounds(fullRouteLayer.getBounds(), { padding: [50, 50] });
+    }, 100);
+
+    // Fortschritt-Layer zurücksetzen
+    if (progressRouteLayer) {
+      map.removeLayer(progressRouteLayer);
+      progressRouteLayer = null;
+    }
+
+    // Entfernungs- und Zeitinfos
+    const dist = data.features[0].properties.summary.distance / 1000; // in km
+    const dur = data.features[0].properties.summary.duration / 60;    // in Minuten
+
+    const h = Math.floor(dur / 60);
+    const m = Math.round(dur % 60);
+    const timeStr = h > 0 ? `${h} Std ${m} Min` : `${m} Min`;
+
+    const avgSpeed = dist / (dur / 60); // km/h
+    const speedStr = `${avgSpeed.toFixed(1)} km/h`;
+
+    document.getElementById('routeInfo').innerHTML =
+      `<strong>🚴 ${dist.toFixed(1)} km</strong> · ⏱ ${timeStr} · ⬆️ Schnitt: ${speedStr}`;
+
+    // Nächste Hütte
+    if (selectedHuts.length > 0 && data.features[0].properties.segments[0]) {
+      const firstSegment = data.features[0].properties.segments[0];
+      const nextDist = firstSegment.distance / 1000;
+      const nextDur = firstSegment.duration / 60;
+      const nextHutId = (mode === 'optimized' ? arr[0] : selectedHuts[0]);
+      const nextHut = allHuts.find(h => h.id === nextHutId);
+      const nextName = nextHut ? nextHut.name : "Nächste Hütte";
+
+      const nextH = Math.floor(nextDur / 60);
+      const nextM = Math.round(nextDur % 60);
+      const nextTimeStr = nextH > 0 ? `${nextH} Std ${nextM} Min` : `${nextM} Min`;
+
+      document.getElementById('nextStopInfo').innerText =
+        `🚏 ${nextName} – ${nextDist.toFixed(1)} km · ⏱ ${nextTimeStr}`;
+      document.getElementById('nextStopInfo').style.display = 'block';
+    } else {
+      document.getElementById('nextStopInfo').style.display = 'none';
+    }
+
+    routeExists = true;
+
+  } catch (err) {
+    console.error(err);
+    const fallback = localStorage.getItem('lastRoute');
+    if (fallback) {
+      const data = JSON.parse(fallback);
+      routeCoordinates = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
+
+      if (!fullRouteLayer) {
+        fullRouteLayer = L.polyline(routeCoordinates, {
+          color: '#ccc',
+          weight: 4,
+          dashArray: '4,6'
+        }).addTo(map);
+      } else {
+        fullRouteLayer.setLatLngs(routeCoordinates);
+      }
+
+      setTimeout(() => {
+        map.fitBounds(fullRouteLayer.getBounds(), { padding: [50, 50] });
+      }, 100);
+
+      document.getElementById('routeInfo').innerText = "📴 Letzte gespeicherte Route geladen (offline)";
+    } else {
+      showToast('⚠️ Route konnte nicht geladen werden.');
+    }
+  }
+}
+/*
+    
     let fullRouteLayer = null;      // ganze Route (grau)
 let progressRouteLayer = null;  // Fortschrittsteil (farbig)
 let routeCoordinates = [];      // Koordinaten der Route
@@ -1104,7 +1230,7 @@ fullRouteLayer = L.polyline(routeCoordinates, {
   }
   }
 }
-
+*/
     function updateProgressLine(currentPos) {
   if (!routeCoordinates.length) return;
 
