@@ -859,26 +859,23 @@ function stopGroupTracking() {
         allHuts = [];
         Object.values(hutMarkers).forEach(m=>map.removeLayer(m));
         hutMarkers = {};
+        let found = false;
         snap.forEach(doc => {
-  const d = doc.data();
-  if (!d.location) return;
+          const d = doc.data();
+          if (!d.location) return;
+          const start = d.aboStart?.toDate?.();
+          const monate = d.aboMonate || 0;
+          if (!start || monate <= 0) return;
+          const jetzt = new Date();
+          const ablauf = new Date(start);
+          ablauf.setMonth(ablauf.getMonth() + monate);
+          if (ablauf < jetzt) return;
+          if (!d.paypalSubscriptionId || d.paypalSubscriptionId.trim() === "") return;
+          if (d.status !== 'angenommen') return;
 
-  // ✅ Abo-Zeitraum berechnen
-  const start = d.aboStart?.toDate?.();
-  const monate = d.aboMonate || 0;
-  if (!start || monate <= 0) return;
+          // Wenn wir bis hier kommen: gültige Hütte
+          found = true;
 
-  const jetzt = new Date();
-  const ablauf = new Date(start);
-  ablauf.setMonth(ablauf.getMonth() + monate);
-  if (ablauf < jetzt) return; // Abo abgelaufen
-
-  // ✅ PayPal-Abo vorhanden?
-  if (!d.paypalSubscriptionId || d.paypalSubscriptionId.trim() === "") return;
-
-  // ✅ Status muss "angenommen" sein
-  if (d.status !== 'angenommen') return;
-          
           const hut = { id:doc.id, name:d.name||'Unbenannt',
                         lat:d.location.latitude, lng:d.location.longitude,
                         strom:(d.strom===true||String(d.strom).toLowerCase()==='ja'),
@@ -896,9 +893,16 @@ function stopGroupTracking() {
           clusterGroup.addLayer(m);
           hutMarkers[hut.id] = m;
         });
-        hutsLoaded = true; checkLoadingDone();
-        updateSelectedList();
-        recalculateRoute();
+
+        hutsLoaded = true;
+        checkLoadingDone();
+
+        if (found) {
+          updateSelectedList();
+          recalculateRoute();
+        } else {
+          showToast('⚠️ Keine gültigen Hütten gefunden.');
+        }
       });
     }
 
