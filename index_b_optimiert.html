@@ -708,7 +708,7 @@ function stopGroupTracking() {
     });
 
     // Hütten aus Firebase laden
-   /* function loadHutsLive() {
+    function loadHutsLive() {
       db.collection('eierhuetten').onSnapshot(snap => {
         allHuts = [];
         Object.values(hutMarkers).forEach(m=>map.removeLayer(m));
@@ -754,7 +754,7 @@ function stopGroupTracking() {
         updateSelectedList();
         recalculateRoute();
       });
-    }*/
+    }
 
     // Auswahl umschalten
     function toggleSelection(id) {
@@ -785,73 +785,8 @@ function stopGroupTracking() {
         }
       });
     }
-/*function recalculateRoute() {
-  if (!userMarker || selectedHuts.length === 0) return;
-
-  const pts = [userMarker.getLatLng()];
-  const mode = document.querySelector('input[name="routeMode"]:checked').value;
-  const arr = [...selectedHuts];
-  if (mode === 'optimized') arr.sort();
-  arr.forEach(id => {
-    const h = allHuts.find(x => x.id === id);
-    if (h) pts.push([h.lat, h.lng]);
-  });
-
-  if (routingControl) map.removeControl(routingControl);
-
-  // Alte Warnsymbole entfernen
-  if (window.warnMarkers) {
-    window.warnMarkers.forEach(m => map.removeLayer(m));
-  }
-  window.warnMarkers = [];
-
-  routingControl = L.Routing.control({
-    waypoints: pts,
-    router: L.Routing.osrmv1({
-      serviceUrl: 'https://router.project-osrm.org/route/v1',
-      profile: 'car'
-    }),
-    createMarker: () => null,
-    show: false,
-    lineOptions: {
-      styles: [{ color: mode === 'optimized' ? 'orange' : '#10b981', weight: 5 }]
-    }
-  }).addTo(map).on('routesfound', e => {
-    const r = e.routes[0];
-    
-    const km = r.summary.totalDistance / 1000;
-const avgBikeSpeed = window.currentBikeSpeed || 15; // fallback falls kein GPS-Speed
-const estimatedBikeMinutes = Math.round((km / avgBikeSpeed) * 60);
-document.getElementById('routeInfo').innerText =
-  `🚴 ${km.toFixed(1)} km · ⏱ ca. ${estimatedBikeMinutes} min (Fahrrad)`;
-    
-    const badTypes = ['motorway', 'trunk'];
-    let unsafe = false;
-
-    // Schritt-für-Schritt prüfen
-    r.instructions.forEach(instr => {
-      if (instr.road_class && badTypes.includes(instr.road_class)) {
-        unsafe = true;
-
-        const m = L.marker(instr.latLng, {
-          icon: L.divIcon({
-            className: 'warn-icon',
-            html: '⚠️',
-            iconSize: [20, 20]
-          })
-        }).bindPopup(`⚠️ Achtung: ${instr.road} (${instr.road_class})`);
-        m.addTo(map);
-        window.warnMarkers.push(m);
-      }
-    });
-
-    if (unsafe) {
-      showToast("⚠️ Achtung: Die Route enthält ungeeignete Straßen für Fahrräder.");
-    }
-  });
-}*/
-    
-   /* async function recalculateRoute() {
+ 
+async function recalculateRoute() {
   if (!userMarker || selectedHuts.length === 0) return;
 
   const mode = document.querySelector('input[name="routeMode"]:checked').value;
@@ -926,85 +861,6 @@ if (selectedHuts.length > 0 && data.features[0].properties.segments[0]) {
     showToast('❌ Route konnte nicht berechnet werden');
   }
 }
-    let fullRouteLayer = null;
-let progressRouteLayer = null;
-let routeCoordinates = [];
-let routeExists = false;
-
-// Zeichnet die Route auf der Karte
-function drawRoute(coords, color = '#aaa') {
-  if (!coords || coords.length < 2) return;
-
-  if (fullRouteLayer) map.removeLayer(fullRouteLayer);
-
-  fullRouteLayer = L.polyline(coords, {
-    color,
-    weight: 5,
-    opacity: 0.8,
-    dashArray: '4,8'
-  }).addTo(map);
-
-  map.fitBounds(fullRouteLayer.getBounds(), { padding: [50, 50] });
-  routeExists = true;
-}
-*/
-
-// Berechnet Route über OpenRouteService
-async function recalculateRoute() {
-  if (!userMarker || selectedHuts.length === 0) return;
-
-  const start = userMarker.getLatLng();
-  const arr = [...selectedHuts];
-  const mode = document.querySelector('input[name="routeMode"]:checked').value;
-  if (mode === 'optimized') arr.sort();
-
-  const coords = [start, ...arr.map(id => {
-    const hut = allHuts.find(h => h.id === id);
-    return hut ? L.latLng(hut.lat, hut.lng) : null;
-  })].filter(Boolean);
-
-  const orsCoordinates = coords.map(p => [p.lng, p.lat]);
-
-  try {
-    const response = await fetch('https://api.openrouteservice.org/v2/directions/cycling-regular/geojson', {
-      method: 'POST',
-      headers: {
-        'Authorization': '5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ coordinates: orsCoordinates })
-    });
-
-    const data = await response.json();
-    if (!data?.features?.[0]) throw new Error('Keine Route gefunden');
-
-    // Route umwandeln in Leaflet-Format
-    routeCoordinates = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
-    drawRoute(routeCoordinates, '#10b981');
-
-    // Fortschrittslinie zurücksetzen
-    if (progressRouteLayer) {
-      map.removeLayer(progressRouteLayer);
-      progressRouteLayer = null;
-    }
-
-    // Infos anzeigen
-    const dist = data.features[0].properties.summary.distance / 1000;
-    const dur = data.features[0].properties.summary.duration / 60;
-    const h = Math.floor(dur / 60), m = Math.round(dur % 60);
-    const speed = dist / (dur / 60);
-    const timeStr = h > 0 ? `${h} Std ${m} Min` : `${m} Min`;
-    const speedStr = `${speed.toFixed(1)} km/h`;
-
-    document.getElementById('routeInfo').innerHTML = 
-      `<strong>🚴 ${dist.toFixed(1)} km</strong> · ⏱ ${timeStr} · ⬆️ Schnitt: ${speedStr}`;
-
-  } catch (err) {
-    console.error('❌ Fehler beim Routenabruf', err);
-    showToast('⚠️ Route konnte nicht berechnet werden.');
-  }
-}
-
     
     // Route löschen
     function resetSelection(){
@@ -1059,7 +915,7 @@ if (groupId) {
   startGroupTracking();
 }
     // Automatische Neuberechnung beim Modus-Wechsel
-  //  document.querySelectorAll('input[name="routeMode"]').forEach(r => r.addEventListener('change', recalculateRoute));
+   // document.querySelectorAll('input[name="routeMode"]').forEach(r => r.addEventListener('change', recalculateRoute));
   </script>
   <div id="rainEffect"></div>
 </body>
