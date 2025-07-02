@@ -548,9 +548,93 @@ if (!groupId) {
       t.innerText = msg; t.style.display = 'block';
       setTimeout(() => t.style.display = 'none', 3000);
     }
-
-    // Benutzer-Position & Pfeil + Gruppen-Position senden
 function locateUser() {
+  if (!navigator.geolocation) {
+    showToast('❌ Geolocation wird nicht unterstützt');
+    userLoaded = true;
+    checkLoadingDone();
+    return;
+  }
+
+  navigator.geolocation.watchPosition(pos => {
+    const latlng = [pos.coords.latitude, pos.coords.longitude];
+
+    // Geschwindigkeit anzeigen
+    const speed = pos.coords.speed;
+    if (speed != null && !isNaN(speed)) {
+      const kmh = speed * 3.6;
+      window.currentBikeSpeed = Math.max(0, Math.min(60, kmh));
+      document.getElementById("speedDisplay").innerText = `🚴‍♂️ ${window.currentBikeSpeed.toFixed(1)} km/h`;
+    }
+
+    // Erstes Mal: Marker erstellen
+    if (!userMarker) {
+      userMarker = L.marker(latlng, { icon: bikeIcon }).addTo(map);
+
+      const wrap = document.createElement('div');
+      wrap.className = 'arrow-wrapper';
+      const arrow = document.createElement('div');
+      arrow.className = 'arrow-spike';
+      wrap.appendChild(arrow);
+      const arrowIcon = L.divIcon({ html: wrap.outerHTML, iconSize: [80, 80], className: '' });
+      directionMarker = L.marker(latlng, { icon: arrowIcon }).addTo(map);
+
+      userLoaded = true;
+      checkLoadingDone();
+
+      if (typeof startRainMonitoring === 'function') startRainMonitoring();
+    } else {
+      userMarker.setLatLng(latlng);
+      directionMarker.setLatLng(latlng);
+    }
+
+    // Automatisches Folgen nur, wenn aktiviert
+    if (autoFollow) {
+      map.panTo(latlng, { animate: true, duration: 0.25 });
+    }
+
+    // Gruppenposition speichern
+    if (groupTrackingEnabled && groupId) {
+      db.collection('group_positions')
+        .doc(groupId)
+        .collection('members')
+        .doc(userId)
+        .set({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          name: userName
+        });
+    }
+
+  }, err => {
+    console.error('❌ Geolocation-Fehler:', err);
+    showToast('⚠️ GPS nicht verfügbar');
+
+    if (!userMarker) {
+      map.setView([51.1657, 10.4515], 6); // Fallback-Mittelpunkt Deutschland
+    }
+
+    userLoaded = true;
+    checkLoadingDone();
+  }, {
+    enableHighAccuracy: true,
+    timeout: 8000,
+    maximumAge: 10000
+  });
+
+  // Kompass aktivieren
+  if (window.DeviceOrientationEvent) {
+    window.addEventListener('deviceorientation', e => {
+      const spike = document.querySelector('.arrow-spike');
+      if (spike && e.alpha != null) {
+        spike.style.transform = `translateX(-50%) rotate(${e.alpha}deg)`;
+      }
+    }, true);
+  }
+}
+    // Benutzer-Position & Pfeil + Gruppen-Position senden
+/*function locateUser() {
   if (!navigator.geolocation) {
     showToast('❌ Geolocation wird nicht unterstützt');
     userLoaded = true;
@@ -636,7 +720,7 @@ if (groupTrackingEnabled && groupId) {
       }
     }, true);
   }
-}
+}*/
 
     // Gruppenpositionen live aus Firebase laden
     function startGroupTracking() {
