@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>RadlMap Neu</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0fdf4;
+      overflow: hidden;
+    }
+    #map {
+      position: absolute;
+      top: 0; bottom: 0; left: 0; right: 0;
+      z-index: 0;
+    }
+    #bottomButtons {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+      z-index: 1002;
+      background: rgba(255,255,255,0.95);
+      padding: 12px;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+    #bottomButtons button {
+      padding: 14px 22px;
+      font-size: 1.3em;
+      border: none;
+      border-radius: 14px;
+      min-width: 200px;
+      text-align: center;
+      background-color: #10b981;
+      color: white;
+      cursor: pointer;
+    }
+    #toggleButtons {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1003;
+      font-size: 1.8em;
+      background: white;
+      border: 2px solid #10b981;
+      color: #10b981;
+      border-radius: 12px;
+      padding: 6px 12px;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+    #routeInfo {
+      position: fixed;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: white;
+      padding: 10px 18px;
+      border-radius: 12px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+      z-index: 1001;
+      font-weight: bold;
+      font-size: 1.1em;
+    }
+    .toast {
+      position: fixed;
+      bottom: 200px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #10b981;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-size: 1em;
+      font-weight: 500;
+      z-index: 9999;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="routeInfo">🚴 0 km · ⏱ 0 Min</div>
+
+  <div id="bottomButtons">
+    <button onclick="recalculateRoute()">🔁 Route neu berechnen</button>
+    <button onclick="resetRoute()">❌ Route löschen</button>
+    <button id="followBtn" onclick="enableAutoFollow()">📍 Folgen</button>
+  </div>
+
+  <button id="toggleButtons" onclick="toggleBottom()">🧩</button>
+  <div class="toast" id="toastMsg">Nachricht</div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([51.5, 10.5], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap',
+      maxZoom: 19
+    }).addTo(map);
+
+    let userMarker = null;
+    let routingControl = null;
+    let autoFollow = false;
+
+    function showToast(msg) {
+      const toast = document.getElementById('toastMsg');
+      toast.innerText = msg;
+      toast.style.display = 'block';
+      setTimeout(() => toast.style.display = 'none', 3000);
+    }
+
+    function enableAutoFollow() {
+      autoFollow = true;
+      showToast("📍 Auto-Follow aktiviert");
+      if (userMarker) map.setView(userMarker.getLatLng(), 15);
+      document.getElementById('followBtn').style.display = 'none';
+    }
+
+    function toggleBottom() {
+      const panel = document.getElementById('bottomButtons');
+      panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+    }
+
+    function resetRoute() {
+      if (routingControl) {
+        map.removeLayer(routingControl);
+        routingControl = null;
+        showToast("🗺️ Route gelöscht");
+      }
+      document.getElementById('routeInfo').innerText = '🚴 0 km · ⏱ 0 Min';
+    }
+
+    function recalculateRoute() {
+      if (!userMarker) {
+        showToast("📍 Position wird noch geladen…");
+        return;
+      }
+      const start = userMarker.getLatLng();
+      const end = [start.lat + 0.1, start.lng + 0.1];
+      const coordinates = [[start.lng, start.lat], [end[1], end[0]]];
+
+      fetch('https://api.openrouteservice.org/v2/directions/cycling-regular/geojson', {
+        method: 'POST',
+        headers: {
+          'Authorization': '5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ coordinates })
+      }).then(res => res.json()).then(data => {
+        if (routingControl) map.removeLayer(routingControl);
+        const routeCoords = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
+        routingControl = L.polyline(routeCoords, {
+          color: '#10b981',
+          weight: 5
+        }).addTo(map);
+        setTimeout(() => {
+          map.fitBounds(routingControl.getBounds(), { padding: [50, 50] });
+        }, 100);
+
+        const dist = data.features[0].properties.summary.distance / 1000;
+        const dur = data.features[0].properties.summary.duration / 60;
+        const h = Math.floor(dur / 60);
+        const m = Math.round(dur % 60);
+        const timeStr = h > 0 ? `${h} Std ${m} Min` : `${m} Min`;
+
+        document.getElementById('routeInfo').innerText =
+          `🚴 ${dist.toFixed(1)} km · ⏱ ${timeStr}`;
+
+        autoFollow = false;
+        document.getElementById('followBtn').style.display = 'block';
+      }).catch(err => {
+        console.error(err);
+        showToast('⚠️ Fehler bei der Routenberechnung');
+      });
+    }
+
+    navigator.geolocation.watchPosition(pos => {
+      const latlng = [pos.coords.latitude, pos.coords.longitude];
+      if (!userMarker) {
+        userMarker = L.marker(latlng).addTo(map);
+        showToast('📍 Position erkannt');
+        if (autoFollow) map.setView(latlng, 15);
+      } else {
+        userMarker.setLatLng(latlng);
+        if (autoFollow) map.setView(latlng, 15);
+      }
+    }, err => {
+      console.error(err);
+      showToast('❌ Keine GPS-Position verfügbar');
+    }, {
+      enableHighAccuracy: true
+    });
+
+    map.on('movestart', () => {
+      autoFollow = false;
+      document.getElementById('followBtn').style.display = 'block';
+    });
+  </script>
+</body>
+</html>
