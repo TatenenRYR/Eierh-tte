@@ -3,14 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Eierhütten Tour</title>
+  <title>Eierhütten Tour App</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
-
   <style>
     html, body, #map {
       height: 100%;
@@ -32,172 +31,200 @@
       z-index: 9999;
       display: none;
     }
+    .control-panel {
+      position: fixed;
+      top: 70px;
+      right: 12px;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.9);
+      border-radius: 10px;
+      padding: 10px;
+      box-shadow: 0 0 6px rgba(0,0,0,0.3);
+    }
+    .control-panel button {
+      display: block;
+      width: 100%;
+      margin-bottom: 8px;
+      padding: 8px 12px;
+      font-size: 1em;
+      background: #10b981;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
-  <div id="map"></div>
-  <div class="toast" id="toastMsg">Meldung</div>
+<div id="map"></div>
+<div class="toast" id="toastMsg">Meldung</div>
+<div class="control-panel">
+  <button onclick="toggleRain()">🌧 Regenradar</button>
+  <button onclick="toggleGroup()">👥 Gruppenposition</button>
+</div>
 
 <script>
-  const firebaseConfig = {
-    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-    authDomain: "eierhuettentour.firebaseapp.com",
-    projectId: "eierhuettentour"
-  };
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.firestore();
+// === Firebase-Konfiguration ===
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
 
-  const map = L.map('map').setView([51.5, 10.5], 6);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OSM'
-  }).addTo(map);
+// === Karte initialisieren ===
+const map = L.map('map').setView([51.5, 10.5], 6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, attribution: '&copy; OSM'
+}).addTo(map);
 
-  // Regenradar-Overlay
-  const rainLayer = L.tileLayer('https://tilecache.rainviewer.com/v2/radar/nowcast/0/256/{z}/{x}/{y}/2/1_1.png', {
-    opacity: 0.5,
-    attribution: 'RainViewer.com'
-  });
-  rainLayer.addTo(map);
+// === Regenradar ===
+let rainLayer = L.tileLayer('https://tilecache.rainviewer.com/v2/radar/nowcast/0/256/{z}/{x}/{y}/2/1_1.png', {
+  opacity: 0.5, attribution: 'RainViewer.com'
+});
+let rainVisible = true;
+rainLayer.addTo(map);
+function toggleRain() {
+  if (rainVisible) map.removeLayer(rainLayer);
+  else map.addLayer(rainLayer);
+  rainVisible = !rainVisible;
+}
 
-  let userMarker = null;
-  let routingControl = null;
-  let allHuts = [], selectedHuts = [];
+// === Live-Standort ===
+let userMarker = null;
+let routingControl = null;
+let allHuts = [], selectedHuts = [];
+let groupId = "demo-gruppe";
+let userId = Math.random().toString(36).substr(2, 9);
+let groupVisible = true;
+let groupMarkers = {};
 
-  const groupId = "demo-gruppe";
-  const userId = Math.random().toString(36).substr(2, 9);
-  const groupTrackingEnabled = true;
+function toggleGroup() {
+  groupVisible = !groupVisible;
+  for (const id in groupMarkers) {
+    if (groupVisible) groupMarkers[id].addTo(map);
+    else map.removeLayer(groupMarkers[id]);
+  }
+}
 
-  const clusterGroup = L.markerClusterGroup();
-  map.addLayer(clusterGroup);
+const clusterGroup = L.markerClusterGroup();
+map.addLayer(clusterGroup);
 
-  function showToast(msg) {
-    const toast = document.getElementById('toastMsg');
-    toast.innerText = msg;
-    toast.style.display = 'block';
-    setTimeout(() => toast.style.display = 'none', 3000);
+// === Toast ===
+function showToast(msg) {
+  const toast = document.getElementById('toastMsg');
+  toast.innerText = msg;
+  toast.style.display = 'block';
+  setTimeout(() => toast.style.display = 'none', 3000);
+}
+
+// === Standort überwachen ===
+navigator.geolocation.watchPosition(pos => {
+  const latlng = [pos.coords.latitude, pos.coords.longitude];
+  if (!userMarker) {
+    userMarker = L.marker(latlng).addTo(map);
+    map.setView(latlng, 14);
+  } else {
+    userMarker.setLatLng(latlng);
   }
 
-  // Standort & Gruppentracking
-  navigator.geolocation.watchPosition(pos => {
-    const latlng = [pos.coords.latitude, pos.coords.longitude];
-    if (!userMarker) {
-      userMarker = L.marker(latlng).addTo(map);
-      map.setView(latlng, 14);
-    } else {
-      userMarker.setLatLng(latlng);
-    }
+  db.collection('group_positions').doc(groupId).collection('members').doc(userId).set({
+    lat: latlng[0],
+    lng: latlng[1],
+    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+    name: "Du"
+  });
+}, err => {
+  showToast("❌ GPS nicht verfügbar");
+}, { enableHighAccuracy: true });
 
-    if (groupTrackingEnabled) {
-      db.collection('group_positions')
-        .doc(groupId)
-        .collection('members')
-        .doc(userId)
-        .set({
-          lat: latlng[0],
-          lng: latlng[1],
-          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-          name: "Du"
-        });
-    }
-  }, err => {
-    showToast('❌ GPS nicht verfügbar');
-  }, { enableHighAccuracy: true });
-
-  // Gruppenmitglieder anzeigen
-  db.collection("group_positions").doc(groupId).collection("members")
-    .onSnapshot(snap => {
-      snap.docChanges().forEach(change => {
-        const data = change.doc.data();
-        if (change.doc.id !== userId && data.lat && data.lng) {
-          const id = "group_" + change.doc.id;
-          if (!window[id]) {
-            window[id] = L.marker([data.lat, data.lng], {
-              icon: L.divIcon({ className: '', html: `<div style='background:#0af;color:#fff;padding:4px 8px;border-radius:6px;'>${data.name}</div>` })
-            }).addTo(map);
-          } else {
-            window[id].setLatLng([data.lat, data.lng]);
-          }
+// === Gruppenmitglieder ===
+db.collection("group_positions").doc(groupId).collection("members")
+  .onSnapshot(snap => {
+    snap.docChanges().forEach(change => {
+      const data = change.doc.data();
+      if (change.doc.id !== userId && data.lat && data.lng) {
+        if (!groupMarkers[change.doc.id]) {
+          groupMarkers[change.doc.id] = L.marker([data.lat, data.lng], {
+            icon: L.divIcon({ className: '', html: "<div style='background:#0af;color:#fff;padding:4px 8px;border-radius:6px;font-size:0.9em'>" + data.name + "</div>" })
+          });
+        } else {
+          groupMarkers[change.doc.id].setLatLng([data.lat, data.lng]);
         }
-      });
-    });
-
-  function toggleSelection(hutId) {
-    const i = selectedHuts.indexOf(hutId);
-    if (i >= 0) {
-      selectedHuts.splice(i, 1);
-      showToast("❌ Hütte entfernt");
-    } else {
-      selectedHuts.push(hutId);
-      showToast("✅ Hütte hinzugefügt");
-    }
-    recalculateRoute();
-  }
-
-  function recalculateRoute() {
-    if (!userMarker) {
-      showToast("📍 Position wird noch geladen…");
-      return;
-    }
-    if (!selectedHuts.length) {
-      showToast("🥚 Bitte wähle Eierhütten aus");
-      return;
-    }
-
-    const start = userMarker.getLatLng();
-    const hutCoords = selectedHuts.map(id => {
-      const h = allHuts.find(x => x.id === id);
-      return h ? [h.lng, h.lat] : null;
-    }).filter(Boolean);
-
-    // einfache Optimierung: nach Entfernung
-    hutCoords.sort((a, b) => {
-      const dx1 = start.lng - a[0], dy1 = start.lat - a[1];
-      const dx2 = start.lng - b[0], dy2 = start.lat - b[1];
-      return (dx1*dx1 + dy1*dy1) - (dx2*dx2 + dy2*dy2);
-    });
-
-    const coordinates = [[start.lng, start.lat], ...hutCoords];
-
-    fetch('https://api.openrouteservice.org/v2/directions/cycling-regular/geojson', {
-      method: 'POST',
-      headers: {
-        'Authorization': '5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ coordinates })
-    }).then(res => res.json()).then(data => {
-      if (routingControl) map.removeLayer(routingControl);
-      const coords = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
-      routingControl = L.polyline(coords, { color: '#10b981', weight: 5 }).addTo(map);
-      map.fitBounds(routingControl.getBounds(), { padding: [50, 50] });
-    }).catch(err => {
-      console.error(err);
-      showToast("⚠️ Fehler bei der Routenberechnung");
-    });
-  }
-
-  // Eierhütten live laden
-  db.collection("eierhuetten").onSnapshot(snapshot => {
-    allHuts = [];
-    clusterGroup.clearLayers();
-    snapshot.forEach(doc => {
-      const d = doc.data();
-      if (!d.location || d.status !== 'angenommen') return;
-      const hut = {
-        id: doc.id,
-        name: d.name || "Unbenannt",
-        lat: d.location.latitude,
-        lng: d.location.longitude
-      };
-      allHuts.push(hut);
-      const m = L.marker([hut.lat, hut.lng]).bindPopup(`<b>${hut.name}</b><br>
-        <button onclick="toggleSelection('${hut.id}')">
-          ${selectedHuts.includes(hut.id) ? '❌ Entfernen' : '✅ Zur Route'}
-        </button>`);
-      clusterGroup.addLayer(m);
+        if (groupVisible) groupMarkers[change.doc.id].addTo(map);
+        else map.removeLayer(groupMarkers[change.doc.id]);
+      }
     });
   });
+
+// === Hütte auswählen ===
+function toggleSelection(hutId) {
+  const i = selectedHuts.indexOf(hutId);
+  if (i >= 0) {
+    selectedHuts.splice(i, 1);
+    showToast("❌ Hütte entfernt");
+  } else {
+    selectedHuts.push(hutId);
+    showToast("✅ Hütte hinzugefügt");
+  }
+  recalculateRoute();
+}
+
+// === Route berechnen ===
+function recalculateRoute() {
+  if (!userMarker || selectedHuts.length === 0) return;
+  const start = userMarker.getLatLng();
+  const hutCoords = selectedHuts.map(id => {
+    const h = allHuts.find(x => x.id === id);
+    return h ? [h.lng, h.lat] : null;
+  }).filter(Boolean);
+  const coordinates = [[start.lng, start.lat], ...hutCoords];
+
+  fetch('https://api.openrouteservice.org/v2/directions/cycling-regular/geojson', {
+    method: 'POST',
+    headers: {
+      'Authorization': '5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ coordinates })
+  }).then(res => res.json()).then(data => {
+    if (routingControl) map.removeLayer(routingControl);
+    const coords = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
+    routingControl = L.polyline(coords, { color: '#10b981', weight: 5 }).addTo(map);
+    map.fitBounds(routingControl.getBounds(), { padding: [50, 50] });
+  }).catch(() => {
+    showToast("⚠️ Fehler bei der Routenberechnung");
+  });
+}
+
+// === Eierhütten laden ===
+db.collection("eierhuetten").onSnapshot(snapshot => {
+  allHuts = [];
+  clusterGroup.clearLayers();
+  snapshot.forEach(doc => {
+    const d = doc.data();
+    if (!d.location || d.status !== 'angenommen') return;
+    const hut = {
+      id: doc.id,
+      name: d.name || "Unbenannt",
+      lat: d.location.latitude,
+      lng: d.location.longitude,
+      strom: d.strom ? "Ja" : "Nein",
+      oeffnungszeiten: d.oeffnungszeiten || "n.v."
+    };
+    allHuts.push(hut);
+    const m = L.marker([hut.lat, hut.lng]).bindPopup(
+      `<b>${hut.name}</b><br>
+       🔌 Strom: ${hut.strom}<br>
+       🕒 Öffnungszeiten: ${hut.oeffnungszeiten}<br>
+       <button onclick="toggleSelection('${hut.id}')">
+         ${selectedHuts.includes(hut.id) ? '❌ Entfernen' : '✅ Zur Route'}
+       </button>`
+    );
+    clusterGroup.addLayer(m);
+  });
+});
 </script>
 </body>
 </html>
