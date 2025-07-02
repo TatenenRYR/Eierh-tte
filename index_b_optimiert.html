@@ -556,18 +556,21 @@ function locateUser() {
     return;
   }
 
+  let firstUpdate = true;
+
   navigator.geolocation.watchPosition(pos => {
     const latlng = [pos.coords.latitude, pos.coords.longitude];
 
-    // Geschwindigkeit anzeigen
+    // Geschwindigkeit messen
     const speed = pos.coords.speed;
     if (speed != null && !isNaN(speed)) {
       const kmh = speed * 3.6;
-      window.currentBikeSpeed = Math.max(0, Math.min(60, kmh));
+      window.currentBikeSpeed = Math.max(8, Math.min(25, kmh));
+      console.log(`🚴 Geschwindigkeit: ${window.currentBikeSpeed.toFixed(1)} km/h`);
       document.getElementById("speedDisplay").innerText = `🚴‍♂️ ${window.currentBikeSpeed.toFixed(1)} km/h`;
     }
 
-    // Erstes Mal: Marker erstellen
+    // Erstes Mal: Marker + Pfeil erstellen
     if (!userMarker) {
       userMarker = L.marker(latlng, { icon: bikeIcon }).addTo(map);
 
@@ -588,12 +591,13 @@ function locateUser() {
       directionMarker.setLatLng(latlng);
     }
 
-    // Automatisches Folgen nur, wenn aktiviert
-    if (autoFollow) {
-      map.panTo(latlng, { animate: true, duration: 0.25 });
+    // Karte nur beim ersten Mal zentrieren
+    if (firstUpdate || autoFollow) {
+      map.setView(latlng, 15);
+      firstUpdate = false;
     }
 
-    // Gruppenposition speichern
+    // Gruppenposition senden
     if (groupTrackingEnabled && groupId) {
       db.collection('group_positions')
         .doc(groupId)
@@ -612,14 +616,14 @@ function locateUser() {
     showToast('⚠️ GPS nicht verfügbar');
 
     if (!userMarker) {
-      map.setView([51.1657, 10.4515], 6); // Fallback-Mittelpunkt Deutschland
+      map.setView([51.1657, 10.4515], 6); // Deutschland-Zentrum
     }
 
     userLoaded = true;
     checkLoadingDone();
   }, {
     enableHighAccuracy: true,
-    timeout: 8000,
+    timeout: 10000,
     maximumAge: 10000
   });
 
