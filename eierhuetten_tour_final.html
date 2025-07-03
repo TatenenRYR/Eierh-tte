@@ -97,6 +97,74 @@ function startRoute() {
 
   startNavigationLoop();
 }
+let navInterval;
+let voiceEnabled = localStorage.getItem("voice") !== "0";
+
+function toggleVoice() {
+  voiceEnabled = !voiceEnabled;
+  localStorage.setItem("voice", voiceEnabled ? "1" : "0");
+  showToast(voiceEnabled ? "🔊 Sprache aktiviert" : "🔇 Sprache deaktiviert");
+}
+
+function startNavigationLoop() {
+  if (navInterval) clearInterval(navInterval);
+  navInterval = setInterval(() => {
+    if (!userMarker || !routingControl) return;
+    let path = routingControl.getLatLngs();
+    if (path.length < 2) return;
+
+    const from = userMarker.getLatLng();
+    const to = path[1];
+    const dx = to.lng - from.lng;
+    const dy = to.lat - from.lat;
+    const angle = ((Math.atan2(dy, dx) * 180 / Math.PI) + 360) % 360;
+    document.getElementById("compassArrow").style.transform = `rotate(${angle}deg)`;
+
+    const dist = map.distance(from, to);
+    const estTime = Math.round(dist / 250);
+    const arrival = new Date(Date.now() + estTime * 60000);
+    const arrivalStr = arrival.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    showToast(`📍 Noch ${Math.round(dist)} m · Ankunft: ${arrivalStr}`);
+
+    if (voiceEnabled && 'speechSynthesis' in window) {
+      const msg = new SpeechSynthesisUtterance(`Noch ${Math.round(dist)} Meter bis zur nächsten Hütte. Ankunft gegen ${arrivalStr}`);
+      window.speechSynthesis.speak(msg);
+    }
+
+    if (dist < 50 && path.length > 2) {
+      path.shift();
+      routingControl.setLatLngs(path);
+      showToast("✅ Nächste Hütte wird angesteuert...");
+    }
+  }, 5000);
+}
+
+function startRoute() {
+  if (!userMarker || !routingControl) {
+    showToast("⚠️ Keine Route verfügbar");
+    return;
+  }
+  const from = userMarker.getLatLng();
+  const path = routingControl.getLatLngs();
+  if (path.length < 2) {
+    showToast("⚠️ Keine gültige Route");
+    return;
+  }
+  const to = path[1];
+  map.flyTo(from, 17);
+  const dist = map.distance(from, to);
+  const estTime = Math.round(dist / 250);
+  const arrival = new Date(Date.now() + estTime * 60000);
+  const arrivalStr = arrival.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  showToast(`➡️ ${Math.round(dist)} m bis zur nächsten Hütte · Ankunft ca. ${arrivalStr}`);
+
+  if (nextArrow) map.removeLayer(nextArrow);
+  nextArrow = L.marker(to, {
+    icon: L.divIcon({ className: '', html: '🧭', iconSize: [32, 32] })
+  }).addTo(map);
+
+  startNavigationLoop();
+}
 </script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>  <style>
     html, body, #map {
       height: 100%;
@@ -173,6 +241,8 @@ function startRoute() {
 <body><div id="map"></div>
 <img id="compassArrow" src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/Navigation_arrow.svg/120px-Navigation_arrow.svg.png" alt="Pfeil">
 <div class="toast" id="toastMsg"></div><div class="bottom-toolbar">
+  <button onclick="toggleVoice()">🔊 Sprachausgabe</button>
+  <button onclick="startRoute()">▶️ Route starten</button>
   <button onclick="startRoute()">▶️ Route starten</button>
   <button onclick="centerMap()">📍 Zentrieren</button>
   <button onclick="toggleDarkMode()">🌙 Dark Mode</button>
