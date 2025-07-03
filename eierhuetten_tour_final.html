@@ -1,12 +1,26 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Eierhütten Tour App</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js">function updateRouteInfo(path) {
+  if (!userMarker || !path || path.length < 2) return;
+  const from = userMarker.getLatLng();
+  const totalDistance = path.reduce((sum, pt, i, arr) => {
+    if (i === 0) return 0;
+    return sum + map.distance(arr[i - 1], pt);
+  }, 0);
+  const to = path[1];
+  const nextHut = allHuts.find(h => h.lat === to.lat && h.lng === to.lng);
+  const dist = map.distance(from, to);
+  const time = Math.round(totalDistance / 250);
+  document.getElementById("infoDistance").textContent = (totalDistance / 1000).toFixed(1) + ' km';
+  document.getElementById("infoTime").textContent = time + ' Min';
+  document.getElementById("infoNext").textContent = nextHut ? nextHut.name : '-';
+}
+</script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <style>
     html, body, #map {
@@ -70,12 +84,15 @@
 <div id="map"></div>
 <img id="compassArrow" src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/Navigation_arrow.svg/120px-Navigation_arrow.svg.png" alt="Pfeil">
 <div class="toast" id="toastMsg"></div>
-
+<div id="routeHeader" style="position:fixed; top:0; left:0; right:0; background:#10b981; color:white; padding:10px; text-align:center; font-size:1.1em; z-index:1000; display:none;">
+  🚴‍♂️ Strecke: <span id="infoDistance">0 km</span> · ⏱️ Zeit: <span id="infoTime">0 Min</span> · 🏁 Ziel: <span id="infoNext">-</span>
+</div>
 <div class="bottom-toolbar">
   <button onclick="toggleVoice()">🔊 Sprachausgabe</button>
   <button onclick="startRoute()">▶️ Route starten</button>
+  <button onclick="saveRoute()">💾 Speichern</button>
+  <button onclick="resetRoute()">🗑 Löschen</button>
 </div>
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script>
@@ -85,156 +102,25 @@ const firebaseConfig = {
   projectId: "eierhuettentour"
 };
 firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+const db = firebase.firestore();const map = L.map('map').setView([51.5, 10.5], 6); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map); const clusterGroup = L.markerClusterGroup().addTo(map); let userMarker = null, routingControl = null, nextArrow = null, followUser = false; let allHuts = [], selectedHuts = [], navInterval; let voiceEnabled = localStorage.getItem("voice") !== "0";
 
-const map = L.map('map').setView([51.5, 10.5], 6);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-const clusterGroup = L.markerClusterGroup().addTo(map);
-let userMarker = null, routingControl = null, nextArrow = null, followUser = false;
-let allHuts = [], selectedHuts = [], navInterval;
-let voiceEnabled = localStorage.getItem("voice") !== "0";
+function showToast(msg) { const toast = document.getElementById("toastMsg"); toast.innerText = msg; toast.style.display = "block"; setTimeout(() => toast.style.display = "none", 3000); }
 
-function showToast(msg) {
-  const toast = document.getElementById("toastMsg");
-  toast.innerText = msg;
-  toast.style.display = "block";
-  setTimeout(() => toast.style.display = "none", 3000);
-}
+function toggleVoice() { voiceEnabled = !voiceEnabled; localStorage.setItem("voice", voiceEnabled ? "1" : "0"); showToast(voiceEnabled ? "🔊 Sprache aktiviert" : "🔇 Sprache deaktiviert"); }
 
-function toggleVoice() {
-  voiceEnabled = !voiceEnabled;
-  localStorage.setItem("voice", voiceEnabled ? "1" : "0");
-  showToast(voiceEnabled ? "🔊 Sprache aktiviert" : "🔇 Sprache deaktiviert");
-}
+navigator.geolocation.watchPosition(pos => { const latlng = [pos.coords.latitude, pos.coords.longitude]; if (!userMarker) { userMarker = L.marker(latlng).addTo(map); map.setView(latlng, 15); } else { userMarker.setLatLng(latlng); } });
 
-navigator.geolocation.watchPosition(pos => {
-  const latlng = [pos.coords.latitude, pos.coords.longitude];
-  if (!userMarker) {
-    userMarker = L.marker(latlng).addTo(map);
-    map.setView(latlng, 15);
-  } else {
-    userMarker.setLatLng(latlng);
-  }
-}, () => showToast("⚠️ Standort nicht verfügbar"));
+window.addEventListener("deviceorientationabsolute" in window ? "deviceorientationabsolute" : "deviceorientation", e => { const alpha = e.alpha || 0; document.getElementById("compassArrow").style.transform = rotate(${-alpha}deg); });
 
-window.addEventListener("deviceorientationabsolute" in window ? "deviceorientationabsolute" : "deviceorientation", e => {
-  const alpha = e.alpha || 0;
-  document.getElementById("compassArrow").style.transform = `rotate(${-alpha}deg)`;
-});
+function startRoute() { if (!userMarker || !routingControl) { showToast("⚠️ Keine Route verfügbar"); return; } const from = userMarker.getLatLng(); const path = routingControl.getLatLngs(); if (path.length < 2) { showToast("⚠️ Keine gültige Route"); return; } const to = path[1]; map.flyTo(from, 17); document.getElementById("routeHeader").style.display = "block"; updateRouteInfo(path); if (nextArrow) map.removeLayer(nextArrow); nextArrow = L.marker(to, { icon: L.divIcon({ className: '', html: '🧭', iconSize: [32, 32] }) }).addTo(map); startNavigationLoop(); } }
 
-function startRoute() {
-  if (!userMarker || !routingControl) {
-    showToast("⚠️ Keine Route verfügbar");
-    return;
-  }
-  const from = userMarker.getLatLng();
-  const path = routingControl.getLatLngs();
-  if (path.length < 2) {
-    showToast("⚠️ Keine gültige Route");
-    return;
-  }
-  const to = path[1];
-  map.flyTo(from, 17);
-  const dist = map.distance(from, to);
-  const estTime = Math.round(dist / 250);
-  const arrival = new Date(Date.now() + estTime * 60000);
-  const arrivalStr = arrival.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  showToast(`➡️ ${Math.round(dist)} m bis zur nächsten Hütte · Ankunft ca. ${arrivalStr}`);
-  if (nextArrow) map.removeLayer(nextArrow);
-  nextArrow = L.marker(to, {
-    icon: L.divIcon({ className: '', html: '🧭', iconSize: [32, 32] })
-  }).addTo(map);
-  startNavigationLoop();
-}
+function startNavigationLoop() { if (navInterval) clearInterval(navInterval); navInterval = setInterval(() => { if (!userMarker || !routingControl) return; let path = routingControl.getLatLngs(); if (path.length < 2) return; const from = userMarker.getLatLng(); const to = path[1]; const dx = to.lng - from.lng; const dy = to.lat - from.lat; const angle = ((Math.atan2(dy, dx) * 180 / Math.PI) + 360) % 360; document.getElementById("compassArrow").style.transform = rotate(${angle}deg); const dist = map.distance(from, to); const estTime = Math.round(dist / 250); const arrival = new Date(Date.now() + estTime * 60000); const arrivalStr = arrival.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); showToast(📍 Noch ${Math.round(dist)} m · Ankunft: ${arrivalStr}); if (voiceEnabled && 'speechSynthesis' in window) { const hut = allHuts.find(h => h.lat === to.lat && h.lng === to.lng); if (hut) { const msg = new SpeechSynthesisUtterance(Nächste Hütte: ${hut.name}); window.speechSynthesis.speak(msg); } } Meter bis zur nächsten Hütte. Ankunft gegen ${arrivalStr}`); window.speechSynthesis.speak(msg); } if (dist < 50 && path.length > 2) { path.shift(); routingControl.setLatLngs(path); showToast("✅ Nächste Hütte wird angesteuert..."); } }, 5000); }
 
-function startNavigationLoop() {
-  if (navInterval) clearInterval(navInterval);
-  navInterval = setInterval(() => {
-    if (!userMarker || !routingControl) return;
-    let path = routingControl.getLatLngs();
-    if (path.length < 2) return;
-    const from = userMarker.getLatLng();
-    const to = path[1];
-    const dx = to.lng - from.lng;
-    const dy = to.lat - from.lat;
-    const angle = ((Math.atan2(dy, dx) * 180 / Math.PI) + 360) % 360;
-    document.getElementById("compassArrow").style.transform = `rotate(${angle}deg)`;
-    const dist = map.distance(from, to);
-    const estTime = Math.round(dist / 250);
-    const arrival = new Date(Date.now() + estTime * 60000);
-    const arrivalStr = arrival.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    showToast(`📍 Noch ${Math.round(dist)} m · Ankunft: ${arrivalStr}`);
-    if (voiceEnabled && 'speechSynthesis' in window) {
-      const msg = new SpeechSynthesisUtterance(`Noch ${Math.round(dist)} Meter bis zur nächsten Hütte. Ankunft gegen ${arrivalStr}`);
-      window.speechSynthesis.speak(msg);
-    }
-    if (dist < 50 && path.length > 2) {
-      path.shift();
-      routingControl.setLatLngs(path);
-      showToast("✅ Nächste Hütte wird angesteuert...");
-    }
-  }, 5000);
-}
+function toggleSelection(id) { const index = selectedHuts.indexOf(id); if (index >= 0) { selectedHuts.splice(index, 1); showToast("❌ Entfernt"); } else { selectedHuts.push(id); showToast("✅ Hinzugefügt"); } recalculateRoute(); }
 
-function toggleSelection(id) {
-  const index = selectedHuts.indexOf(id);
-  if (index >= 0) {
-    selectedHuts.splice(index, 1);
-    showToast("❌ Entfernt");
-  } else {
-    selectedHuts.push(id);
-    showToast("✅ Hinzugefügt");
-  }
-  recalculateRoute();
-}
+function recalculateRoute() { if (!userMarker || selectedHuts.length === 0) return; const start = userMarker.getLatLng(); const coords = selectedHuts.map(id => { const h = allHuts.find(x => x.id === id); return h ? [h.lng, h.lat] : null; }).filter(Boolean); const coordinates = [[start.lng, start.lat], ...coords]; fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", { method: "POST", headers: { "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87", "Content-Type": "application/json" }, body: JSON.stringify({ coordinates }) }) .then(res => res.json()) .then(data => { if (routingControl) map.removeLayer(routingControl); const coords = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]); routingControl = L.polyline(coords, { color: "#10b981", weight: 5 }).addTo(map); }) .catch(() => showToast("⚠️ Routing fehlgeschlagen")); }
 
-function recalculateRoute() {
-  if (!userMarker || selectedHuts.length === 0) return;
-  const start = userMarker.getLatLng();
-  const coords = selectedHuts.map(id => {
-    const h = allHuts.find(x => x.id === id);
-    return h ? [h.lng, h.lat] : null;
-  }).filter(Boolean);
-  const coordinates = [[start.lng, start.lat], ...coords];
-  fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
-    method: "POST",
-    headers: {
-      "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ coordinates })
-  })
-  .then(res => res.json())
-  .then(data => {
-    if (routingControl) map.removeLayer(routingControl);
-    const coords = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
-    routingControl = L.polyline(coords, { color: "#10b981", weight: 5 }).addTo(map);
-  })
-  .catch(() => showToast("⚠️ Routing fehlgeschlagen"));
-}
+db.collection("eierhuetten").onSnapshot(snapshot => { allHuts = []; clusterGroup.clearLayers(); snapshot.forEach(doc => { const d = doc.data(); if (!d.location || d.status !== "angenommen") return; const hut = { id: doc.id, name: d.name || "Unbenannt", lat: d.location.latitude, lng: d.location.longitude }; allHuts.push(hut); const marker = L.marker([hut.lat, hut.lng]).bindPopup( <b>${hut.name}</b><br> <button onclick="toggleSelection('${hut.id}')"> ${selectedHuts.includes(hut.id) ? '❌ Entfernen' : '✅ Hinzufügen'} </button>); clusterGroup.addLayer(marker); }); recalculateRoute(); }); </script>
 
-db.collection("eierhuetten").onSnapshot(snapshot => {
-  allHuts = [];
-  clusterGroup.clearLayers();
-  snapshot.forEach(doc => {
-    const d = doc.data();
-    if (!d.location || d.status !== "angenommen") return;
-    const hut = {
-      id: doc.id,
-      name: d.name || "Unbenannt",
-      lat: d.location.latitude,
-      lng: d.location.longitude
-    };
-    allHuts.push(hut);
-    const marker = L.marker([hut.lat, hut.lng]).bindPopup(`
-      <b>${hut.name}</b><br>
-      <button onclick="toggleSelection('${hut.id}')">
-        ${selectedHuts.includes(hut.id) ? '❌ Entfernen' : '✅ Hinzufügen'}
-      </button>`);
-    clusterGroup.addLayer(marker);
-  });
-  recalculateRoute();
-});
-</script>
 </body>
 </html>
