@@ -3,98 +3,61 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Eierhütten Tour App</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js">function updateRouteInfo(path) {
-  if (!userMarker || !path || path.length < 2) return;
-  const from = userMarker.getLatLng();
-  const totalDistance = path.reduce((sum, pt, i, arr) => {
-    if (i === 0) return 0;
-    return sum + map.distance(arr[i - 1], pt);
-  }, 0);
-  const to = path[1];
-  const nextHut = allHuts.find(h => h.lat === to.lat && h.lng === to.lng);
-  const dist = map.distance(from, to);
-  const time = Math.round(totalDistance / 250);
-  document.getElementById("infoDistance").textContent = (totalDistance / 1000).toFixed(1) + ' km';
-  document.getElementById("infoTime").textContent = time + ' Min';
-  document.getElementById("infoNext").textContent = nextHut ? nextHut.name : '-';
-}
-</script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <style>
-    html, body, #map {
-      height: 100%;
-      margin: 0;
-      padding: 0;
-      font-family: 'Segoe UI', sans-serif;
+    html, body {
+      margin: 0; padding: 0; height: 100%; font-family: sans-serif;
     }
-    .toast {
-      position: fixed;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #10b981;
-      color: white;
-      padding: 12px 20px;
-      border-radius: 12px;
-      font-size: 1em;
-      font-weight: 500;
-      z-index: 9999;
+    #map {
+      height: 100%;
+    }
+    #routeHeader {
+      position: fixed; top: 0; left: 0; right: 0;
+      background: #10b981; color: white;
+      padding: 10px; text-align: center;
+      font-size: 1.1em; z-index: 1000;
       display: none;
     }
     .bottom-toolbar {
-      position: fixed;
-      bottom: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 8px;
-      background: rgba(255,255,255,0.95);
-      padding: 12px;
-      border-radius: 14px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-      z-index: 1000;
+      position: fixed; bottom: 0; left: 0; right: 0;
+      display: flex; flex-wrap: wrap; justify-content: center;
+      gap: 8px; background: #f0f0f0;
+      padding: 10px; z-index: 1001;
     }
     .bottom-toolbar button {
-      font-size: 1rem;
-      padding: 10px 16px;
-      background: #10b981;
-      color: white;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      min-height: 44px;
+      font-size: 1rem; padding: 10px 16px;
+      background: #10b981; color: white;
+      border: none; border-radius: 8px;
+      cursor: pointer; flex: 1;
+    }
+    .toast {
+      position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+      background: #333; color: #fff; padding: 10px 20px;
+      border-radius: 8px; z-index: 9999; display: none;
     }
     #compassArrow {
-      position: fixed;
-      top: 80px;
-      left: 20px;
-      z-index: 1100;
-      width: 40px;
-      height: 40px;
-      transform: rotate(0deg);
-      transition: transform 0.2s ease;
+      position: fixed; top: 70px; left: 10px; width: 40px;
+      height: 40px; z-index: 1002;
     }
   </style>
 </head>
 <body>
+<div id="routeHeader">🚴‍♂️ Strecke: <span id="infoDistance">0 km</span> · ⏱ <span id="infoTime">0 Min</span> · 🏁 <span id="infoNext">-</span></div>
 <div id="map"></div>
-<img id="compassArrow" src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/Navigation_arrow.svg/120px-Navigation_arrow.svg.png" alt="Pfeil">
+<img id="compassArrow" src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/Navigation_arrow.svg/120px-Navigation_arrow.svg.png" alt="Pfeil" />
 <div class="toast" id="toastMsg"></div>
-<div id="routeHeader" style="position:fixed; top:0; left:0; right:0; background:#10b981; color:white; padding:10px; text-align:center; font-size:1.1em; z-index:1000; display:none;">
-  🚴‍♂️ Strecke: <span id="infoDistance">0 km</span> · ⏱️ Zeit: <span id="infoTime">0 Min</span> · 🏁 Ziel: <span id="infoNext">-</span>
-</div>
 <div class="bottom-toolbar">
   <button onclick="toggleVoice()">🔊 Sprachausgabe</button>
   <button onclick="startRoute()">▶️ Route starten</button>
-  <button onclick="saveRoute()">💾 Speichern</button>
   <button onclick="resetRoute()">🗑 Löschen</button>
+  <button onclick="saveRoute()">💾 Speichern</button>
+  <button onclick="reverseRoute()">🔄 Umkehren</button>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 <script>
 const firebaseConfig = {
   apiKey: "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
@@ -102,23 +65,25 @@ const firebaseConfig = {
   projectId: "eierhuettentour"
 };
 firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();const map = L.map('map').setView([51.5, 10.5], 6); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map); const clusterGroup = L.markerClusterGroup().addTo(map); let userMarker = null, routingControl = null, nextArrow = null, followUser = false; let allHuts = [], selectedHuts = [], navInterval; let voiceEnabled = localStorage.getItem("voice") !== "0";
+const db = firebase.firestore();const map = L.map('map').setView([51.5, 10.5], 6); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map); const clusterGroup = L.markerClusterGroup().addTo(map); let allHuts = [], selectedHuts = [], routingControl = null, nextArrow = null; let userMarker = null, navInterval = null, voiceEnabled = true;
 
 function showToast(msg) { const toast = document.getElementById("toastMsg"); toast.innerText = msg; toast.style.display = "block"; setTimeout(() => toast.style.display = "none", 3000); }
 
-function toggleVoice() { voiceEnabled = !voiceEnabled; localStorage.setItem("voice", voiceEnabled ? "1" : "0"); showToast(voiceEnabled ? "🔊 Sprache aktiviert" : "🔇 Sprache deaktiviert"); }
-
 navigator.geolocation.watchPosition(pos => { const latlng = [pos.coords.latitude, pos.coords.longitude]; if (!userMarker) { userMarker = L.marker(latlng).addTo(map); map.setView(latlng, 15); } else { userMarker.setLatLng(latlng); } });
 
-window.addEventListener("deviceorientationabsolute" in window ? "deviceorientationabsolute" : "deviceorientation", e => { const alpha = e.alpha || 0; document.getElementById("compassArrow").style.transform = rotate(${-alpha}deg); });
+function toggleVoice() { voiceEnabled = !voiceEnabled; showToast(voiceEnabled ? "🔊 Sprache aktiviert" : "🔇 Sprache deaktiviert"); }
 
-function startRoute() { if (!userMarker || !routingControl) { showToast("⚠️ Keine Route verfügbar"); return; } const from = userMarker.getLatLng(); const path = routingControl.getLatLngs(); if (path.length < 2) { showToast("⚠️ Keine gültige Route"); return; } const to = path[1]; map.flyTo(from, 17); document.getElementById("routeHeader").style.display = "block"; updateRouteInfo(path); if (nextArrow) map.removeLayer(nextArrow); nextArrow = L.marker(to, { icon: L.divIcon({ className: '', html: '🧭', iconSize: [32, 32] }) }).addTo(map); startNavigationLoop(); } }
+function toggleSelection(id) { const i = selectedHuts.indexOf(id); if (i >= 0) { selectedHuts.splice(i, 1); showToast("❌ Entfernt"); } else { selectedHuts.push(id); showToast("✅ Hinzugefügt"); } recalculateRoute(); }
 
-function startNavigationLoop() { if (navInterval) clearInterval(navInterval); navInterval = setInterval(() => { if (!userMarker || !routingControl) return; let path = routingControl.getLatLngs(); if (path.length < 2) return; const from = userMarker.getLatLng(); const to = path[1]; const dx = to.lng - from.lng; const dy = to.lat - from.lat; const angle = ((Math.atan2(dy, dx) * 180 / Math.PI) + 360) % 360; document.getElementById("compassArrow").style.transform = rotate(${angle}deg); const dist = map.distance(from, to); const estTime = Math.round(dist / 250); const arrival = new Date(Date.now() + estTime * 60000); const arrivalStr = arrival.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); showToast(📍 Noch ${Math.round(dist)} m · Ankunft: ${arrivalStr}); if (voiceEnabled && 'speechSynthesis' in window) { const hut = allHuts.find(h => h.lat === to.lat && h.lng === to.lng); if (hut) { const msg = new SpeechSynthesisUtterance(Nächste Hütte: ${hut.name}); window.speechSynthesis.speak(msg); } } Meter bis zur nächsten Hütte. Ankunft gegen ${arrivalStr}`); window.speechSynthesis.speak(msg); } if (dist < 50 && path.length > 2) { path.shift(); routingControl.setLatLngs(path); showToast("✅ Nächste Hütte wird angesteuert..."); } }, 5000); }
+function saveRoute() { localStorage.setItem("savedRoute", JSON.stringify(selectedHuts)); showToast("💾 Route gespeichert"); }
 
-function toggleSelection(id) { const index = selectedHuts.indexOf(id); if (index >= 0) { selectedHuts.splice(index, 1); showToast("❌ Entfernt"); } else { selectedHuts.push(id); showToast("✅ Hinzugefügt"); } recalculateRoute(); }
+function resetRoute() { selectedHuts = []; if (routingControl) map.removeLayer(routingControl); routingControl = null; if (nextArrow) map.removeLayer(nextArrow); showToast("🗑 Route gelöscht"); document.getElementById("routeHeader").style.display = "none"; }
+
+function reverseRoute() { selectedHuts.reverse(); recalculateRoute(); }
 
 function recalculateRoute() { if (!userMarker || selectedHuts.length === 0) return; const start = userMarker.getLatLng(); const coords = selectedHuts.map(id => { const h = allHuts.find(x => x.id === id); return h ? [h.lng, h.lat] : null; }).filter(Boolean); const coordinates = [[start.lng, start.lat], ...coords]; fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", { method: "POST", headers: { "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87", "Content-Type": "application/json" }, body: JSON.stringify({ coordinates }) }) .then(res => res.json()) .then(data => { if (routingControl) map.removeLayer(routingControl); const coords = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]); routingControl = L.polyline(coords, { color: "#10b981", weight: 5 }).addTo(map); }) .catch(() => showToast("⚠️ Routing fehlgeschlagen")); }
+
+function startRoute() { if (!userMarker || !routingControl) return; const path = routingControl.getLatLngs(); if (path.length < 2) return; document.getElementById("routeHeader").style.display = "block"; const from = userMarker.getLatLng(); const to = path[1]; const dist = map.distance(from, to); const total = path.reduce((sum, pt, i, arr) => i > 0 ? sum + map.distance(arr[i - 1], pt) : 0, 0); const min = Math.round(total / 250); document.getElementById("infoDistance").textContent = (total / 1000).toFixed(1) + ' km'; document.getElementById("infoTime").textContent = min + ' Min'; const next = allHuts.find(h => h.lat === to.lat && h.lng === to.lng); document.getElementById("infoNext").textContent = next ? next.name : '-'; if (voiceEnabled && next && 'speechSynthesis' in window) { const msg = new SpeechSynthesisUtterance(Nächste Hütte: ${next.name}); window.speechSynthesis.speak(msg); } if (nextArrow) map.removeLayer(nextArrow); nextArrow = L.marker(to, { icon: L.divIcon({ className: '', html: '🧭', iconSize: [32, 32] }) }).addTo(map); }
 
 db.collection("eierhuetten").onSnapshot(snapshot => { allHuts = []; clusterGroup.clearLayers(); snapshot.forEach(doc => { const d = doc.data(); if (!d.location || d.status !== "angenommen") return; const hut = { id: doc.id, name: d.name || "Unbenannt", lat: d.location.latitude, lng: d.location.longitude }; allHuts.push(hut); const marker = L.marker([hut.lat, hut.lng]).bindPopup( <b>${hut.name}</b><br> <button onclick="toggleSelection('${hut.id}')"> ${selectedHuts.includes(hut.id) ? '❌ Entfernen' : '✅ Hinzufügen'} </button>); clusterGroup.addLayer(marker); }); recalculateRoute(); }); </script>
 
