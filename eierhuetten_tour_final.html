@@ -59,6 +59,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 
 const clusterGroup = L.markerClusterGroup().addTo(map);
 let userMarker = null;
 let routingControl = null;
+let nextArrow = null;
 let followUser = false;
 let allHuts = [], selectedHuts = [];
 const rainLayer = L.tileLayer('https://tilecache.rainviewer.com/v2/radar/nowcast/0/256/{z}/{x}/{y}/2/1_1.png', { opacity: 0.5 });
@@ -98,8 +99,12 @@ function toggleSelection(id) {
   recalculateRoute();
 }
 function recalculateRoute() {
-  if (!userMarker || selectedHuts.length === 0) return;
+  if (!userMarker || selectedHuts.length === 0) {
+    if (routingControl) { map.removeLayer(routingControl); routingControl = null; }
+    return;
+  }
   const start = userMarker.getLatLng();
+  const optimize = document.getElementById("optimizeRoute").checked;
   const coords = selectedHuts.map(id => {
     const h = allHuts.find(x => x.id === id);
     return h ? [h.lng, h.lat] : null;
@@ -113,74 +118,29 @@ function recalculateRoute() {
     },
     body: JSON.stringify({ coordinates })
   })
-    .then(res => res.json())
-    .then(data => {
-      if (routingControl) map.removeLayer(routingControl);
-      const coords = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
-      routingControl = L.polyline(coords, { color: "#10b981", weight: 5 }).addTo(map);
-      map.fitBounds(routingControl.getBounds(), { padding: [50, 50] });
-      showToast(`✅ ${data.features[0].properties.summary.distance / 1000} km`);
-    })
-    .catch(() => showToast("⚠️ Routing fehlgeschlagen"));
+  .then(res => res.json())
+  .then(data => {
+    if (routingControl) map.removeLayer(routingControl);
+    const coords = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
+    routingControl = L.polyline(coords, { color: "#10b981", weight: 5 }).addTo(map);
+    map.fitBounds(routingControl.getBounds(), { padding: [50, 50] });
+    showToast(`✅ ${data.features[0].properties.summary.distance / 1000} km`);if (nextArrow) map.removeLayer(nextArrow);
+const next = coords[1];
+if (next) {
+  nextArrow = L.marker(next, {
+    icon: L.divIcon({ className: '', html: '🧭', iconSize: [32, 32] })
+  }).addTo(map);
 }
-function saveRoute() {
-  localStorage.setItem("savedRoute", JSON.stringify(selectedHuts));
-  showToast("💾 Route gespeichert");
-}
-function resetRoute() {
-  selectedHuts = [];
-  if (routingControl) map.removeLayer(routingControl);
-  routingControl = null;
-  showToast("🗑 Route gelöscht");
-}
-function openRouteDashboard() {
-  const list = document.getElementById("routeList");
-  list.innerHTML = '';
-  selectedHuts.forEach(id => {
-    const hut = allHuts.find(h => h.id === id);
-    if (hut) {
-      const li = document.createElement("li");
-      li.innerHTML = `${hut.name} <button onclick="removeFromRoute('${id}')">❌</button>`;
-      list.appendChild(li);
-    }
-  });
-  document.getElementById("routeDashboard").style.display = "block";
-}
-function closeRouteDashboard() { document.getElementById("routeDashboard").style.display = "none"; }
-function removeFromRoute(id) {
-  selectedHuts = selectedHuts.filter(h => h !== id);
-  recalculateRoute();
-  openRouteDashboard();
-}
-window.addEventListener("DOMContentLoaded", () => {
-  const saved = localStorage.getItem("savedRoute");
-  if (saved) {
-    if (confirm("💾 Es wurde eine gespeicherte Route erkannt. Möchtest du sie wiederherstellen?")) {
-      selectedHuts = JSON.parse(saved);
-      setTimeout(() => {
-        showToast("💾 Route wiederhergestellt");
-        recalculateRoute();
-      }, 1000);
-    }
-  }
-});
-db.collection("eierhuetten").onSnapshot(snapshot => {
-  allHuts = [];
-  clusterGroup.clearLayers();
-  snapshot.forEach(doc => {
-    const d = doc.data();
-    if (!d.location || d.status !== "angenommen") return;
-    const hut = { id: doc.id, name: d.name || "Unbenannt", lat: d.location.latitude, lng: d.location.longitude };
-    allHuts.push(hut);
-    const marker = L.marker([hut.lat, hut.lng]).bindPopup(`
-  <b>${hut.name}</b><br>
-  <button onclick="toggleSelection('${hut.id}')">
-    ${selectedHuts.includes(hut.id) ? '❌ Entfernen' : '✅ Hinzufügen'}
-  </button>
-`);
-    clusterGroup.addLayer(marker);
-  });
-});
-</script>
+
+}) .catch(() => showToast("⚠️ Routing fehlgeschlagen")); } } function saveRoute() { localStorage.setItem("savedRoute", JSON.stringify(selectedHuts)); showToast("💾 Route gespeichert"); } function resetRoute() { selectedHuts = []; if (routingControl) map.removeLayer(routingControl); routingControl = null; showToast("🗑 Route gelöscht"); } function openRouteDashboard() { const list = document.getElementById("routeList"); list.innerHTML = '';
+
+const settings = document.createElement("div"); settings.innerHTML =  <div style="margin-bottom:10px"> <label><input type="checkbox" id="optimizeRouteDashboard" ${document.getElementById('optimizeRoute').checked ? 'checked' : ''}/> Optimierte Route verwenden</label> </div>; list.appendChild(settings);
+
+selectedHuts.forEach(id => { const hut = allHuts.find(h => h.id === id); if (hut) { const li = document.createElement("li"); li.innerHTML = ➡️ ${hut.name} <button onclick="removeFromRoute('${id}')">❌</button>; list.appendChild(li); } });
+
+document.getElementById("optimizeRouteDashboard").addEventListener("change", e => { document.getElementById("optimizeRoute").checked = e.target.checked; recalculateRoute(); });
+
+document.getElementById("routeDashboard").style.display = "block"; } } function closeRouteDashboard() { document.getElementById("routeDashboard").style.display = "none"; } function removeFromRoute(id) { selectedHuts = selectedHuts.filter(h => h !== id); recalculateRoute(); openRouteDashboard(); } window.addEventListener("DOMContentLoaded", () => { const saved = localStorage.getItem("savedRoute"); if (saved) { if (confirm("💾 Es wurde eine gespeicherte Route erkannt. Möchtest du sie wiederherstellen?")) { selectedHuts = JSON.parse(saved); setTimeout(() => { showToast("💾 Route wiederhergestellt"); recalculateRoute(); }, 1000); } } }); db.collection("eierhuetten").onSnapshot(snapshot => { allHuts = []; clusterGroup.clearLayers(); snapshot.forEach(doc => { const d = doc.data(); if (!d.location || d.status !== "angenommen") return; const hut = { id: doc.id, name: d.name || "Unbenannt", lat: d.location.latitude, lng: d.location.longitude }; allHuts.push(hut); const marker = L.marker([hut.lat, hut.lng]).bindPopup(<b>${hut.name}</b><br> <button onclick="toggleSelection('${hut.id}')"> ${selectedHuts.includes(hut.id) ? '❌ Entfernen' : '✅ Hinzufügen'} </button>); clusterGroup.addLayer(marker); }); }); </script>
+
 </body>
 </html>
