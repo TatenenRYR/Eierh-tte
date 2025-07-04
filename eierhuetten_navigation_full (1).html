@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Eierhütten Navigation</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+  <style>
+    html, body {margin:0; padding:0; height:100%; font-family:sans-serif; background:#fff;}
+    #loader {position:fixed;top:0;left:0;right:0;bottom:0;background:#fff;z-index:99999;display:flex;align-items:center;justify-content:center;font-size:1.2rem;}
+    #routeHeader {position:fixed;top:0;left:0;right:0;background:#10b981;color:white;padding:10px;text-align:center;font-size:1em;z-index:1000;display:none;}
+    #hutList {position:fixed;top:50px;left:0;right:0;background:#f9f9f9;padding:5px 10px;font-size:0.9em;z-index:1000;max-height:100px;overflow-x:auto;white-space:nowrap;}
+    .hut-chip {display:inline-block;background:#10b981;color:white;padding:4px 10px;border-radius:10px;margin:2px;cursor:pointer;}
+    #map {position:absolute;top:150px;bottom:60px;left:0;right:0;z-index:0;}
+    #compassArrow {position:fixed;top:110px;left:10px;width:40px;height:40px;z-index:1002;}
+    .toast {position:fixed;top:70px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:8px;z-index:9999;display:none;}
+    .bottom-toolbar {position:fixed;bottom:0;left:0;right:0;display:flex;flex-wrap:wrap;justify-content:center;gap:8px;background:#f0f0f0;padding:10px;z-index:1001;}
+    .bottom-toolbar button, .bottom-toolbar select {font-size:1rem;padding:10px 16px;background:#10b981;color:white;border:none;border-radius:8px;cursor:pointer;flex:1;}
+    body.dark {background:#111;color:#eee;}
+    body.dark .bottom-toolbar {background:#1a1a1a;}
+    body.dark .bottom-toolbar button, body.dark .bottom-toolbar select {background:#0e7c5b;}
+    body.dark #routeHeader {background:#0e7c5b;}
+    body.dark #hutList {background:#222;}
+    body.dark #loader {background:#111;color:#ccc;}
+  </style>
+</head>
+<body>
+<div id="loader">⏳ Lage ...</div>
+<div id="routeHeader">🚴‍♂️ <span id="infoDistance">0 km</span> · ⏱ <span id="infoTime">0 Min</span> · 🏁 <span id="infoNext">-</span></div>
+<div id="hutList"></div>
+<div id="map"></div>
+<img id="compassArrow" src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/Navigation_arrow.svg/120px-Navigation_arrow.svg.png" alt="Pfeil"/>
+<div class="toast" id="toastMsg"></div>
+<div class="bottom-toolbar">
+  <button onclick="toggleDarkMode()">🌙 Dark Mode</button>
+  <button onclick="toggleVoice()">🔊 Sprache</button>
+  <select id="routeMode" onchange="recalculateRoute()">
+    <option value="auto">🔄 Optimiert</option>
+    <option value="manual">➡️ Manuell</option>
+  </select>
+  <button onclick="startRoute()">▶️ Start</button>
+  <button onclick="resetRoute()">🗑 Löschen</button>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+let map, clusterGroup, userMarker, routingControl=null;
+let selectedHuts=[], allHuts=[], navInterval=null, voiceEnabled=true, darkMode=false;
+let userReady=false, hutsReady=false, nextArrow=null, routeActive=false;
+
+const lightTile=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19});
+const darkTile=L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{maxZoom:19});
+
+function showToast(msg){
+  const t=document.getElementById("toastMsg");t.innerText=msg;t.style.display="block";
+  setTimeout(()=>t.style.display="none",3000);
+}
+
+window.addEventListener("DOMContentLoaded",()=>{
+  darkMode=localStorage.getItem("darkMode")==="1";
+  if(darkMode)document.body.classList.add("dark");
+  map=L.map("map",{layers:[darkMode?darkTile:lightTile]}).setView([51.5,10.5],6);
+  clusterGroup=L.markerClusterGroup().addTo(map);
+
+  navigator.geolocation.watchPosition(pos=>{
+    const latlng=[pos.coords.latitude,pos.coords.longitude];
+    if(!userMarker){userMarker=L.marker(latlng).addTo(map);map.setView(latlng,15);userReady=true;tryHideLoader();}
+    else userMarker.setLatLng(latlng);
+  },()=>{showToast("⚠️ Standort nicht verfügbar");userReady=true;tryHideLoader();},{enableHighAccuracy:true});
+
+  window.addEventListener("deviceorientationabsolute" in window?"deviceorientationabsolute":"deviceorientation",e=>{
+    const alpha=e.alpha||0;
+    document.getElementById("compassArrow").style.transform=\`rotate(${-alpha}deg)\`;
+  });
+
+  db.collection("eierhuetten").onSnapshot(snap=>{
+    allHuts=[];clusterGroup.clearLayers();
+    snap.forEach(doc=>{
+      const d=doc.data();
+      if(!d.location||d.status!=="angenommen")return;
+      const hut={id:doc.id,name:d.name||"Unbenannt",lat:d.location.latitude,lng:d.location.longitude};
+      allHuts.push(hut);
+      const marker=L.marker([hut.lat,hut.lng]).bindPopup(()=>{
+        const added=selectedHuts.includes(hut.id);
+        return \`<b>\${hut.name}</b><br><button onclick="toggleSelection('\${hut.id}')">\${added?'❌ Entfernen':'✅ Hinzufügen'}</button>\`;
+      });
+      clusterGroup.addLayer(marker);
+    });
+    hutsReady=true;tryHideLoader();updateHutList();recalculateRoute();
+  });
+});
+
+function tryHideLoader(){
+  if(userReady&&hutsReady)document.getElementById("loader").style.display="none";
+}
+
+function toggleSelection(id){
+  const i=selectedHuts.indexOf(id);
+  if(i>=0){selectedHuts.splice(i,1);showToast("❌ Hütte entfernt");}
+  else{selectedHuts.push(id);showToast("✅ Hütte hinzugefügt");}
+  updateHutList();recalculateRoute();
+}
+
+function updateHutList(){
+  const c=document.getElementById("hutList");c.innerHTML="";
+  selectedHuts.forEach(id=>{
+    const h=allHuts.find(x=>x.id===id);
+    if(!h)return;
+    const div=document.createElement("div");div.className="hut-chip";div.textContent=h.name+" ×";
+    div.onclick=()=>toggleSelection(id);c.appendChild(div);
+  });
+}
+
+function toggleDarkMode(){
+  darkMode=!darkMode;document.body.classList.toggle("dark",darkMode);
+  localStorage.setItem("darkMode",darkMode?"1":"0");
+  map.eachLayer(l=>map.removeLayer(l));(darkMode?darkTile:lightTile).addTo(map);clusterGroup.addTo(map);
+  showToast(darkMode?"🌙 Dark Mode":"☀️ Hellmodus");
+}
+
+function toggleVoice(){voiceEnabled=!voiceEnabled;showToast(voiceEnabled?"🔊 Sprache aktiviert":"🔇 Sprache deaktiviert");}
+
+function recalculateRoute(){
+  if(!userMarker||selectedHuts.length===0){if(routingControl)map.removeLayer(routingControl);routingControl=null;document.getElementById("routeHeader").style.display="none";return;}
+  const start=userMarker.getLatLng();const mode=document.getElementById("routeMode").value;
+  if(mode==="manual"){
+    const cs=selectedHuts.map(id=>{const h=allHuts.find(x=>x.id===id);return h?[h.lng,h.lat]:null;}).filter(Boolean);
+    cs.unshift([start.lng,start.lat]);drawRoute(cs);
+  } else {
+    const to=selectedHuts.map(id=>{const h=allHuts.find(x=>x.id===id);return h?[h.lng,h.lat]:null;}).filter(Boolean);
+    fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson",{method:"POST",headers:{"Authorization":"5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87","Content-Type":"application/json"},body:JSON.stringify({coordinates:[[start.lng,start.lat],...to]})})
+    .then(r=>r.json()).then(d=>{const rc=d.features[0].geometry.coordinates.map(c=>[c[1],c[0]]);drawRoute(rc);}).catch(()=>showToast("⚠️ Routing fehlgeschlagen"));
+  }
+}
+
+function drawRoute(cs){
+  if(routingControl)map.removeLayer(routingControl);routingControl=L.polyline(cs,{color:"#10b981",weight:5}).addTo(map);
+}
+
+function startRoute(){
+  if(routeActive){resetRoute();return;}
+  if(!userMarker||!routingControl)return;const path=routingControl.getLatLngs();if(path.length<2)return;
+  document.getElementById("routeHeader").style.display="block";
+  document.querySelector(".bottom-toolbar button[onclick="startRoute()"]").innerText="🟥 Beenden";
+  routeActive=true;
+  clusterGroup.eachLayer(m=>map.removeLayer(m));
+  map.setView(userMarker.getLatLng(),16);
+  const from=userMarker.getLatLng(),to=path[1],dist=map.distance(from,to);
+  const total=path.reduce((s,pt,i,a)=>i>0?s+map.distance(a[i-1],pt):0,0),time=Math.round(total/250);
+  const next=allHuts.find(h=>h.lat===to.lat&&h.lng===to.lng),name=next?next.name:"unbekannt";
+  document.getElementById("infoDistance").textContent=(total/1000).toFixed(1)+" km";
+  document.getElementById("infoTime").textContent=time+" Min";
+  document.getElementById("infoNext").textContent=name;
+  if(voiceEnabled&&next&&'speechSynthesis'in window){const m=new SpeechSynthesisUtterance(`Route wird gestartet. Nächste Hütte: ${name}. Entfernung: ${(dist/1000).toFixed(1)} Kilometer. Dauer: ${time} Minuten.`);m.lang='de-DE';window.speechSynthesis.cancel();window.speechSynthesis.speak(m);}
+  startNavigationLoop();
+}
+
+function startNavigationLoop(){
+  if(navInterval)clearInterval(navInterval);
+  navInterval=setInterval(()=>{
+    if(!userMarker||!routingControl)return;const p=routingControl.getLatLngs();if(p.length<2)return;
+    const f=userMarker.getLatLng(),t=p[1],dx=t.lng-f.lng,dy=t.lat-f.lat,ang=((Math.atan2(dy,dx)*180/Math.PI)+360)%360;
+    document.getElementById("compassArrow").style.transform=`rotate(${ang}deg)`;
+    const dist=map.distance(f,t),total=p.reduce((s,pt,i,a)=>i>0?s+map.distance(a[i-1],pt):0,0),time=Math.round(total/250);
+    document.getElementById("infoDistance").textContent=(total/1000).toFixed(1)+" km";
+    document.getElementById("infoTime").textContent=time+" Min";
+    const next=allHuts.find(h=>h.lat===t.lat&&h.lng===t.lng);document.getElementById("infoNext").textContent=next?next.name:"-";
+    if(voiceEnabled&&next&&'speechSynthesis'in window){const m=new SpeechSynthesisUtterance(`Nächste Hütte: ${next.name}`);m.lang='de-DE';window.speechSynthesis.cancel();window.speechSynthesis.speak(m);}
+    if(dist<50&&p.length>2){p.shift();routingControl.setLatLngs(p);showToast("✅ Nächste Hütte angesteuert...");}
+  },10000);
+}
+
+function resetRoute(){
+  routeActive=false;selectedHuts=[];updateHutList();
+  if(routingControl)map.removeLayer(routingControl);routingControl=null;
+  if(nextArrow)map.removeLayer(nextArrow);
+  document.getElementById("routeHeader").style.display="none";
+  document.querySelector(".bottom-toolbar button[onclick="startRoute()"]").innerText="▶️ Start";
+  clusterGroup.eachLayer(m=>map.addLayer(m));
+  showToast("🛑 Navigation beendet");
+}
+</script>
+</body>
+</html>
