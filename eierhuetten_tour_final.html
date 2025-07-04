@@ -158,11 +158,11 @@
 
   // Loader ausblenden, wenn bereit
   function tryHideLoader() {
-    if (hutsReady && userReady) {
+    if (userReady && hutsReady) {
       document.getElementById("loader").style.display = "none";
+      tryRestoreRoute(); // hier erst fragen!
     }
   }
-
   // 📍 Folge-Button gedrückt
   function followUser() {
     if (lastUserPos) map.setView(lastUserPos, originalZoom);
@@ -186,8 +186,36 @@
     map.eachLayer(l => map.removeLayer(l));
     (darkMode ? darkTile : lightTile).addTo(map);
     clusterGroup.addTo(map);
+
+    if (routingControl) {
+      routingControl.setStyle({
+        color: routeActive ? "#ffa500" : (darkMode ? "#3cf" : "#10b981"),
+        weight: 5
+      });
+    }
+
     showToast(darkMode ? "🌙 Dark Mode" : "☀️ Hellmodus");
   }
+
+  // Beim Karten-Load prüfen, ob Route gespeichert wurde – aber verzögert!
+  let restoreAsked = false;
+  function tryRestoreRoute() {
+    if (restoreAsked || !userReady || !hutsReady) return;
+    restoreAsked = true;
+    const saved = localStorage.getItem("savedRoute");
+    if (saved) {
+      const yes = confirm("💾 Es wurde eine Route erkannt. Möchtest du sie wiederherstellen?");
+      if (yes) {
+        selectedHuts = JSON.parse(saved);
+        updateHutList();
+        recalculateRoute();
+      } else {
+        localStorage.removeItem("savedRoute");
+      }
+    }
+  }
+
+
 
   // 🔊 Sprache umschalten
   function toggleVoice() {
@@ -384,19 +412,7 @@
     clearInterval(navInterval);
   }
   
-  // 🧠 Nach dem Laden prüfen: wurde Route gespeichert?
-  window.addEventListener("load", () => {
-    if (localStorage.getItem("savedRoute")) {
-      const yes = confirm("💾 Es wurde eine Route erkannt. Möchtest du sie wiederherstellen?");
-      if (yes) {
-        selectedHuts = JSON.parse(localStorage.getItem("savedRoute") || "[]");
-        updateHutList();
-        recalculateRoute();
-      } else {
-        localStorage.removeItem("savedRoute");
-      }
-    }
-  });
+  
 
   // 💾 Route speichern
   const saveRoute = () => {
