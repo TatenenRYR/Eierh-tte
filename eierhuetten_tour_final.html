@@ -3,45 +3,55 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>Eierhütten Navigation – Überarbeitet</title>
+  <title>Eierhütten Tour Navigator</title>
+
   <!-- Leaflet & MarkerCluster CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+
   <style>
-    html, body { margin:0; padding:0; height:100%; }
-    body { font-family: sans-serif; background: #fff; }
-    #loader { position:fixed; top:0; left:0; right:0; bottom:0;
-      background:#fff; display:flex; align-items:center; justify-content:center;
-      font-size:1.2em; z-index:9999; }
-    #routeHeader { position:fixed; top:0; left:0; right:0; background:#10b981;
-      color:#fff; padding:10px; text-align:center; font-size:1em; z-index:1000; display:none; }
+    /* —— Grundlayout —— */
+    html, body { margin:0; padding:0; height:100%; font-family:sans-serif; background:#fff; }
+    #loader { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+      font-size:1.2em; background:#fff; z-index:10000; }
+    #routeHeader { position:fixed; top:0; left:0; right:0; background:#10b981; color:#fff;
+      padding:10px; text-align:center; font-size:1em; z-index:900; display:none; }
     #hutList { position:fixed; top:50px; left:0; right:0; background:#f9f9f9;
-      padding:5px 10px; font-size:0.9em; z-index:1000; max-height:80px;
-      overflow-x:auto; white-space:nowrap; }
+      padding:5px 10px; font-size:0.9em; overflow-x:auto; white-space:nowrap; z-index:900; }
     .hut-chip { display:inline-block; background:#10b981; color:#fff;
       padding:4px 8px; border-radius:10px; margin:2px; cursor:pointer; }
-    #map { position:absolute; top:140px; bottom:60px; left:0; right:0; }
-    .toast { position:fixed; top:70px; left:50%; transform:translateX(-50%);
-      background:#333; color:#fff; padding:8px 16px; border-radius:8px; z-index:9999; display:none; }
+    #map { position:absolute; top:150px; bottom:70px; left:0; right:0; }
     #followBtn { position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
-      background:orange; color:#fff; padding:10px 20px; border-radius:8px; z-index:1002; display:none; }
+      background:orange; color:#fff; padding:10px 20px; border-radius:8px; display:none;
+      z-index:950; }
     .bottom-toolbar { position:fixed; bottom:0; left:0; right:0; display:flex;
-      justify-content:center; gap:8px; background:#f0f0f0; padding:8px; z-index:1001; }
-    .bottom-toolbar button, .bottom-toolbar select { flex:1; font-size:1rem;
-      padding:8px; background:#10b981; color:#fff; border:none; border-radius:8px; cursor:pointer; }
-    .compass-icon { position:fixed !important; top:110px; left:10px; z-index:1002;
-      font-size:32px; pointer-events:none; transform-origin:center; }
+      gap:8px; background:#f0f0f0; padding:8px; z-index:900; }
+    .bottom-toolbar button, .bottom-toolbar select {
+      flex:1; padding:8px; background:#10b981; color:#fff; border:none; border-radius:8px;
+      font-size:1rem; cursor:pointer;
+    }
+    .toast { position:fixed; top:70px; left:50%; transform:translateX(-50%);
+      background:#333; color:#fff; padding:8px 16px; border-radius:8px; z-index:10001;
+      display:none;
+    }
+    .compass-icon {
+      position:fixed!important; top:110px; left:10px; z-index:950;
+      font-size:32px; pointer-events:none; transform-origin:center;
+    }
+    /* —— Dark Mode —— */
     body.dark { background:#222; color:#eee; }
     body.dark #loader { background:#222; color:#ccc; }
     body.dark .bottom-toolbar { background:#333; }
-    body.dark .bottom-toolbar button, body.dark .bottom-toolbar select { background:#0e7c5b; }
+    body.dark .bottom-toolbar button,
+    body.dark .bottom-toolbar select { background:#0e7c5b; }
     body.dark #routeHeader { background:#0e7c5b; }
     body.dark #hutList { background:#444; }
   </style>
 </head>
 <body>
 
-  <div id="loader">⏳ Lade Standort & Hütten…</div>
+  <!-- Loader, Header & Hut-Dashboard -->
+  <div id="loader">⏳ Standort & Hütten werden geladen…</div>
   <div id="routeHeader">
     🚴‍♂️ <span id="infoDistance">0 km</span> · ⏱ <span id="infoTime">0 Min</span> · 🏁 <span id="infoNext">-</span>
   </div>
@@ -50,6 +60,8 @@
   <div id="compassArrow" class="compass-icon">🧭</div>
   <div class="toast" id="toastMsg"></div>
   <div id="followBtn" onclick="followUser()">📍 Standort folgen</div>
+
+  <!-- Toolbar -->
   <div class="bottom-toolbar">
     <button onclick="toggleDarkMode()">🌙 Dark Mode</button>
     <button onclick="toggleVoice()">🔊 Sprache</button>
@@ -61,206 +73,295 @@
     <button onclick="resetRoute()">🗑 Löschen</button>
   </div>
 
-  <!-- JS-Libs -->
+  <!-- JS-Libraries -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-
   <script>
-  // Firebase
-  const firebaseConfig = {/* …deine Config… */};
+  /********** Konfiguration **********/
+  const firebaseConfig = {
+    apiKey: "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
+    authDomain: "eierhuettentour.firebaseapp.com",
+    projectId: "eierhuettentour"
+  };
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
 
-  // Variablen
-  let map, clusterGroup, userMarker, routingControl=null, navInterval=null;
-  let selectedHuts=[], allHuts=[], darkMode=false, voiceEnabled=true;
-  let userReady=false, hutsReady=false, lastUserPos=null, following=true;
-  let routeActive=false, originalZoom;
+  /********** Globale Variablen **********/
+  let map, clusterGroup, userMarker, routingControl = null, navInterval = null;
+  let selectedHuts = [], allHuts = [], darkMode = false, voiceEnabled = true;
+  let userReady = false, hutsReady = false, lastUserPos = null, following = true, routeActive = false;
+  let originalZoom = 15;
 
-  // Tiles
+  // Tiles: hell & kontrastreicher Dark
   const lightTile = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{ maxZoom:19 });
   const darkTile  = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png",{ maxZoom:19, attribution:"&copy; CartoDB" });
 
+  /********** Utility-Funktionen **********/
   function showToast(msg){
-    const t=document.getElementById("toastMsg");
-    t.innerText=msg; t.style.display="block";
-    setTimeout(()=>t.style.display="none",3000);
+    const t = document.getElementById("toastMsg");
+    t.innerText = msg; t.style.display = "block";
+    setTimeout(()=> t.style.display="none", 2500);
   }
   function tryHideLoader(){
-    if(userReady&&hutsReady) document.getElementById("loader").style.display="none";
+    if(userReady && hutsReady){
+      document.getElementById("loader").style.display = "none";
+    }
   }
 
-  window.addEventListener("DOMContentLoaded",()=>{
-    // Darkmode
-    darkMode=localStorage.getItem("darkMode")==="1";
+  /********** Initialisierung **********/
+  window.addEventListener("DOMContentLoaded", ()=>{
+    // DarkMode aus LocalStorage
+    darkMode = localStorage.getItem("darkMode")==="1";
     if(darkMode) document.body.classList.add("dark");
 
-    // Map init
-    map = L.map("map",{ layers:[darkMode?darkTile:lightTile] }).setView([51.5,10.5],6);
-    clusterGroup=L.markerClusterGroup().addTo(map);
+    // Karte
+    map = L.map("map", { layers: [darkMode ? darkTile : lightTile] }).setView([51.5,10.5], originalZoom);
+    clusterGroup = L.markerClusterGroup().addTo(map);
 
     // Follow-Abbruch bei Drag/Zoom
-    map.on("dragstart zoomstart",()=>{
-      if(following){following=false; document.getElementById("followBtn").style.display="block";}
+    map.on("dragstart zoomstart", ()=>{
+      if(following){
+        following = false;
+        document.getElementById("followBtn").style.display = "block";
+      }
     });
 
-    // Geolocation
+    // Standort via Geolocation
     navigator.geolocation.watchPosition(pos=>{
-      const ll=[pos.coords.latitude,pos.coords.longitude];
-      lastUserPos=L.latLng(ll);
+      const ll = [pos.coords.latitude, pos.coords.longitude];
+      lastUserPos = L.latLng(ll);
       if(!userMarker){
-        userMarker=L.marker(ll).addTo(map);
-        map.setView(ll,15);
-        userReady=true; tryHideLoader();
+        userMarker = L.marker(ll).addTo(map);
+        map.setView(ll, originalZoom);
+        userReady = true;
+        tryHideLoader();
       } else {
         userMarker.setLatLng(ll);
         if(following) map.setView(ll);
       }
-    },()=>{
+    }, ()=>{
       showToast("⚠️ Standort nicht verfügbar");
-      userReady=true; tryHideLoader();
-    },{ enableHighAccuracy:true });
+      userReady = true; tryHideLoader();
+    }, { enableHighAccuracy:true });
 
-    // Kompass
+    // Kompass drehen
     const compassEl = document.getElementById("compassArrow");
-    window.addEventListener("deviceorientationabsolute" in window?"deviceorientationabsolute":"deviceorientation",e=>{
-      compassEl.style.transform=`rotate(${-((e.alpha||0))}deg)`;
+    window.addEventListener("deviceorientationabsolute" in window?"deviceorientationabsolute":"deviceorientation", e=>{
+      compassEl.style.transform = `rotate(${-((e.alpha||0))}deg)`;
     });
 
-    // Firestore
+    // Hütten aus Firestore
     db.collection("eierhuetten").onSnapshot(snap=>{
-      allHuts=[]; clusterGroup.clearLayers();
+      allHuts = []; clusterGroup.clearLayers();
       snap.forEach(doc=>{
-        const d=doc.data(); if(!d.location||d.status!=="angenommen")return;
-        const h={ id:doc.id, name:d.name||"Unbenannt", lat:d.location.latitude, lng:d.location.longitude };
+        const d = doc.data();
+        if(!d.location || d.status!=="angenommen") return;
+        const h = { id:doc.id, name:d.name||"Unbenannt", lat:d.location.latitude, lng:d.location.longitude };
         allHuts.push(h);
-        const m=L.marker([h.lat,h.lng]).bindPopup(()=>{
-          const added=selectedHuts.includes(h.id);
-          return `<b>${h.name}</b><br><button onclick="toggleSelection('${h.id}')">${added?'❌ Entfernen':'✅ Hinzufügen'}</button>`;
+        const m = L.marker([h.lat, h.lng]).bindPopup(()=>{
+          const added = selectedHuts.includes(h.id);
+          return `<b>${h.name}</b><br>
+                  <button onclick="toggleSelection('${h.id}')">
+                    ${added?'❌ Entfernen':'✅ Hinzufügen'}
+                  </button>`;
         });
         clusterGroup.addLayer(m);
       });
-      hutsReady=true; tryHideLoader();
+      hutsReady = true; tryHideLoader();
       updateHutList(); recalculateRoute();
     });
   });
 
-  // Follow-Button
+  /********** Follow-Button **********/
   function followUser(){
-    if(lastUserPos) map.setView(lastUserPos, originalZoom||15);
-    following=true;
-    document.getElementById("followBtn").style.display="none";
+    if(lastUserPos){
+      map.setView(lastUserPos, originalZoom);
+      following = true;
+      document.getElementById("followBtn").style.display = "none";
+    }
   }
 
-  // Auswahl
+  /********** Hütten-Auswahl & Dashboard **********/
   function toggleSelection(id){
-    const i=selectedHuts.indexOf(id);
-    if(i>=0){selectedHuts.splice(i,1); showToast("❌ Hütte entfernt");}
-    else      {selectedHuts.push(id); showToast("✅ Hütte hinzugefügt");}
+    const idx = selectedHuts.indexOf(id);
+    if(idx>=0){
+      selectedHuts.splice(idx,1);
+      showToast("❌ Hütte entfernt");
+    } else {
+      selectedHuts.push(id);
+      showToast("✅ Hütte hinzugefügt");
+    }
     updateHutList(); recalculateRoute();
   }
   function updateHutList(){
-    const c=document.getElementById("hutList"); c.innerHTML="";
+    const c = document.getElementById("hutList");
+    c.innerHTML = "";
     selectedHuts.forEach(id=>{
-      const h=allHuts.find(x=>x.id===id); if(!h)return;
-      const d=document.createElement("div");
-      d.className="hut-chip"; d.textContent=h.name+" ×"; d.onclick=()=>toggleSelection(id);
-      c.appendChild(d);
+      const h = allHuts.find(x=>x.id===id);
+      if(!h) return;
+      const chip = document.createElement("div");
+      chip.className = "hut-chip";
+      chip.innerText = h.name + " ×";
+      chip.onclick = ()=> toggleSelection(id);
+      c.appendChild(chip);
     });
   }
 
-  // Darkmode
+  /********** Modus & Sprache **********/
   function toggleDarkMode(){
-    darkMode=!darkMode; document.body.classList.toggle("dark",darkMode);
-    localStorage.setItem("darkMode",darkMode?"1":"0");
+    darkMode = !darkMode;
+    document.body.classList.toggle("dark", darkMode);
+    localStorage.setItem("darkMode", darkMode?"1":"0");
     map.eachLayer(l=>map.removeLayer(l));
-    (darkMode?darkTile:lightTile).addTo(map); clusterGroup.addTo(map);
+    (darkMode?darkTile:lightTile).addTo(map);
+    clusterGroup.addTo(map);
     showToast(darkMode?"🌙 Dark Mode":"☀️ Hellmodus");
   }
-  function toggleVoice(){voiceEnabled=!voiceEnabled; showToast(voiceEnabled?"🔊 Sprache":"🔇 Stumm");}
+  function toggleVoice(){
+    voiceEnabled = !voiceEnabled;
+    showToast(voiceEnabled?"🔊 Sprache an":"🔇 Sprache aus");
+  }
 
-  // Route
+  /********** Routenberechnung **********/
   function recalculateRoute(){
-    if(!userMarker||selectedHuts.length===0){
+    if(!userMarker || selectedHuts.length===0){
       if(routingControl) map.removeLayer(routingControl);
-      routingControl=null; document.getElementById("routeHeader").style.display="none"; return;
+      routingControl = null;
+      document.getElementById("routeHeader").style.display = "none";
+      return;
     }
-    const s=userMarker.getLatLng();
-    const mode=document.getElementById("routeMode").value;
-    if(mode==="manual"){
-      const cc=selectedHuts.map(id=>{const h=allHuts.find(x=>x.id===id);return h?[h.lng,h.lat]:null;}).filter(Boolean);
-      cc.unshift([s.lng,s.lat]); drawRoute(cc);
+    const start = userMarker.getLatLng();
+    const mode = document.getElementById("routeMode").value;
+    if(mode === "manual"){
+      const coords = selectedHuts.map(id=>{
+        const h = allHuts.find(x=>x.id===id);
+        return h?[h.lng,h.lat]:null;
+      }).filter(Boolean);
+      coords.unshift([start.lng, start.lat]);
+      drawRoute(coords);
     } else {
-      const tc=selectedHuts.map(id=>{const h=allHuts.find(x=>x.id===id);return h?[h.lng,h.lat]:null;}).filter(Boolean);
-      fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson",{
-        method:"POST",headers:{"Authorization":"5b3ce359...","Content-Type":"application/json"},
-        body:JSON.stringify({coordinates:[[s.lng,s.lat],...tc]})
-      }).then(r=>r.json()).then(d=>{
-        const rc=d.features[0].geometry.coordinates.map(c=>[c[1],c[0]]);
+      const toCoords = selectedHuts.map(id=>{
+        const h = allHuts.find(x=>x.id===id);
+        return h?[h.lng,h.lat]:null;
+      }).filter(Boolean);
+      fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
+        method:"POST",
+        headers:{
+          "Authorization":"5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
+          "Content-Type":"application/json"
+        },
+        body:JSON.stringify({coordinates:[[start.lng,start.lat],...toCoords]})
+      })
+      .then(res=>res.json())
+      .then(data=>{
+        const rc = data.features[0].geometry.coordinates.map(c=>[c[1],c[0]]);
         drawRoute(rc);
-      }).catch(()=>showToast("⚠️ Routing fehlgeschlagen"));
+      })
+      .catch(()=> showToast("⚠️ Routing fehlgeschlagen"));
     }
   }
   function drawRoute(coords){
     if(routingControl) map.removeLayer(routingControl);
-    routingControl=L.polyline(coords,{color:"#ffa500",weight:5}).addTo(map);
+    routingControl = L.polyline(coords,{ color:"#ffa500", weight:5 }).addTo(map);
   }
 
-  // Nav
+  /********** Navigation Start/Loop/Reset **********/
   function startRoute(){
     if(routeActive){ resetRoute(); return; }
-    if(!userMarker||!routingControl) return;
-    const p=routingControl.getLatLngs(); if(p.length<2)return;
-    routeActive=true; document.getElementById("routeHeader").style.display="block";
-    document.querySelector("button[onclick='startRoute()']").innerText="🟥 Beenden";
-    originalZoom=map.getZoom(); routingControl.setStyle({color:"#ffa500"});
-    clusterGroup.eachLayer(m=>map.removeLayer(m));
+    if(!userMarker || !routingControl) return;
+    const path = routingControl.getLatLngs();
+    if(path.length < 2) return;
+
+    routeActive = true;
+    document.getElementById("routeHeader").style.display = "block";
+    document.querySelector("button[onclick='startRoute()']").innerText = "🟥 Beenden";
+    originalZoom = map.getZoom();
+
+    routingControl.setStyle({ color:"#ffa500" });
+    clusterGroup.eachLayer(m=> map.removeLayer(m));
     map.setView(userMarker.getLatLng(),16);
-    const f=userMarker.getLatLng(),t=p[1];
-    const dist=map.distance(f,t),tot=p.reduce((s,pt,i,a)=>i>0?s+map.distance(a[i-1],pt):0,0),time=Math.round(tot/250);
-    const next=allHuts.find(h=>h.lat===t.lat&&h.lng===t.lng),nm=next?next.name:"-";
-    document.getElementById("infoDistance").textContent=(tot/1000).toFixed(1)+" km";
-    document.getElementById("infoTime").textContent=time+" Min";
-    document.getElementById("infoNext").textContent=nm;
-    if(voiceEnabled&&next&&'speechSynthesis'in window){
-      const m=new SpeechSynthesisUtterance(`Route startet. Nächste Hütte: ${nm}. ${Math.round(dist)} Meter geradeaus.`);
-      m.lang='de-DE';window.speechSynthesis.cancel();window.speechSynthesis.speak(m);
+
+    const to = path[1];
+    const dist = map.distance(userMarker.getLatLng(), to);
+    const total = path.reduce((acc, pt, i, arr)=>
+      i>0? acc + map.distance(arr[i-1], pt) : acc
+    ,0);
+    const time = Math.round(total/250);
+    const next = allHuts.find(h=>h.lat===to.lat && h.lng===to.lng);
+
+    document.getElementById("infoDistance").innerText = (total/1000).toFixed(1)+" km";
+    document.getElementById("infoTime").innerText = time+" Min";
+    document.getElementById("infoNext").innerText = next? next.name : "-";
+
+    if(voiceEnabled && next){
+      const msg = new SpeechSynthesisUtterance(
+        `Navigation gestartet. Nächste Hütte: ${next.name}. ${Math.round(dist)} Meter geradeaus.`
+      );
+      msg.lang = "de-DE";
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(msg);
     }
+
     startNavigationLoop();
   }
+
   function startNavigationLoop(){
-    if(navInterval)clearInterval(navInterval);
-    navInterval=setInterval(()=>{
-      if(!userMarker||!routingControl)return;
-      const p=routingControl.getLatLngs(); if(p.length<2)return;
-      const f=userMarker.getLatLng(),t=p[1];
-      const ang=((Math.atan2(t.lat-f.lat,t.lng-f.lng)*180/Math.PI)+360)%360;
-      document.getElementById("compassArrow").style.transform=`rotate(${ang}deg)`;
-      const dist=map.distance(f,t),tot=p.reduce((s,pt,i,a)=>i>0?s+map.distance(a[i-1],pt):0,0),time=Math.round(tot/250);
-      document.getElementById("infoDistance").textContent=(tot/1000).toFixed(1)+" km";
-      document.getElementById("infoTime").textContent=time+" Min";
-      const next=allHuts.find(h=>h.lat===t.lat&&h.lng===t.lng);
-      document.getElementById("infoNext").textContent=next?next.name:"-";
-      if(dist<100&&p.length>2){
-        const [a,b,c]=[p[0],p[1],p[2]];
-        const b1=Math.atan2(b[0]-a[0],b[1]-a[1]),b2=Math.atan2(c[0]-b[0],c[1]-b[1]);
-        const turn=((b2-b1)*180/Math.PI+360)%360;
-        let dir="geradeaus"; if(turn>45&&turn<135)dir="rechts abbiegen";else if(turn>225&&turn<315)dir="links abbiegen";
+    if(navInterval) clearInterval(navInterval);
+    navInterval = setInterval(()=>{
+      if(!userMarker || !routingControl) return;
+      const path = routingControl.getLatLngs();
+      if(path.length < 2) return;
+
+      const f = userMarker.getLatLng(), t = path[1];
+      const angle = ((Math.atan2(t.lat - f.lat, t.lng - f.lng)*180/Math.PI)+360)%360;
+      document.getElementById("compassArrow").style.transform = `rotate(${angle}deg)`;
+
+      const dist = map.distance(f,t);
+      const total = path.reduce((acc, pt, i, arr)=>
+        i>0? acc + map.distance(arr[i-1], pt) : acc
+      ,0);
+      const time = Math.round(total/250);
+      const next = allHuts.find(h=>h.lat===t.lat && h.lng===t.lng);
+
+      document.getElementById("infoDistance").innerText = (total/1000).toFixed(1)+" km";
+      document.getElementById("infoTime").innerText = time+" Min";
+      document.getElementById("infoNext").innerText = next? next.name : "-";
+
+      // Abbiegehinweis
+      if(dist < 100 && path.length > 2){
+        const [p0,p1,p2] = [path[0], path[1], path[2]];
+        const b1 = Math.atan2(p1[0]-p0[0], p1[1]-p0[1]);
+        const b2 = Math.atan2(p2[0]-p1[0], p2[1]-p1[1]);
+        const turn = ((b2 - b1)*180/Math.PI + 360)%360;
+        let dir = "geradeaus";
+        if(turn>45 && turn<135) dir="rechts abbiegen";
+        else if(turn>225 && turn<315) dir="links abbiegen";
         if(voiceEnabled){
-          const m=new SpeechSynthesisUtterance(`In ${Math.round(dist)} Metern ${dir}.`);
-          m.lang='de-DE';window.speechSynthesis.cancel();window.speechSynthesis.speak(m);
+          const msg = new SpeechSynthesisUtterance(`In ${Math.round(dist)} Metern ${dir}.`);
+          msg.lang="de-DE";
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(msg);
         }
       }
-      if(dist<50&&p.length>2){
-        p.shift();routingControl.setLatLngs(p);showToast("✅ Nächste Hütte…");
+
+      if(dist<50 && path.length>2){
+        path.shift();
+        routingControl.setLatLngs(path);
+        showToast("✅ Nächste Hütte erreicht");
       }
     },10000);
   }
+
   function resetRoute(){
-    routeActive=false;selectedHuts=[];updateHutList();
-    if(routingControl){routingControl.setStyle({color:"#10b981"});map.fitBounds(routingControl.getBounds(),{padding:[30,30]});}
+    routeActive=false;
+    selectedHuts=[];
+    updateHutList();
+    if(routingControl){
+      routingControl.setStyle({ color:"#10b981" });
+      map.fitBounds(routingControl.getBounds(),{ padding:[20,20] });
+    }
     document.getElementById("routeHeader").style.display="none";
     document.querySelector("button[onclick='startRoute()']").innerText="▶️ Start";
     clusterGroup.eachLayer(m=>map.addLayer(m));
