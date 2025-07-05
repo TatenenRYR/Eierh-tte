@@ -29,14 +29,35 @@
       background: #333; color: #fff; padding: 10px 20px;
       border-radius: 8px; z-index: 2000; display: none;
     }
+    #directionBox {
+      position: fixed; top: 0; left: 0; right: 0;
+      background: #10b981; color: #fff; text-align: center;
+      font-size: 1.1rem; padding: 8px; z-index: 1001; display: none;
+    }
+    #hutList {
+      position: fixed; top: 48px; left: 10px; right: 10px;
+      background: rgba(255,255,255,0.95); padding: 5px; border-radius: 8px;
+      font-size: 0.9rem; z-index: 1001; display: none;
+    }
+    .hut-chip {
+      display: inline-block; margin: 3px; padding: 5px 10px;
+      background: #10b981; color: #fff; border-radius: 10px;
+      cursor: pointer;
+    }
     body.dark { background: #1e1e1e; color: #eee; }
-    body.dark #controls { background: rgba(30,30,30,0.95); }
-    body.dark .btn, body.dark select { background: #0e7c5b; }
+    body.dark #controls, body.dark #hutList {
+      background: rgba(30,30,30,0.95);
+    }
+    body.dark .btn, body.dark select {
+      background: #0e7c5b;
+    }
   </style>
 </head>
 <body>
   <div id="loader">⏳ Karte wird geladen...</div>
   <div id="map"></div>
+  <div id="directionBox"></div>
+  <div id="hutList"></div>
   <div id="controls">
     <button class="btn" onclick="toggleDarkMode()">🌙 Dark Mode</button>
     <button class="btn" onclick="toggleFollow()">📍 Folgen</button>
@@ -116,6 +137,34 @@ function speak(text) {
   speechSynthesis.speak(utter);
 }
 
+function updateHutList() {
+  const list = document.getElementById("hutList");
+  list.innerHTML = "";
+  selected.forEach(h => {
+    const chip = document.createElement("div");
+    chip.className = "hut-chip";
+    chip.textContent = h.name;
+    chip.onclick = () => removeFromRoute(h);
+    list.appendChild(chip);
+  });
+  list.style.display = selected.length > 0 ? "block" : "none";
+}
+
+function addToRoute(hut) {
+  if (!selected.find(h => h.lat === hut.lat && h.lng === hut.lng)) {
+    selected.push(hut);
+    showToast(`➕ ${hut.name} zur Route`);
+    updateHutList();
+    recalculateRoute();
+  }
+}
+
+function removeFromRoute(hut) {
+  selected = selected.filter(h => h.lat !== hut.lat || h.lng !== hut.lng);
+  updateHutList();
+  recalculateRoute();
+}
+
 function recalculateRoute() {
   if (!userMarker || selected.length === 0) return;
   const start = userMarker.getLatLng();
@@ -142,13 +191,26 @@ function startNavigation() {
   if (!routeLine) return showToast("⚠️ Keine Route verfügbar");
   follow = true;
   speak("Navigation wird gestartet. Viel Spaß!");
-  showToast("▶️ Navigation gestartet");
+  document.getElementById("directionBox").style.display = "block";
+  navTimer = setInterval(() => {
+    const path = routeLine.getLatLngs();
+    const pos = userMarker.getLatLng();
+    let next = path.find(p => pos.distanceTo(p) > 10);
+    if (next) {
+      const dist = Math.round(pos.distanceTo(next));
+      const dir = dist < 30 ? "➡️ Jetzt abbiegen" : `➡️ In ${dist} Meter rechts abbiegen`;
+      document.getElementById("directionBox").innerText = dir;
+      if (voice) speak(dir);
+    }
+  }, 7000);
 }
 
 function stopNavigation() {
   if (navTimer) clearInterval(navTimer);
   if (routeLine) map.removeLayer(routeLine);
   routeLine = null;
+  document.getElementById("directionBox").style.display = "none";
+  document.getElementById("hutList").style.display = "block";
   showToast("🛑 Navigation beendet");
   speak("Navigation beendet");
 }
@@ -163,12 +225,6 @@ db.collection("eierhuetten").where("status", "==", "angenommen").get().then(snap
       `<b>${hut.name}</b><br><button onclick='addToRoute(${JSON.stringify(hut)})'>Zur Route</button>`);
   });
 });
-
-function addToRoute(hut) {
-  selected.push(hut);
-  showToast(`➕ ${hut.name} zur Route`);
-  recalculateRoute();
-}
 
   </script>
 </body>
