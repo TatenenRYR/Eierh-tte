@@ -2,36 +2,32 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Eierhütten Navigation – Smart</title>
+  <title>Eierhütten Fahrradnavigation</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; background: #fff; color: #000; }
+    html, body { margin: 0; padding: 0; height: 100%; font-family: "Segoe UI", sans-serif; background: #f0fdf4; color: #111; }
     #map { position: absolute; top: 0; bottom: 0; left: 0; right: 0; z-index: 0; }
     #loader {
-      position: fixed; inset: 0;
-      background: #fff; display: flex; align-items: center; justify-content: center;
+      position: fixed; inset: 0; background: #fff; display: flex; align-items: center; justify-content: center;
       font-size: 1.2rem; z-index: 9999;
     }
     #controls {
       position: fixed; bottom: 0; left: 0; right: 0;
-      background: rgba(255,255,255,0.95);
-      display: flex; flex-wrap: wrap; justify-content: center;
+      background: rgba(255,255,255,0.95); display: flex; flex-wrap: wrap; justify-content: center;
       gap: 8px; padding: 10px; z-index: 1000;
     }
     .btn, select {
-      padding: 10px 16px; border-radius: 8px;
-      border: none; font-size: 1rem;
-      background: #10b981; color: white;
-      cursor: pointer;
+      padding: 10px 16px; border-radius: 8px; border: none; font-size: 1rem;
+      background: #16a34a; color: white; cursor: pointer;
     }
     #toast {
       position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-      background: #333; color: #fff; padding: 10px 20px;
-      border-radius: 8px; z-index: 2000; display: none;
+      background: #333; color: #fff; padding: 10px 20px; border-radius: 8px; z-index: 2000; display: none;
     }
     #directionBox {
       position: fixed; top: 0; left: 0; right: 0;
-      background: #10b981; color: #fff; text-align: center;
+      background: #16a34a; color: #fff; text-align: center;
       font-size: 1.1rem; padding: 8px; z-index: 1001; display: none;
     }
     #hutList {
@@ -41,20 +37,27 @@
     }
     .hut-chip {
       display: inline-block; margin: 3px; padding: 5px 10px;
-      background: #10b981; color: #fff; border-radius: 10px;
+      background: #16a34a; color: #fff; border-radius: 10px;
       cursor: pointer;
     }
-    body.dark { background: #1e1e1e; color: #eee; }
+    #arrow {
+      position: fixed; bottom: 50%; left: 50%; transform: translate(-50%, 50%) rotate(0deg);
+      width: 50px; height: 50px; z-index: 1001;
+      transition: transform 0.3s ease-in-out;
+    }
+    body.dark {
+      background: #111827; color: #eee;
+    }
     body.dark #controls, body.dark #hutList {
       background: rgba(30,30,30,0.95);
     }
     body.dark .btn, body.dark select {
-      background: #0e7c5b;
+      background: #065f46;
     }
   </style>
 </head>
 <body>
-  <div id="loader">⏳ Karte wird geladen...</div>
+  <div id="loader">🚴‍♂️ Lade Fahrradrouten…</div>
   <div id="map"></div>
   <div id="directionBox"></div>
   <div id="hutList"></div>
@@ -69,8 +72,10 @@
       <option value="manual">➡️ Manuell</option>
     </select>
   </div>
+  <img src="https://cdn-icons-png.flaticon.com/512/1147/1147430.png" id="arrow" style="display:none" />
   <div id="toast"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script>
@@ -89,11 +94,14 @@ if (dark) document.body.classList.add("dark");
 
 let userMarker, follow = true, voice = true;
 let huts = [], selected = [], routeLine, navTimer;
+let clusterGroup = L.markerClusterGroup();
+map.addLayer(clusterGroup);
 
 navigator.geolocation.watchPosition(pos => {
   const latlng = [pos.coords.latitude, pos.coords.longitude];
   if (!userMarker) {
-    userMarker = L.marker(latlng).addTo(map);
+    const icon = L.divIcon({ className: '', html: '🚴‍♂️', iconSize: [32, 32] });
+    userMarker = L.marker(latlng, { icon }).addTo(map);
     map.setView(latlng, 15);
     document.getElementById("loader").style.display = "none";
   } else {
@@ -110,6 +118,7 @@ function toggleDarkMode() {
   localStorage.setItem("darkMode", dark ? "1" : "0");
   map.eachLayer(l => map.removeLayer(l));
   (dark ? darkTiles : lightTiles).addTo(map);
+  map.addLayer(clusterGroup);
 }
 
 function toggleFollow() {
@@ -135,6 +144,12 @@ function speak(text) {
   utter.lang = "de-DE";
   speechSynthesis.cancel();
   speechSynthesis.speak(utter);
+}
+
+function updateArrow(angle) {
+  const arrow = document.getElementById("arrow");
+  arrow.style.display = "block";
+  arrow.style.transform = `translate(-50%, 50%) rotate(${angle}deg)`;
 }
 
 function updateHutList() {
@@ -198,6 +213,8 @@ function startNavigation() {
     let next = path.find(p => pos.distanceTo(p) > 10);
     if (next) {
       const dist = Math.round(pos.distanceTo(next));
+      const angle = Math.atan2(next.lat - pos.lat, next.lng - pos.lng) * 180 / Math.PI;
+      updateArrow(angle);
       const dir = dist < 30 ? "➡️ Jetzt abbiegen" : `➡️ In ${dist} Meter rechts abbiegen`;
       document.getElementById("directionBox").innerText = dir;
       if (voice) speak(dir);
@@ -210,6 +227,7 @@ function stopNavigation() {
   if (routeLine) map.removeLayer(routeLine);
   routeLine = null;
   document.getElementById("directionBox").style.display = "none";
+  document.getElementById("arrow").style.display = "none";
   document.getElementById("hutList").style.display = "block";
   showToast("🛑 Navigation beendet");
   speak("Navigation beendet");
@@ -221,8 +239,9 @@ db.collection("eierhuetten").where("status", "==", "angenommen").get().then(snap
     if (!d.location) return;
     const hut = { name: d.name, lat: d.location.latitude, lng: d.location.longitude };
     huts.push(hut);
-    const marker = L.marker([hut.lat, hut.lng]).addTo(map).bindPopup(
+    const marker = L.marker([hut.lat, hut.lng]).bindPopup(
       `<b>${hut.name}</b><br><button onclick='addToRoute(${JSON.stringify(hut)})'>Zur Route</button>`);
+    clusterGroup.addLayer(marker);
   });
 });
 
