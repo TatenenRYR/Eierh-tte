@@ -40,10 +40,10 @@
       background: #16a34a; color: #fff; border-radius: 10px;
       cursor: pointer;
     }
-    #arrow {
-      position: fixed; bottom: 50%; left: 50%; transform: translate(-50%, 50%) rotate(0deg);
-      width: 50px; height: 50px; z-index: 1001;
-      transition: transform 0.3s ease-in-out;
+    #compass {
+      position: fixed; top: 10px; right: 10px; z-index: 1200;
+      width: 48px; height: 48px; font-size: 32px; text-align: center;
+      transform-origin: center center;
     }
     body.dark {
       background: #111827; color: #eee;
@@ -59,6 +59,7 @@
 <body>
   <div id="loader">🚴‍♂️ Lade Fahrradrouten…</div>
   <div id="map"></div>
+  <div id="compass">🧭</div>
   <div id="directionBox"></div>
   <div id="hutList"></div>
   <div id="controls">
@@ -72,7 +73,6 @@
       <option value="manual">➡️ Manuell</option>
     </select>
   </div>
-  <img src="https://cdn-icons-png.flaticon.com/512/1147/1147430.png" id="arrow" style="display:none" />
   <div id="toast"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
@@ -100,7 +100,7 @@ map.addLayer(clusterGroup);
 navigator.geolocation.watchPosition(pos => {
   const latlng = [pos.coords.latitude, pos.coords.longitude];
   if (!userMarker) {
-    const icon = L.divIcon({ className: '', html: '🚴‍♂️', iconSize: [32, 32] });
+    const icon = L.divIcon({ className: '', html: '🚴‍♂️', iconSize: [40, 40] });
     userMarker = L.marker(latlng, { icon }).addTo(map);
     map.setView(latlng, 15);
     document.getElementById("loader").style.display = "none";
@@ -109,6 +109,13 @@ navigator.geolocation.watchPosition(pos => {
     if (follow) map.setView(latlng);
   }
 }, () => showToast("⚠️ Standort nicht verfügbar"), { enableHighAccuracy: true });
+
+window.addEventListener("deviceorientationabsolute" in window ? "deviceorientationabsolute" : "deviceorientation", e => {
+  const compass = document.getElementById("compass");
+  if (e.alpha != null) {
+    compass.style.transform = `rotate(${Math.round(e.alpha)}deg)`;
+  }
+});
 
 map.on("movestart", () => { follow = false; });
 
@@ -144,12 +151,6 @@ function speak(text) {
   utter.lang = "de-DE";
   speechSynthesis.cancel();
   speechSynthesis.speak(utter);
-}
-
-function updateArrow(angle) {
-  const arrow = document.getElementById("arrow");
-  arrow.style.display = "block";
-  arrow.style.transform = `translate(-50%, 50%) rotate(${angle}deg)`;
 }
 
 function updateHutList() {
@@ -213,8 +214,6 @@ function startNavigation() {
     let next = path.find(p => pos.distanceTo(p) > 10);
     if (next) {
       const dist = Math.round(pos.distanceTo(next));
-      const angle = Math.atan2(next.lat - pos.lat, next.lng - pos.lng) * 180 / Math.PI;
-      updateArrow(angle);
       const dir = dist < 30 ? "➡️ Jetzt abbiegen" : `➡️ In ${dist} Meter rechts abbiegen`;
       document.getElementById("directionBox").innerText = dir;
       if (voice) speak(dir);
@@ -227,7 +226,6 @@ function stopNavigation() {
   if (routeLine) map.removeLayer(routeLine);
   routeLine = null;
   document.getElementById("directionBox").style.display = "none";
-  document.getElementById("arrow").style.display = "none";
   document.getElementById("hutList").style.display = "block";
   showToast("🛑 Navigation beendet");
   speak("Navigation beendet");
@@ -240,7 +238,7 @@ db.collection("eierhuetten").where("status", "==", "angenommen").get().then(snap
     const hut = { name: d.name, lat: d.location.latitude, lng: d.location.longitude };
     huts.push(hut);
     const marker = L.marker([hut.lat, hut.lng]).bindPopup(
-      `<b>${hut.name}</b><br><button onclick='addToRoute(${JSON.stringify(hut)})'>Zur Route</button>`);
+      `<b>${hut.name}</b><br><i>Versorgung: ${d.versorgung || 'unbekannt'}</i><br><button onclick='addToRoute(${JSON.stringify(hut)})'>Zur Route</button>`);
     clusterGroup.addLayer(marker);
   });
 });
