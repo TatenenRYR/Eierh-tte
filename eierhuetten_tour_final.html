@@ -13,12 +13,12 @@
       position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
       display:flex; gap:10px; background:rgba(0,0,0,0.7);
       padding:10px 15px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.4);
-      z-index:1001;
+      z-index:1001; max-width:480px; width:calc(100% - 40px);
     }
     .toolbar button, .toolbar select {
       background:#10b981; color:#fff; border:none; border-radius:8px;
-      padding:10px 14px; font-size:1rem; cursor:pointer;
-      transition:background .2s;
+      padding:10px 14px; font-size:1rem; cursor:pointer; transition:background .2s;
+      flex:1; min-width:0;
     }
     .toolbar button:hover, .toolbar select:hover { background:#0e9e6e; }
     .toolbar button.start { background:#ff5722; flex:1.5; font-weight:bold; }
@@ -32,6 +32,14 @@
       position:fixed; bottom:100px; left:50%; transform:translateX(-50%);
       background:rgba(0,0,0,0.75); padding:12px 16px; border-radius:12px;
       font-size:1rem; text-align:center; z-index:1001; display:none;
+      max-width:90%; color:#fff;
+    }
+    #hutList {
+      margin-top:8px; font-size:0.9em; overflow-x:auto; white-space:nowrap;
+    }
+    .hut-chip {
+      display:inline-block; background:#0e9e6e; color:#fff;
+      padding:4px 8px; border-radius:8px; margin:2px; cursor:pointer;
     }
     body.dark { background:#181a1b; }
     body.dark .toolbar { background:rgba(20,20,20,0.9); }
@@ -43,7 +51,18 @@
 
   <div id="map"></div>
   <div id="compass">🧭</div>
-  <div id="dashboard"></div>
+  <div id="dashboard">
+    <div>🚴 <span id="dashDist">0 km</span> · ⏱ <span id="dashTime">0 Min</span></div>
+    <div>🧭 <span id="dashDir">–</span> · 🏁 <span id="dashNext">–</span></div>
+    <div id="hutList"></div>
+    <div style="margin-top:8px;">
+      <select id="routeModeDash" onchange="recalculateRoute()">
+        <option value="auto">Optimiert</option>
+        <option value="manual">Manuell</option>
+      </select>
+      <button onclick="resetRoute()" style="margin-left:8px;background:#ff4444;">🗑 Route löschen</button>
+    </div>
+  </div>
 
   <div class="toolbar">
     <button onclick="toggleDark()">🌙</button>
@@ -61,174 +80,189 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script>
-    // --- Konfiguration ---
+    // **Konfiguration**
     const darkTiles   = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
     const lightTiles  = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-    const orsApiKey   = "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87";
-    const firebaseConfig = {
-      apiKey: orsApiKey,
+    const ORS_KEY     = "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87";
+
+    // **Initialisierung**
+    firebase.initializeApp({
+      apiKey: ORS_KEY,
       authDomain: "eierhuettentour.firebaseapp.com",
       projectId: "eierhuettentour"
-    };
-
-    // --- Initialisierung ---
-    firebase.initializeApp(firebaseConfig);
+    });
     const db = firebase.firestore();
-    let darkMode = false, voiceEnabled = true;
+
+    let darkMode = false;
     let map = L.map("map").setView([51.5,10.5],15);
-    let baseLayer = L.tileLayer(darkTiles, { maxZoom:19 }).addTo(map);
+    let base = L.tileLayer(lightTiles,{maxZoom:19}).addTo(map);
     let cluster = L.markerClusterGroup().addTo(map);
+
     let userMarker = null, routingControl = null;
-    let allHuts = [], selectedHuts = [], navInterval = null;
-    let lastCoords = null, restoreAsked = false;
+    let allHuts = [], selectedHuts = [], navTimer = null;
+    let lastCoordsJSON = "", restoreAsked = false;
 
-    // --- DOM-Elemente ---
-    const compassEl   = document.getElementById("compass");
-    const dashEl      = document.getElementById("dashboard");
-    const modeSelect  = document.getElementById("routeMode");
-    const startBtn    = document.querySelector(".toolbar .start");
+    const compassEl = document.getElementById("compass");
+    const dashEl    = document.getElementById("dashboard");
+    const distEl    = document.getElementById("dashDist");
+    const timeEl    = document.getElementById("dashTime");
+    const dirEl     = document.getElementById("dashDir");
+    const nextEl    = document.getElementById("dashNext");
+    const hutList   = document.getElementById("hutList");
+    const startBtn  = document.querySelector(".start");
 
-    // --- Standort & Kompass ---
-    navigator.geolocation.watchPosition(pos => {
-      const latlng = [pos.coords.latitude, pos.coords.longitude];
+    // **Dark Mode Toggle**
+    function toggleDark(){
+      darkMode = !darkMode;
+      document.body.classList.toggle("dark",darkMode);
+      map.removeLayer(base);
+      base = L.tileLayer(darkMode? darkTiles:lightTiles,{maxZoom:19}).addTo(map);
+      cluster.addTo(map);
+      if(routingControl) routingControl.addTo(map);
+    }
+
+    // **Standort + Hütten laden**
+    navigator.geolocation.watchPosition(pos=>{
+      const latlng=[pos.coords.latitude,pos.coords.longitude];
       if(!userMarker){
-        userMarker = L.marker(latlng).addTo(map);
+        userMarker=L.marker(latlng).addTo(map);
         map.setView(latlng,15);
         loadHuts();
         tryRestore();
       } else {
         userMarker.setLatLng(latlng);
       }
-    }, ()=>{}, { enableHighAccuracy:true });
+    },()=>{}, {enableHighAccuracy:true});
 
-    window.addEventListener("deviceorientationabsolute" in window?"deviceorientationabsolute":"deviceorientation",
-      e => compassEl.style.transform = `rotate(${- (e.alpha||0)}deg)`
-    );
-
-    // --- Dark Mode ---
-    function toggleDark(){
-      darkMode = !darkMode;
-      document.body.classList.toggle("dark",darkMode);
-      map.removeLayer(baseLayer);
-      baseLayer = L.tileLayer(darkMode? darkTiles:lightTiles, { maxZoom:19 }).addTo(map);
-      cluster.addTo(map);
-      if(routingControl) routingControl.addTo(map);
-    }
-
-    // --- Firestore Hütten laden ---
     function loadHuts(){
       db.collection("eierhuetten").where("status","==","angenommen")
         .onSnapshot(snap=>{
-          allHuts = []; cluster.clearLayers();
-          snap.forEach(doc => {
-            const d = doc.data();
-            if(!d.location) return;
-            const h = { id:doc.id, name:d.name, lat:d.location.latitude, lng:d.location.longitude };
-            allHuts.push(h);
-            const m = L.marker([h.lat,h.lng]).bindPopup(
-              `<b>${h.name}</b><br>
-               <button onclick="toggleHut('${h.id}')">
-                 ${selectedHuts.includes(h.id)? '❌ Entfernen':'✅ Hinzufügen'}
-               </button>`
-            );
-            cluster.addLayer(m);
+          allHuts=[]; cluster.clearLayers();
+          snap.forEach(d=>{
+            const h=d.data(); if(!h.location) return;
+            const hut={id:d.id,name:h.name,lat:h.location.latitude,lng:h.location.longitude};
+            allHuts.push(hut);
+            L.marker([hut.lat,hut.lng])
+             .bindPopup(`<b>${hut.name}</b><br>
+               <button onclick="toggleHut('${hut.id}')">${
+                 selectedHuts.includes(hut.id)?'❌ Entfernen':'✅ Hinzufügen'
+               }</button>`)
+             .addTo(cluster);
           });
-          tryRestore();
         });
     }
 
-    // --- Auswählen / Abwählen ---
+    // **Hütte ein/auswählen**
     function toggleHut(id){
-      const idx = selectedHuts.indexOf(id);
-      if(idx>=0) selectedHuts.splice(idx,1);
+      const i=selectedHuts.indexOf(id);
+      if(i>=0) selectedHuts.splice(i,1);
       else selectedHuts.push(id);
       localStorage.setItem("savedRoute",JSON.stringify(selectedHuts));
       recalc();
+      renderHutList();
+    }
+    function renderHutList(){
+      hutList.innerHTML="";
+      selectedHuts.forEach(id=>{
+        const h=allHuts.find(x=>x.id===id);
+        if(!h) return;
+        const chip=document.createElement("div");
+        chip.className="hut-chip"; chip.textContent=h.name+" ×";
+        chip.onclick=()=>toggleHut(id);
+        hutList.appendChild(chip);
+      });
     }
 
-    // --- Route wiederherstellen ---
+    // **Route wiederherstellen**
     function tryRestore(){
-      if(restoreAsked || !userMarker || !allHuts.length) return;
-      restoreAsked = true;
-      const saved = localStorage.getItem("savedRoute");
+      if(restoreAsked||!userMarker||!allHuts.length) return;
+      restoreAsked=true;
+      const saved=localStorage.getItem("savedRoute");
       if(saved && confirm("💾 Route gefunden. Wiederherstellen?")){
-        selectedHuts = JSON.parse(saved);
-        recalc();
+        selectedHuts=JSON.parse(saved);
+        recalc(); renderHutList();
       }
     }
 
-    // --- Route berechnen & zeichnen ---
+    // **Route berechnen**
     function recalc(){
       if(routingControl) map.removeLayer(routingControl);
-      if(!selectedHuts.length) return dashEl.style.display="none";
-      const start = userMarker.getLatLng();
-      const coords = selectedHuts.map(id=>{
-        const h = allHuts.find(x=>x.id===id);
+      if(!selectedHuts.length){ dashEl.style.display="none"; return; }
+      const start=userMarker.getLatLng();
+      const coords=selectedHuts.map(id=>{
+        const h=allHuts.find(x=>x.id===id);
         return h?[h.lng,h.lat]:null;
       }).filter(Boolean);
-      const arr = [[start.lng,start.lat], ...coords];
-      if(modeSelect.value==="manual"){
+      const arr=[[start.lng,start.lat],...coords];
+      if(document.getElementById("routeMode").value==="manual"){
         draw(arr.map(c=>[c[1],c[0]]));
       } else {
-        fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
+        fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson",{
           method:"POST",
-          headers:{ "Authorization": orsApiKey, "Content-Type":"application/json"},
-          body: JSON.stringify({ coordinates: arr })
+          headers:{Authorization:ORS_KEY,"Content-Type":"application/json"},
+          body:JSON.stringify({coordinates:arr})
         })
         .then(r=>r.json())
-        .then(j=> draw(j.features[0].geometry.coordinates.map(p=>[p[1],p[0]])))
+        .then(j=>draw(j.features[0].geometry.coordinates.map(p=>[p[1],p[0]])))
         .catch(()=>alert("Routing fehlgeschlagen"));
       }
     }
     function draw(path){
-      if(JSON.stringify(path)===JSON.stringify(lastCoords)) return;
-      lastCoords = path;
-      routingControl = L.polyline(path, { color:"#10b981", weight:5 }).addTo(map);
+      const j=JSON.stringify(path);
+      if(j===lastCoordsJSON) return;
+      lastCoordsJSON=j;
+      routingControl=L.polyline(path,{color:"#10b981",weight:5}).addTo(map);
     }
 
-    // --- Navigation starten/stoppen ---
+    // **Navigation starten/stoppen**
     function startRoute(){
-      if(navInterval) return stopRoute();
+      if(navTimer) return stopRoute();
       if(!routingControl) return;
-      startBtn.innerText="🟥 Beenden";  
+      startBtn.innerText="🟥 Beenden";
       let idx=1;
       dashEl.style.display="block";
-      navInterval = setInterval(()=> {
-        const pos = userMarker.getLatLng();
-        const next = routingControl.getLatLngs()[idx];
-        const d = L.latLng(next).distanceTo(pos);
-        // Richtung berechnen
-        const prev = L.latLng(routingControl.getLatLngs()[idx-1]);
-        const dir1 = Math.atan2(next.lat-prev.lat,next.lng-prev.lng);
-        const dir2 = Math.atan2(pos.lat-prev.lat,pos.lng-prev.lng);
-        const diff = ((dir1-dir2)*180/Math.PI+360)%360;
+      navTimer=setInterval(()=>{
+        const pos=userMarker.getLatLng();
+        const stops=routingControl.getLatLngs();
+        if(idx>=stops.length){ stopRoute(); return; }
+        const next=stops[idx];
+        const d=pos.distanceTo(next);
+        // Abbiegerichtung
+        const prev=stops[idx-1];
+        const a1=Math.atan2(next.lat-prev.lat,next.lng-prev.lng),
+              a2=Math.atan2(pos.lat-prev.lat,pos.lng-prev.lng),
+              diff=((a1-a2)*180/Math.PI+360)%360;
         let turn="geradeaus";
         if(diff>45&&diff<135) turn="rechts abbiegen";
         else if(diff>225&&diff<315) turn="links abbiegen";
-        // Dashboard aktualisieren
-        dashEl.innerHTML = `🚴 ${(d/1000).toFixed(2)} km · ⏱ ${Math.round(d/250)} Min · 🧭 ${turn}`;
-        // Sprachansage
+        // Dashboard
+        distEl.textContent=(d/1000).toFixed(2)+" km";
+        timeEl.textContent=Math.round(d/250)+" Min";
+        dirEl.textContent=turn;
+        nextEl.textContent=allHuts.find(h=>h.lat===next.lat&&h.lng===next.lng)?.name||"–";
+        // Sprache
         if(voiceEnabled){
-          const msg = new SpeechSynthesisUtterance(`In ${Math.round(d)} Metern ${turn}`);
-          msg.lang="de-DE"; speechSynthesis.speak(msg);
+          const m=new SpeechSynthesisUtterance(`In ${Math.round(d)} Metern ${turn}`);
+          m.lang="de-DE"; speechSynthesis.speak(m);
         }
-        // Nächster Punkt
         if(d<30) idx++;
-        if(idx>=routingControl.getLatLngs().length) stopRoute();
       },5000);
     }
     function stopRoute(){
-      clearInterval(navInterval); navInterval=null;
+      clearInterval(navTimer); navTimer=null;
       startBtn.innerText="▶️ Start"; dashEl.style.display="none";
       speak("Navigation beendet");
     }
 
-    // --- Helpers ---
-    function recenter(){ map.setView(userMarker.getLatLng(),15); }
-    function centerMap(){ recenter(); }
-    modeSelect.addEventListener("change", recalc);
-    function resetRoute(){ selectedHuts=[]; localStorage.removeItem("savedRoute"); if(routingControl) map.removeLayer(routingControl); dashEl.style.display="none"; }
-    function speak(t){ if('speechSynthesis' in window){ const u=new SpeechSynthesisUtterance(t); u.lang="de-DE"; speechSynthesis.speak(u);} }
+    // **Hilfsfunktionen**
+    function centerMap(){ if(userMarker) map.setView(userMarker.getLatLng(),15); }
+    function resetRoute(){
+      selectedHuts=[]; localStorage.removeItem("savedRoute");
+      if(routingControl) map.removeLayer(routingControl);
+      dashEl.style.display="none"; renderHutList();
+    }
+    function recalculateRoute(){ recalc(); }
+    function speak(t){ if('speechSynthesis' in window){ const u=new SpeechSynthesisUtterance(t);u.lang="de-DE";speechSynthesis.speak(u);} }
   </script>
 </body>
 </html>
