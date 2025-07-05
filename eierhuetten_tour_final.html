@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Eierhütten Navigation – Final</title>
+  <title>Eierhütten Navigation – Final Fix</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
   <style>
@@ -13,14 +13,14 @@
       position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
       display:flex;gap:8px;background:rgba(0,0,0,0.7);
       padding:10px;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.4);
-      z-index:1001;max-width:480px;width:calc(100%-40px);
-      transition:opacity .3s
+      z-index:1001;max-width:480px;width:calc(100% - 40px);
+      transition:opacity .3s;
     }
     .toolbar.hidden{opacity:0;pointer-events:none}
     .toolbar button,.toolbar select{
       background:#10b981;color:#fff;border:none;border-radius:8px;
       padding:10px;font-size:1rem;cursor:pointer;transition:background .2s;
-      flex:1;min-width:0
+      flex:1;min-width:0;
     }
     .toolbar button:hover,.toolbar select:hover{background:#0e9e6e}
     .toolbar button.start{background:#ff5722;flex:1.5;font-weight:bold}
@@ -43,7 +43,7 @@
     }
     body.dark{background:#181a1b}
     body.dark .toolbar{background:rgba(20,20,20,0.9)}
-    body.dark .toolbar button, body.dark .toolbar select{background:#0e7c5b}
+    body.dark .toolbar button,body.dark .toolbar select{background:#0e7c5b}
     body.dark .toolbar button:hover,body.dark .toolbar select:hover{background:#0b5f46}
   </style>
 </head>
@@ -57,18 +57,18 @@
     <div>🧭 <span id="dashDir">–</span> · 🏁 <span id="dashNext">–</span></div>
     <div id="hutList"></div>
     <div style="margin-top:8px">
-      <select id="routeModeDash" onchange="recalculateRoute()">
+      <select id="routeModeDash" style="flex:1">
         <option value="auto">Optimiert</option>
         <option value="manual">Manuell</option>
       </select>
-      <button onclick="resetRoute()" style="margin-left:8px;background:#ff4444">🗑 Löschen</button>
+      <button onclick="resetRoute()" style="margin-left:8px;background:#ff4444;flex:1;">🗑 Löschen</button>
     </div>
   </div>
 
   <div class="toolbar" id="toolbar">
     <button onclick="toggleDark()">🌙</button>
     <button onclick="centerMap()">📍</button>
-    <select id="routeMode" onchange="recalculateRoute()">
+    <select id="routeMode" style="flex:1">
       <option value="auto">Optimiert</option>
       <option value="manual">Manuell</option>
     </select>
@@ -77,32 +77,21 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script>
-    // Konfiguration
-    const darkTiles="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-          lightTiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-          ORS_KEY="5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87";
-
-    firebase.initializeApp({
-      apiKey:ORS_KEY,
-      authDomain:"eierhuettentour.firebaseapp.com",
-      projectId:"eierhuettentour"
-    });
+    const ORS_KEY="5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87";
+    firebase.initializeApp({ apiKey:ORS_KEY, authDomain:"eierhuettentour.firebaseapp.com", projectId:"eierhuettentour" });
     const db=firebase.firestore();
 
-    // State
-    let darkMode=false, voiceEnabled=true,
-        map=L.map("map").setView([51.5,10.5],15),
-        base=L.tileLayer(lightTiles,{maxZoom:19}).addTo(map),
+    let map=L.map("map").setView([51.5,10.5],15),
+        base=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19}).addTo(map),
         cluster=L.markerClusterGroup().addTo(map),
         userMarker=null, routingControl=null,
         allHuts=[], selectedHuts=[], navTimer=null,
-        lastCoords="", restoreAsked=false;
+        lastCoords="", restoreAsked=false, darkMode=false;
 
-    // UI
     const compassEl=document.getElementById("compass"),
           dashEl=document.getElementById("dashboard"),
           distEl=document.getElementById("dashDist"),
@@ -113,12 +102,17 @@
           toolbar=document.getElementById("toolbar"),
           startBtn=toolbar.querySelector("button.start");
 
-    // Dark Mode
+    // Darkmode init
+    if(localStorage.getItem("darkMode")==="1") toggleDark();
     function toggleDark(){
       darkMode=!darkMode;
+      localStorage.setItem("darkMode", darkMode?"1":"0");
       document.body.classList.toggle("dark",darkMode);
       map.removeLayer(base);
-      base=L.tileLayer(darkMode?darkTiles:lightTiles,{maxZoom:19}).addTo(map);
+      base=L.tileLayer(darkMode ? 
+        "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png":
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19})
+        .addTo(map);
       cluster.addTo(map);
       if(routingControl) routingControl.addTo(map);
     }
@@ -138,7 +132,7 @@
         .onSnapshot(snap=>{
           allHuts=[]; cluster.clearLayers();
           snap.forEach(doc=>{
-            const d=doc.data(); if(!d.location)return;
+            const d=doc.data(); if(!d.location) return;
             const h={id:doc.id,name:d.name,lat:d.location.latitude,lng:d.location.longitude};
             allHuts.push(h);
             L.marker([h.lat,h.lng])
@@ -151,7 +145,6 @@
         });
     }
 
-    // Hütte toggeln
     function toggleHut(id){
       const i=selectedHuts.indexOf(id);
       if(i>=0) selectedHuts.splice(i,1);
@@ -171,9 +164,8 @@
       });
     }
 
-    // Route wiederherstellen
     function tryRestore(){
-      if(restoreAsked||!userMarker||!allHuts.length) return;
+      if(restoreAsked||!userMarker||!allHuts.length)return;
       restoreAsked=true;
       const s=localStorage.getItem("savedRoute");
       if(s && confirm("💾 Route gefunden. Wiederherstellen?")){
@@ -182,16 +174,12 @@
       }
     }
 
-    // Route berechnen
     function recalc(){
       if(routingControl) map.removeLayer(routingControl);
       if(!selectedHuts.length){ dashEl.style.display="none"; return; }
       const start=userMarker.getLatLng(),
-            arr=selectedHuts.map(id=>{
-              const h=allHuts.find(x=>x.id===id);
-              return h?[h.lng,h.lat]:null;
-            }).filter(Boolean);
-      const coords=[[start.lng,start.lat],...arr];
+            arr=selectedHuts.map(id=>{const h=allHuts.find(x=>x.id===id);return h?[h.lng,h.lat]:null;}).filter(Boolean),
+            coords=[[start.lng,start.lat],...arr];
       if(document.getElementById("routeMode").value==="manual"){
         draw(coords.map(c=>[c[1],c[0]]));
       } else {
@@ -206,12 +194,10 @@
     }
     function draw(path){
       const j=JSON.stringify(path);
-      if(j===lastCoords) return;
-      lastCoords=j;
+      if(j===lastCoords)return; lastCoords=j;
       routingControl=L.polyline(path,{color:"#10b981",weight:5}).addTo(map);
     }
 
-    // Navigation starten/stoppen
     function startRoute(){
       if(navTimer) return stopRoute();
       if(!routingControl) return;
@@ -220,12 +206,10 @@
       startBtn.innerText="🟥 Beenden";
       let idx=1;
       navTimer=setInterval(()=>{
-        const pos=userMarker.getLatLng(),
-              pts=routingControl.getLatLngs();
+        const pos=userMarker.getLatLng(),pts=routingControl.getLatLngs();
         if(idx>=pts.length){ stopRoute(); return; }
         const next=pts[idx], d=pos.distanceTo(next);
-        const prev=pts[idx-1],
-              a1=Math.atan2(next.lat-prev.lat,next.lng-prev.lng),
+        const prev=pts[idx-1], a1=Math.atan2(next.lat-prev.lat,next.lng-prev.lng),
               a2=Math.atan2(pos.lat-prev.lat,pos.lng-prev.lng),
               diff=((a1-a2)*180/Math.PI+360)%360;
         let turn="geradeaus";
@@ -247,7 +231,6 @@
       speak("Navigation beendet");
     }
 
-    // Hilfen
     function centerMap(){ if(userMarker) map.setView(userMarker.getLatLng(),15); }
     function resetRoute(){ selectedHuts=[]; localStorage.removeItem("savedRoute"); if(routingControl) map.removeLayer(routingControl); dashEl.style.display="none"; renderHuts(); }
     function recalculateRoute(){ recalc(); }
