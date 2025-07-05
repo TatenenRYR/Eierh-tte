@@ -1,312 +1,159 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Eierhütten Navigation</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eierhütten Navigation – Smart</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
-    #map { position: absolute; top: 0; bottom: 0; left: 0; right: 0; }
+    html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; background: #fff; color: #000; }
+    #map { position: absolute; top: 0; bottom: 0; left: 0; right: 0; z-index: 0; }
     #loader {
       position: fixed; inset: 0;
-      background: #fff; display: flex;
-      align-items: center; justify-content: center;
+      background: #fff; display: flex; align-items: center; justify-content: center;
       font-size: 1.2rem; z-index: 9999;
     }
-    body.dark { background: #1e1e1e; color: #eee; }
-    body.dark #loader { background: #1e1e1e; color: #ccc; }
-    .bottom-toolbar {
+    #controls {
       position: fixed; bottom: 0; left: 0; right: 0;
-      display: flex; gap: 6px;
       background: rgba(255,255,255,0.95);
-      padding: 10px; z-index: 900;
+      display: flex; flex-wrap: wrap; justify-content: center;
+      gap: 8px; padding: 10px; z-index: 1000;
     }
-    .bottom-toolbar button, .bottom-toolbar select {
-      flex: 1; font-size: 1rem; padding: 8px;
-      background: #10b981; color: #fff;
-      border: none; border-radius: 8px; cursor: pointer;
+    .btn, select {
+      padding: 10px 16px; border-radius: 8px;
+      border: none; font-size: 1rem;
+      background: #10b981; color: white;
+      cursor: pointer;
     }
-    body.dark .bottom-toolbar {
-      background: rgba(30,30,30,0.95);
+    #toast {
+      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+      background: #333; color: #fff; padding: 10px 20px;
+      border-radius: 8px; z-index: 2000; display: none;
     }
-    body.dark .bottom-toolbar button, body.dark .bottom-toolbar select {
-      background: #0e7c5b;
-    }
-    #followBtn {
-      position: fixed; bottom: 80px; left: 50%;
-      transform: translateX(-50%);
-      background: orange; color: #fff;
-      padding: 10px 20px; border-radius: 8px;
-      z-index: 950; display: none;
-    }
-    #toastMsg {
-      position: fixed; top: 70px; left: 50%;
-      transform: translateX(-50%);
-      background: #333; color: #fff;
-      padding: 10px 20px; border-radius: 8px;
-      z-index: 9999; display: none;
-    }
-    #arrowCanvas {
-      position: fixed; top: 50%; left: 50%;
-      width: 80px; height: 80px;
-      transform: translate(-50%, -50%);
-      z-index: 1002; pointer-events: none; display: none;
-    }
-    #compassEl {
-      position: fixed; top: 10px; right: 10px;
-      font-size: 28px;
-      background: rgba(0,0,0,0.6);
-      padding: 10px; border-radius: 50%;
-      z-index: 1001;
-    }
+    body.dark { background: #1e1e1e; color: #eee; }
+    body.dark #controls { background: rgba(30,30,30,0.95); }
+    body.dark .btn, body.dark select { background: #0e7c5b; }
   </style>
 </head>
 <body>
-  <div id="loader">⏳ Standort & Hütten werden geladen…</div>
+  <div id="loader">⏳ Karte wird geladen...</div>
   <div id="map"></div>
-  <canvas id="arrowCanvas" width="80" height="80"></canvas>
-  <div id="compassEl">🧭</div>
-  <div id="followBtn" onclick="followUser()">📍 Standort folgen</div>
-  <div class="bottom-toolbar">
-    <button onclick="toggleDarkMode()">🌙 Dark Mode</button>
-    <button onclick="toggleVoice()">🔊 Sprache</button>
-    <select id="routeMode" onchange="recalculateRoute()">
+  <div id="controls">
+    <button class="btn" onclick="toggleDarkMode()">🌙 Dark Mode</button>
+    <button class="btn" onclick="toggleFollow()">📍 Folgen</button>
+    <button class="btn" onclick="startNavigation()">▶️ Navigation</button>
+    <button class="btn" onclick="stopNavigation()">🛑 Stop</button>
+    <select id="modeSelect" onchange="recalculateRoute()">
       <option value="auto">🔄 Optimiert</option>
       <option value="manual">➡️ Manuell</option>
     </select>
-    <button onclick="startRoute()">▶️ Start</button>
-    <button onclick="resetRoute()">🗑 Löschen</button>
   </div>
-  <div id="toastMsg"></div>
+  <div id="toast"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-<script>
-const firebaseConfig = {
-  apiKey: "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
-  authDomain: "eierhuettentour.firebaseapp.com",
-  projectId: "eierhuettentour"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();let map = L.map('map').setView([51.5, 10.5], 13);
+let dark = false;
+const lightTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+const darkTiles = L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png');
+lightTiles.addTo(map);
 
-let map = L.map("map").setView([51.5, 10.5], 15);
-let darkMode = localStorage.getItem("darkMode") === "1";
-let userMarker = null, lastUserPos = null, following = true;
-let selectedHuts = [], allHuts = [];
-let clusterGroup = L.markerClusterGroup().addTo(map);
-
-const tileLight = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 });
-const tileDark = L.tileLayer("https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png", { maxZoom: 19 });
-darkMode ? tileDark.addTo(map) : tileLight.addTo(map);
-if (darkMode) document.body.classList.add("dark");
+let userMarker, follow = true;
+let huts = [], selected = [];
+let routeLine;
 
 navigator.geolocation.watchPosition(pos => {
   const latlng = [pos.coords.latitude, pos.coords.longitude];
-  lastUserPos = L.latLng(latlng);
   if (!userMarker) {
     userMarker = L.marker(latlng).addTo(map);
-    map.setView(latlng, 16);
+    map.setView(latlng, 15);
     document.getElementById("loader").style.display = "none";
   } else {
     userMarker.setLatLng(latlng);
-    if (following) map.setView(latlng);
+    if (follow) map.setView(latlng);
   }
-}, () => {
-  document.getElementById("loader").innerText = "⚠️ Standort nicht verfügbar";
-}, { enableHighAccuracy: true });
+}, () => showToast("⚠️ Standort nicht verfügbar"), { enableHighAccuracy: true });
 
 map.on("movestart", () => {
-  if (following) {
-    following = false;
-    document.getElementById("followBtn").style.display = "block";
-  }
+  follow = false;
 });
-function followUser() {
-  if (lastUserPos) map.setView(lastUserPos, 16);
-  following = true;
-  document.getElementById("followBtn").style.display = "none";
-}
-
-// Kompass
-window.addEventListener("deviceorientation", e => {
-  if (e.alpha != null) {
-    document.getElementById("compassEl").style.transform = `rotate(${-e.alpha}deg)`;
-  }
-});
-
-// Hütten laden
-db.collection("eierhuetten").onSnapshot(snap => {
-  allHuts = [];
-  clusterGroup.clearLayers();
-  snap.forEach(doc => {
-    const d = doc.data();
-    if (!d.location || d.status !== "angenommen") return;
-    const h = { id: doc.id, name: d.name, lat: d.location.latitude, lng: d.location.longitude };
-    allHuts.push(h);
-    const m = L.marker([h.lat, h.lng]).bindPopup(() => {
-      const added = selectedHuts.includes(h.id);
-      return `<b>${h.name}</b><br><button onclick="toggleSelection('${h.id}')">${added ? "❌ Entfernen" : "✅ Hinzufügen"}</button>`;
-    });
-    clusterGroup.addLayer(m);
-  });
-});
-
-let voiceEnabled = true;
-let routingControl = null;
-let navTimer = null;
-let currentStep = 1;
 
 function toggleDarkMode() {
-  darkMode = !darkMode;
-  document.body.classList.toggle("dark", darkMode);
-  localStorage.setItem("darkMode", darkMode ? "1" : "0");
+  dark = !dark;
+  document.body.classList.toggle("dark", dark);
   map.eachLayer(l => map.removeLayer(l));
-  (darkMode ? tileDark : tileLight).addTo(map);
-  clusterGroup.addTo(map);
-  showToast(darkMode ? "🌙 Dunkelmodus aktiv" : "☀️ Hellmodus aktiv");
+  (dark ? darkTiles : lightTiles).addTo(map);
 }
 
-function toggleVoice() {
-  voiceEnabled = !voiceEnabled;
-  showToast(voiceEnabled ? "🔊 Sprache aktiviert" : "🔇 Sprache deaktiviert");
+function toggleFollow() {
+  follow = !follow;
+  showToast(follow ? "📍 Standort wird verfolgt" : "🛑 Folge-Modus aus");
 }
 
 function showToast(msg) {
-  const toast = document.getElementById("toastMsg");
-  toast.innerText = msg;
+  const toast = document.getElementById("toast");
+  toast.textContent = msg;
   toast.style.display = "block";
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.style.display = "none", 3000);
-}
-let toastTimer;
-
-function toggleSelection(id) {
-  const i = selectedHuts.indexOf(id);
-  if (i >= 0) {
-    selectedHuts.splice(i, 1);
-    showToast("❌ Hütte entfernt");
-  } else {
-    selectedHuts.push(id);
-    showToast("✅ Hütte hinzugefügt");
-  }
-  recalculateRoute();
+  setTimeout(() => toast.style.display = "none", 3000);
 }
 
 function recalculateRoute() {
-  if (!userMarker || selectedHuts.length === 0) return;
-
+  if (!userMarker || selected.length === 0) return;
   const start = userMarker.getLatLng();
-  const toCoords = selectedHuts
-    .map(id => {
-      const h = allHuts.find(x => x.id === id);
-      return h ? [h.lng, h.lat] : null;
-    })
-    .filter(Boolean);
-
+  const coords = selected.map(h => [h.lng, h.lat]);
+  coords.unshift([start.lng, start.lat]);
   fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
     method: "POST",
     headers: {
-      "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ coordinates: [[start.lng, start.lat], ...toCoords] })
-  })
-    .then(res => res.json())
-    .then(data => {
-      const rc = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
-      if (routingControl) map.removeLayer(routingControl);
-      routingControl = L.polyline(rc, {
-        color: "orange",
-        weight: 5
-      }).addTo(map);
-    })
-    .catch(() => showToast("⚠️ Routing fehlgeschlagen"));
-}
-
-function drawArrow(angle) {
-  const canvas = document.getElementById("arrowCanvas");
-  const ctx = canvas.getContext("2d");
-  canvas.style.display = "block";
-  ctx.clearRect(0, 0, 80, 80);
-  ctx.save();
-  ctx.translate(40, 40);
-  ctx.rotate(angle * Math.PI / 180);
-  ctx.beginPath();
-  ctx.moveTo(0, -25);
-  ctx.lineTo(12, 15);
-  ctx.lineTo(0, 5);
-  ctx.lineTo(-12, 15);
-  ctx.closePath();
-  ctx.fillStyle = "orange";
-  ctx.fill();
-  ctx.restore();
-}
-
-function startRoute() {
-  if (!userMarker || selectedHuts.length === 0) {
-    showToast("⚠️ Bitte Hütte auswählen");
-    return;
-  }
-
-  const coords = selectedHuts.map(id => {
-    const h = allHuts.find(x => x.id === id);
-    return h ? [h.lng, h.lat] : null;
-  }).filter(Boolean);
-  coords.unshift([userMarker.getLatLng().lng, userMarker.getLatLng().lat]);
-
-  fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
-    method: "POST",
-    headers: {
-      "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
+      "Authorization": firebaseConfig.apiKey,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({ coordinates: coords })
   })
-    .then(res => res.json())
-    .then(data => {
-      const pts = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
-      if (routingControl) map.removeLayer(routingControl);
-      routingControl = L.polyline(pts, { color: "orange", weight: 5 }).addTo(map);
-      runNavigation(pts);
-    });
+  .then(r => r.json())
+  .then(data => {
+    const latlngs = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
+    if (routeLine) map.removeLayer(routeLine);
+    routeLine = L.polyline(latlngs, { color: "orange", weight: 5 }).addTo(map);
+    map.fitBounds(routeLine.getBounds());
+  });
 }
 
-function runNavigation(path) {
-  currentStep = 1;
-  if (voiceEnabled) {
-    const msg = new SpeechSynthesisUtterance("Navigation wird gestartet. Viel Spaß!");
-    msg.lang = "de-DE";
-    speechSynthesis.cancel();
-    speechSynthesis.speak(msg);
-  }
-
-  navTimer = setInterval(() => {
-    if (!userMarker || currentStep >= path.length) return;
-    const pos = userMarker.getLatLng();
-    const next = L.latLng(path[currentStep]);
-    const dist = pos.distanceTo(next);
-    const angle = Math.atan2(next.lat - pos.lat, next.lng - pos.lng) * 180 / Math.PI;
-    drawArrow(angle);
-
-    if (dist < 30 && currentStep < path.length - 1) {
-      currentStep++;
-      showToast("✅ Nächster Streckenpunkt");
-    }
-  }, 4000);
+function startNavigation() {
+  if (!routeLine) return showToast("⚠️ Keine Route verfügbar");
+  follow = true;
+  showToast("▶️ Navigation gestartet");
 }
 
-function resetRoute() {
-  if (navTimer) clearInterval(navTimer);
-  if (routingControl) map.removeLayer(routingControl);
-  routingControl = null;
-  document.getElementById("arrowCanvas").style.display = "none";
-  if (lastUserPos) map.setView(lastUserPos, 15);
+function stopNavigation() {
+  if (routeLine) map.removeLayer(routeLine);
+  routeLine = null;
   showToast("🛑 Navigation beendet");
 }
-</script>
+
+db.collection("eierhuetten").where("status", "==", "angenommen").get().then(snap => {
+  snap.forEach(doc => {
+    const d = doc.data();
+    if (!d.location) return;
+    const hut = { name: d.name, lat: d.location.latitude, lng: d.location.longitude };
+    huts.push(hut);
+    const marker = L.marker([hut.lat, hut.lng]).addTo(map).bindPopup(
+      `<b>${hut.name}</b><br><button onclick='addToRoute(${JSON.stringify(hut)})'>Zur Route</button>`);
+  });
+});
+
+function addToRoute(hut) {
+  selected.push(hut);
+  showToast(`➕ ${hut.name} zur Route`);
+  recalculateRoute();
+}
+
+  </script>
 </body>
 </html>
