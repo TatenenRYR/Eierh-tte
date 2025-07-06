@@ -1,34 +1,62 @@
-<!DOCTYPE html><html lang="de">
+<!DOCTYPE html>
+<html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Eierhütten Fahrradnavigation</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eierhütten Navigation</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; font-family: "Segoe UI", sans-serif; background: #f0fdf4; color: #111; }
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      font-family: "Segoe UI", sans-serif;
+      background: #f0fdf4; color: #111;
+    }
     #map { position: absolute; top: 0; bottom: 0; left: 0; right: 0; z-index: 0; }
     #loader {
-      position: fixed; inset: 0; background: #fff; display: flex; align-items: center; justify-content: center;
+      position: fixed; inset: 0; background: #fff;
+      display: flex; align-items: center; justify-content: center;
       font-size: 1.2rem; z-index: 9999;
     }
     #controls {
       position: fixed; bottom: 0; left: 0; right: 0;
-      background: rgba(255,255,255,0.95); display: flex; flex-wrap: wrap; justify-content: center;
+      background: rgba(255,255,255,0.95);
+      display: flex; flex-wrap: wrap; justify-content: center;
       gap: 8px; padding: 10px; z-index: 1000;
     }
     .btn, select {
-      padding: 10px 16px; border-radius: 8px; border: none; font-size: 1rem;
+      padding: 10px 16px; border-radius: 8px;
+      border: none; font-size: 1rem;
       background: #16a34a; color: white; cursor: pointer;
     }
     #toast {
       position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-      background: #333; color: #fff; padding: 10px 20px; border-radius: 8px; z-index: 2000; display: none;
+      background: #333; color: #fff; padding: 10px 20px;
+      border-radius: 8px; z-index: 2000; display: none;
     }
     #directionBox {
       position: fixed; top: 0; left: 0; right: 0;
-      background: #16a34a; color: #fff; text-align: center;
-      font-size: 1.1rem; padding: 8px; z-index: 1001; display: none;
+      background: #16a34a; color: #fff;
+      text-align: center; font-size: 1.1rem;
+      padding: 8px; z-index: 1001; display: none;
+    }
+    #progressBar {
+      position: fixed; top: 40px; left: 0;
+      height: 6px; background: #10b981;
+      z-index: 1001; width: 0%;
+      transition: width 0.3s ease;
+    }
+    #arrowBox {
+      position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%);
+      font-size: 2rem; z-index: 1001;
+      background: rgba(255,255,255,0.9);
+      padding: 6px 12px; border-radius: 12px; display: none;
+    }
+    #compass {
+      position: fixed; top: 10px; right: 10px; z-index: 1200;
+      width: 48px; height: 48px;
+      font-size: 32px; text-align: center;
+      transform-origin: center center;
     }
     #hutList {
       position: fixed; top: 48px; left: 10px; right: 10px;
@@ -39,11 +67,6 @@
       display: inline-block; margin: 3px; padding: 5px 10px;
       background: #16a34a; color: #fff; border-radius: 10px;
       cursor: pointer;
-    }
-    #compass {
-      position: fixed; top: 10px; right: 10px; z-index: 1200;
-      width: 48px; height: 48px; font-size: 32px; text-align: center;
-      transform-origin: center center;
     }
     body.dark {
       background: #111827; color: #eee;
@@ -61,6 +84,8 @@
   <div id="map"></div>
   <div id="compass">🧭</div>
   <div id="directionBox"></div>
+  <div id="progressBar"></div>
+  <div id="arrowBox"></div>
   <div id="hutList"></div>
   <div id="controls">
     <button class="btn" onclick="toggleDarkMode()">🌙 Dark Mode</button>
@@ -73,61 +98,200 @@
       <option value="manual">➡️ Manuell</option>
     </select>
   </div>
-  <div id="toast"></div>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>  <script src="https://unpkg.com/leaflet-rotatedmarker/leaflet.rotatedMarker.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>  <script>
-    const firebaseConfig = {
-      apiKey: "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
-      authDomain: "eierhuettentour.firebaseapp.com",
-      projectId: "eierhuettentour"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
+  <div id="toast"></div>
+  <!-- JS Libraries -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="https://unpkg.com/leaflet-rotatedmarker/leaflet.rotatedMarker.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 
-    let map = L.map('map', { zoomControl: false }).setView([51.5, 10.5], 13);
-    let dark = localStorage.getItem("darkMode") === "1";
-    const lightTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
-    const darkTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a>'
-    });
-    dark ? darkTiles.addTo(map) : lightTiles.addTo(map);
-    if (dark) document.body.classList.add("dark");
+  <script>
+  const firebaseConfig = {
+    apiKey: "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
+    authDomain: "eierhuettentour.firebaseapp.com",
+    projectId: "eierhuettentour"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
 
-    let userMarker, follow = true, voice = true, userHeading = 0;
-    let huts = [], selected = [], routeLine, navTimer;
-    let clusterGroup = L.markerClusterGroup();
-    map.addLayer(clusterGroup);
+  let map = L.map('map').setView([51.5, 10.5], 13);
+  let dark = localStorage.getItem("darkMode") === "1";
+  const lightTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+  const darkTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href=\"https://carto.com/attributions\">CARTO</a>'
+  });
+  (dark ? darkTiles : lightTiles).addTo(map);
+  if (dark) document.body.classList.add("dark");
 
-    navigator.geolocation.watchPosition(pos => {
-      const latlng = [pos.coords.latitude, pos.coords.longitude];
-      if (!userMarker) {
-        const icon = L.divIcon({ className: '', html: '🚴‍♂️', iconSize: [40, 40] });
-        userMarker = L.marker(latlng, { icon, rotationAngle: userHeading, rotationOrigin: 'center center' }).addTo(map);
-        map.setView(latlng, 15);
-        document.getElementById("loader").style.display = "none";
-      } else {
-        userMarker.setLatLng(latlng);
-        userMarker.setRotationAngle(userHeading);
-        if (follow) map.setView(latlng);
-      }
-    }, () => showToast("⚠️ Standort nicht verfügbar"), { enableHighAccuracy: true });
+  let userMarker, follow = true, voice = true, userHeading = 0;
+  let huts = [], selected = [], routeLine, navTimer;
+  let clusterGroup = L.markerClusterGroup();
+  map.addLayer(clusterGroup);
 
-    window.addEventListener("deviceorientationabsolute" in window ? "deviceorientationabsolute" : "deviceorientation", e => {
-      const compass = document.getElementById("compass");
-      if (e.alpha != null) {
-        userHeading = 360 - Math.round(e.alpha);
-        compass.style.transform = `rotate(${Math.round(e.alpha)}deg)`;
-        if (userMarker) {
-          userMarker.setRotationAngle(userHeading);
-        }
-      }
-    });
-
-    function toggleDarkMode() {
-      dark = !dark;
-      document.body.classList.toggle("dark", dark);
-      localStorage.setItem("darkMode", dark ? "1" : "0");
-      map.eachLayer(l => map.removeLayer(l));
-      (dark ? darkTiles : lightTiles).addTo(map);
-      map.addLayer(clusterGroup);
+  navigator.geolocation.watchPosition(pos => {
+    const latlng = [pos.coords.latitude, pos.coords.longitude];
+    if (!userMarker) {
+      const icon = L.divIcon({ className: '', html: '🚴‍♂️', iconSize: [40, 40] });
+      userMarker = L.marker(latlng, {
+        icon, rotationAngle: userHeading, rotationOrigin: 'center center'
+      }).addTo(map);
+      map.setView(latlng, 15);
+      document.getElementById("loader").style.display = "none";
+    } else {
+      userMarker.setLatLng(latlng);
+      userMarker.setRotationAngle(userHeading);
+      if (follow) map.setView(latlng);
     }
-  </script></body>
+  }, () => showToast(\"⚠️ Standort nicht verfügbar\"), { enableHighAccuracy: true });
+
+  window.addEventListener(\"deviceorientationabsolute\" in window ? \"deviceorientationabsolute\" : \"deviceorientation\", e => {
+    const compass = document.getElementById(\"compass\");
+    if (e.alpha != null) {
+      userHeading = 360 - Math.round(e.alpha);
+      compass.style.transform = `rotate(${Math.round(e.alpha)}deg)`;
+      if (userMarker) {
+        userMarker.setRotationAngle(userHeading);
+      }
+    }
+  });
+
+  function toggleDarkMode() {
+    dark = !dark;
+    document.body.classList.toggle(\"dark\", dark);
+    localStorage.setItem(\"darkMode\", dark ? \"1\" : \"0\");
+    map.eachLayer(l => map.removeLayer(l));
+    (dark ? darkTiles : lightTiles).addTo(map);
+    map.addLayer(clusterGroup);
+  }
+
+  function toggleFollow() {
+    follow = !follow;
+    showToast(follow ? \"📍 Standort wird verfolgt\" : \"🛑 Folge-Modus aus\");
+  }
+
+  function toggleVoice() {
+    voice = !voice;
+    showToast(voice ? \"🔊 Sprache aktiviert\" : \"🔇 Sprache deaktiviert\");
+  }
+
+  function showToast(msg) {
+    const toast = document.getElementById(\"toast\");
+    toast.innerText = msg;
+    toast.style.display = \"block\";
+    setTimeout(() => toast.style.display = \"none\", 3000);
+  }
+
+  function speak(text) {
+    if (!voice || !(\"speechSynthesis\" in window)) return;
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = \"de-DE\";
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utter);
+  }
+    function recalculateRoute() {
+    if (!userMarker || selected.length === 0) return;
+    const start = userMarker.getLatLng();
+    const coords = selected.map(h => [h.lng, h.lat]);
+    coords.unshift([start.lng, start.lat]);
+
+    fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
+      method: "POST",
+      headers: {
+        "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ coordinates: coords })
+    })
+    .then(res => res.json())
+    .then(data => {
+      const line = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
+      if (routeLine) map.removeLayer(routeLine);
+      routeLine = L.polyline(line, { color: \"#10b981\", weight: 5 }).addTo(map);
+    })
+    .catch(() => showToast(\"⚠️ Routing fehlgeschlagen\"));
+  }
+
+  function startNavigation() {
+    if (!routeLine) return showToast(\"❌ Keine Route aktiv\");
+    speak(\"Navigation wird gestartet. Viel Spaß!\");
+    document.getElementById(\"directionBox\").style.display = \"block\";
+    document.getElementById(\"arrowBox\").style.display = \"block\";
+    document.getElementById(\"progressBar\").style.width = \"0%\";
+
+    let path = routeLine.getLatLngs();
+    let total = path.reduce((acc, p, i, arr) => i > 0 ? acc + map.distance(arr[i - 1], p) : 0, 0);
+    let step = 0;
+
+    navTimer = setInterval(() => {
+      if (!userMarker || step >= path.length - 1) return stopNavigation();
+
+      const pos = userMarker.getLatLng();
+      const next = path[step + 1];
+      const dist = map.distance(pos, next);
+
+      if (dist < 30) step++;
+      const remaining = path.slice(step);
+      const remainDist = remaining.reduce((a, p, i, arr) => i > 0 ? a + map.distance(arr[i - 1], p) : 0, 0);
+
+      const directionText = getDirectionText(remaining, pos);
+      document.getElementById(\"directionBox\").innerText = `➡️ ${directionText}`;
+      document.getElementById(\"arrowBox\").innerText = directionText;
+
+      const percent = 100 - (remainDist / total * 100);
+      document.getElementById(\"progressBar\").style.width = `${percent.toFixed(1)}%`;
+
+      if (dist < 30 && voice) {
+        speak(`In ${Math.round(dist)} Metern ${directionText}`);
+      }
+    }, 5000);
+  }
+
+  function stopNavigation() {
+    clearInterval(navTimer);
+    navTimer = null;
+    document.getElementById(\"directionBox\").style.display = \"none\";
+    document.getElementById(\"arrowBox\").style.display = \"none\";
+    document.getElementById(\"progressBar\").style.width = \"0%\";
+    speak(\"Navigation beendet.\");
+  }
+
+  function getDirectionText(path, current) {
+    if (path.length < 3) return \"geradeaus\";
+    const p0 = current, p1 = path[0], p2 = path[1];
+    const angle1 = Math.atan2(p1.lat - p0.lat, p1.lng - p0.lng);
+    const angle2 = Math.atan2(p2.lat - p1.lat, p2.lng - p1.lng);
+    const delta = ((angle2 - angle1) * 180 / Math.PI + 360) % 360;
+    if (delta > 45 && delta < 135) return \"rechts abbiegen\";
+    if (delta > 225 && delta < 315) return \"links abbiegen\";
+    return \"geradeaus\";
+  }
+
+  // DUMMY HÜTTEN ZUM TESTEN
+  db.collection(\"eierhuetten\").onSnapshot(snap => {
+    huts = [];
+    clusterGroup.clearLayers();
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (!d.location || d.status !== \"angenommen\") return;
+      const h = {
+        id: doc.id,
+        name: d.name || \"Unbenannt\",
+        lat: d.location.latitude,
+        lng: d.location.longitude
+      };
+      huts.push(h);
+      const marker = L.marker([h.lat, h.lng]).bindPopup(`<b>${h.name}</b><br>
+        <button onclick=\"selectHut('${h.id}')\">➕ Route</button>`);
+      clusterGroup.addLayer(marker);
+    });
+  });
+
+  function selectHut(id) {
+    if (!selected.includes(id)) selected.push(id);
+    recalculateRoute();
+    showToast(\"✅ Hütte zur Route hinzugefügt\");
+  }
+  </script>
+</body>
 </html>
