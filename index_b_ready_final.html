@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>RadlMap</title>
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    html, body { margin:0; padding:0; height:100%; }
+    #map { position:absolute; top:0; bottom:0; width:100%; }
+    /* Overlay per CSS ausblenden */
+    #loadingOverlay { display:none !important; }
+    /* Toast oben */
+    .toast { position:fixed; top:14px; left:50%; transform:translateX(-50%); background:#10b981; color:white; padding:8px 16px; border-radius:8px; display:none; z-index:1000; }
+    #bottomButtons { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:8px; z-index:1000; }
+    #bottomButtons button { padding:12px 20px; font-size:1em; border:none; border-radius:8px; background:#10b981; color:#fff; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="toast" id="toast"></div>
+  <div id="bottomButtons">
+    <button onclick="toggleSidebar()">☰ Menü</button>
+    <button onclick="recalculateRoute()">🔄 Route neu</button>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script>
+    // Firebase
+    firebase.initializeApp({ apiKey: "…", authDomain: "…", projectId: "…" });
+    const db = firebase.firestore();
+
+    // Karte
+    const map = L.map('map').setView([51.5,10.5],6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+
+    // State
+    let userMarker, routingControl, allHuts=[], selectedHuts=[];
+
+    function showToast(msg) {
+      const t=document.getElementById('toast'); t.innerText=msg; t.style.display='block';
+      setTimeout(()=>t.style.display='none',3000);
+    }
+
+    // User-Lokation
+    function locateUser(){
+      if(!navigator.geolocation){ showToast('GPS nicht unterstützt'); return; }
+      navigator.geolocation.getCurrentPosition(pos=>{
+        const latlng=[pos.coords.latitude,pos.coords.longitude];
+        userMarker=L.marker(latlng).addTo(map);
+        map.setView(latlng,15);
+      },err=> showToast('GPS Fehler'));
+    }
+
+    // Hütten laden
+    function loadHutsLive(){
+      return new Promise(resolve=>{
+        db.collection('eierhuetten').get().then(snap=>{
+          snap.forEach(doc=>{
+            const d=doc.data(); if(!d.location) return;
+            const m=L.marker([d.location.latitude,d.location.longitude]).addTo(map);
+            m.bindPopup(d.name);
+            allHuts.push({id:doc.id,lat:d.location.latitude,lng:d.location.longitude});
+          });
+          resolve();
+        });
+      });
+    }
+
+    // Route
+    async function recalculateRoute(){
+      if(!userMarker || allHuts.length===0){ showToast('Warten auf Daten'); return; }
+      const coords=[[userMarker.getLatLng().lng,userMarker.getLatLng().lat]];
+      allHuts.forEach(h=>coords.push([h.lng,h.lat]));
+      try{
+        const res=await fetch('https://api.openrouteservice.org/v2/directions/cycling-regular/geojson',{method:'POST',headers:{Authorization:'5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87','Content-Type':'application/json'},body:JSON.stringify({coordinates:coords})});
+        const data=await res.json();
+        if(routingControl) map.removeLayer(routingControl);
+        const lc=data.features[0].geometry.coordinates.map(c=>[c[1],c[0]]);
+        routingControl=L.polyline(lc,{color:'#10b981',weight:6,renderer:L.canvas()}).addTo(map);
+        map.fitBounds(routingControl.getBounds(),{padding:[50,50]});
+      }catch(e){showToast('Route Fehler');}
+    }
+
+    // Init
+    locateUser();
+    loadHutsLive().then(()=>recalculateRoute());
+  </script>
+</body>
+</html>
