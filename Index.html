@@ -46,7 +46,71 @@
     <button id="startBtn" onclick="startRoute()">▶️ Start</button>
     <button id="stopBtn" onclick="stopNavigation()" style="display:none;">🛑 Stop</button>
     <button onclick="resetRoute()">🗑️ Reset</button>
-  </div>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>  <script>
+  </div>  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">function init() {
+  initUsername();
+
+  map = L.map("map", {
+    center: [47.3, 11.4],
+    zoom: 13
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  map.addLayer(cluster);
+
+  navigator.geolocation.watchPosition(
+    p => {
+      const ll = [p.coords.latitude, p.coords.longitude];
+      if (!userMarker) {
+        userMarker = L.marker(ll).addTo(map);
+        map.setView(ll, 15);
+        document.getElementById("loader").style.display = "none";
+      } else {
+        userMarker.setLatLng(ll);
+        if (follow) map.setView(ll);
+      }
+      updateGroup();
+    },
+    () => {
+      document.getElementById("loader").style.display = "none";
+      showToast("⚠️ GPS nicht verfügbar");
+    },
+    { enableHighAccuracy: true }
+  );
+
+  listenGroup();
+
+  db.collection("eierhuetten").onSnapshot(snap => {
+    huts = [];
+    cluster.clearLayers();
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (!d.location || d.status !== "angenommen") return;
+      const h = {
+        id: doc.id,
+        name: d.name,
+        lat: d.location.latitude,
+        lng: d.location.longitude
+      };
+      huts.push(h);
+      const m = L.marker([h.lat, h.lng])
+        .bindPopup(`<b>${h.name}</b><br><button onclick="toggleSelection('${h.id}')">✅</button>`);
+      cluster.addLayer(m);
+    });
+  });
+
+  // Fallback: Loader nach 8 Sekunden ausblenden
+  setTimeout(() => {
+    const l = document.getElementById("loader");
+    if (l && l.style.display !== "none") {
+      l.style.display = "none";
+      showToast("⏳ Timeout – GPS nicht verfügbar?");
+    }
+  }, 8000);
+}
+
+document.addEventListener("DOMContentLoaded", init);
+
+</script>  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>  <script>
     // Firebase Init
     const firebaseConfig = { apiKey: "...", authDomain: "...", projectId: "..." };
     firebase.initializeApp(firebaseConfig);
