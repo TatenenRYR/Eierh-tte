@@ -1,140 +1,100 @@
-<!DOCTYPE html><html lang="de">
+<!DOCTYPE html>
+<html lang="de">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Stabile RadlMap</title>
+  <title>Eierhütten Navigation – Gruppen & Sicherheit</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <style>
-    html, body { height: 100%; margin: 0; }
-    #map { width: 100%; height: 100%; }
-    #followBtn {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 1000;
-      background: #10b981;
-      color: white;
-      padding: 10px 16px;
-      border: none;
-      border-radius: 8px;
-      display: none;
-      font-size: 1em;
-    }
-    #routeInfo {
-      position: absolute;
-      top: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: white;
-      padding: 8px 12px;
-      border-radius: 8px;
-      z-index: 999;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-      font-family: sans-serif;
-    }
+    html, body { margin:0; padding:0; height:100%; font-family:sans-serif; }
+    #map { position:absolute; top:0; bottom:0; left:0; right:0; }
+    #loader { position:fixed; inset:0; background:white; display:flex; align-items:center; justify-content:center; z-index:9999; font-size:1.2em; }
+    #toolbar { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:8px; background:#fff; padding:8px 12px; border-radius:12px; box-shadow:0 2px 6px rgba(0,0,0,0.2); z-index:1000; }
+    #toolbar button, #toolbar input { min-width:48px; min-height:48px; font-size:16px; border:none; border-radius:8px; cursor:pointer; }
+    #toolbar input { padding:0 8px; flex:1; }
+    #dashboard { position:fixed; top:60px; right:10px; width:240px; background:#fff; border:1px solid #ccc; padding:10px; z-index:1001; font-size:14px; border-radius:8px; }
+    #toast { position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:#333; color:white; padding:10px 16px; border-radius:8px; display:none; z-index:1002; }
+    #debug { position:fixed; bottom:10px; left:10px; background:black; color:lime; padding:6px; font-family:monospace; font-size:12px; border-radius:6px; z-index:1002; max-height:120px; overflow:auto; }
+    #routeInfo { position:fixed; top:10px; left:50%; transform:translateX(-50%); background:#333; color:white; padding:6px 14px; border-radius:8px; font-size:14px; z-index:1001; display:none; }
+    #compass { position:fixed;top:20px;left:20px;width:50px;height:50px;background:#fff;border-radius:50%;z-index:1001;display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 0 5px rgba(0,0,0,0.3); }
   </style>
 </head>
 <body>
+  <div id="loader">⏳ Lade Karte…</div>
   <div id="map"></div>
-  <div id="routeInfo">🚴</div>
-  <button id="followBtn" onclick="enableAutoFollow()">📍 Folgen</button>
+  <div id="compass">🧭</div>
+  <div id="routeInfo">0 km · 0 Min · -</div>
+  <div id="dashboard">
+    <b>📋 Ausgewählt:</b>
+    <ul id="selectedList" style="list-style:none;padding-left:0;"></ul>
+    <button onclick="skipHut()">⏭️ Nächste überspringen</button>
+    <hr/>
+    <button onclick="sendSOS()">❗ SOS senden</button>
+    <hr/>
+    <input id="username" placeholder="Name" />
+    <button onclick="saveUsername()">💾 Speichern</button>
+    <p id="userDisplay" style="margin:8px 0;"></p>
+    <input id="roomId" placeholder="Raum-ID" />
+    <button onclick="joinRoom()">👥 Beitreten</button>
+  </div>
+  <div id="toast"></div>
+  <div id="debug"></div>
+  <div id="toolbar">
+    <button onclick="toggleFollow()">📍</button>
+    <button onclick="toggleVoice()">🔊</button>
+    <button id="startBtn" onclick="startRoute()">▶️ Start</button>
+    <button id="stopBtn" onclick="stopNavigation()" style="display:none;">🛑 Stop</button>
+    <button onclick="resetRoute()">🗑️ Reset</button>
+  </div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <script>
-    const map = L.map('map').setView([51.5, 10.5], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19
-    }).addTo(map);let userMarker = null;
-let autoFollow = true;
-let firstUpdate = true;
-let routeLayer = null;
+// Firebase Init
+const firebaseConfig={apiKey:"5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",authDomain:"eierhuettentour.firebaseapp.com",projectId:"eierhuettentour"};firebase.initializeApp(firebaseConfig);const db=firebase.firestore();
 
-function locateUser() {
-  if (!navigator.geolocation) {
-    alert('Geolocation wird nicht unterstützt');
-    return;
-  }
+// Globals
+let map,userMarker,follow=true,voice=true,cluster=L.markerClusterGroup(),huts=[],selected=[],routingLine,progressLine,navInterval;
+let groupMarkers={},roomId="default",alias="User"+Math.floor(Math.random()*1000);
+let tourStartTime, tourDistance=0, challengeProgress=0;
 
-  navigator.geolocation.watchPosition(pos => {
-    const latlng = [pos.coords.latitude, pos.coords.longitude];
+function showToast(msg){const t=document.getElementById("toast");t.innerText=msg;t.style.display="block";setTimeout(()=>t.style.display="none",3000);}
+function logDebug(msg){const d=document.getElementById("debug");d.innerHTML+=`[${new Date().toLocaleTimeString()}] ${msg}<br>`;d.scrollTop=d.scrollHeight;}
 
-    if (!userMarker) {
-      userMarker = L.marker(latlng).addTo(map);
-    } else {
-      userMarker.setLatLng(latlng);
-    }
+// User
+function saveUsername(){const n=document.getElementById("username").value.trim();if(n){localStorage.username=n;document.getElementById("userDisplay").innerText="👤 " + n;showToast("✔️ Name gespeichert");}}
+function initUsername(){const n=localStorage.username; if(n) document.getElementById("userDisplay").innerText="👤 " + n;}
 
-    if (firstUpdate || autoFollow) {
-      map.setView(latlng, 15);
-      firstUpdate = false;
-    }
-  }, err => {
-    alert("Fehler beim Standortzugriff");
-  }, {
-    enableHighAccuracy: true,
-    timeout: 10000,
-    maximumAge: 10000
-  });
-}
+// Group
+function joinRoom(){const id=input=document.getElementById("roomId").value.trim();if(id){roomId=id;showToast("👥 Betrete Raum " + id);listenGroup();}}
+function updateGroup(){if(userMarker) {const pos=userMarker.getLatLng();db.collection("live").doc(alias).set({name:localStorage.username||alias,lat:pos.lat,lng:pos.lng,room:roomId,ts:Date.now()});}}
+function listenGroup(){db.collection("live").where("room","==",roomId).onSnapshot(snap=>{snap.forEach(doc=>{const d=doc.data();if(doc.id===alias)return; if(!groupMarkers[doc.id]){groupMarkers[doc.id]=L.marker([d.lat,d.lng],{icon:L.divIcon({className:"group-icon",html:"👥"})}).addTo(map);}else groupMarkers[doc.id].setLatLng([d.lat,d.lng]);});});}
 
-function enableAutoFollow() {
-  autoFollow = true;
-  document.getElementById('followBtn').style.display = 'none';
-  if (userMarker) {
-    map.setView(userMarker.getLatLng(), 15);
-  }
-}
+// Safety
+function sendSOS(){if(userMarker){const pos=userMarker.getLatLng(); showToast("⚠️ SOS gesendet: " + pos.lat.toFixed(5)+","+pos.lng.toFixed(5)); logDebug("SOS at " + pos);} }
 
-map.on('dragstart', () => {
-  autoFollow = false;
-  document.getElementById('followBtn').style.display = 'block';
-});
+// Routing
+function toggleFollow(){follow=!follow;showToast("📍 Follow " + (follow?"AN":"AUS"));}
+function toggleVoice(){voice=!voice;showToast("🔊 Voice " + (voice?"AN":"AUS"));}
+function speak(text){if(!voice)return;const u=new SpeechSynthesisUtterance(text);u.lang="de-DE";speechSynthesis.cancel();speechSynthesis.speak(u);}
+function skipHut(){if(navInterval){clearInterval(navInterval);selected.shift();showToast("⏭️ Hütte übersprungen");startRoute();}}
 
-async function calculateRoute() {
-  const coordinates = [
-    [10.0, 51.5],
-    [10.1, 51.6],
-    [10.3, 51.55]
-  ];
+function startRoute(){if(!userMarker||!selected.length){showToast("❗ Auswahl fehlt");return;}tourStartTime=Date.now();tourDistance=0;challengeProgress=0;const coords=[ [userMarker.getLatLng().lng,userMarker.getLatLng().lat],...selected.map(h=>[h.lng,h.lat]) ];fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson",{method:"POST",headers:{"Authorization":"5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87","Content-Type":"application/json"},body:JSON.stringify({coordinates:coords})}).then(r=>r.json()).then(d=>{const pts=d.features[0].geometry.coordinates.map(p=>[p[1],p[0]]);if(routingLine)map.removeLayer(routingLine);if(progressLine)map.removeLayer(progressLine);routingLine=L.polyline(pts,{color:"#f80",weight:5}).addTo(map);progressLine=L.polyline([],{color:"#aaa",weight:4}).addTo(map);map.fitBounds(routingLine.getBounds(),{padding:[30,30]});document.getElementById("startBtn").style.display="none";document.getElementById("stopBtn").style.display="inline-block";navInterval=setInterval(()=>navLoop(pts),10000);});}
+function resetRoute(){selected=[];if(routingLine)map.removeLayer(routingLine);if(progressLine)map.removeLayer(progressLine);clearInterval(navInterval);updateSelectedList();document.getElementById("routeInfo").style.display="none";showToast("🗑️ Route gelöscht");}
+function stopNavigation(){clearInterval(navInterval);navInterval=null;showToast("🛑 Navigation gestoppt");speak("Navigation gestoppt");document.getElementById("stopBtn").style.display="none";document.getElementById("startBtn").style.display="inline-block";}
+function navLoop(path){const pos=userMarker.getLatLng();const next=path[1];const dist=map.distance(pos,next); if(dist<50&&path.length>2){const past=path.shift();routingLine.setLatLngs(path);progressLine.addLatLng(past);speakNextInstruction(selected[0].name,0);updateChallenge();}else if(path.length<=2&&dist<50){stopNavigation();speak("Ziel erreicht");logSummary();updateChallenge();}else{tourDistance+=map.distance(pos,next);speakNextInstruction(selected[0].name,dist);const rest=path.reduce((a,p,i,arr)=>i>0?a+map.distance(arr[i-1],p):0,0);document.getElementById("routeInfo").innerText=`${(rest/1000).toFixed(1)} km · ${Math.round(rest/250)} Min · ${selected[0].name}`;document.getElementById("routeInfo").style.display="block";}updateGroup();}
+function updateChallenge(){challengeProgress++;showToast(`🥚 ${challengeProgress} besucht`);if(challengeProgress===selected.length)showToast("🏆 Challenge geschafft");}
+function logSummary(){const dur=Math.round((Date.now()-tourStartTime)/60000);alert(`🏁 Tour: ${(tourDistance/1000).toFixed(2)} km in ${dur} Min`);}  
 
-  try {
-    const response = await fetch('https://api.openrouteservice.org/v2/directions/cycling-regular/geojson', {
-      method: 'POST',
-      headers: {
-        'Authorization': '5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ coordinates })
-    });
+function updateSelectedList(){const ul=document.getElementById("selectedList");ul.innerHTML="";selected.forEach((h,i)=>{const li=document.createElement("li");li.innerHTML=`🔢 ${i+1}. ${h.name} <button onclick="removeHut('${h.id}')">🗑️</button>`;ul.appendChild(li);});}
+function removeHut(id){const i=selected.findIndex(h=>h.id===id);if(i>=0){selected.splice(i,1);updateSelectedList();showToast("❌ Entfernt");}}
 
-    const data = await response.json();
-    const routeCoords = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
-
-    if (routeLayer) map.removeLayer(routeLayer);
-    routeLayer = L.polyline(routeCoords, {
-      color: '#10b981',
-      weight: 5,
-      opacity: 0.9
-    }).addTo(map);
-
-    map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
-
-    const dist = data.features[0].properties.summary.distance / 1000;
-    const dur = data.features[0].properties.summary.duration / 60;
-    const h = Math.floor(dur / 60);
-    const m = Math.round(dur % 60);
-    const timeStr = h > 0 ? `${h} Std ${m} Min` : `${m} Min`;
-
-    document.getElementById('routeInfo').innerText = `🚴 ${dist.toFixed(1)} km · ⏱ ${timeStr}`;
-  } catch (err) {
-    console.error("Routenfehler:", err);
-    alert("Route konnte nicht geladen werden");
-  }
-}
-
-locateUser();
-calculateRoute();
-
+// Init
+function init(){initUsername();map=L.map("map",{center:[47.3,11.4],zoom:13});L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);map.addLayer(cluster);navigator.geolocation.watchPosition(p=>{const ll=[p.coords.latitude,p.coords.longitude];if(!userMarker){userMarker=L.marker(ll).addTo(map);map.setView(ll,15);document.getElementById("loader").style.display="none";}else{userMarker.setLatLng(ll);if(follow)map.setView(ll);}updateGroup();},()=>{document.getElementById("loader").style.display="none";showToast("⚠️ GPS nvt");},{enableHighAccuracy:true});listenGroup();
+ db.collection("eierhuetten").onSnapshot(snap=>{huts=[];cluster.clearLayers();snap.forEach(doc=>{const d=doc.data();if(!d.location||d.status!="angenommen")return;const h={id:doc.id,name:d.name,lat:d.location.latitude,lng:d.location.longitude};huts.push(h);const m=L.marker([h.lat,h.lng]).bindPopup(`<b>${h.name}</b><br><button onclick="toggleSelection('${h.id}')">✅</button>`);cluster.addLayer(m);});});setTimeout(()=>{const l=document.getElementById("loader");if(l&&l.style.display!="none"){l.style.display="none";showToast("⏳ Timeout");}},10000);}document.addEventListener("DOMContentLoaded",init);
   </script>
 </body>
 </html>
