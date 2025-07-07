@@ -1,0 +1,265 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Eierhütten Navigation</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+  <style>
+    html, body { margin: 0; height: 100%; font-family: sans-serif; }
+    #map { height: 100%; }
+    #loader {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      background: white; display: flex; align-items: center; justify-content: center;
+      flex-direction: column; z-index: 9999;
+    }
+    #loaderStatus { margin-top: 10px; color: #333; }
+    #debugConsole {
+      position: fixed; top: 0; left: 0; right: 0;
+      max-height: 150px; overflow: auto; z-index: 99999;
+      background: #000; color: #0f0; font-family: monospace;
+      font-size: 12px; padding: 8px; display: none;
+    }
+    #langSelector {
+      position: absolute; bottom: 10px; right: 10px; z-index: 999;
+    }
+  </style>
+</head>
+<body>
+<div id="loader">
+  <div>Lade Anwendung…</div>
+  <div id="loaderStatus">Initialisiere…</div>
+</div>
+<div id="debugConsole"></div>
+<select id="langSelector">
+  <option value="de">🇩🇪 Deutsch</option>
+  <option value="en">🇬🇧 English</option>
+</select>
+<div id="map"></div>
+<div id="summary" style="position:absolute; top:10px; left:10px; z-index:999;
+background:rgba(255,255,255,0.9); padding:6px 10px; border-radius:6px; font-size:14px; display:none;">
+  <div id="summaryDistance"></div>
+  <div id="summaryTime"></div>
+</div>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js">
+function speak(txt) {
+  if (!window.speechSynthesis) return;
+  const msg = new SpeechSynthesisUtterance(txt);
+  msg.lang = (lang === "de") ? "de-DE" : "en-US";
+  window.speechSynthesis.speak(msg);
+}
+
+</script>
+<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js">
+function speak(txt) {
+  if (!window.speechSynthesis) return;
+  const msg = new SpeechSynthesisUtterance(txt);
+  msg.lang = (lang === "de") ? "de-DE" : "en-US";
+  window.speechSynthesis.speak(msg);
+}
+
+</script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js">
+function speak(txt) {
+  if (!window.speechSynthesis) return;
+  const msg = new SpeechSynthesisUtterance(txt);
+  msg.lang = (lang === "de") ? "de-DE" : "en-US";
+  window.speechSynthesis.speak(msg);
+}
+
+</script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js">
+function speak(txt) {
+  if (!window.speechSynthesis) return;
+  const msg = new SpeechSynthesisUtterance(txt);
+  msg.lang = (lang === "de") ? "de-DE" : "en-US";
+  window.speechSynthesis.speak(msg);
+}
+
+</script>
+<script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js">
+function speak(txt) {
+  if (!window.speechSynthesis) return;
+  const msg = new SpeechSynthesisUtterance(txt);
+  msg.lang = (lang === "de") ? "de-DE" : "en-US";
+  window.speechSynthesis.speak(msg);
+}
+
+</script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-polylineoffset@1.0.1/leaflet.polylineoffset.min.js">
+function speak(txt) {
+  if (!window.speechSynthesis) return;
+  const msg = new SpeechSynthesisUtterance(txt);
+  msg.lang = (lang === "de") ? "de-DE" : "en-US";
+  window.speechSynthesis.speak(msg);
+}
+
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tts-js/1.0.0/tts.min.js">
+function speak(txt) {
+  if (!window.speechSynthesis) return;
+  const msg = new SpeechSynthesisUtterance(txt);
+  msg.lang = (lang === "de") ? "de-DE" : "en-US";
+  window.speechSynthesis.speak(msg);
+}
+
+</script>
+<script>
+const DEBUG_MODE = true;
+const lang = navigator.language.startsWith("de") ? "de" : "en";
+document.getElementById("langSelector").value = lang;
+document.getElementById("langSelector").addEventListener("change", e => location.reload());
+
+function log(msg) {
+  if (!DEBUG_MODE) return;
+  const el = document.getElementById("debugConsole");
+  if (!el) return;
+  el.style.display = "block";
+  const p = document.createElement("div");
+  p.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
+  el.appendChild(p);
+  el.scrollTop = el.scrollHeight;
+}
+
+function updateLoaderStatus(txt) {
+  document.getElementById("loaderStatus").textContent = txt;
+  log("Loader: " + txt);
+}
+
+// === Firebase Initialisierung (bitte Projekt-Daten hier einfügen!) ===
+const firebaseConfig = {
+  apiKey: "DEIN_API_KEY",
+  authDomain: "DEIN_PROJEKT.firebaseapp.com",
+  projectId: "DEIN_PROJEKT_ID",
+  storageBucket: "DEIN_PROJEKT.appspot.com",
+  messagingSenderId: "DEINE_ID",
+  appId: "DEINE_APP_ID"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// === Karte & Marker ===
+let map = L.map("map")
+let selectedRoute = null;
+let routeControl = null;
+let targetMarker = null;
+let progressLine = null;
+let currentStep = 0;.setView([51.5, 10.5], 6);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 18,
+}).addTo(map);
+let cluster = L.markerClusterGroup().addTo(map);
+
+// === Hütten laden ===
+let hutsReady = false;
+updateLoaderStatus(lang === "de" ? "📦 Hütten werden geladen…" : "📦 Loading huts…");
+db.collection("eierhuetten").where("status", "==", "angenommen").onSnapshot(snapshot => {
+  snapshot.forEach(doc => {
+    const data = doc.data();
+    if (data.location && data.name) {
+      const lat = data.location.latitude;
+      const lng = data.location.longitude;
+      const name = data.name;
+      
+const extras = [
+  data.oeffnungszeiten ? (lang === "de" ? "⏰ Öffnungszeiten: " : "⏰ Hours: ") + data.oeffnungszeiten : "",
+  data.sitzplaetze === "Ja" ? (lang === "de" ? "🪑 Sitzplätze vorhanden" : "🪑 Seating available") : "",
+  data.strom === "Ja" ? (lang === "de" ? "🔌 Stromanschluss" : "🔌 Power available") : ""
+].filter(Boolean).join("<br>");
+
+const marker = L.marker([lat, lng]).on("click", () => {
+  if (!userMarker) return;
+  const from = userMarker.getLatLng();
+  const to = L.latLng(lat, lng);
+
+  if (routeControl) map.removeControl(routeControl);
+  if (targetMarker) map.removeLayer(targetMarker);
+  if (progressLine) map.removeLayer(progressLine);
+
+  routeControl = L.Routing.control({
+    waypoints: [from, to],
+    routeWhileDragging: false,
+    createMarker: () => null,
+    show: false
+  }).addTo(map);
+
+  targetMarker = L.marker(to, {icon: L.icon({
+    iconUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
+    iconSize: [32, 32], iconAnchor: [16, 32]
+  })}).addTo(map);
+
+  routeControl.on("routesfound", e => {
+    const route = e.routes[0];
+    selectedRoute = route.coordinates;
+    currentStep = 0;
+    if (progressLine) map.removeLayer(progressLine);
+    progressLine = L.polyline([], {color:"#888", weight:5}).addTo(map);
+    const dist = (route.summary.totalDistance / 1000).toFixed(2);
+    const time = Math.round(route.summary.totalTime / 60);
+    document.getElementById("summaryDistance").textContent = (lang === "de" ? "Distanz: " : "Distance: ") + dist + " km";
+    document.getElementById("summaryTime").textContent = (lang === "de" ? "Dauer: " : "Duration: ") + time + " min";
+    document.getElementById("summary").style.display = "block";
+    log("📍 Route gefunden – " + dist + " km, " + time + " min");
+  });
+
+}).bindPopup(`<b>${name}</b><br>${extras}`);
+      cluster.addLayer(marker);
+    }
+  });
+  hutsReady = true;
+  log("✅ Hütten geladen");
+  checkReady();
+});
+
+// === GPS ===
+let userReady = false;
+updateLoaderStatus(lang === "de" ? "📍 Warte auf GPS…" : "📍 Waiting for GPS…");
+navigator.geolocation.watchPosition(pos => {
+  const latlng = [pos.coords.latitude, pos.coords.longitude];
+  if (!window.userMarker) {
+    window.userMarker = L.marker(latlng).addTo(map);
+    map.setView(latlng, 14);
+  } else {
+    userMarker.setLatLng(latlng);
+if (selectedRoute && currentStep < selectedRoute.length - 1) {
+  const next = selectedRoute[currentStep];
+  const dist = map.distance(latlng, next);
+  if (dist < 25) {
+    progressLine.addLatLng(next);
+    currentStep++;
+    if (currentStep % 5 === 0) {
+      const dir = lang === "de" ? "Geradeaus" : "Straight";
+      if (typeof speak === "function") speak(dir);
+    }
+  }
+}
+  }
+  userReady = true;
+  log("✅ GPS bereit");
+  checkReady();
+}, err => {
+  log("❌ GPS Fehler: " + err.message);
+  userReady = true;
+  checkReady();
+}, { enableHighAccuracy: true });
+
+// === Loader ausblenden wenn alles bereit ===
+function checkReady() {
+  if (userReady && hutsReady) {
+    document.getElementById("loader").style.display = "none";
+    log("✅ App bereit – Loader entfernt");
+  }
+}
+
+function speak(txt) {
+  if (!window.speechSynthesis) return;
+  const msg = new SpeechSynthesisUtterance(txt);
+  msg.lang = (lang === "de") ? "de-DE" : "en-US";
+  window.speechSynthesis.speak(msg);
+}
+
+</script>
+</body>
+</html>
