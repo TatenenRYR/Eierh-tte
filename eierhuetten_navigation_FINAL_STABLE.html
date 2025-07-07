@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eierhütten Navigation – Stabil</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <style>
+    html, body { margin:0; padding:0; height:100%; font-family:sans-serif; }
+    #map { position:absolute; top:0; bottom:0; left:0; right:0; }
+    #loader {
+      position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+      background:white; z-index:9999; font-size:1.2em;
+    }
+    #toolbar {
+      position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+      display:flex; gap:10px; z-index:1000; background:#fff; padding:10px; border-radius:12px;
+      box-shadow:0 2px 6px rgba(0,0,0,0.2);
+    }
+    #toolbar button {
+      background:#10b981; color:white; border:none; padding:10px 16px;
+      border-radius:8px; cursor:pointer; font-size:16px;
+    }
+    #dashboard {
+      position:fixed; top:60px; right:10px; width:220px; background:#fff;
+      border:1px solid #ccc; padding:10px; z-index:1001; font-size:14px; border-radius:8px;
+    }
+    #toast {
+      position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+      background:#333; color:white; padding:10px 16px; border-radius:8px;
+      display:none; z-index:1002;
+    }
+    #debug {
+      position:fixed; bottom:10px; left:10px; background:black; color:lime;
+      padding:6px; font-family:monospace; font-size:12px; border-radius:6px;
+      z-index:1002; max-height:120px; overflow:auto;
+    }
+  </style>
+</head>
+<body>
+  <div id="loader">⏳ Karte wird geladen…</div>
+  <div id="map"></div>
+  <div id="dashboard">
+    <b>📋 Ausgewählt:</b>
+    <ul id="selectedList" style="list-style:none; padding-left:0; margin-top:8px;"></ul>
+  </div>
+  <div id="toast"></div>
+  <div id="debug"></div>
+  <div id="toolbar">
+    <button onclick="toggleFollow()">📍</button>
+    <button onclick="toggleVoice()">🔊</button>
+    <button onclick="startDemoRoute()">▶️</button>
+    <button onclick="resetRoute()">🗑</button>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script>
+    let map, userMarker, follow = true, voice = true;
+    let selected = [], huts = [], routingLine = null;
+    const cluster = L.markerClusterGroup();
+
+    function showToast(msg) {
+      const t = document.getElementById("toast");
+      if (!t) return;
+      t.innerText = msg;
+      t.style.display = "block";
+      setTimeout(() => t.style.display = "none", 3000);
+    }
+
+    function logDebug(msg) {
+      const d = document.getElementById("debug");
+      if (!d) return;
+      d.innerHTML += `[${new Date().toLocaleTimeString()}] ${msg}<br>`;
+      d.scrollTop = d.scrollHeight;
+    }
+
+    function updateSelectedList() {
+      const ul = document.getElementById("selectedList");
+      if (!ul) return;
+      ul.innerHTML = selected.map(h => `<li>✅ ${h.name}</li>`).join("");
+    }
+
+    function toggleFollow() {
+      follow = !follow;
+      showToast("📍 Follow " + (follow ? "aktiv" : "aus"));
+      logDebug("Follow: " + follow);
+    }
+
+    function toggleVoice() {
+      voice = !voice;
+      showToast("🔊 Sprache " + (voice ? "aktiv" : "aus"));
+      logDebug("Voice: " + voice);
+    }
+
+    function toggleSelection(id) {
+      try {
+        const h = huts.find(x => x.id === id);
+        if (!h) return;
+        const i = selected.findIndex(x => x.id === id);
+        if (i >= 0) {
+          selected.splice(i, 1);
+          showToast("❌ Entfernt: " + h.name);
+        } else {
+          selected.push(h);
+          showToast("✅ Hinzugefügt: " + h.name);
+        }
+        updateSelectedList();
+      } catch (e) {
+        showToast("⚠️ Auswahlfehler");
+        logDebug(e);
+      }
+    }
+
+    function resetRoute() {
+      selected = [];
+      if (routingLine) map.removeLayer(routingLine);
+      routingLine = null;
+      updateSelectedList();
+      showToast("🧹 Route gelöscht");
+    }
+
+    function startDemoRoute() {
+      if (!userMarker || selected.length === 0) {
+        showToast("❗ Standort oder Auswahl fehlt");
+        return;
+      }
+      const from = userMarker.getLatLng();
+      const to = L.latLng(selected[0].lat, selected[0].lng);
+      if (routingLine) map.removeLayer(routingLine);
+      routingLine = L.polyline([from, to], {color: "#f80", weight: 5}).addTo(map);
+      map.fitBounds(routingLine.getBounds(), {padding: [30, 30]});
+      showToast("🚴 Route gestartet");
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      map = L.map("map", { center: [47.3, 11.4], zoom: 13 });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      map.addLayer(cluster);
+
+      huts = [
+        {id: "a", name: "Eierhütte A", lat: 47.31, lng: 11.41},
+        {id: "b", name: "Panorama Hütte", lat: 47.33, lng: 11.42},
+        {id: "c", name: "Jausenstation C", lat: 47.32, lng: 11.43}
+      ];
+
+      huts.forEach(h => {
+        const m = L.marker([h.lat, h.lng]);
+        m.bindPopup(`<b>${h.name}</b><br><button onclick="toggleSelection('${h.id}')">✅ Auswahl</button>`);
+        cluster.addLayer(m);
+      });
+
+      if (!navigator.geolocation) {
+        showToast("❌ Kein GPS");
+        document.getElementById("loader").style.display = "none";
+      } else {
+        navigator.geolocation.watchPosition(p => {
+          const ll = [p.coords.latitude, p.coords.longitude];
+          if (!userMarker) {
+            userMarker = L.marker(ll).addTo(map);
+            map.setView(ll, 15);
+            document.getElementById("loader").style.display = "none";
+          } else {
+            userMarker.setLatLng(ll);
+            if (follow) map.setView(ll);
+          }
+        }, () => {
+          showToast("⚠️ Standort nicht verfügbar");
+          document.getElementById("loader").style.display = "none";
+        }, { enableHighAccuracy: true });
+
+        // Sicherheits-Timeout
+        setTimeout(() => {
+          const loader = document.getElementById("loader");
+          if (loader && loader.style.display !== "none") {
+            loader.style.display = "none";
+            showToast("⚠️ Standort nicht verfügbar (Timeout)");
+          }
+        }, 10000);
+      }
+    });
+  </script>
+</body>
+</html>
