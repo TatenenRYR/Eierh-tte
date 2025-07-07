@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eierhütten Navigation</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: sans-serif;
+    }
+    #map {
+      position: absolute;
+      top: 0; bottom: 0; left: 0; right: 0;
+    }
+    #loader {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,0.9);
+      font-size: 1.2em;
+      z-index: 9999;
+    }
+    #toolbar {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      z-index: 1000;
+      background: white;
+      border-radius: 12px;
+      padding: 8px 12px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+    }
+    #toolbar button {
+      background: #10b981;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 14px;
+      cursor: pointer;
+    }
+    #debug {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: black;
+      color: lime;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 6px;
+      border-radius: 6px;
+      z-index: 1001;
+      max-height: 120px;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <div id="loader">⏳ Karte wird geladen…</div>
+  <div id="map"></div>
+  <div id="toolbar">
+    <button onclick="toggleDarkMode()">🌓</button>
+    <button onclick="toggleFollow()">📍</button>
+    <button onclick="resetRoute()">🗑</button>
+  </div>
+  <div id="debug" style="display:none;"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script>
+    let map, userMarker, following = true, darkMode = false;
+    let clusterGroup = L.markerClusterGroup();
+    const debugBox = document.getElementById("debug");
+
+    function log(msg) {
+      debugBox.style.display = "block";
+      debugBox.innerHTML += `[${new Date().toLocaleTimeString()}] ${msg}<br>`;
+      debugBox.scrollTop = debugBox.scrollHeight;
+    }
+
+    function toggleDarkMode() {
+      darkMode = !darkMode;
+      localStorage.setItem("darkMode", darkMode ? "1" : "0");
+      map.eachLayer(l => map.removeLayer(l));
+      (darkMode ? dark : light).addTo(map);
+      clusterGroup.addTo(map);
+      if (userMarker) userMarker.addTo(map);
+      log("🌗 Modus: " + (darkMode ? "Dunkel" : "Hell"));
+    }
+
+    function toggleFollow() {
+      following = !following;
+      log("📍 Follow-Modus: " + (following ? "AN" : "AUS"));
+    }
+
+    function resetRoute() {
+      log("🗑 Route gelöscht");
+    }
+
+    const light = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '&copy; OpenStreetMap'
+    });
+    const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19, attribution: '&copy; OpenStreetMap & CartoDB'
+    });
+
+    document.addEventListener("DOMContentLoaded", () => {
+      darkMode = localStorage.getItem("darkMode") === "1";
+      map = L.map("map", {
+        center: [47.3, 11.4],
+        zoom: 13,
+        layers: [darkMode ? dark : light]
+      });
+
+      map.addLayer(clusterGroup);
+
+      const huts = [
+        {name: "Eierhütte A", lat: 47.31, lng: 11.41},
+        {name: "Eierhütte B", lat: 47.32, lng: 11.42},
+        {name: "Eierhütte C", lat: 47.33, lng: 11.43},
+      ];
+      huts.forEach(h => {
+        const marker = L.marker([h.lat, h.lng]);
+        marker.bindPopup(`<b>${h.name}</b><br><button onclick="alert('Navigation starten...')">🚴 Route</button>`);
+        clusterGroup.addLayer(marker);
+      });
+
+      navigator.geolocation.watchPosition(pos => {
+        const latlng = [pos.coords.latitude, pos.coords.longitude];
+        if (!userMarker) {
+          userMarker = L.marker(latlng).addTo(map);
+          map.setView(latlng, 15);
+          document.getElementById("loader").style.display = "none";
+        } else {
+          userMarker.setLatLng(latlng);
+          if (following) map.setView(latlng);
+        }
+      }, err => {
+        log("❌ GPS nicht verfügbar");
+        document.getElementById("loader").style.display = "none";
+      }, {
+        enableHighAccuracy: true
+      });
+    });
+  </script>
+</body>
+</html>
