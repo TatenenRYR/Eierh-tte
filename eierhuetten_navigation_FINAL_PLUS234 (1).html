@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eierhütten Navigation – Kategorie & Optimierung</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <style>
+    html, body { margin:0; padding:0; height:100%; font-family:sans-serif; }
+    #map { position:absolute; top:0; bottom:0; left:0; right:0; }
+    #loader { position:fixed; inset:0; background:white; display:flex; align-items:center; justify-content:center; z-index:9999; font-size:1.2em; }
+    #toolbar {
+      position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+      display:flex; gap:10px; z-index:1000;
+      background:#fff; padding:10px; border-radius:12px;
+      box-shadow:0 2px 6px rgba(0,0,0,0.2);
+    }
+    #toolbar button, #toolbar select {
+      background:#10b981; color:white; border:none; padding:10px 16px;
+      border-radius:8px; cursor:pointer; font-size:16px;
+    }
+    #toolbar select {
+      background: #4caf50;
+    }
+    #routeInfo {
+      position:fixed; top:10px; left:50%; transform:translateX(-50%);
+      background:#333; color:white; padding:6px 14px; border-radius:8px;
+      font-size:14px; z-index:1001; display:none;
+    }
+  </style>
+</head>
+<body>
+  <div id="loader">⏳ Karte wird geladen…</div>
+  <div id="map"></div>
+  <div id="routeInfo">0 km · 0 Min · -</div>
+  <div id="toolbar">
+    <select id="categoryFilter" onchange="filterByCategory(this.value)">
+      <option value="alle">🧺 Alle Kategorien</option>
+      <option value="Almhütte">🏔️ Almhütte</option>
+      <option value="Aussicht">🔭 Aussicht</option>
+      <option value="Jausenstation">🥨 Jausenstation</option>
+    </select>
+    <button onclick="toggleFollow()">📍</button>
+    <button onclick="toggleVoice()">🔊</button>
+    <button onclick="startRoute()">▶️</button>
+    <button onclick="resetRoute()">🗑</button>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+  
+
+<script>
+const firebaseConfig = {
+  apiKey: "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+let map, userMarker, follow = true, voice = true;
+let huts = [], selected = [], markers = [], cluster = L.markerClusterGroup();
+let routingLine = null, progressLine = null, navInterval = null;
+const infoBox = document.getElementById("routeInfo");
+
+const bikeIcon = L.icon({ iconUrl: "https://cdn-icons-png.flaticon.com/512/2972/2972185.png", iconSize:[32,32], iconAnchor:[16,16] });
+const hutIcon = L.icon({ iconUrl: "https://cdn-icons-png.flaticon.com/512/685/685352.png", iconSize:[32,32], iconAnchor:[16,32] });
+
+function toggleFollow() { follow = !follow; }
+function toggleVoice() { voice = !voice; }
+function speak(txt) {
+  if (!voice) return;
+  const m = new SpeechSynthesisUtterance(txt);
+  m.lang = "de-DE";
+  speechSynthesis.cancel();
+  speechSynthesis.speak(m);
+}
+function resetRoute() {
+  if (routingLine) map.removeLayer(routingLine);
+  if (progressLine) map.removeLayer(progressLine);
+  routingLine = progressLine = null;
+  selected = [];
+  clearInterval(navInterval);
+  infoBox.style.display = "none";
+}
+
+function updateInfo(dist, time, next) {
+  infoBox.innerText = `${(dist/1000).toFixed(1)} km · ${Math.round(time)} Min · ${next}`;
+  infoBox.style.display = "block";
+}
+
+function toggleSelection(id) {
+  const h = huts.find(x => x.id === id);
+  if (!h) return;
+  const i = selected.findIndex(x => x.id === id);
+  if (i >= 0) selected.splice(i, 1);
+  else selected.push(h);
+}
+
+function filterByCategory(cat) {
+  cluster.clearLayers();
+  huts.forEach(h => {
+    if (cat === "alle" || h.type === cat) {
+      const m = L.marker([h.lat, h.lng], { icon: hutIcon })
+        .bindPopup(`<b>${h.name}</b><br><button onclick="toggleSelection('${h.id}')">✅ Auswahl</button>`);
+      cluster.addLayer(m);
+    }
+  });
+}
+
+function startRoute() {
+  if (!userMarker || selected.length === 0) return;
+
+  const start = turf.point([userMarker.getLatLng().lng, userMarker.getLatLng().lat]);
+  const features = selected.map(h => turf.point([h.lng, h.lat]));
+  const fc = turf.featureCollection([start, ...features]);
+
+  const routeOrder = turf.nearestPointToEach(start, turf.featureCollection(features));
+  const coords = [start.geometry.coordinates, ...features.map(f => f.geometry.coordinates)];
+
+  fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
+    method: "POST",
+    headers: {
+      "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ coordinates: coords })
+  })
+  .then(r => r.json())
+  .then(d => {
+    const pts = d.features[0].geometry.coordinates.map(p => [p[1], p[0]]);
+    if (routingLine) map.removeLayer(routingLine);
+    if (progressLine) map.removeLayer(progressLine);
+    routingLine = L.polyline(pts, { color: "#f80", weight: 5 }).addTo(map);
+    progressLine = L.polyline([], { color: "#888", weight: 5 }).addTo(map);
+    map.fitBounds(routingLine.getBounds(), { padding: [30, 30] });
+    startNavigationLoop(pts);
+  });
+}
+
+function startNavigationLoop(path) {
+  if (navInterval) clearInterval(navInterval);
+  navInterval = setInterval(() => {
+    if (!userMarker || !path.length) return;
+    const pos = userMarker.getLatLng();
+    const next = path[1];
+    const dist = map.distance(pos, next);
+
+    if (dist > 100 && !routingLine) {
+      speak("Du hast die Route verlassen. Neuberechnung...");
+      startRoute();
+      return;
+    }
+
+    if (dist < 50 && path.length > 2) {
+      const past = path.shift();
+      routingLine.setLatLngs(path);
+      progressLine.addLatLng(past);
+      speak("✅ Hütte erreicht");
+    } else {
+      const angle = Math.atan2(next.lat - pos.lat, next.lng - pos.lng) * 180 / Math.PI;
+      const turn = angle > 45 && angle < 135 ? "rechts" : angle < -45 && angle > -135 ? "links" : "geradeaus";
+      speak(`In ${Math.round(dist)} Metern ${turn}`);
+      const rest = path.reduce((a,p,i,arr)=>i>0?a+map.distance(arr[i-1],p):0,0);
+      updateInfo(rest, rest/250, selected[0]?.name || "-");
+    }
+  }, 10000);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  map = L.map("map", { center: [47.3, 11.4], zoom: 13 });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  map.addLayer(cluster);
+
+  navigator.geolocation.watchPosition(p => {
+    const latlng = [p.coords.latitude, p.coords.longitude];
+    if (!userMarker) {
+      userMarker = L.marker(latlng, { icon: bikeIcon }).addTo(map);
+      map.setView(latlng, 15);
+      document.getElementById("loader").style.display = "none";
+    } else {
+      userMarker.setLatLng(latlng);
+      if (follow) map.setView(latlng);
+    }
+  });
+
+  db.collection("eierhuetten").onSnapshot(snap => {
+    huts = [];
+    cluster.clearLayers();
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (!d.location || d.status !== "angenommen") return;
+      const hut = {
+        id: doc.id,
+        name: d.name,
+        lat: d.location.latitude,
+        lng: d.location.longitude,
+        type: d.typ || "Almhütte"
+      };
+      huts.push(hut);
+    });
+    filterByCategory("alle");
+  });
+});
+</script>
+
+</body>
+</html>
