@@ -495,53 +495,68 @@ document.querySelector("#toolbar button[onclick='toggleFollow()']").style.displa
     /////////////////////////////////////////
 
     // Aktualisiert die Listenanzeige der gewählten Hütten
-    function updateSelectedList() {
+let lastListMode = null; // "empty", "list", "stats"
+
+function updateSelectedList() {
+  if (typeof selected === "undefined" || !Array.isArray(selected)) {
+  console.warn("🚨 selected[] ist nicht definiert – breche updateSelectedList() ab");
+  return;
+  }
   const ul = document.getElementById("selectedList");
+  if (!ul || !Array.isArray(selected)) return;
+
   ul.innerHTML = "";
 
-  // 🔒 Falls Liste leer ist
-  if (!selected || selected.length === 0) {
-    const li = document.createElement("li");
-    li.innerText = "⚠️ Keine Hütten ausgewählt.";
-    ul.appendChild(li);
+  const hasHuts = selected.length > 0;
+  const next = hasHuts ? selected[0] : null;
+  const isNavigating = !!navInterval;
+  const pos = userMarker?.getLatLng?.();
+  const routePoints = routingLine?.getLatLngs?.() || [];
+
+  if (!hasHuts) {
+    if (lastListMode !== "empty") {
+      const li = document.createElement("li");
+      li.textContent = "⚠️ Keine Hütten ausgewählt.";
+      ul.appendChild(li);
+      lastListMode = "empty";
+    }
     return;
   }
 
-  // 📊 Falls Navigation läuft und alles bereit ist
-  const navigationActive = !!navInterval;
-  const routeAvailable = routingLine?.getLatLngs?.()?.length > 1;
-  const next = selected[0];
+  const canShowStats = isNavigating && pos && next && routePoints.length > 1;
 
-  if (navigationActive && userMarker && routeAvailable && next) {
-    try {
-      const pos = userMarker?.getLatLng?.();
-      if (!pos || !next) throw new Error("Position oder Ziel nicht verfügbar");
+  if (canShowStats) {
+    if (lastListMode !== "stats") {
+      try {
+        const dist = map.distance(pos, L.latLng(next.lat, next.lng));
+        const totalDist = routePoints.reduce((sum, p, i, arr) =>
+          i > 0 ? sum + map.distance(arr[i - 1], p) : 0, 0);
 
-      const latLngs = routingLine.getLatLngs();
-      const dist = map.distance(pos, L.latLng(next.lat, next.lng));
-      const totalDist = latLngs.reduce((a, p, i, arr) =>
-        i > 0 ? a + map.distance(arr[i - 1], p) : 0, 0);
-
-      const li = document.createElement("li");
-      li.innerHTML = `
-        🧭 <b>Nächste:</b> ${next.name}<br/>
-        📏 <b>${Math.round(dist)} m</b> entfernt<br/>
-        ⏱️ Gesamt: ${(totalDist / 1000).toFixed(1)} km ≈ ${Math.round(totalDist / 250)} min<br/>
-        🥚 Verbleibende Hütten: ${selected.length}
-      `;
-      ul.appendChild(li);
-    } catch (e) {
-      console.warn("Fehler bei Statistik-Anzeige:", e);
-      renderStaticList(ul);
+        const li = document.createElement("li");
+        li.innerHTML = `
+          🧭 <b>Nächste:</b> ${next.name}<br/>
+          📏 <b>${Math.round(dist)} m</b> entfernt<br/>
+          ⏱️ Gesamt: ${(totalDist / 1000).toFixed(1)} km ≈ ${Math.round(totalDist / 250)} min<br/>
+          🥚 Verbleibende Hütten: ${selected.length}
+        `;
+        ul.appendChild(li);
+        lastListMode = "stats";
+      } catch (err) {
+        console.warn("Statistikanzeige fehlgeschlagen:", err);
+        renderStaticList(ul);
+        lastListMode = "list";
+      }
     }
   } else {
-    // 🔁 Standard-Drag-and-Drop-Liste
-    renderStaticList(ul);
+    if (lastListMode !== "list") {
+      renderStaticList(ul);
+      lastListMode = "list";
+    }
   }
 }
 
-// 🔁 Drag & Drop Hilfsfunktion
 function renderStaticList(ul) {
+  ul.innerHTML = "";
   selected.forEach((h, i) => {
     const li = document.createElement("li");
     li.setAttribute("draggable", "true");
@@ -551,7 +566,6 @@ function renderStaticList(ul) {
     ul.appendChild(li);
   });
 }
-
 // Drag & Drop-Logik
 function allowDrop(ev) {
   ev.preventDefault();
@@ -632,6 +646,11 @@ function drop(ev) {
 
     function init() {
       initUsername();
+      try {
+  updateSelectedList();
+} catch (err) {
+  console.warn("Fehler beim Initialen updateSelectedList:", err);
+      }
       map = L.map("map", { center: [47.3, 11.4], zoom: 13 });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
       map.addLayer(cluster);
