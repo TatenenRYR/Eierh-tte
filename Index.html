@@ -495,43 +495,40 @@ document.querySelector("#toolbar button[onclick='toggleFollow()']").style.displa
     /////////////////////////////////////////
 
     // Aktualisiert die Listenanzeige der gewählten Hütten
-let lastListMode = null; // "empty", "list", "stats"
+let lastListMode = null; // globaler Cache-Zustand: "stats", "list" oder "empty"
 
 function updateSelectedList() {
-  if (typeof selected === "undefined" || !Array.isArray(selected)) {
-  console.warn("🚨 selected[] ist nicht definiert – breche updateSelectedList() ab");
-  return;
-  }
   const ul = document.getElementById("selectedList");
-  if (!ul || !Array.isArray(selected)) return;
-
   ul.innerHTML = "";
 
-  const hasHuts = selected.length > 0;
+  const navigationActive = !!navInterval;
+  const routeReady = routingLine?.getLatLngs?.()?.length > 1;
+  const hasHuts = selected && selected.length > 0;
   const next = hasHuts ? selected[0] : null;
-  const isNavigating = !!navInterval;
-  const pos = userMarker?.getLatLng?.();
-  const routePoints = routingLine?.getLatLngs?.() || [];
+  const gpsReady = userMarker?.getLatLng;
 
+  // ⛔ Kein Ziel? → nur einmal anzeigen
   if (!hasHuts) {
     if (lastListMode !== "empty") {
       const li = document.createElement("li");
-      li.textContent = "⚠️ Keine Hütten ausgewählt.";
+      li.innerText = "⚠️ Keine Hütten ausgewählt.";
       ul.appendChild(li);
       lastListMode = "empty";
     }
     return;
   }
 
-  const canShowStats = isNavigating && pos && next && routePoints.length > 1;
+  // ✅ Statistik-Modus wenn alles bereit
+  if (navigationActive && routeReady && gpsReady && next) {
+    try {
+      const pos = userMarker.getLatLng();
+      const latLngs = routingLine.getLatLngs();
+      const dist = map.distance(pos, L.latLng(next.lat, next.lng));
+      const totalDist = latLngs.reduce((a, p, i, arr) =>
+        i > 0 ? a + map.distance(arr[i - 1], p) : 0, 0);
 
-  if (canShowStats) {
-    if (lastListMode !== "stats") {
-      try {
-        const dist = map.distance(pos, L.latLng(next.lat, next.lng));
-        const totalDist = routePoints.reduce((sum, p, i, arr) =>
-          i > 0 ? sum + map.distance(arr[i - 1], p) : 0, 0);
-
+      // nur neu rendern, wenn Modus sich geändert hat
+      if (lastListMode !== "stats") {
         const li = document.createElement("li");
         li.innerHTML = `
           🧭 <b>Nächste:</b> ${next.name}<br/>
@@ -541,13 +538,14 @@ function updateSelectedList() {
         `;
         ul.appendChild(li);
         lastListMode = "stats";
-      } catch (err) {
-        console.warn("Statistikanzeige fehlgeschlagen:", err);
-        renderStaticList(ul);
-        lastListMode = "list";
       }
+    } catch (e) {
+      console.warn("Fehler in Statistik-Modus:", e);
+      renderStaticList(ul);
+      lastListMode = "list";
     }
   } else {
+    // 🔁 Nur wenn wir nicht schon im Listenmodus waren
     if (lastListMode !== "list") {
       renderStaticList(ul);
       lastListMode = "list";
@@ -555,6 +553,7 @@ function updateSelectedList() {
   }
 }
 
+// 🔁 Drag & Drop Liste
 function renderStaticList(ul) {
   ul.innerHTML = "";
   selected.forEach((h, i) => {
@@ -646,11 +645,6 @@ function drop(ev) {
 
     function init() {
       initUsername();
-      try {
-  updateSelectedList();
-} catch (err) {
-  console.warn("Fehler beim Initialen updateSelectedList:", err);
-      }
       map = L.map("map", { center: [47.3, 11.4], zoom: 13 });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
       map.addLayer(cluster);
