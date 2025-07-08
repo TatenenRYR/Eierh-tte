@@ -495,40 +495,41 @@ document.querySelector("#toolbar button[onclick='toggleFollow()']").style.displa
     /////////////////////////////////////////
 
     // Aktualisiert die Listenanzeige der gewählten Hütten
-let lastListMode = null; // globaler Cache-Zustand: "stats", "list" oder "empty"
+let lastListMode = null; // "empty", "list", "stats"
 
 function updateSelectedList() {
   const ul = document.getElementById("selectedList");
+  if (!ul) return;
   ul.innerHTML = "";
 
-  const navigationActive = !!navInterval;
-  const routeReady = routingLine?.getLatLngs?.()?.length > 1;
-  const hasHuts = selected && selected.length > 0;
+  const hasHuts = Array.isArray(selected) && selected.length > 0;
   const next = hasHuts ? selected[0] : null;
-  const gpsReady = userMarker?.getLatLng;
+  const isNavigating = !!navInterval;
+  const pos = userMarker?.getLatLng?.();
+  const routePoints = routingLine?.getLatLngs?.() || [];
 
-  // ⛔ Kein Ziel? → nur einmal anzeigen
+  // 🔒 Kein Ziel ausgewählt
   if (!hasHuts) {
     if (lastListMode !== "empty") {
       const li = document.createElement("li");
-      li.innerText = "⚠️ Keine Hütten ausgewählt.";
+      li.textContent = "⚠️ Keine Hütten ausgewählt.";
       ul.appendChild(li);
       lastListMode = "empty";
     }
     return;
   }
 
-  // ✅ Statistik-Modus wenn alles bereit
-  if (navigationActive && routeReady && gpsReady && next) {
-    try {
-      const pos = userMarker.getLatLng();
-      const latLngs = routingLine.getLatLngs();
-      const dist = map.distance(pos, L.latLng(next.lat, next.lng));
-      const totalDist = latLngs.reduce((a, p, i, arr) =>
-        i > 0 ? a + map.distance(arr[i - 1], p) : 0, 0);
+  // 📊 Navigation läuft und alles ist bereit
+  const canShowStats = isNavigating && pos && next && routePoints.length > 1;
 
-      // nur neu rendern, wenn Modus sich geändert hat
-      if (lastListMode !== "stats") {
+  if (canShowStats) {
+    if (lastListMode !== "stats") {
+      try {
+        const dist = map.distance(pos, L.latLng(next.lat, next.lng));
+        const totalDist = routePoints.reduce((sum, p, i, arr) =>
+          i > 0 ? sum + map.distance(arr[i - 1], p) : 0, 0
+        );
+
         const li = document.createElement("li");
         li.innerHTML = `
           🧭 <b>Nächste:</b> ${next.name}<br/>
@@ -538,14 +539,13 @@ function updateSelectedList() {
         `;
         ul.appendChild(li);
         lastListMode = "stats";
+      } catch (err) {
+        console.warn("Statistikanzeige fehlgeschlagen:", err);
+        renderStaticList(ul);
+        lastListMode = "list";
       }
-    } catch (e) {
-      console.warn("Fehler in Statistik-Modus:", e);
-      renderStaticList(ul);
-      lastListMode = "list";
     }
   } else {
-    // 🔁 Nur wenn wir nicht schon im Listenmodus waren
     if (lastListMode !== "list") {
       renderStaticList(ul);
       lastListMode = "list";
@@ -553,7 +553,6 @@ function updateSelectedList() {
   }
 }
 
-// 🔁 Drag & Drop Liste
 function renderStaticList(ul) {
   ul.innerHTML = "";
   selected.forEach((h, i) => {
