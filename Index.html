@@ -148,7 +148,6 @@
        <input id="usernameInput" type="text" style="display:none;" />
        <button onclick="saveUsername()" id="saveNameBtn" style="display:none;">💾</button>
     </div>
-    <p id="userDisplay" style="margin:8px 0;"></p>
     <div id="roomToggle">
         <button onclick="toggleRoom()">👥 Raum beitreten</button>
         <div id="roomBox" style="display:none;">
@@ -378,6 +377,8 @@ function saveUsername() {
         showToast("❗ Auswahl fehlt");
         return;
       }
+      follow = true;
+document.querySelector("#toolbar button[onclick='toggleFollow()']").style.display = "none";
       speak("Navigation gestartet. Viel Spaß!");
       tourStartTime = Date.now();
       tourDistance = 0;
@@ -399,8 +400,11 @@ function saveUsername() {
         const pts = d.features[0].geometry.coordinates.map(p => [p[1], p[0]]);
         if (routingLine) map.removeLayer(routingLine);
         if (progressLine) map.removeLayer(progressLine);
-        routingLine = L.polyline(pts, { color: "#ccc", weight: 5 }).addTo(map);
-        progressLine = L.polyline([], { color: "#f80", weight: 4 }).addTo(map);
+        // Zuerst die Zielroute ORANGE
+        routingLine = L.polyline(pts, { color: "#f80", weight: 5 }).addTo(map);
+
+        // Dann den Fortschrittsweg GRAU darunter
+        progressLine = L.polyline([], { color: "#ccc", weight: 4 }).addTo(map);
         //routingLine = L.polyline(pts, { color: "#f80", weight: 5 }).addTo(map);
        // progressLine = L.polyline([], { color: "#aaa", weight: 4 }).addTo(map);
         map.fitBounds(routingLine.getBounds(), { padding: [30, 30] });
@@ -428,6 +432,7 @@ function saveUsername() {
       speak("Navigation gestoppt");
       document.getElementById("stopBtn").style.display = "none";
       document.getElementById("startBtn").style.display = "inline-block";
+      document.querySelector("#toolbar button[onclick='toggleFollow()']").style.display = "inline-block";
     }
     // Navigationsschleife zur Routenverfolgung
     function navLoop(path) {
@@ -488,15 +493,45 @@ function saveUsername() {
 
     // Aktualisiert die Listenanzeige der gewählten Hütten
     function updateSelectedList() {
-      const ul = document.getElementById("selectedList");
-      ul.innerHTML = "";
-      selected.forEach((h, i) => {
-        const li = document.createElement("li");
-        li.innerHTML = `🔢 ${i + 1}. ${h.name} <button onclick="removeHut('${h.id}')">🗑️</button>`;
-        ul.appendChild(li);
-      });
-    }
+  const ul = document.getElementById("selectedList");
+  ul.innerHTML = "";
+  selected.forEach((h, i) => {
+    const li = document.createElement("li");
+    li.setAttribute("draggable", "true");
+    li.setAttribute("data-index", i);
+    li.ondragstart = drag;
+    li.innerHTML = `🔢 ${i + 1}. ${h.name} <button onclick="removeHut('${h.id}')">🗑️</button>`;
+    ul.appendChild(li);
+  });
+}
 
+// Drag & Drop-Logik
+function allowDrop(ev) {
+  ev.preventDefault();
+}
+function drag(ev) {
+  ev.dataTransfer.setData("text", ev.target.getAttribute("data-index"));
+}
+function drop(ev) {
+  ev.preventDefault();
+  const from = parseInt(ev.dataTransfer.getData("text"));
+  const to = parseInt(ev.target.closest("li").getAttribute("data-index"));
+  if (from !== to) {
+    const moved = selected.splice(from, 1)[0];
+    selected.splice(to, 0, moved);
+    updateSelectedList();
+    showToast("🔃 Reihenfolge geändert");
+    if (navInterval) startRoute(); // Route neu starten
+  }
+}
+    function resetRoute() {
+  if (routingLine) map.removeLayer(routingLine);
+  if (progressLine) map.removeLayer(progressLine);
+  clearInterval(navInterval);
+  navInterval = null;
+  showToast("🗑️ Route gelöscht");
+  document.getElementById("routeInfo").style.display = "none";
+}
     // Entfernt eine Hütte aus der Auswahl
     function removeHut(id) {
       const i = selected.findIndex(h => h.id === id);
