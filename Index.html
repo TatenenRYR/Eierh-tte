@@ -360,8 +360,10 @@
         const pts = d.features[0].geometry.coordinates.map(p => [p[1], p[0]]);
         if (routingLine) map.removeLayer(routingLine);
         if (progressLine) map.removeLayer(progressLine);
-        routingLine = L.polyline(pts, { color: "#f80", weight: 5 }).addTo(map);
-        progressLine = L.polyline([], { color: "#aaa", weight: 4 }).addTo(map);
+        routingLine = L.polyline(pts, { color: "#ccc", weight: 5 }).addTo(map);
+        progressLine = L.polyline([], { color: "#f80", weight: 4 }).addTo(map);
+        //routingLine = L.polyline(pts, { color: "#f80", weight: 5 }).addTo(map);
+       // progressLine = L.polyline([], { color: "#aaa", weight: 4 }).addTo(map);
         map.fitBounds(routingLine.getBounds(), { padding: [30, 30] });
         document.getElementById("startBtn").style.display = "none";
         document.getElementById("stopBtn").style.display = "inline-block";
@@ -396,8 +398,16 @@
 
       if (dist < 50 && path.length > 2) {
         const past = path.shift();
+        
+        progressLine.addLatLng(past)
         routingLine.setLatLngs(path);
         progressLine.addLatLng(past);
+
+        
+        selected.shift();
+        updateSelectedList(); // visuelle Liste updaten
+        startRoute(); // Route neuberechnen
+
         speakNextInstruction(selected[0].name, 0);
         updateChallenge();
       } else if (path.length <= 2 && dist < 50) {
@@ -467,9 +477,19 @@
         showToast("⚠️ Bereits ausgewählt");
         return;
       }
+      
       selected.push(hut);
       updateSelectedList();
       showToast("✔️ Hinzugefügt: " + hut.name);
+    
+    // Wenn die Route gestartet ist und eine neue Hütte hinzugefügt wird :
+     if (navInterval) {
+        showToast("➕ Neue Hütte hinzugefügt, Route wird neu berechnet.");
+        speak("Neue Hütte hinzugefügt, Route wird aktualisiert.");
+        clearInterval(navInterval);
+        startRoute();
+     }
+    
     }
 
     /////////////////////////////////////////
@@ -522,6 +542,17 @@
           );
           cluster.addLayer(m);
         });
+
+        // Kompass
+     if (window.DeviceOrientationEvent) {
+       window.addEventListener("deviceorientationabsolute", e => {
+       if (e.absolute && e.alpha != null) {
+         const compass = document.getElementById("compass");
+         const heading = 360 - e.alpha; // Drehung im Uhrzeigersinn
+         compass.style.transform = `rotate(${heading}deg)`;
+        }
+      }, true);
+     }
       });
 
       // Falls GPS nicht lädt
