@@ -216,6 +216,8 @@
     let roomId = "default";
     let alias = "User" + Math.floor(Math.random() * 1000);
     let tourStartTime, tourDistance = 0, challengeProgress = 0;
+    let compassRotation = 0;
+let orientationListenerActive = false;
 
     /////////////////////////////////////////
     // 🧩 Hilfsfunktionen
@@ -279,9 +281,41 @@ function saveUsername() {
   document.getElementById("usernameInput").style.display = "none";
   document.getElementById("saveNameBtn").style.display = "none";
 }
+function enableCompassRotation() {
+  if (orientationListenerActive) return;
+  orientationListenerActive = true;
 
+  window.addEventListener("deviceorientationabsolute", rotateMap, true);
+  window.addEventListener("deviceorientation", rotateMap, true);
+}
 
-    
+    function disableCompassRotation() {
+  if (!orientationListenerActive) return;
+  orientationListenerActive = false;
+
+  window.removeEventListener("deviceorientationabsolute", rotateMap, true);
+  window.removeEventListener("deviceorientation", rotateMap, true);
+
+  // Karte wieder gerade ausrichten
+  map.setBearing?.(0); // falls du leaflet-bearing-plugin nutzt
+  map._rotate = 0; // oder manuell zurücksetzen
+    }
+
+    function rotateMap(event) {
+  if (!map || !event.alpha) return;
+
+  const heading = 360 - event.alpha;
+  compassRotation = heading;
+
+  if (map._rotate !== undefined) {
+    map._rotate = heading;
+  }
+
+  const mapPane = document.querySelector(".leaflet-map-pane");
+  if (mapPane) {
+    mapPane.style.transform = `rotate(${heading}deg)`;
+  }
+    }
     /////////////////////////////////////////
     // 👥 Gruppenfunktionen
     /////////////////////////////////////////
@@ -422,6 +456,9 @@ function startRoute() {
         currentRoutePath = [...points];
         navInterval = setInterval(navLoop, 10000);
         updateSelectedList();
+        document.getElementById("startBtn").style.display = "none";
+document.getElementById("stopBtn").style.display = "inline-block";
+        enableCompassRotation();
       })
       .catch(err => {
         console.warn("❌ Routing-Fehler:", err);
@@ -453,6 +490,7 @@ function startRoute() {
   showToast("🛑 Navigation gestoppt");
   speak("Navigation gestoppt");
   updateSelectedList();
+      disableCompassRotation();
 }
     // Navigationsschleife zur Routenverfolgung
  function navLoop() {
