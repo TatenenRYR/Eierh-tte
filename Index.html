@@ -138,7 +138,7 @@
   <!-- Dashboard mit Benutzer-, Gruppen- und Routendaten -->
   <div id="dashboard">
     <b>📋 Ausgewählt:</b>
-    <ul id="selectedList" style="list-style:none;padding-left:0;"></ul>
+    <ul id="selectedList" ondrop="drop(event)" ondragover="allowDrop(event)"></ul>
     <button onclick="skipHut()">⏭️ Nächste überspringen</button>
     <hr/>
     <button onclick="sendSOS()">❗ SOS senden</button>
@@ -566,6 +566,7 @@ function saveUsername() {
 
   ul.innerHTML = "";
 
+  // 🧯 Kein Eintrag?
   if (selected.length === 0) {
     const li = document.createElement("li");
     li.innerText = "⚠️ Keine Hütten ausgewählt.";
@@ -573,13 +574,12 @@ function saveUsername() {
     return;
   }
 
-  // Prüfen: Navigation aktiv, Position verfügbar, Route vorhanden
   const isNavigating = !!navInterval;
-  const next = selected[0];
   const pos = userMarker?.getLatLng?.();
+  const next = selected[0];
   const routePoints = routingLine?.getLatLngs?.();
 
-  const showStats = (
+  const canShowStats = (
     isNavigating &&
     pos &&
     next &&
@@ -587,109 +587,44 @@ function saveUsername() {
     routePoints.length > 1
   );
 
-  if (showStats) {
+  // 📊 Wenn Navigation läuft, oben Statistik anzeigen
+  if (canShowStats) {
     try {
       const dist = map.distance(pos, L.latLng(next.lat, next.lng));
       const totalDist = routePoints.reduce((sum, p, i, arr) =>
-        i > 0 ? sum + map.distance(arr[i - 1], p) : 0, 0
-      );
+        i > 0 ? sum + map.distance(arr[i - 1], p) : 0, 0);
 
-      const li = document.createElement("li");
-      li.innerHTML = `
-        🧭 <b>Nächste:</b> ${next.name}<br/>
-        📏 <b>${Math.round(dist)} m</b> entfernt<br/>
+      const statLi = document.createElement("li");
+      statLi.style.background = "#f0f0f0";
+      statLi.style.padding = "8px";
+      statLi.style.marginBottom = "6px";
+      statLi.style.borderRadius = "8px";
+      statLi.innerHTML = `
+        <b>📊 Navigation aktiv</b><br/>
+        🧭 Nächste: <b>${next.name}</b><br/>
+        📏 Entfernung: <b>${Math.round(dist)} m</b><br/>
         ⏱️ Gesamt: ${(totalDist / 1000).toFixed(1)} km ≈ ${Math.round(totalDist / 250)} min<br/>
-        🥚 Verbleibende Hütten: ${selected.length}
+        🥚 Hütten übrig: ${selected.length}
       `;
-      ul.appendChild(li);
-      return;
-    } catch (err) {
-      console.warn("⚠️ Statistik konnte nicht angezeigt werden:", err);
+      ul.appendChild(statLi);
+    } catch (e) {
+      console.warn("⚠️ Statistik konnte nicht berechnet werden:", e);
     }
   }
 
-  // Fallback: Standardliste (Drag & Drop)
+  // 🔁 Liste darunter anzeigen – auch während Navigation
   selected.forEach((h, i) => {
     const li = document.createElement("li");
     li.setAttribute("draggable", "true");
     li.setAttribute("data-index", i);
     li.ondragstart = drag;
-    li.innerHTML = `🔢 ${i + 1}. ${h.name} <button onclick="removeHut('${h.id}')">🗑️</button>`;
+    li.innerHTML = `
+      🔢 ${i + 1}. ${h.name}
+      <button onclick="removeHut('${h.id}')">🗑️</button>
+    `;
     ul.appendChild(li);
   });
 }
-/*    
-let lastListMode = null; // "empty", "list", "stats"
-
-function updateSelectedList() {
-  if (typeof selected === "undefined" || !Array.isArray(selected)) {
-  console.warn("🚨 selected[] ist nicht definiert – breche updateSelectedList() ab");
-  return;
-  }
-  const ul = document.getElementById("selectedList");
-  if (!ul || !Array.isArray(selected)) return;
-
-  ul.innerHTML = "";
-
-  const hasHuts = selected.length > 0;
-  const next = hasHuts ? selected[0] : null;
-  const isNavigating = !!navInterval;
-  const pos = userMarker?.getLatLng?.();
-  const routePoints = routingLine?.getLatLngs?.() || [];
-
-  if (!hasHuts) {
-    if (lastListMode !== "empty") {
-      const li = document.createElement("li");
-      li.textContent = "⚠️ Keine Hütten ausgewählt.";
-      ul.appendChild(li);
-      lastListMode = "empty";
-    }
-    return;
-  }
-
-  const canShowStats = isNavigating && pos && next && routePoints.length > 1;
-
-  if (canShowStats) {
-    if (lastListMode !== "stats") {
-      try {
-        const dist = map.distance(pos, L.latLng(next.lat, next.lng));
-        const totalDist = routePoints.reduce((sum, p, i, arr) =>
-          i > 0 ? sum + map.distance(arr[i - 1], p) : 0, 0);
-
-        const li = document.createElement("li");
-        li.innerHTML = `
-          🧭 <b>Nächste:</b> ${next.name}<br/>
-          📏 <b>${Math.round(dist)} m</b> entfernt<br/>
-          ⏱️ Gesamt: ${(totalDist / 1000).toFixed(1)} km ≈ ${Math.round(totalDist / 250)} min<br/>
-          🥚 Verbleibende Hütten: ${selected.length}
-        `;
-        ul.appendChild(li);
-        lastListMode = "stats";
-      } catch (err) {
-        console.warn("Statistikanzeige fehlgeschlagen:", err);
-        renderStaticList(ul);
-        lastListMode = "list";
-      }
-    }
-  } else {
-    if (lastListMode !== "list") {
-      renderStaticList(ul);
-      lastListMode = "list";
-    }
-  }
-}
-
-function renderStaticList(ul) {
-  ul.innerHTML = "";
-  selected.forEach((h, i) => {
-    const li = document.createElement("li");
-    li.setAttribute("draggable", "true");
-    li.setAttribute("data-index", i);
-    li.ondragstart = drag;
-    li.innerHTML = `🔢 ${i + 1}. ${h.name} <button onclick="removeHut('${h.id}')">🗑️</button>`;
-    ul.appendChild(li);
-  });
-}*/
 // Drag & Drop-Logik
 function allowDrop(ev) {
   ev.preventDefault();
