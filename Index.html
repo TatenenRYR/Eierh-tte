@@ -374,47 +374,63 @@ function saveUsername() {
 
     // Startet die Route
     function startRoute() {
-      if (!userMarker || !selected.length) {
-        showToast("❗ Auswahl fehlt");
+  if (!userMarker || selected.length === 0) {
+    showToast("❗ Bitte Hütte auswählen");
+    return;
+  }
+
+  speak("Navigation gestartet. Viel Spaß!");
+
+  // Tour-Zähler zurücksetzen
+  tourStartTime = Date.now();
+  tourDistance = 0;
+  challengeProgress = 0;
+
+  // vorhandene Routen löschen
+  if (routingLine) map.removeLayer(routingLine);
+  if (progressLine) map.removeLayer(progressLine);
+  clearInterval(navInterval);
+  navInterval = null;
+
+  // Neue Koordinaten vorbereiten
+  const coords = [
+    [userMarker.getLatLng().lng, userMarker.getLatLng().lat],
+    ...selected.map(h => [h.lng, h.lat])
+  ];
+
+  // Route berechnen
+  fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
+    method: "POST",
+    headers: {
+      "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ coordinates: coords })
+  })
+    .then(r => r.json())
+    .then(data => {
+      const pts = data.features?.[0]?.geometry?.coordinates?.map(p => [p[1], p[0]]);
+      if (!pts || pts.length < 2) {
+        showToast("⚠️ Routing fehlgeschlagen");
         return;
       }
-      follow = true;
-document.querySelector("#toolbar button[onclick='toggleFollow()']").style.display = "none";
-      speak("Navigation gestartet. Viel Spaß!");
-      tourStartTime = Date.now();
-      tourDistance = 0;
-      challengeProgress = 0;
 
-      const coords = [
-        [userMarker.getLatLng().lng, userMarker.getLatLng().lat],
-        ...selected.map(h => [h.lng, h.lat])
-      ];
+      routingLine = L.polyline(pts, { color: "#f80", weight: 5 }).addTo(map);
+      progressLine = L.polyline([], { color: "#ccc", weight: 4 }).addTo(map);
 
-      fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
-        method: "POST",
-        headers: {
-          "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ coordinates: coords })
-      }).then(r => r.json()).then(d => {
-        const pts = d.features[0].geometry.coordinates.map(p => [p[1], p[0]]);
-        if (routingLine) map.removeLayer(routingLine);
-        if (progressLine) map.removeLayer(progressLine);
-        // Zuerst die Zielroute ORANGE
-        routingLine = L.polyline(pts, { color: "#f80", weight: 5 }).addTo(map);
+      map.fitBounds(routingLine.getBounds(), { padding: [30, 30] });
 
-        // Dann den Fortschrittsweg GRAU darunter
-        progressLine = L.polyline([], { color: "#ccc", weight: 4 }).addTo(map);
-        //routingLine = L.polyline(pts, { color: "#f80", weight: 5 }).addTo(map);
-       // progressLine = L.polyline([], { color: "#aaa", weight: 4 }).addTo(map);
-        map.fitBounds(routingLine.getBounds(), { padding: [30, 30] });
-        document.getElementById("startBtn").style.display = "none";
-        document.getElementById("stopBtn").style.display = "inline-block";
-        navInterval = setInterval(() => navLoop(pts), 10000);
-      });
-      updateSelectedList(); // ✅ Zeigt Statistik-Liste an, siehe unten
-    }
+      document.getElementById("startBtn").style.display = "none";
+      document.getElementById("stopBtn").style.display = "inline-block";
+
+      // 🧭 alle 10 Sekunden prüfen
+      navInterval = setInterval(() => navLoop([...pts]), 10000);
+    })
+    .catch(err => {
+      console.warn("❌ Fehler beim Routing:", err);
+      showToast("❗ Routenberechnung fehlgeschlagen");
+    });
+}
 
     // Überspringt aktuelle Hütte
     function skipHut() {
@@ -439,40 +455,57 @@ document.querySelector("#toolbar button[onclick='toggleFollow()']").style.displa
     }
     // Navigationsschleife zur Routenverfolgung
     function navLoop(path) {
-      const pos = userMarker.getLatLng();
-      const next = path[1];
-      const dist = map.distance(pos, next);
+  const pos = userMarker.getLatLng();
+  const next = path[1]; // der nächste Punkt im Pfad
+  const dist = map.distance(pos, next);
 
-      if (dist < 50 && path.length > 2) {
-        const past = path.shift();
-        
-        progressLine.addLatLng(past)
-        routingLine.setLatLngs(path);
-        progressLine.addLatLng(past);
+  if (dist < 50 && path.length > 2) {
+    const past = path.shift();
 
-        
-        selected.shift();
-       updateSelectedList(); // visuelle Liste updaten
-        if (selected.length > 0) {
-            startRoute();
-        } // Route neuberechnen
+    // Fortschrittslinie erweitern
+    progressLine.addLatLng(past);
+    routingLine.setLatLngs(path);
 
-        speakNextInstruction(selected[0].name, 0);
-        updateChallenge();
-      } else if (path.length <= 2 && dist < 50) {
-        stopNavigation();
-        speak("Ziel erreicht");
-        logSummary();
-        updateChallenge();
-      } else {
-        tourDistance += map.distance(pos, next);
-        speakNextInstruction(selected[0].name, dist);
-        const rest = path.reduce((a, p, i, arr) => i > 0 ? a + map.distance(arr[i - 1], p) : 0, 0);
-        document.getElementById("routeInfo").innerText =
-          `${(rest / 1000).toFixed(1)} km · ${Math.round(rest / 250)} Min · ${selected[0].name}`;
-        document.getElementById("routeInfo").style.display = "block";
-      }
-      updateGroup();
+    // 🧹 Navigation stoppen, um Konflikte zu vermeiden
+    clearInterval(navInterval);
+    navInterval = null;
+
+    // ⛔ Hütte entfernen, aber nur wenn sie noch da ist
+    if (selected.length > 0) {
+      selected.shift();
+    }
+
+    updateSelectedList();
+
+    // ✅ Neue Route berechnen, falls noch Hütten übrig
+    if (selected.length > 0) {
+      startRoute(); // nutzt die aktualisierte Liste
+    } else {
+      stopNavigation();
+      resetRoute(); // optional
+    }
+
+    speakNextInstruction(selected[0]?.name ?? "", 0);
+    updateChallenge();
+
+  } else if (path.length <= 2 && dist < 50) {
+    stopNavigation();
+    speak("Ziel erreicht");
+    logSummary();
+    updateChallenge();
+  } else {
+    tourDistance += map.distance(pos, next);
+    speakNextInstruction(selected[0]?.name ?? "", dist);
+
+    const rest = path.reduce((a, p, i, arr) =>
+      i > 0 ? a + map.distance(arr[i - 1], p) : 0, 0);
+
+    document.getElementById("routeInfo").innerText =
+      `${(rest / 1000).toFixed(1)} km · ${Math.round(rest / 250)} Min · ${selected[0]?.name ?? "-"}`;
+    document.getElementById("routeInfo").style.display = "block";
+  }
+
+  updateGroup();
     }
 
     // Fortschritt updaten (Challenge)
