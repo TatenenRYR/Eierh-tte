@@ -373,14 +373,16 @@ function saveUsername() {
     }
 
     // Startet die Route
-    function startRoute() {
+   let currentRoutePath = []; // global definiert, z. B. oben bei den anderen let-Variablen
+
+function startRoute() {
   try {
     if (!userMarker || !Array.isArray(selected) || selected.length === 0) {
       showToast("❗ Bitte mindestens eine Hütte auswählen");
       return;
     }
 
-    // 🧹 bestehende Route stoppen
+    // ⛔ Vorherige Route stoppen
     clearInterval(navInterval);
     navInterval = null;
 
@@ -416,22 +418,17 @@ function saveUsername() {
 
         routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
         progressLine = L.polyline([], { color: "#ccc", weight: 4 }).addTo(map);
-
         map.fitBounds(routingLine.getBounds(), { padding: [30, 30] });
 
-        document.getElementById("startBtn").style.display = "none";
-        document.getElementById("stopBtn").style.display = "inline-block";
-
-        // 📦 wir klonen das Array → keine Seiteneffekte
-        const pathClone = [...points];
-        navInterval = setInterval(() => navLoop([...pathClone]), 10000);
+        currentRoutePath = [...points]; // 🧠 globaler, fortlaufender Pfad
+        navInterval = setInterval(navLoop, 10000); // 🔁 alle 10 Sekunden
       })
       .catch(err => {
         console.warn("❌ Routing API Fehler:", err);
         showToast("❗ Routenberechnung fehlgeschlagen");
       });
   } catch (err) {
-    console.warn("❌ startRoute Fehler:", err);
+    console.warn("❌ Fehler in startRoute():", err);
   }
 }
 
@@ -457,27 +454,24 @@ function saveUsername() {
       updateSelectedList(); // ✅ Zeigt Statistik-Liste an, siehe unten
     }
     // Navigationsschleife zur Routenverfolgung
- function navLoop(path) {
+ function navLoop() {
   try {
-    if (!Array.isArray(path) || path.length < 2 || !userMarker) return;
+    if (!Array.isArray(currentRoutePath) || currentRoutePath.length < 2 || !userMarker) return;
 
     const pos = userMarker.getLatLng();
-    const next = path[1];
+    const next = currentRoutePath[1];
     const dist = map.distance(pos, next);
 
-    if (dist < 50 && path.length > 2) {
-      const past = path.shift();
-
-      progressLine?.addLatLng?.(past);
-      routingLine?.setLatLngs?.(path);
+    // ✅ Wenn nächste Station erreicht
+    if (dist < 50 && currentRoutePath.length > 2) {
+      const past = currentRoutePath.shift();
+      progressLine?.addLatLng(past);
+      routingLine?.setLatLngs(currentRoutePath);
 
       clearInterval(navInterval);
       navInterval = null;
 
-      if (selected.length > 0) {
-        selected.shift(); // entfernte Hütte
-      }
-
+      if (selected.length > 0) selected.shift();
       updateSelectedList();
 
       if (selected.length > 0) {
@@ -492,8 +486,8 @@ function saveUsername() {
       return;
     }
 
-    // Ziel erreicht
-    if (path.length <= 2 && dist < 50) {
+    // ✅ Wenn letzte Station erreicht
+    if (currentRoutePath.length <= 2 && dist < 50) {
       stopNavigation();
       speak("Ziel erreicht");
       logSummary();
@@ -501,11 +495,11 @@ function saveUsername() {
       return;
     }
 
-    // noch unterwegs
+    // 🔄 Während Fahrt
     tourDistance += map.distance(pos, next);
     speakNextInstruction(selected[0]?.name || "", dist);
 
-    const rest = path.reduce((a, p, i, arr) =>
+    const rest = currentRoutePath.reduce((a, p, i, arr) =>
       i > 0 ? a + map.distance(arr[i - 1], p) : 0, 0);
 
     document.getElementById("routeInfo").innerText =
@@ -514,7 +508,7 @@ function saveUsername() {
 
     updateGroup();
   } catch (err) {
-    console.warn("⚠️ navLoop Fehler:", err);
+    console.warn("⚠️ Fehler in navLoop():", err);
   }
 }
 
