@@ -374,62 +374,65 @@ function saveUsername() {
 
     // Startet die Route
     function startRoute() {
-  if (!userMarker || selected.length === 0) {
-    showToast("❗ Bitte Hütte auswählen");
-    return;
-  }
+  try {
+    if (!userMarker || !Array.isArray(selected) || selected.length === 0) {
+      showToast("❗ Bitte mindestens eine Hütte auswählen");
+      return;
+    }
 
-  speak("Navigation gestartet. Viel Spaß!");
+    // 🧹 bestehende Route stoppen
+    clearInterval(navInterval);
+    navInterval = null;
 
-  // Tour-Zähler zurücksetzen
-  tourStartTime = Date.now();
-  tourDistance = 0;
-  challengeProgress = 0;
+    if (routingLine) map.removeLayer(routingLine);
+    if (progressLine) map.removeLayer(progressLine);
 
-  // vorhandene Routen löschen
-  if (routingLine) map.removeLayer(routingLine);
-  if (progressLine) map.removeLayer(progressLine);
-  clearInterval(navInterval);
-  navInterval = null;
+    speak("Navigation gestartet. Viel Spaß!");
 
-  // Neue Koordinaten vorbereiten
-  const coords = [
-    [userMarker.getLatLng().lng, userMarker.getLatLng().lat],
-    ...selected.map(h => [h.lng, h.lat])
-  ];
+    tourStartTime = Date.now();
+    tourDistance = 0;
+    challengeProgress = 0;
 
-  // Route berechnen
-  fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
-    method: "POST",
-    headers: {
-      "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ coordinates: coords })
-  })
-    .then(r => r.json())
-    .then(data => {
-      const pts = data.features?.[0]?.geometry?.coordinates?.map(p => [p[1], p[0]]);
-      if (!pts || pts.length < 2) {
-        showToast("⚠️ Routing fehlgeschlagen");
-        return;
-      }
+    const coords = [
+      [userMarker.getLatLng().lng, userMarker.getLatLng().lat],
+      ...selected.map(h => [h.lng, h.lat])
+    ];
 
-      routingLine = L.polyline(pts, { color: "#f80", weight: 5 }).addTo(map);
-      progressLine = L.polyline([], { color: "#ccc", weight: 4 }).addTo(map);
-
-      map.fitBounds(routingLine.getBounds(), { padding: [30, 30] });
-
-      document.getElementById("startBtn").style.display = "none";
-      document.getElementById("stopBtn").style.display = "inline-block";
-
-      // 🧭 alle 10 Sekunden prüfen
-      navInterval = setInterval(() => navLoop([...pts]), 10000);
+    fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
+      method: "POST",
+      headers: {
+        "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ coordinates: coords })
     })
-    .catch(err => {
-      console.warn("❌ Fehler beim Routing:", err);
-      showToast("❗ Routenberechnung fehlgeschlagen");
-    });
+      .then(r => r.json())
+      .then(data => {
+        const points = data.features?.[0]?.geometry?.coordinates?.map(p => [p[1], p[0]]);
+        if (!points || points.length < 2) {
+          showToast("⚠️ Route unvollständig");
+          return;
+        }
+
+        routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
+        progressLine = L.polyline([], { color: "#ccc", weight: 4 }).addTo(map);
+
+        map.fitBounds(routingLine.getBounds(), { padding: [30, 30] });
+
+        document.getElementById("startBtn").style.display = "none";
+        document.getElementById("stopBtn").style.display = "inline-block";
+
+        // 📦 wir klonen das Array → keine Seiteneffekte
+        const pathClone = [...points];
+        navInterval = setInterval(() => navLoop([...pathClone]), 10000);
+      })
+      .catch(err => {
+        console.warn("❌ Routing API Fehler:", err);
+        showToast("❗ Routenberechnung fehlgeschlagen");
+      });
+  } catch (err) {
+    console.warn("❌ startRoute Fehler:", err);
+  }
 }
 
     // Überspringt aktuelle Hütte
@@ -454,59 +457,66 @@ function saveUsername() {
       updateSelectedList(); // ✅ Zeigt Statistik-Liste an, siehe unten
     }
     // Navigationsschleife zur Routenverfolgung
-    function navLoop(path) {
-  const pos = userMarker.getLatLng();
-  const next = path[1]; // der nächste Punkt im Pfad
-  const dist = map.distance(pos, next);
+ function navLoop(path) {
+  try {
+    if (!Array.isArray(path) || path.length < 2 || !userMarker) return;
 
-  if (dist < 50 && path.length > 2) {
-    const past = path.shift();
+    const pos = userMarker.getLatLng();
+    const next = path[1];
+    const dist = map.distance(pos, next);
 
-    // Fortschrittslinie erweitern
-    progressLine.addLatLng(past);
-    routingLine.setLatLngs(path);
+    if (dist < 50 && path.length > 2) {
+      const past = path.shift();
 
-    // 🧹 Navigation stoppen, um Konflikte zu vermeiden
-    clearInterval(navInterval);
-    navInterval = null;
+      progressLine?.addLatLng?.(past);
+      routingLine?.setLatLngs?.(path);
 
-    // ⛔ Hütte entfernen, aber nur wenn sie noch da ist
-    if (selected.length > 0) {
-      selected.shift();
+      clearInterval(navInterval);
+      navInterval = null;
+
+      if (selected.length > 0) {
+        selected.shift(); // entfernte Hütte
+      }
+
+      updateSelectedList();
+
+      if (selected.length > 0) {
+        startRoute();
+      } else {
+        stopNavigation();
+        resetRoute();
+      }
+
+      speakNextInstruction(selected[0]?.name || "", 0);
+      updateChallenge();
+      return;
     }
 
-    updateSelectedList();
-
-    // ✅ Neue Route berechnen, falls noch Hütten übrig
-    if (selected.length > 0) {
-      startRoute(); // nutzt die aktualisierte Liste
-    } else {
+    // Ziel erreicht
+    if (path.length <= 2 && dist < 50) {
       stopNavigation();
-      resetRoute(); // optional
+      speak("Ziel erreicht");
+      logSummary();
+      updateChallenge();
+      return;
     }
 
-    speakNextInstruction(selected[0]?.name ?? "", 0);
-    updateChallenge();
-
-  } else if (path.length <= 2 && dist < 50) {
-    stopNavigation();
-    speak("Ziel erreicht");
-    logSummary();
-    updateChallenge();
-  } else {
+    // noch unterwegs
     tourDistance += map.distance(pos, next);
-    speakNextInstruction(selected[0]?.name ?? "", dist);
+    speakNextInstruction(selected[0]?.name || "", dist);
 
     const rest = path.reduce((a, p, i, arr) =>
       i > 0 ? a + map.distance(arr[i - 1], p) : 0, 0);
 
     document.getElementById("routeInfo").innerText =
-      `${(rest / 1000).toFixed(1)} km · ${Math.round(rest / 250)} Min · ${selected[0]?.name ?? "-"}`;
+      `${(rest / 1000).toFixed(1)} km · ${Math.round(rest / 250)} Min · ${selected[0]?.name || "-"}`;
     document.getElementById("routeInfo").style.display = "block";
-  }
 
-  updateGroup();
-    }
+    updateGroup();
+  } catch (err) {
+    console.warn("⚠️ navLoop Fehler:", err);
+  }
+}
 
     // Fortschritt updaten (Challenge)
     function updateChallenge() {
@@ -710,23 +720,26 @@ function drop(ev) {
   }
     // Entfernt eine Hütte aus der Auswahl
     function removeHut(id) {
-  const i = selected.findIndex(h => h.id === id);
-  if (i >= 0) {
-    selected.splice(i, 1);
+  const index = selected.findIndex(h => h.id === id);
+  if (index !== -1) {
+    selected.splice(index, 1);
     updateSelectedList();
     showToast("❌ Hütte entfernt");
 
-    // 🧠 Wenn Navigation läuft → Route neu starten oder stoppen
+    // Wenn Navigation läuft, Route neu starten oder abbrechen
     if (navInterval) {
-      if (selected.length === 0) {
-        stopNavigation();      // Route stoppen
-        resetRoute();          // Route vollständig entfernen
+      clearInterval(navInterval);
+      navInterval = null;
+
+      if (selected.length > 0) {
+        startRoute();
       } else {
-        startRoute();          // Route neu berechnen mit verbleibenden Hütten
+        stopNavigation();
+        resetRoute();
       }
     }
   }
-    }
+}
 
     // Fügt Hütte zur Auswahlliste hinzu
     function toggleSelection(id) {
