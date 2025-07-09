@@ -217,7 +217,8 @@
     let alias = "User" + Math.floor(Math.random() * 1000);
     let tourStartTime, tourDistance = 0, challengeProgress = 0;
     let compassRotation = 0;
-let orientationListenerActive = false;
+    let orientationListenerActive = false;
+    let autoFollow = true; 
 
     /////////////////////////////////////////
     // 🧩 Hilfsfunktionen
@@ -458,7 +459,9 @@ function startRoute() {
         updateSelectedList();
         document.getElementById("startBtn").style.display = "none";
 document.getElementById("stopBtn").style.display = "inline-block";
-        enableCompassRotation();
+        follow = false;
+orientationListenerActive = true;
+enableCompassRotation();
       })
       .catch(err => {
         console.warn("❌ Routing-Fehler:", err);
@@ -490,7 +493,9 @@ document.getElementById("stopBtn").style.display = "inline-block";
   showToast("🛑 Navigation gestoppt");
   speak("Navigation gestoppt");
   updateSelectedList();
-      disableCompassRotation();
+      orientationListenerActive = false;
+follow = true;
+disableCompassRotation();
 }
     // Navigationsschleife zur Routenverfolgung
  function navLoop() {
@@ -765,24 +770,30 @@ function drop(ev) {
       map.addLayer(cluster);
 
       navigator.geolocation.watchPosition(
-        p => {
-          const ll = [p.coords.latitude, p.coords.longitude];
-          if (!userMarker) {
-            userMarker = L.marker(ll).addTo(map);
-            map.setView(ll, 15);
-            document.getElementById("loader").style.display = "none";
-          } else {
-            userMarker.setLatLng(ll);
-            if (follow) map.setView(ll);
-          }
-          updateGroup();
-        },
-        () => {
-          document.getElementById("loader").style.display = "none";
-          showToast("⚠️ GPS nicht verfügbar");
-        },
-        { enableHighAccuracy: true }
-      );
+  p => {
+    const ll = [p.coords.latitude, p.coords.longitude];
+
+    if (!userMarker) {
+      userMarker = L.marker(ll).addTo(map);
+      map.setView(ll, 15);
+      document.getElementById("loader").style.display = "none";
+    } else {
+      userMarker.setLatLng(ll);
+
+      // ✅ Nur folgen, wenn Follow aktiv ist UND kein Kompass stört
+      if (follow && !orientationListenerActive) {
+        map.setView(ll);
+      }
+    }
+
+    updateGroup();
+  },
+  () => {
+    document.getElementById("loader").style.display = "none";
+    showToast("⚠️ GPS nicht verfügbar");
+  },
+  { enableHighAccuracy: true }
+);
 
       listenGroup();
 
