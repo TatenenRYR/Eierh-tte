@@ -373,8 +373,8 @@ function saveUsername() {
     }
 
     // Startet die Route
-   let currentRoutePath = []; // global definiert, z. B. oben bei den anderen let-Variablen
-
+   let currentRoutePath = [];     // Aktuelle Routing-Punkte (alle)
+let currentHutIndex = 0;       // Aktuelle Zielhütte in selected[]
 function startRoute() {
   try {
     if (!userMarker || !Array.isArray(selected) || selected.length === 0) {
@@ -382,7 +382,6 @@ function startRoute() {
       return;
     }
 
-    // ⛔ Vorherige Route stoppen
     clearInterval(navInterval);
     navInterval = null;
 
@@ -390,10 +389,10 @@ function startRoute() {
     if (progressLine) map.removeLayer(progressLine);
 
     speak("Navigation gestartet. Viel Spaß!");
-
     tourStartTime = Date.now();
     tourDistance = 0;
     challengeProgress = 0;
+    currentHutIndex = 0;
 
     const coords = [
       [userMarker.getLatLng().lng, userMarker.getLatLng().lat],
@@ -420,11 +419,12 @@ function startRoute() {
         progressLine = L.polyline([], { color: "#ccc", weight: 4 }).addTo(map);
         map.fitBounds(routingLine.getBounds(), { padding: [30, 30] });
 
-        currentRoutePath = [...points]; // 🧠 globaler, fortlaufender Pfad
-        navInterval = setInterval(navLoop, 10000); // 🔁 alle 10 Sekunden
+        currentRoutePath = [...points];
+        navInterval = setInterval(navLoop, 10000);
+        updateSelectedList();
       })
       .catch(err => {
-        console.warn("❌ Routing API Fehler:", err);
+        console.warn("❌ Routing-Fehler:", err);
         showToast("❗ Routenberechnung fehlgeschlagen");
       });
   } catch (err) {
@@ -444,66 +444,54 @@ function startRoute() {
 
     // Beendet die Navigation
     function stopNavigation() {
-      clearInterval(navInterval);
-      navInterval = null;
-      showToast("🛑 Navigation gestoppt");
-      speak("Navigation gestoppt");
-      document.getElementById("stopBtn").style.display = "none";
-      document.getElementById("startBtn").style.display = "inline-block";
-      document.querySelector("#toolbar button[onclick='toggleFollow()']").style.display = "inline-block";
-      updateSelectedList(); // ✅ Zeigt Statistik-Liste an, siehe unten
-    }
+  clearInterval(navInterval);
+  navInterval = null;
+
+  document.getElementById("stopBtn").style.display = "none";
+  document.getElementById("startBtn").style.display = "inline-block";
+
+  showToast("🛑 Navigation gestoppt");
+  speak("Navigation gestoppt");
+  updateSelectedList();
+}
     // Navigationsschleife zur Routenverfolgung
  function navLoop() {
   try {
     if (!Array.isArray(currentRoutePath) || currentRoutePath.length < 2 || !userMarker) return;
+    if (!Array.isArray(selected) || selected.length === 0) return;
+    if (currentHutIndex >= selected.length) return;
 
     const pos = userMarker.getLatLng();
-    const next = currentRoutePath[1];
-    const dist = map.distance(pos, next);
+    const currentHut = selected[currentHutIndex];
+    const hutLatLng = L.latLng(currentHut.lat, currentHut.lng);
+    const dist = map.distance(pos, hutLatLng);
 
-    // ✅ Wenn nächste Station erreicht
-    if (dist < 50 && currentRoutePath.length > 2) {
-      const past = currentRoutePath.shift();
-      progressLine?.addLatLng(past);
-      routingLine?.setLatLngs(currentRoutePath);
+    // 🎯 Benutzer ist an aktueller Hütte angekommen
+    if (dist < 40) {
+      speak(`Angekommen bei ${currentHut.name}`);
+      progressLine?.addLatLng(hutLatLng);
+      updateChallenge();
 
-      clearInterval(navInterval);
-      navInterval = null;
+      currentHutIndex++;
 
-      if (selected.length > 0) selected.shift();
-      updateSelectedList();
-
-      if (selected.length > 0) {
-        startRoute();
-      } else {
+      if (currentHutIndex >= selected.length) {
         stopNavigation();
-        resetRoute();
+        speak("🎉 Alle Hütten erreicht!");
+        logSummary();
       }
 
-      speakNextInstruction(selected[0]?.name || "", 0);
-      updateChallenge();
+      updateSelectedList();
       return;
     }
 
-    // ✅ Wenn letzte Station erreicht
-    if (currentRoutePath.length <= 2 && dist < 50) {
-      stopNavigation();
-      speak("Ziel erreicht");
-      logSummary();
-      updateChallenge();
-      return;
-    }
+    // 🚴 Unterwegs – Anzeige aktualisieren
+    speakNextInstruction(currentHut.name, dist);
 
-    // 🔄 Während Fahrt
-    tourDistance += map.distance(pos, next);
-    speakNextInstruction(selected[0]?.name || "", dist);
-
-    const rest = currentRoutePath.reduce((a, p, i, arr) =>
-      i > 0 ? a + map.distance(arr[i - 1], p) : 0, 0);
+    const remaining = currentRoutePath.reduce((sum, p, i, arr) =>
+      i > 0 ? sum + map.distance(arr[i - 1], p) : 0, 0);
 
     document.getElementById("routeInfo").innerText =
-      `${(rest / 1000).toFixed(1)} km · ${Math.round(rest / 250)} Min · ${selected[0]?.name || "-"}`;
+      `${(remaining / 1000).toFixed(1)} km · ${Math.round(remaining / 250)} Min · ${currentHut.name}`;
     document.getElementById("routeInfo").style.display = "block";
 
     updateGroup();
@@ -554,7 +542,7 @@ function startRoute() {
     ul.appendChild(li);
   });
 }*/
-   function updateSelectedList() {
+   /*function updateSelectedList() {
   const ul = document.getElementById("selectedList");
   if (!ul || !Array.isArray(selected)) return;
 
@@ -618,7 +606,34 @@ function startRoute() {
     `;
     ul.appendChild(li);
   });
-}
+}*/
+    function updateSelectedList() {
+  const ul = document.getElementById("selectedList");
+  if (!ul || !Array.isArray(selected)) return;
+
+  ul.innerHTML = "";
+
+  if (selected.length === 0) {
+    const li = document.createElement("li");
+    li.innerText = "⚠️ Keine Hütten ausgewählt.";
+    ul.appendChild(li);
+    return;
+  }
+
+  selected.forEach((h, i) => {
+    const li = document.createElement("li");
+    li.setAttribute("draggable", "true");
+    li.setAttribute("data-index", i);
+    li.ondragstart = drag;
+
+    const isActive = i === currentHutIndex && navInterval;
+    li.innerHTML = `
+      ${isActive ? "🟢" : "🔢"} ${i + 1}. ${h.name}
+      <button onclick="removeHut('${h.id}')">🗑️</button>
+    `;
+    ul.appendChild(li);
+  });
+    }
 // Drag & Drop-Logik
 function allowDrop(ev) {
   ev.preventDefault();
