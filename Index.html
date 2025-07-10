@@ -281,39 +281,65 @@ function saveUsername() {
   document.getElementById("usernameInput").style.display = "none";
   document.getElementById("saveNameBtn").style.display = "none";
 }
-function enableCompassRotation() {
-  if (orientationListenerActive) return;
-  orientationListenerActive = true;
-
-  window.addEventListener("deviceorientationabsolute", rotateMap, true);
-  window.addEventListener("deviceorientation", rotateMap, true);
-}
-
     function disableCompassRotation() {
   if (!orientationListenerActive) return;
-  orientationListenerActive = false;
 
-  window.removeEventListener("deviceorientationabsolute", rotateMap, true);
+  orientationListenerActive = false;
   window.removeEventListener("deviceorientation", rotateMap, true);
 
-  // Karte wieder gerade ausrichten
-  map.setBearing?.(0); // falls du leaflet-bearing-plugin nutzt
-  map._rotate = 0; // oder manuell zurücksetzen
+  // Rückdrehung der Karte
+  const mapPane = document.querySelector(".leaflet-map-pane");
+  if (mapPane) {
+    mapPane.style.transform = "rotate(0deg)";
+  }
+
+  const compass = document.getElementById("compass");
+  if (compass) {
+    compass.style.transform = "rotate(0deg)";
+  }
     }
+function enableCompassRotation() {
+  if (orientationListenerActive) return;
+
+  if (
+    typeof DeviceOrientationEvent !== "undefined" &&
+    typeof DeviceOrientationEvent.requestPermission === "function"
+  ) {
+    DeviceOrientationEvent.requestPermission().then(response => {
+      if (response === "granted") {
+        startCompassListener();
+      } else {
+        showToast("❌ Kompass-Zugriff verweigert");
+      }
+    }).catch(err => {
+      console.warn("❗ Kompass-Zugriff fehlgeschlagen:", err);
+      showToast("❗ Zugriff auf Kompass gescheitert");
+    });
+  } else {
+    startCompassListener();
+  }
+}
+
+function startCompassListener() {
+  if (orientationListenerActive) return;
+  orientationListenerActive = true;
+  window.addEventListener("deviceorientation", rotateMap, true);
+  console.log("🧭 Kompassrotation aktiviert");
+}
 
     function rotateMap(event) {
-  if (!map || !event.alpha) return;
+  if (!event.alpha) return;
 
   const heading = 360 - event.alpha;
   compassRotation = heading;
 
-  // Drehe Kompass-Icon (oben links)
+  // Drehe Kompass-Icon
   const compass = document.getElementById("compass");
   if (compass) {
     compass.style.transform = `rotate(${heading}deg)`;
   }
 
-  // Drehe Kartenpane
+  // Drehe Leaflet-Karten-Pane
   const mapPane = document.querySelector(".leaflet-map-pane");
   if (mapPane) {
     mapPane.style.transformOrigin = "center center";
