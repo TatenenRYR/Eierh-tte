@@ -999,98 +999,105 @@ function drop(ev) {
     /////////////////////////////////////////
 
     function init() {
-      initUsername();
-      try {
-         updateSelectedList();
-      } catch (err) {
-         console.warn("Fehler beim Initialen updateSelectedList:", err);
-      }
-      // Karte initialisieren
-map = L.map("map", {
-  center: [47.3, 11.4],
-  zoom: 13
-});
+  initUsername();
 
-// Theme aus localStorage lesen
-const storedTheme = localStorage.getItem("mapTheme");
-isDarkTheme = (storedTheme || "light") === "dark";
-createTileLayer(isDarkTheme);
+  try {
+    updateSelectedList();
+  } catch (err) {
+    console.warn("Fehler beim initialen updateSelectedList:", err);
+  }
 
-// Button-Symbol setzen
-const themeBtn = document.getElementById("toggleThemeBtn");
-if (themeBtn) {
-  themeBtn.textContent = isDarkTheme ? "☀️" : "🌙";
-}
-     /* L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; OpenStreetMap, &copy; CARTO',
-  subdomains: 'abcd',
-  maxZoom: 19
-}).addTo(map);*/
-    //  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-      map.addLayer(cluster);
+  // 🗺️ Karte erzeugen
+  map = L.map("map", {
+    center: [47.3, 11.4],
+    zoom: 13
+  });
 
-      navigator.geolocation.watchPosition(
-  p => {
-    const ll = [p.coords.latitude, p.coords.longitude];
+  // 🌙 Theme aus localStorage lesen oder fallback auf "light"
+  let storedTheme = localStorage.getItem("mapTheme");
+  if (!storedTheme) {
+    storedTheme = "light";
+    localStorage.setItem("mapTheme", "light");
+  }
 
-    if (!userMarker) {
-      userMarker = L.marker(ll).addTo(map);
-      map.setView(ll, 15);
-      document.getElementById("loader").style.display = "none";
-    } else {
-      userMarker.setLatLng(ll);
+  isDarkTheme = storedTheme === "dark";
+  createTileLayer(isDarkTheme);
 
-      // ✅ Nur folgen, wenn Follow aktiv ist UND kein Kompass stört
-      if (follow && !orientationListenerActive) {
-        map.setView(ll);
-      }
-    }
+  const themeBtn = document.getElementById("toggleThemeBtn");
+  if (themeBtn) {
+    themeBtn.textContent = isDarkTheme ? "☀️" : "🌙";
+  }
 
-    updateGroup();
-  },
-  () => {
-    document.getElementById("loader").style.display = "none";
-    showToast("⚠️ GPS nicht verfügbar");
-  },
-  { enableHighAccuracy: true }
-);
+  // 📦 Clustergruppe zur Karte hinzufügen
+  map.addLayer(cluster);
 
-      listenGroup();
+  // 📡 GPS aktivieren
+  navigator.geolocation.watchPosition(
+    p => {
+      const ll = [p.coords.latitude, p.coords.longitude];
 
-      db.collection("eierhuetten").onSnapshot(snap => {
-        huts = [];
-        cluster.clearLayers();
-        snap.forEach(doc => {
-          const d = doc.data();
-          if (!d.location || d.status != "angenommen") return;
-          const h = {
-            id: doc.id,
-            name: d.name,
-            lat: d.location.latitude,
-            lng: d.location.longitude
-          };
-          huts.push(h);
-          const m = L.marker([h.lat, h.lng]).bindPopup(
-            `<b>${h.name}</b><br><button onclick="toggleSelection('${h.id}')">✅</button>`
-          );
-          cluster.addLayer(m);
-        });
-
-     
-      });
-
-      // Falls GPS nicht lädt
-      setTimeout(() => {
-        const l = document.getElementById("loader");
-        if (l && l.style.display != "none") {
-          l.style.display = "none";
-          showToast("⏳ Timeout");
+      if (!userMarker) {
+        userMarker = L.marker(ll).addTo(map);
+        map.setView(ll, 15);
+        document.getElementById("loader").style.display = "none";
+      } else {
+        userMarker.setLatLng(ll);
+        if (follow && !orientationListenerActive) {
+          map.setView(ll);
         }
-      }, 10000);
-      setTimeout(() => {
-         loadRouteFromLocal();
-      }, 2000);
+      }
+
+      updateGroup();
+    },
+    () => {
+      document.getElementById("loader").style.display = "none";
+      showToast("⚠️ GPS nicht verfügbar");
+    },
+    { enableHighAccuracy: true }
+  );
+
+  // 👥 Gruppenanzeige
+  listenGroup();
+
+  // 🛖 Hütten aus Firebase laden
+  db.collection("eierhuetten").onSnapshot(snap => {
+    huts = [];
+    cluster.clearLayers();
+
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (!d.location || d.status !== "angenommen") return;
+
+      const h = {
+        id: doc.id,
+        name: d.name,
+        lat: d.location.latitude,
+        lng: d.location.longitude
+      };
+
+      huts.push(h);
+
+      const m = L.marker([h.lat, h.lng]).bindPopup(
+        `<b>${h.name}</b><br><button onclick="toggleSelection('${h.id}')">✅</button>`
+      );
+
+      cluster.addLayer(m);
+    });
+
+    // ✅ Route erst jetzt laden (wenn Hütten verfügbar)
+    loadRouteFromLocal();
+    document.getElementById("loader").style.display = "none";
+  });
+
+  // 🕒 Sicherheits-Timeout für GPS (falls gar nichts passiert)
+  setTimeout(() => {
+    const l = document.getElementById("loader");
+    if (l && l.style.display !== "none" && !userMarker) {
+      l.style.display = "none";
+      showToast("⏳ Timeout – Start ohne Standort");
     }
+  }, 10000);
+}
 
     document.addEventListener("DOMContentLoaded", init);
   </script>
