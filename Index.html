@@ -140,9 +140,7 @@
   max-height: 70vh; /* Wichtig! */
   overflow-y: auto;
 }
-    #dashboard.hidden {
-  display: none;
-    }
+    
 
 #selectedList {
   max-height: 200px;
@@ -339,48 +337,33 @@ function clearDashboardAlert() {
   clearDashboardAlert(); // ← Badge zurücksetzen
     }
 
+      let currentTileLayer;
 let isDarkTheme = false;
-let currentTileLayer;
 
-function createTileLayer(useDark = false) {
-  if (!map) {
-    console.warn("🛑 Karte ist noch nicht initialisiert");
-    return;
-  }
+function createTileLayer(dark = false) {
+  if (currentTileLayer) map.removeLayer(currentTileLayer);
 
-  // Existierenden Tile-Layer entfernen
-  if (currentTileLayer) {
-    map.removeLayer(currentTileLayer);
-  }
+  const tileUrl = dark
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
-  const tileUrl = useDark
-    ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-    : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-
-  const attrib = useDark
+  const attrib = dark
     ? '&copy; OpenStreetMap &copy; CARTO'
     : '&copy; OpenStreetMap contributors';
 
   currentTileLayer = L.tileLayer(tileUrl, {
     attribution: attrib,
-    subdomains: useDark ? "abcd" : undefined,
+    subdomains: dark ? 'abcd' : undefined,
     maxZoom: 19
-  });
-
-  currentTileLayer.addTo(map);
+  }).addTo(map);
 }
-
-let isDarkTheme = false;
 
 function toggleMapTheme() {
   isDarkTheme = !isDarkTheme;
   createTileLayer(isDarkTheme);
 
-  // Icon wechseln
-  const btn = document.getElementById("toggleThemeBtn");
-  if (btn) btn.textContent = isDarkTheme ? "☀️" : "🌙";
-
-  // Speicher lokal ab
+  // Symbol ändern
+  document.getElementById("toggleThemeBtn").textContent = isDarkTheme ? "☀️" : "🌙";
   localStorage.setItem("mapTheme", isDarkTheme ? "dark" : "light");
 }
     /////////////////////////////////////////
@@ -999,105 +982,87 @@ function drop(ev) {
     /////////////////////////////////////////
 
     function init() {
-  initUsername();
-
-  try {
-    updateSelectedList();
-  } catch (err) {
-    console.warn("Fehler beim initialen updateSelectedList:", err);
-  }
-
-  // 🗺️ Karte erzeugen
-  map = L.map("map", {
-    center: [47.3, 11.4],
-    zoom: 13
-  });
-
-  // 🌙 Theme aus localStorage lesen oder fallback auf "light"
-  let storedTheme = localStorage.getItem("mapTheme");
-  if (!storedTheme) {
-    storedTheme = "light";
-    localStorage.setItem("mapTheme", "light");
-  }
-
-  isDarkTheme = storedTheme === "dark";
-  createTileLayer(isDarkTheme);
-
-  const themeBtn = document.getElementById("toggleThemeBtn");
-  if (themeBtn) {
-    themeBtn.textContent = isDarkTheme ? "☀️" : "🌙";
-  }
-
-  // 📦 Clustergruppe zur Karte hinzufügen
-  map.addLayer(cluster);
-
-  // 📡 GPS aktivieren
-  navigator.geolocation.watchPosition(
-    p => {
-      const ll = [p.coords.latitude, p.coords.longitude];
-
-      if (!userMarker) {
-        userMarker = L.marker(ll).addTo(map);
-        map.setView(ll, 15);
-        document.getElementById("loader").style.display = "none";
-      } else {
-        userMarker.setLatLng(ll);
-        if (follow && !orientationListenerActive) {
-          map.setView(ll);
-        }
+      initUsername();
+      try {
+         updateSelectedList();
+      } catch (err) {
+         console.warn("Fehler beim Initialen updateSelectedList:", err);
       }
+      map = L.map("map", { center: [47.3, 11.4], zoom: 13 });
+      isDarkTheme = localStorage.getItem("mapTheme") === "dark";
+      createTileLayer(isDarkTheme);
+      document.getElementById("toggleThemeBtn").textContent = isDarkTheme ? "☀️" : "🌙";
 
-      updateGroup();
-    },
-    () => {
+     /* L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap, &copy; CARTO',
+  subdomains: 'abcd',
+  maxZoom: 19
+}).addTo(map);*/
+    //  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      map.addLayer(cluster);
+
+      navigator.geolocation.watchPosition(
+  p => {
+    const ll = [p.coords.latitude, p.coords.longitude];
+
+    if (!userMarker) {
+      userMarker = L.marker(ll).addTo(map);
+      map.setView(ll, 15);
       document.getElementById("loader").style.display = "none";
-      showToast("⚠️ GPS nicht verfügbar");
-    },
-    { enableHighAccuracy: true }
-  );
+    } else {
+      userMarker.setLatLng(ll);
 
-  // 👥 Gruppenanzeige
-  listenGroup();
-
-  // 🛖 Hütten aus Firebase laden
-  db.collection("eierhuetten").onSnapshot(snap => {
-    huts = [];
-    cluster.clearLayers();
-
-    snap.forEach(doc => {
-      const d = doc.data();
-      if (!d.location || d.status !== "angenommen") return;
-
-      const h = {
-        id: doc.id,
-        name: d.name,
-        lat: d.location.latitude,
-        lng: d.location.longitude
-      };
-
-      huts.push(h);
-
-      const m = L.marker([h.lat, h.lng]).bindPopup(
-        `<b>${h.name}</b><br><button onclick="toggleSelection('${h.id}')">✅</button>`
-      );
-
-      cluster.addLayer(m);
-    });
-
-    // ✅ Route erst jetzt laden (wenn Hütten verfügbar)
-    loadRouteFromLocal();
-    document.getElementById("loader").style.display = "none";
-  });
-
-  // 🕒 Sicherheits-Timeout für GPS (falls gar nichts passiert)
-  setTimeout(() => {
-    const l = document.getElementById("loader");
-    if (l && l.style.display !== "none" && !userMarker) {
-      l.style.display = "none";
-      showToast("⏳ Timeout – Start ohne Standort");
+      // ✅ Nur folgen, wenn Follow aktiv ist UND kein Kompass stört
+      if (follow && !orientationListenerActive) {
+        map.setView(ll);
+      }
     }
-  }, 10000);
-}
+
+    updateGroup();
+  },
+  () => {
+    document.getElementById("loader").style.display = "none";
+    showToast("⚠️ GPS nicht verfügbar");
+  },
+  { enableHighAccuracy: true }
+);
+
+      listenGroup();
+
+      db.collection("eierhuetten").onSnapshot(snap => {
+        huts = [];
+        cluster.clearLayers();
+        snap.forEach(doc => {
+          const d = doc.data();
+          if (!d.location || d.status != "angenommen") return;
+          const h = {
+            id: doc.id,
+            name: d.name,
+            lat: d.location.latitude,
+            lng: d.location.longitude
+          };
+          huts.push(h);
+          const m = L.marker([h.lat, h.lng]).bindPopup(
+            `<b>${h.name}</b><br><button onclick="toggleSelection('${h.id}')">✅</button>`
+          );
+          cluster.addLayer(m);
+        });
+
+     
+      });
+
+      // Falls GPS nicht lädt
+      setTimeout(() => {
+        const l = document.getElementById("loader");
+        if (l && l.style.display != "none") {
+          l.style.display = "none";
+          showToast("⏳ Timeout");
+        }
+      }, 10000);
+      setTimeout(() => {
+         loadRouteFromLocal();
+      }, 2000);
+    }
 
     document.addEventListener("DOMContentLoaded", init);
   </script>
