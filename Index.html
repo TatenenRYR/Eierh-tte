@@ -10,11 +10,13 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 
   <style>
+    
     html, body {
       margin: 0;
       padding: 0;
       height: 100%;
       font-family: sans-serif;
+      overscroll-behavior: none;
     }
 
     #map {
@@ -466,6 +468,33 @@ function toggleMapTheme() {
 
   localStorage.setItem("mapTheme", isDarkTheme ? "dark" : "light");
 }
+
+
+    function rotateMap(event) {
+  if (!event.alpha) return;
+
+  const heading = 360 - event.alpha;
+  compassRotation = heading;
+
+  const compass = document.getElementById("compass");
+  if (compass) {
+    compass.style.transform = `rotate(${heading}deg)`;
+  }
+
+  const mapPane = document.querySelector(".leaflet-map-pane");
+  if (mapPane) {
+    mapPane.style.transformOrigin = "center center";
+    mapPane.style.transition = "transform 0.2s linear";
+    mapPane.style.transform = `rotate(${heading}deg)`;
+  }
+
+  // 🧭 Karte leicht verschieben (damit User weiter unten ist)
+  if (follow && userMarker && map) {
+    const ll = userMarker.getLatLng();
+    map.setView(ll, map.getZoom(), { animate: false });
+    map.panBy([0, 100], { animate: true }); // ← Pan nach unten (Y: 100px)
+  }
+    }
     /////////////////////////////////////////
     // 🧩 Hilfsfunktionen
     /////////////////////////////////////////
@@ -736,7 +765,7 @@ function startRoute() {
 
         routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
 progressLine = L.polyline([], { color: "#ccc", weight: 4 }).addTo(map);
-
+progressLine.setStyle({ color: "#00f" }); // Fortgeschrittener Teil blau statt grau
         if (userPos) {
   map.setView(userPos, 17); // Zoom-Level anpassen nach Wunsch
         }
@@ -751,6 +780,7 @@ orientationListenerActive = true;
 enableCompassRotation();
         saveRouteToLocal(); // 💾 speichert Route
         showDashboardAlert();
+        document.querySelector("button[onclick='toggleFollow()']").style.display = "none";
       })
       .catch(err => {
         console.warn("❌ Routing-Fehler:", err);
@@ -786,6 +816,7 @@ enableCompassRotation();
 follow = false;
 disableCompassRotation();
       showDashboardAlert();
+      document.querySelector("button[onclick='toggleFollow()']").style.display = "inline-block";
       if (userMarker) {
   map.setView(userMarker.getLatLng(), 13); // Zoom-Level zurück (z. B. Überblick)
       }
@@ -830,7 +861,15 @@ disableCompassRotation();
       `${(remaining / 1000).toFixed(1)} km · ${Math.round(remaining / 250)} Min · ${currentHut.name}`;
     document.getElementById("routeInfo").style.display = "block";
 
+    
     updateGroup();
+
+// 🧭 Re-Zentriere auf User (bei Navigation aktiv & Follow aktiviert)
+if (follow && userMarker && map) {
+  const ll = userMarker.getLatLng();
+  map.setView(ll, map.getZoom(), { animate: true });
+  map.panBy([0, 100], { animate: true }); // User etwas nach unten rücken
+}
   } catch (err) {
     console.warn("⚠️ Fehler in navLoop():", err);
   }
