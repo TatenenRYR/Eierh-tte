@@ -295,6 +295,15 @@ body.dark-mode .leaflet-popup-content {
   </style>
 </head>
 <body>
+  <!-- 🔝 Navigationsbanner -->
+<div id="navBanner" style="
+  display:none; position:fixed; top:0; left:0; right:0;
+  z-index:1002; background:#222; color:#fff;
+  padding:14px 20px; font-size:18px;
+  display:flex; justify-content:space-between; align-items:center;">
+  <span id="navInstruction">🚴 Navigation aktiv</span>
+  <span id="navDistance">0 m</span>
+</div>
   <!-- Loader & Kartencontainer -->
   <div id="loader">⏳ Lade Karte…</div>
   <div id="map"></div>
@@ -322,6 +331,14 @@ body.dark-mode .leaflet-popup-content {
        <input id="roomId" placeholder="Raum-ID" />
        <button onclick="joinRoom()">➡️</button>
    </div>
+      <label>🗣️ Sprache:
+  <select id="voiceLang" onchange="localStorage.lang = this.value" style="margin-top:4px;">
+    <option value="de-DE">🇩🇪 Deutsch</option>
+    <option value="de-AT">🇦🇹 Österreich</option>
+    <option value="de-CH">🇨🇭 Schweiz</option>
+    <option value="nl-NL">🇳🇱 Niederländisch</option>
+  </select>
+      </label>
     
     </div>
   </div>
@@ -393,7 +410,23 @@ body.dark-mode .leaflet-popup-content {
    /////////////////////////////////////////
    // 🧩 UI Funktion
    /////////////////////////////////////////
+function speakNextInstruction(name, dist) {
+  if (!voice || !name || dist == null) return;
 
+  let msg = "";
+  if (dist < 50) {
+    msg = `Jetzt ${name}.`;
+  } else if (dist < 200) {
+    msg = `In ${Math.round(dist)} Metern erreichst du ${name}.`;
+  } else {
+    msg = `${name} in ${(dist / 1000).toFixed(1)} Kilometern.`;
+  }
+
+  const utter = new SpeechSynthesisUtterance(msg);
+  utter.lang = localStorage.lang || navigator.language || "de-DE";
+  speechSynthesis.cancel();
+  speechSynthesis.speak(utter);
+}
 
   function toggleDashboard() {
      const dash = document.getElementById("dashboard");
@@ -819,6 +852,7 @@ disableCompassRotation();
       document.querySelector("button[onclick='toggleFollow()']").style.display = "inline-block";
       if (userMarker) {
   map.setView(userMarker.getLatLng(), 13); // Zoom-Level zurück (z. B. Überblick)
+        document.getElementById("navBanner").style.display = "none";
       }
 }
     // Navigationsschleife zur Routenverfolgung
@@ -861,7 +895,12 @@ disableCompassRotation();
       `${(remaining / 1000).toFixed(1)} km · ${Math.round(remaining / 250)} Min · ${currentHut.name}`;
     document.getElementById("routeInfo").style.display = "block";
 
-    
+
+
+    // ⬆️ Navigationsbanner aktualisieren
+document.getElementById("navBanner").style.display = "flex";
+document.getElementById("navInstruction").innerText = `➡️ Nächste: ${selected[0]?.name || "-"}`;
+document.getElementById("navDistance").innerText = `${Math.round(dist)} m`;
     updateGroup();
 
 // 🧭 Re-Zentriere auf User (bei Navigation aktiv & Follow aktiviert)
@@ -1155,6 +1194,9 @@ function drop(ev) {
      document.body.classList.add(isDarkTheme ? "dark-mode" : "light-mode");
       
      map.addLayer(cluster);
+
+      const select = document.getElementById("voiceLang");
+if (select) select.value = localStorage.lang || "de-DE";
 
       navigator.geolocation.watchPosition(
   p => {
