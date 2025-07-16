@@ -316,7 +316,10 @@ body.nav-active #routeInfo {
     body.nav-active #dashboard {
   top: 130px; /* statt 60px */
     }
-
+.group-icon {
+  background: none;
+  border: none;
+}
   </style>
 </head>
 <body>
@@ -427,6 +430,12 @@ body.nav-active #routeInfo {
     let orientationListenerActive = false;
     let currentTileLayer;
     let isDarkTheme = false;
+
+    //User ID bestimmen
+    if (!localStorage.aliasId) {
+       localStorage.aliasId = "user_" + Math.random().toString(36).substr(2, 6);
+    }
+    const alias = localStorage.aliasId;
 
    /////////////////////////////////////////
    // 🧩 UI Funktion
@@ -720,35 +729,41 @@ function startCompassListener() {
 
     // Aktualisiert die eigene Position in Firebase
     function updateGroup() {
-      if (userMarker) {
-        const pos = userMarker.getLatLng();
-        db.collection("live").doc(alias).set({
-          name: localStorage.username || alias,
-          lat: pos.lat,
-          lng: pos.lng,
-          room: roomId,
-          ts: Date.now()
-        });
-      }
-    }
+  if (userMarker) {
+    const pos = userMarker.getLatLng();
+    db.collection("live").doc(alias).set({
+      name: localStorage.username || alias,
+      lat: pos.lat,
+      lng: pos.lng,
+      room: roomId,
+      ts: Date.now()
+    });
+  }
+}
 
     // Hört auf andere Gruppenmitglieder
     function listenGroup() {
-      db.collection("live").where("room", "==", roomId).onSnapshot(snap => {
-        snap.forEach(doc => {
-          const d = doc.data();
-          if (doc.id === alias) return;
+  db.collection("live").where("room", "==", roomId).onSnapshot(snap => {
+    snap.forEach(doc => {
+      const d = doc.data();
 
-          if (!groupMarkers[doc.id]) {
-            groupMarkers[doc.id] = L.marker([d.lat, d.lng], {
-              icon: L.divIcon({ className: "group-icon", html: "👥" })
-            }).addTo(map);
-          } else {
-            groupMarkers[doc.id].setLatLng([d.lat, d.lng]);
-          }
-        });
-      });
-    }
+      // 👤 Nicht sich selbst anzeigen
+      if (doc.id === alias) return;
+
+      // 👥 Neuen Marker erstellen oder aktualisieren
+      if (!groupMarkers[doc.id]) {
+        groupMarkers[doc.id] = L.marker([d.lat, d.lng], {
+          icon: L.divIcon({
+            className: "group-icon",
+            html: `<div style="font-size: 22px; text-align: center;">👥<br><span style="font-size: 12px;">${d.name || "?"}</span></div>`
+          })
+        }).addTo(map);
+      } else {
+        groupMarkers[doc.id].setLatLng([d.lat, d.lng]);
+      }
+    });
+  });
+}
     function toggleRoom() {
   const box = document.getElementById("roomBox");
   box.style.display = (box.style.display === "none") ? "block" : "none";
