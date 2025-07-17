@@ -444,6 +444,8 @@ body.nav-active #routeInfo {
     let orientationListenerActive = false;
     let currentTileLayer;
     let isDarkTheme = false;
+    let lastSpokenHutIndex = -1;
+let alreadySpokenTurnIndex = {};
 
     //User ID bestimmen
     if (!localStorage.aliasId) {
@@ -1012,7 +1014,7 @@ disableCompassRotation();
       }
 }*/
     // Navigationsschleife zur Routenverfolgung
- function navLoop() {
+function navLoop() {
   try {
     if (!Array.isArray(currentRoutePath) || currentRoutePath.length < 2 || !userMarker) return;
     if (!Array.isArray(selected) || selected.length === 0) return;
@@ -1030,6 +1032,7 @@ disableCompassRotation();
       updateChallenge();
 
       currentHutIndex++;
+      lastSpokenHutIndex = -1; // Zurücksetzen für nächste Hütte
 
       if (currentHutIndex >= selected.length) {
         stopNavigation();
@@ -1041,9 +1044,36 @@ disableCompassRotation();
       return;
     }
 
-    // 🚴 Unterwegs – Anzeige aktualisieren
-    speakNextInstruction(currentHut.name, dist);
+    // 🗣️ Nur 1x pro Hütte sagen
+    if (dist <= 150 && currentHutIndex !== lastSpokenHutIndex) {
+      speak(`Noch ${Math.round(dist)} Meter bis zur Hütte ${currentHut.name}`);
+      lastSpokenHutIndex = currentHutIndex;
+    }
 
+    // 🚦 Abbiegungserkennung
+    const userPos = [pos.lat, pos.lng];
+    for (let i = 1; i < currentRoutePath.length - 1; i++) {
+      const p1 = currentRoutePath[i - 1];
+      const p2 = currentRoutePath[i];
+      const p3 = currentRoutePath[i + 1];
+
+      const d = map.distance(pos, L.latLng(p2));
+      const angle = getAngle(p1, p2, p3);
+
+      if (!alreadySpokenTurnIndex[i] && d < 50) {
+        if (angle > 45 && angle < 135) {
+          speak("In 50 Metern links abbiegen");
+          alreadySpokenTurnIndex[i] = true;
+          break;
+        } else if (angle > 225 && angle < 315) {
+          speak("In 50 Metern rechts abbiegen");
+          alreadySpokenTurnIndex[i] = true;
+          break;
+        }
+      }
+    }
+
+    // 📊 Reststrecke berechnen
     const remaining = currentRoutePath.reduce((sum, p, i, arr) =>
       i > 0 ? sum + map.distance(arr[i - 1], p) : 0, 0);
 
@@ -1051,29 +1081,30 @@ disableCompassRotation();
       `${(remaining / 1000).toFixed(1)} km · ${Math.round(remaining / 250)} Min · ${currentHut.name}`;
     document.getElementById("routeInfo").style.display = "block";
 
-
-
     // ⬆️ Navigationsbanner aktualisieren
     const banner = document.getElementById("navBanner");
     banner.style.display = "flex";
-    
-//document.getElementById("navBanner").style.display = "flex";
-document.getElementById("navInstruction").innerText = `➡️ Nächste: ${selected[0]?.name || "-"}`;
-document.getElementById("navDistance").innerText = `${Math.round(dist)} m`;
+    document.getElementById("navInstruction").innerText = `➡️ Nächste: ${selected[0]?.name || "-"}`;
+    document.getElementById("navDistance").innerText = `${Math.round(dist)} m`;
+
     updateGroup();
 
-// 🧭 Re-Zentriere auf User (bei Navigation aktiv & Follow aktiviert)
-if (follow && userMarker && map) {
-  const ll = userMarker.getLatLng();
-  map.setView(ll, map.getZoom(), {
-  animate: true,
-  paddingTopLeft: [0, 100]
-});
-}
+    // 🧭 Re-Zentriere auf User (bei Navigation aktiv & Follow aktiviert)
+    if (follow && userMarker && map) {
+      const ll = userMarker.getLatLng();
+      map.setView(ll, map.getZoom(), {
+        animate: true,
+        paddingTopLeft: [0, 100]
+      });
+    }
   } catch (err) {
     console.warn("⚠️ Fehler in navLoop():", err);
   }
 }
+    function getAngle(p1, p2, p3) {
+  const angle = Math.atan2(p3[1] - p2[1], p3[0] - p2[0]) - Math.atan2(p1[1] - p2[1], p1[0] - p2[0]);
+  return (angle * 180 / Math.PI + 360) % 360;
+    }
 
     // Fortschritt updaten (Challenge)
     function updateChallenge() {
