@@ -370,13 +370,9 @@ body.nav-active #routeInfo {
        <button onclick="joinRoom()">➡️</button>
    </div>
       
-  <label for="voiceLang">Wähle deine Sprache:</label>
-  <select id="voiceLang">
-    <option value="de-DE">🇩🇪 Deutsch</option>
-    <option value="de-AT">🇦🇹 Österreich</option>
-    <option value="de-CH">🇨🇭 Schweiz</option>
-    <option value="nl-NL">🇳🇱 Niederländisch</option>
-  </select>
+   <label for="voiceLang">🗣️ Sprache:
+  <select id="voiceLang" style="margin-top:4px;"></select>
+   </label>
     
     </div>
   </div>
@@ -826,7 +822,29 @@ document.getElementById("roomStatus").innerText = "👥 Raum: " + roomId;
       voice = !voice;
       showToast("🔊 Voice " + (voice ? "AN" : "AUS"));
     }
+function populateVoiceDropdown() {
+  const select = document.getElementById("voiceLang");
+  if (!select) return;
 
+  select.innerHTML = ""; // Leeren
+
+  const voices = speechSynthesis.getVoices();
+
+  voices.forEach((voice, index) => {
+    const option = document.createElement("option");
+    option.value = index;
+    option.textContent = `${voice.name} [${voice.lang}]${voice.default ? " (Standard)" : ""}`;
+    if (voice.lang === localStorage.lang) option.selected = true;
+    select.appendChild(option);
+  });
+
+  // Auswahl speichern
+  select.addEventListener("change", () => {
+    const selectedVoice = voices[select.value];
+    localStorage.lang = selectedVoice.lang;
+    speak("Sprache gespeichert.");
+  });
+}
 
     function initVoiceSelector() {
   const select = document.getElementById("voiceLang");
@@ -843,11 +861,9 @@ document.getElementById("roomStatus").innerText = "👥 Raum: " + roomId;
     speak("Sprache geändert.");
   });
 }
-
-// Initialisierung, wenn Stimmen geladen wurden
-window.speechSynthesis.onvoiceschanged = initVoiceSelector;
     // Text sprechen lassen
-    function speak(text) {
+
+  /*  function speak(text) {
   if (!window.speechSynthesis) return;
 
   const utterance = new SpeechSynthesisUtterance(text);
@@ -855,11 +871,32 @@ window.speechSynthesis.onvoiceschanged = initVoiceSelector;
   utterance.lang = lang;
 
   const voices = speechSynthesis.getVoices();
-  const voice = voices.find(v => v.lang === lang);
-  if (voice) {
-    utterance.voice = voice;
-  } else {
-    console.warn("⚠️ Keine passende Stimme für", lang);
+
+  // Zuerst exakte Sprache suchen
+  let voice = voices.find(v => v.lang === lang);
+
+  // Wenn keine exakte Sprache vorhanden: Fallback suchen
+  if (!voice) {
+    const langPrefix = lang.split("-")[0]; // z. B. "de"
+    voice = voices.find(v => v.lang.startsWith(langPrefix));
+  }
+
+  if (voice) utterance.voice = voice;
+  else console.warn("⚠️ Keine passende Stimme gefunden für:", lang);
+
+  speechSynthesis.speak(utterance);
+}*/
+    function speak(text) {
+  if (!window.speechSynthesis) return;
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  const voices = speechSynthesis.getVoices();
+  const select = document.getElementById("voiceLang");
+  const selectedVoice = voices[select?.value] || voices[0];
+
+  if (selectedVoice) {
+    utterance.voice = selectedVoice;
+    utterance.lang = selectedVoice.lang;
   }
 
   speechSynthesis.speak(utterance);
@@ -1514,7 +1551,9 @@ db.collection("rooms").doc(roomId).onSnapshot(doc => {
 });
 
       //Sprache abrufen
-
+setTimeout(() => {
+  speak("Willkommen bei der Navigation.");
+}, 2000);
 
       
       db.collection("eierhuetten").onSnapshot(snap => {
@@ -1620,6 +1659,11 @@ m.on("popupclose", () => {
     }
 
     document.addEventListener("DOMContentLoaded", init);
+    window.speechSynthesis.onvoiceschanged = populateVoiceDropdown;
+
+if (speechSynthesis.getVoices().length) {
+  populateVoiceDropdown(); // Für manche Browser sofort nötig
+}
   </script>
 </body>
 </html>
