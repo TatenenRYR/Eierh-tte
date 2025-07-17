@@ -343,7 +343,7 @@ body.nav-active #routeInfo {
   <span id="navDistance">0 m</span>
 </div>
   <!-- Loader & Kartencontainer -->
-  <div id="loader">⏳ Lade Karte…</div>
+  <div id="loader" data-i18n="loadingMap"></div>
   <div id="map"></div>
   <div id="compass">🧭</div>
   <button id="toggleDashboardBtn" onclick="toggleDashboard()">
@@ -370,7 +370,7 @@ body.nav-active #routeInfo {
        <button onclick="joinRoom()">➡️</button>
    </div>
       
-   <label for="voiceLang">🗣️ Sprache:
+   <label for="voiceLang" data-i18n="language">🗣️ Sprache:
   <select id="voiceLang" style="margin-top:4px;"></select>
    </label>
     
@@ -397,6 +397,7 @@ body.nav-active #routeInfo {
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+  <script src="i18n.js"></script>
 
   <!-- Beginn des JavaScript-Codes -->
   <script>
@@ -451,6 +452,21 @@ let alreadySpokenTurnIndex = {};
     }
     const alias = localStorage.aliasId;
 
+   /////////////////////////////////////////
+   // 🧩 UI Übersetzungen
+   /////////////////////////////////////////
+function t(key) {
+  const lang = localStorage.lang || "de-DE";
+  return uiTexts[lang]?.[key] || uiTexts["de-DE"]?.[key] || key;
+}
+
+function updateUIText() {
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const key = el.getAttribute("data-i18n");
+    el.innerText = t(key);
+  });
+}
+    
    /////////////////////////////////////////
    // 🧩 UI Funktion
    /////////////////////////////////////////
@@ -822,29 +838,55 @@ document.getElementById("roomStatus").innerText = "👥 Raum: " + roomId;
       voice = !voice;
       showToast("🔊 Voice " + (voice ? "AN" : "AUS"));
     }
-function populateVoiceDropdown() {
+function populateVoiceDropdownFixed() {
   const select = document.getElementById("voiceLang");
   if (!select) return;
 
-  select.innerHTML = ""; // Leeren
+  const supportedLangs = [
+    "de-DE", // 🇩🇪 Deutsch
+    "de-AT", // 🇦🇹 Österreich
+    "de-CH", // 🇨🇭 Schweiz
+    "en-US", // 🇬🇧 Englisch
+    "nl-NL", // 🇳🇱 Niederländisch
+    "pl-PL", // 🇵🇱 Polnisch
+    "fr-FR", // 🇫🇷 Französisch
+    "it-IT", // 🇮🇹 Italienisch
+    "es-ES", // 🇪🇸 Spanisch
+    "sq-AL"  // 🇦🇱 Albanisch
+  ];
 
-  const voices = speechSynthesis.getVoices();
+  const flags = {
+    "de-DE": "🇩🇪 Deutsch",
+    "de-AT": "🇦🇹 Österreich",
+    "de-CH": "🇨🇭 Schweiz",
+    "en-US": "🇬🇧 Englisch",
+    "nl-NL": "🇳🇱 Niederländisch",
+    "pl-PL": "🇵🇱 Polnisch",
+    "fr-FR": "🇫🇷 Französisch",
+    "it-IT": "🇮🇹 Italienisch",
+    "es-ES": "🇪🇸 Spanisch",
+    "sq-AL": "🇦🇱 Albanisch"
+  };
 
-  voices.forEach((voice, index) => {
+  select.innerHTML = "";
+
+  supportedLangs.forEach(lang => {
     const option = document.createElement("option");
-    option.value = index;
-    option.textContent = `${voice.name} [${voice.lang}]${voice.default ? " (Standard)" : ""}`;
-    if (voice.lang === localStorage.lang) option.selected = true;
+    option.value = lang;
+    option.textContent = flags[lang] || lang;
     select.appendChild(option);
   });
 
-  // Auswahl speichern
+  // Gespeicherte Sprache setzen
+  const saved = localStorage.getItem("lang") || "de-DE";
+  select.value = saved;
+
+  // Bei Änderung speichern + Texte aktualisieren
   select.addEventListener("change", () => {
-    const selectedVoice = voices[select.value];
-    localStorage.lang = selectedVoice.lang;
-    speak("Sprache gespeichert.");
+    localStorage.setItem("lang", select.value);
+    updateUIText?.(); // Falls vorhanden
   });
-}
+    }
 
     function initVoiceSelector() {
   const select = document.getElementById("voiceLang");
@@ -1460,6 +1502,7 @@ function drop(ev) {
 
     function init() {
       initUsername();
+      updateUIText();
       try {
          updateSelectedList();
       } catch (err) {
@@ -1659,10 +1702,10 @@ m.on("popupclose", () => {
     }
 
     document.addEventListener("DOMContentLoaded", init);
-    window.speechSynthesis.onvoiceschanged = populateVoiceDropdown;
+    window.speechSynthesis.onvoiceschanged = populateVoiceDropdownFixed();
 
 if (speechSynthesis.getVoices().length) {
-  populateVoiceDropdown(); // Für manche Browser sofort nötig
+  populateVoiceDropdownFixed();; // Für manche Browser sofort nötig
 }
   </script>
 </body>
