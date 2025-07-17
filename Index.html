@@ -1168,6 +1168,32 @@ disableCompassRotation();
         document.getElementById("navBanner").style.display = "none";
       }
 }*/
+    let lastRerouteTime = 0;
+const rerouteCooldown = 30000; // 30 Sekunden Wartezeit zwischen Routen-Neuberechnungen
+const offRouteThreshold = 80; // Meter Abstand zur Route, ab dem Neuberechnung erfolgt
+
+function checkIfOffRoute() {
+  if (!userMarker || !currentRoutePath || currentRoutePath.length === 0) return;
+
+  const userPos = userMarker.getLatLng();
+  let minDist = Infinity;
+
+  for (let i = 0; i < currentRoutePath.length; i++) {
+    const point = L.latLng(currentRoutePath[i]);
+    const dist = map.distance(userPos, point);
+    if (dist < minDist) minDist = dist;
+  }
+
+  if (minDist > offRouteThreshold) {
+    const now = Date.now();
+    if (now - lastRerouteTime > rerouteCooldown) {
+      lastRerouteTime = now;
+      speak("⚠️ Du hast die Route verlassen. Neuberechnung…");
+      console.warn("🔁 Route verlassen – wird neu berechnet");
+      startRoute(); // Deine vorhandene Funktion zum Neuberechnen der Route
+    }
+  }
+}
     // Navigationsschleife zur Routenverfolgung
 function navLoop() {
   try {
@@ -1243,7 +1269,7 @@ function navLoop() {
     document.getElementById("navDistance").innerText = `${Math.round(dist)} m`;
 
     updateGroup();
-
+checkIfOffRoute();
     // 🧭 Re-Zentriere auf User (bei Navigation aktiv & Follow aktiviert)
     if (follow && userMarker && map) {
       const ll = userMarker.getLatLng();
