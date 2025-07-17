@@ -446,6 +446,8 @@ body.nav-active #routeInfo {
     let isDarkTheme = false;
     let lastSpokenHutIndex = -1;
 let alreadySpokenTurnIndex = {};
+    let lastNavActiveState = null; // Merkt letzten bekannten Firestore-Status
+
 
     //User ID bestimmen
     if (!localStorage.aliasId) {
@@ -921,6 +923,15 @@ orientationListenerActive = true;
 enableCompassRotation();
         saveRouteToLocal(); // 💾 speichert Route
         showDashboardAlert();
+
+
+        //speichere status in firebase für Raumsyncro
+        db.collection("rooms").doc(roomId).set({
+  navActive: true,
+  navStartedAt: Date.now()
+}, { merge: true });
+
+        
         document.querySelector("button[onclick='toggleFollow()']").style.display = "none";
       })
       .catch(err => {
@@ -956,6 +967,11 @@ function stopNavigation() {
   orientationListenerActive = false;
   disableCompassRotation();
   clearRouteLines();
+
+  //firebase syncro Raum
+  db.collection("rooms").doc(roomId).set({
+  navActive: false
+}, { merge: true });
 
   // UI-Elemente zurücksetzen
   const followBtn = document.querySelector("button[onclick='toggleFollow()']");
@@ -1446,6 +1462,28 @@ document.getElementById("roomStatus").innerText = "👥 Raum: " + roomId;
   }
 }
       listenGroup();
+
+      
+db.collection("rooms").doc(roomId).onSnapshot(doc => {
+  const data = doc.data();
+  if (!data) return;
+
+  const navState = !!data.navActive;
+
+  // ⛔ Keine Änderung → nichts tun
+  if (navState === lastNavActiveState) return;
+
+  // ✅ Änderung erkannt → aktualisieren
+  lastNavActiveState = navState;
+
+  if (navState) {
+    speak("⏱️ Gruppentour gestartet");
+    if (!navInterval) startRoute();
+  } else {
+    speak("⛔ Gruppentour gestoppt");
+    if (navInterval) stopNavigation();
+  }
+});
 
       db.collection("eierhuetten").onSnapshot(snap => {
         huts = [];
