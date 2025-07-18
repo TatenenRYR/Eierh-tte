@@ -847,6 +847,9 @@ document.getElementById("roomStatus").innerText = "👥 Raum: " + roomId;
 
     // Aktualisiert die eigene Position in Firebase
     function updateGroup() {
+  const now = Date.now();
+
+  // 1. Eigene Position speichern
   if (userMarker) {
     const pos = userMarker.getLatLng();
     db.collection("live").doc(alias).set({
@@ -854,32 +857,100 @@ document.getElementById("roomStatus").innerText = "👥 Raum: " + roomId;
       lat: pos.lat,
       lng: pos.lng,
       room: roomId,
-      ts: Date.now()
+      ts: now
     });
   }
+
+  // 2. Alle anderen Nutzer im selben Raum anzeigen
+  db.collection("live")
+    .where("room", "==", roomId)
+    .get()
+    .then(snapshot => {
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const uid = doc.id;
+
+        // Selbst? Überspringen
+        if (uid === alias) return;
+
+        // Wenn inaktiv (>20 Sek. alt), löschen
+        if (now - (data.ts || 0) > 20000) {
+          if (groupMarkers[uid]) {
+            map.removeLayer(groupMarkers[uid]);
+            delete groupMarkers[uid];
+          }
+          return;
+        }
+
+        // Marker erstellen oder aktualisieren
+        if (!groupMarkers[uid]) {
+          const icon = L.divIcon({
+            className: "group-icon",
+            html: `<div style="font-size:24px;">🚴</div><div style="font-size:10px;text-align:center">${data.name || uid}</div>`
+          });
+
+          groupMarkers[uid] = L.marker([data.lat, data.lng], { icon }).addTo(map);
+        } else {
+          groupMarkers[uid].setLatLng([data.lat, data.lng]);
+        }
+      });
+
+      // 3. Entferne Marker, die nicht mehr im Snapshot vorkommen
+      Object.keys(groupMarkers).forEach(uid => {
+        if (
+          !snapshot.docs.find(doc => doc.id === uid) ||
+          now - (snapshot.docs.find(doc => doc.id === uid)?.data().ts || 0) > 20000
+        ) {
+          map.removeLayer(groupMarkers[uid]);
+          delete groupMarkers[uid];
+        }
+      });
+    });
 }
 
     // Hört auf andere Gruppenmitglieder
     function listenGroup() {
   try {
     db.collection("live").where("room", "==", roomId).onSnapshot(snap => {
-      snap.docChanges().forEach(change => {
-        const doc = change.doc;
+      const now = Date.now();
+      const seen = new Set();
+
+      snap.forEach(doc => {
         const d = doc.data();
+        const id = doc.id;
 
-        // 🧼 Nie den eigenen Marker anzeigen
-        if (doc.id === alias) return;
+        // ❌ Eigenen Marker ignorieren
+        if (id === alias) return;
 
-        // 👥 Fremde Marker anzeigen oder aktualisieren
-        if (!groupMarkers[doc.id]) {
-          groupMarkers[doc.id] = L.marker([d.lat, d.lng], {
+        seen.add(id);
+
+        // ❌ Marker verwerfen, wenn länger als 20 Sekunden inaktiv
+        if (!d.ts || now - d.ts > 20000) {
+          if (groupMarkers[id]) {
+            map.removeLayer(groupMarkers[id]);
+            delete groupMarkers[id];
+          }
+          return;
+        }
+
+        // ✅ Marker erstellen oder aktualisieren
+        if (!groupMarkers[id]) {
+          groupMarkers[id] = L.marker([d.lat, d.lng], {
             icon: L.divIcon({
               className: "group-icon",
               html: `<div style="font-size: 22px; text-align: center;">👥<br><span style="font-size: 12px;">${d.name || "?"}</span></div>`
             })
           }).addTo(map);
         } else {
-          groupMarkers[doc.id].setLatLng([d.lat, d.lng]);
+          groupMarkers[id].setLatLng([d.lat, d.lng]);
+        }
+      });
+
+      // 🧹 Entferne Marker, die nicht mehr im Snapshot sind
+      Object.keys(groupMarkers).forEach(id => {
+        if (!seen.has(id)) {
+          map.removeLayer(groupMarkers[id]);
+          delete groupMarkers[id];
         }
       });
     });
