@@ -946,42 +946,43 @@ function leaveRoom() {
   try {
     db.collection("live").where("room", "==", roomId).onSnapshot(snap => {
       const now = Date.now();
-      const seen = new Set();
+      const seen = {};
 
       snap.forEach(doc => {
         const d = doc.data();
-        const id = doc.id;
+        if (!d.lat || !d.lng) return;
 
-        // ❌ Eigenen Marker ignorieren
-        if (id === alias) return;
+        // 👤 Eigener Marker wird nicht angezeigt
+        if (doc.id === alias) return;
 
-        seen.add(id);
+        // ⏱️ Prüfen, ob aktiv
+        const isActive = now - (d.ts || 0) < 30000; // max 30s Inaktivität
+        seen[doc.id] = true;
 
-        // ❌ Marker verwerfen, wenn länger als 20 Sekunden inaktiv
-        if (!d.ts || now - d.ts > 20000) {
-          if (groupMarkers[id]) {
-            map.removeLayer(groupMarkers[id]);
-            delete groupMarkers[id];
+        if (isActive) {
+          // ✅ Marker neu erstellen oder aktualisieren
+          if (!groupMarkers[doc.id]) {
+            groupMarkers[doc.id] = L.marker([d.lat, d.lng], {
+              icon: L.divIcon({
+                className: "group-icon",
+                html: `<div style="font-size: 22px; text-align: center;">👥<br><span style="font-size: 12px;">${d.name || "?"}</span></div>`
+              })
+            }).addTo(map);
+          } else {
+            groupMarkers[doc.id].setLatLng([d.lat, d.lng]);
           }
-          return;
-        }
-
-        // ✅ Marker erstellen oder aktualisieren
-        if (!groupMarkers[id]) {
-          groupMarkers[id] = L.marker([d.lat, d.lng], {
-            icon: L.divIcon({
-              className: "group-icon",
-              html: `<div style="font-size: 22px; text-align: center;">👥<br><span style="font-size: 12px;">${d.name || "?"}</span></div>`
-            })
-          }).addTo(map);
         } else {
-          groupMarkers[id].setLatLng([d.lat, d.lng]);
+          // ❌ Inaktiv → Marker entfernen
+          if (groupMarkers[doc.id]) {
+            map.removeLayer(groupMarkers[doc.id]);
+            delete groupMarkers[doc.id];
+          }
         }
       });
 
-      // 🧹 Entferne Marker, die nicht mehr im Snapshot sind
+      // 🔍 Alte Marker entfernen, wenn sie nicht mehr im Raum sind
       Object.keys(groupMarkers).forEach(id => {
-        if (!seen.has(id)) {
+        if (!seen[id]) {
           map.removeLayer(groupMarkers[id]);
           delete groupMarkers[id];
         }
