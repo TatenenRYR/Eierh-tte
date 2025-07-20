@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Eierhütten Assistent Chat</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://www.paypal.com/sdk/js?client-id=Ad4snYjUMAWCzY4QamGsAl1kxJccI-t3NSr25NeuYyTWjx4scjb5EqjOpH0yMDiF4VKz8d_kjc2nmLe5&vault=true&intent=subscription" data-sdk-integration-source="button-factory"></script>
+
+ <style>
+    body { background: #f3f4f6; font-family: Arial, sans-serif; }
+    #chat-window { height: 500px; overflow-y: auto; padding: 1rem; background: #fff; border-radius: 0.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .message { clear: both; margin-bottom: 1rem; max-width: 100%; padding: 0.75rem 1rem; border-radius: 1rem; }
+    .bot { float: left; background: #e0f2fe; color: #0369a1; }
+    .user { float: right; background: #dcfce7; color: #166534; text-align: right; }
+    #input-area { margin-top: 1rem; display: flex; gap: 0.5rem; }
+    #chat-input { flex-grow: 1; padding: 0.5rem 1rem; border: 1px solid #cbd5e1; border-radius: 0.5rem; }
+    #send-btn { background: #0284c7; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; }
+    #send-btn:hover { background: #0369a1; }
+    .choice-btn, .edit-btn, .delete-btn {
+      margin-top: 0.5rem; background: #fbbf24; color: #92400e;
+      padding: 0.3rem 0.6rem; border-radius: 0.5rem; cursor: pointer;
+      display: inline-block; margin-right: 0.5rem;
+    }
+    .delete-btn { background: #dc2626; color: white; }
+    #map { width: 100%; height: 300px; border-radius: 0.5rem; margin-top: 1rem; }
+    .minimap { width: 100%; height: 200px; margin-top: 0.5rem; border-radius: 0.5rem; }
+    .time-picker { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+    .time-picker input { padding: 0.4rem; border: 1px solid #ccc; border-radius: 0.5rem; width: 45%; }
+ 
+ .stats-bar {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  background-color: #d1fae5;
+  color: #065f46;
+  padding: 0.5rem;
+  margin-bottom: 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-family: sans-serif;
+  border
+ 
+ </style>
+</head>
+<body class="p-6">
+  <div id="login-section" class="max-w-md mx-auto text-center">
+    <button id="google-login" class="bg-red-600 hover:bg-red-700 text-white py-2 px-6 rounded text-lg">
+      Mit Google anmelden
+    </button>
+  </div>
+
+  <section id="main-section" class="max-w-md mx-auto mt-6 bg-white p-4 rounded-lg shadow hidden">
+    <div class="text-center font-bold text-2xl text-green-700 mb-4">🥚 Eierhütten Assistent Chat</div>
+    <div id="chat-window" aria-live="polite" role="log"></div>
+    <div id="input-area">
+      <input id="chat-input" type="text" placeholder="Antwort hier..." autocomplete="off" class="border border-gray-300 rounded px-3 py-2"/>
+      <button id="send-btn">Senden</button>
+    </div>
+  </section>
+
+<script>
+// Konfiguration
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.appspot.com",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth(), db = firebase.firestore();
+
+// Zustände
+let currentUser = null;
+let editingData = {};
+let step = 0;
+let map, marker;
+
+const chatWindow = document.getElementById('chat-window');
+const chatInput = document.getElementById('chat-input');
+const sendBtn = document.getElementById('send-btn');
+
+function addMessage(text, sender = 'bot') {
+  const div = document.createElement('div');
+  div.classList.add('message', sender);
+  div.textContent = text;
+  chatWindow.appendChild(div);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function addChoiceButtons(options, callback) {
+  const container = document.createElement('div');
+  container.classList.add('message', 'bot');
+  options.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = opt;
+    btn.onclick = () => {
+      addMessage(opt, 'user');
+      container.remove();
+      callback(opt);
+    };
+    container.appendChild(btn);
+  });
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function showTimePicker() {
+  const container = document.createElement('div');
+  container.classList.add('message', 'bot');
+  const label = document.createElement('div');
+  label.textContent = 'Bitte wähle Öffnungszeiten:';
+  const timeDiv = document.createElement('div');
+  timeDiv.className = 'time-picker';
+  const von = document.createElement('input');
+  von.type = 'time';
+  const bis = document.createElement('input');
+  bis.type = 'time';
+  timeDiv.appendChild(von);
+  timeDiv.appendChild(bis);
+  const btn = document.createElement('button');
+  btn.className = 'choice-btn';
+  btn.textContent = 'Übernehmen';
+  btn.onclick = () => {
+    if (von.value && bis.value) {
+      editingData.oeffnungszeiten = `${von.value} – ${bis.value}`;
+      addMessage(`🕒 Öffnungszeiten: ${editingData.oeffnungszeiten}`, 'bot');
+      container.remove();
+      step = 6;
+      showMap();
+    } else {
+      alert('Bitte beide Uhrzeiten eingeben.');
+    }
+  };
+  container.appendChild(label);
+  container.appendChild(timeDiv);
+  container.appendChild(btn);
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// Dialogfluss
+function startDialog() {
+  chatWindow.innerHTML = '';
+  addMessage('Hallo 👋 Ich bin dein Assistent für Eierhütten. Was möchtest du tun?', 'bot');
+  addChoiceButtons(['🥚 Neue Hütte erstellen','📋 Meine Hütten anzeigen'], handleIntent);
+}
+
+function handleIntent(input) {
+  const txt = input.toLowerCase();
+  if (txt.includes('meine')) {
+    korrigiereFehlendeAbos().then(() => {
+      showMyHuts();
+    });
+                             
+  }
+  if (txt.includes('neu')) {
+    step = 1;
+    editingData = {};
+    addMessage('Wie soll deine neue Hütte heißen?', 'bot');
+  }
+}
+
+function processUserInput(txt) {
+  if (step === 1) {
+    editingData.name = txt;
+    step = 2;
+    addMessage('Hat deine Hütte Sitzplätze?', 'bot');
+    addChoiceButtons(['Ja', 'Nein'], ans => {
+      editingData.sitzplaetze = ans;
+      step = 3;
+      addMessage('Gibt es Strom?', 'bot');
+      addChoiceButtons(['Ja', 'Nein'], strom => {
+        editingData.strom = strom;
+        step = 4;
+        addMessage('Extras? (oder „keine“)', 'bot');
+      });
+    });
+    return;
+  }
+  if (step === 4) {
+    editingData.extras = txt.toLowerCase() === 'keine' ? '' : txt;
+    step = 5;
+    addMessage('Wie lauten die Öffnungszeiten?', 'bot');
+    addChoiceButtons(['Immer geöffnet', 'Von – Bis angeben'], ans => {
+      if (ans === 'Immer geöffnet') {
+        editingData.oeffnungszeiten = 'Immer geöffnet';
+        step = 6;
+        showMap();
+      } else {
+        showTimePicker();
+      }
+    });
+    return;
+  }
+}
+// Neue Funktion mit Fallback
+function updateAboInfoFallback(subId, el) {
+  if (!el) return;
+
+  if (!subId) {
+    el.innerHTML = '⚠️ Kein Abo vorhanden oder noch nicht abgeschlossen.';
+    return;
+  }
+
+  getPayPalInfo(subId).then(info => {
+    try {
+      if (info?.status === 'ACTIVE' && info?.start_time) {
+        const startDate = new Date(info.start_time);
+        const testEnd = new Date(startDate);
+        testEnd.setDate(testEnd.getDate() + 14);
+        const now = new Date();
+        const diff = Math.max(0, Math.ceil((testEnd - now) / (1000 * 60 * 60 * 24)));
+
+        // Erfolgreich – zeige Feuerwerk
+        el.innerHTML = `
+          <div class="relative">
+            🎆 Testphase aktiv – endet in ${diff} Tagen<br>
+            <span class="text-xs text-gray-500">🔒 Kündigung über dein PayPal-Konto.</span>
+            <canvas id="firework-${subId}" style="position:absolute;left:0;top:0;width:100%;height:50px;pointer-events:none;"></canvas>
+          </div>
+        `;
+
+        
+      } else {
+        el.innerHTML = '❌ Abo nicht aktiv oder wurde gekündigt.';
+      }
+    } catch (err) {
+      console.warn('⚠️ PayPal-Parsing-Fehler:', err);
+      el.innerHTML = '⚠️ Testphase läuft – genaues Enddatum nicht verfügbar.';
+    }
+  }).catch(err => {
+    console.error('❌ PayPal-Abo konnte nicht abgerufen werden:', err);
+    el.innerHTML = '⚠️ PayPal-Abo nicht abrufbar. Bitte später erneut versuchen.';
+  });
+}
+  async function checkAboStatus(hutId, hutData) {
+  try {
+    if (!hutData.paypalSubscriptionId) return;
+
+    const info = await getPayPalInfo(hutData.paypalSubscriptionId);
+    const status = info?.status;
+
+    if (status !== 'ACTIVE') {
+      // Abo ist nicht aktiv → automatisch deaktivieren
+      await db.collection('eierhuetten').doc(hutId).update({ status: 'abgelehnt' });
+      await db.collection('eierhuetten').doc(hutId).collection('log').add({
+        admin: 'System',
+        feld: 'status',
+        wert: 'abgelehnt',
+        kommentar: 'Abo über PayPal wurde gekündigt oder ist nicht aktiv',
+        zeitpunkt: new Date()
+      });
+      addMessage(`⚠️ Die Hütte "${hutData.name}" wurde deaktiviert, da das Abo nicht mehr aktiv ist.`, 'bot');
+    }
+  } catch (error) {
+    console.warn(`⚠️ Fehler beim Abo-Check für "${hutData.name}":`, error);
+
+    // Fallback: Prüfe lokale Testzeit (wenn kein Zugriff auf PayPal möglich)
+    if (hutData.aboStart && hutData.status === 'angenommen') {
+      const start = hutData.aboStart.toDate();
+      const now = new Date();
+      const testEnd = new Date(start);
+      testEnd.setDate(testEnd.getDate() + 14);
+      if (now > testEnd) {
+        await db.collection('eierhuetten').doc(hutId).update({ status: 'abgelehnt' });
+        await db.collection('eierhuetten').doc(hutId).collection('log').add({
+          admin: 'System',
+          feld: 'status',
+          wert: 'abgelehnt',
+          kommentar: 'Abo konnte nicht geprüft werden – Fallback: Testzeitraum überschritten',
+          zeitpunkt: new Date()
+        });
+        addMessage(`⚠️ Die Hütte "${hutData.name}" wurde deaktiviert, da keine Abo-Info abrufbar war und die Testzeit überschritten ist.`, 'bot');
+      }
+    }
+  }
+  }
+
+  async function analyseUndAktualisiereHuette(hutId, hutData) {
+  const updates = {};
+  let ablehnen = false;
+  let grund = '';
+  const now = new Date();
+
+  try {
+    // Wenn PayPal vorhanden → prüfen
+    if (hutData.paypalSubscriptionId) {
+      const info = await getPayPalInfo(hutData.paypalSubscriptionId);
+      const status = info?.status;
+
+      if (status === 'ACTIVE') {
+        // Automatisch ergänzen, falls fehlt
+        if (!hutData.aboStart) updates.aboStart = new Date();
+        if (!hutData.aboMonate) updates.aboMonate = 1;
+      } else {
+        ablehnen = true;
+        grund = 'PayPal-Abo inaktiv oder gekündigt.';
+      }
+
+    } else if (hutData.aboStart) {
+      // Kein PayPal → Testphase prüfen
+      const testEnd = new Date(hutData.aboStart.toDate());
+      testEnd.setDate(testEnd.getDate() + 14);
+      if (now > testEnd) {
+        ablehnen = true;
+        grund = 'Testphase abgelaufen. Kein aktives Abo.';
+      }
+    } else {
+      // Weder Abo noch Testphase → nicht anzeigen, aber keine Ablehnung
+      return;
+    }
+
+    if (ablehnen && hutData.status === 'angenommen') {
+      updates.status = 'abgelehnt';
+      await db.collection('eierhuetten').doc(hutId).collection('log').add({
+        admin: 'System',
+        feld: 'status',
+        wert: 'abgelehnt',
+        kommentar: grund,
+        zeitpunkt: now
+      });
+      addMessage(`❌ Deine Hütte „${hutData.name}“ wurde deaktiviert: ${grund}`, 'bot');
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await db.collection('eierhuetten').doc(hutId).update(updates);
+    }
+
+  } catch (err) {
+    console.error('🛑 Fehler bei Analyse der Hütte:', hutId, err);
+
+    // Optionaler Fallback
+    if (hutData.aboStart) {
+      const testEnd = new Date(hutData.aboStart.toDate());
+      testEnd.setDate(testEnd.getDate() + 14);
+      if (now > testEnd && hutData.status === 'angenommen') {
+        await db.collection('eierhuetten').doc(hutId).update({ status: 'abgelehnt' });
+        addMessage(`⚠️ Deine Hütte „${hutData.name}“ wurde vorsorglich deaktiviert. Abo konnte nicht geprüft werden.`, 'bot');
+      }
+    }
+  }
+  }
+
+  async function korrigiereFehlendeAbos() {
+  const snapshot = await db.collection('eierhuetten')
+    .where('userId', '==', currentUser.uid)
+    .where('status', '==', 'angenommen')
+    .get();
+
+  snapshot.forEach(async (doc) => {
+    const d = doc.data();
+    const id = doc.id;
+
+    const keinAbo = !d.aboStart && !d.paypalSubscriptionId;
+
+    if (keinAbo) {
+      await db.collection('eierhuetten').doc(id).update({
+        status: 'abgelehnt'
+      });
+
+      await db.collection('eierhuetten').doc(id).collection('log').add({
+        admin: 'System',
+        feld: 'status',
+        wert: 'abgelehnt',
+        kommentar: 'Automatisch deaktiviert: Kein Abo oder Testphase',
+        zeitpunkt: new Date()
+      });
+
+      console.warn(`❌ Hütte "${d.name}" wurde automatisch deaktiviert wegen fehlendem Abo/Test.`);
+    }
+  });
+}
+  
+// Standortwahl
+function showMyHuts() {
+  chatWindow.innerHTML = '';
+  db.collection('eierhuetten').where('userId', '==', currentUser.uid).get().then(snapshot => {
+    if (snapshot.empty) return addMessage('Du hast noch keine Hütten.', 'bot');
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      const id = doc.id;
+      const div = document.createElement('div');
+      const now = new Date();
+      let aboInfo = '';
+      let shouldReject = false;
+      const aboInfoElementId = `abo-info-${id}`;
+      aboInfo = '⏳ Lade Abo-Status...'; // Sofort anzeigen
+
+      
+// Falls Paypal-Abo vorhanden aber aboMonate fehlt → automatisch setzen
+if (d.paypalSubscriptionId && !d.aboMonate) {
+  db.collection('eierhuetten').doc(id).update({
+    aboMonate: 1
+  }).then(() => {
+    console.log(`ℹ️ aboMonate=1 automatisch gesetzt für Hütte "${d.name}" (${id})`);
+    d.aboMonate = 1; // damit Anzeige sofort korrekt ist
+  });
+}
+
+      
+      // Falls Abo-Start fehlt, aber die Hütte bestätigt ist und PayPal ID vorhanden → jetzt nachtragen
+if (d.status === 'angenommen' && !d.aboStart && d.paypalSubscriptionId) {
+  const now = new Date();
+  db.collection('eierhuetten').doc(id).update({
+    aboStart: firebase.firestore.Timestamp.fromDate(now)
+  }).then(() => {
+    console.log(`📌 aboStart nachgetragen für Hütte "${d.name}"`);
+  }).catch(err => {
+    console.error(`❌ Fehler beim Nachtragen von aboStart: ${err.message}`);
+  });
+}
+
+      if (d.aboStart && d.aboMonate) {
+        const start = d.aboStart.toDate();
+        const end = new Date(start);
+        end.setMonth(end.getMonth() + d.aboMonate);
+        const diffTage = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+        if (diffTage > 0) {
+          aboInfo = `💳 Abo aktiv bis: ${end.toLocaleDateString()} (noch ${diffTage} Tage)`;
+        } else {
+          aboInfo = '💳 Abo abgelaufen';
+          if (d.status === 'angenommen') shouldReject = true;
+        }
+      }
+    
+     // später nachladen
+      const el = document.getElementById(aboInfoElementId);
+      updateAboInfoFallback(d.paypalSubscriptionId, el);
+      analyseUndAktualisiereHuette(id, d); // Prüft Abo-Status unabhängig, aber mit Wirkung
+   // renderHut(); // Funktion zum Anzeigen der Hütte
+  
+
+      // Automatisch deaktivieren
+      if (shouldReject) {
+        db.collection('eierhuetten').doc(id).update({ status: 'abgelehnt' });
+        db.collection('eierhuetten').doc(id).collection('log').add({
+          admin: 'System',
+          feld: 'status',
+          wert: 'abgelehnt',
+          kommentar: 'Abo oder Testphase abgelaufen',
+          zeitpunkt: new Date()
+        });
+        addMessage(`⚠️ Die Hütte "${d.name}" wurde automatisch deaktiviert, da das Abo/Testphase abgelaufen ist.`, 'bot');
+      }
+
+
+
+// Statistik berechnen
+let total = 0, angenommen = 0, offen = 0, abosAktiv = 0;
+snapshot.forEach(doc => {
+  const d = doc.data();
+  total++;
+  if (d.status === 'angenommen') angenommen++;
+  if (d.status === 'offen') offen++;
+  if (d.paypalSubscriptionId) abosAktiv++;
+});
+
+// Infobalken erzeugen
+const statsBar = document.createElement('div');
+statsBar.className = 'flex justify-around items-center text-sm bg-green-100 text-green-900 py-2 px-4 rounded mb-3 shadow-sm border border-green-300';
+statsBar.innerHTML = `
+  <div title="Eingereichte Hütten">🥚 <strong>${total}</strong>/10</div>
+  <div title="Angenommen">✅ <strong>${angenommen}</strong></div>
+  <div title="Offen">⏳ <strong>${offen}</strong></div>
+  <div title="Abos aktiv">💳 <strong>${abosAktiv}</strong></div>
+`;
+chatWindow.appendChild(statsBar);
+
+
+
+
+      
+
+      const paypalContainerId = `paypal-button-container-${id}`;
+
+      div.className = 'message bot';
+      div.innerHTML = `
+        <div class='space-y-2 text-sm'>
+          <div class='font-bold'>${d.name}</div>
+          <div class='font-bold'>📌 Status: ${d.status}</div>
+         <div id="abo-info-${id}">${aboInfo}</div>
+
+          ${d.status === 'angenommen' ? `
+            <label>📍 Name:<br><input type='text' data-id='${id}' class='edit-name w-full border px-2 py-1 rounded' value='${d.name}' /></label><br>
+            <label>🪑 Sitzplätze:
+              <select data-id='${id}' class='edit-sitz border rounded px-2 py-1 ml-2'>
+                <option ${d.sitzplaetze === 'Ja' ? 'selected' : ''}>Ja</option>
+                <option ${d.sitzplaetze === 'Nein' ? 'selected' : ''}>Nein</option>
+              </select>
+            </label><br>
+            <label>🔌 Strom:
+              <select data-id='${id}' class='edit-strom border rounded px-2 py-1 ml-2'>
+                <option ${d.strom === 'Ja' ? 'selected' : ''}>Ja</option>
+                <option ${d.strom === 'Nein' ? 'selected' : ''}>Nein</option>
+              </select>
+            </label><br>
+            <label>✨ Extras:<br><input type='text' data-id='${id}' class='edit-extras w-full border px-2 py-1 rounded' value='${d.extras || ''}' /></label><br>
+            <label>🕒 Öffnungszeiten:<br><input type='text' data-id='${id}' class='edit-zeiten w-full border px-2 py-1 rounded' value='${d.oeffnungszeiten || ''}' /></label><br>
+            <button class='edit-btn' onclick='saveEdit("${id}")'>💾 Speichern</button>
+            <button class='delete-btn' onclick='deleteHut("${id}")'>🗑️ Löschen</button>
+
+            ${!d.aboStart ? `<div id='${paypalContainerId}'></div>` : ''}
+          ` : `
+            <div class="text-gray-500 italic">⛔ Änderungen sind nur möglich, wenn die Hütte angenommen wurde.</div>
+          `}
+          <div id='minimap-${id}' class='minimap'></div>
+        </div>`;
+      
+      chatWindow.appendChild(div);
+
+      // PayPal-Button nur einfügen, wenn nötig
+      if (d.status === 'angenommen' && !d.aboStart && typeof paypal !== 'undefined') {
+        setTimeout(() => {
+          paypal.Buttons({
+            style: {
+              shape: 'pill',
+              color: 'blue',
+              layout: 'horizontal',
+              label: 'subscribe'
+            },
+            createSubscription: function (data, actions) {
+              return actions.subscription.create({
+                plan_id: 'P-0CJ41027JV244774KNBNQ7MI' // Dummy Test-Plan
+              });
+            },
+            onApprove: function (data, actions) {
+  db.collection('eierhuetten').doc(id).get().then(doc => {
+    if (!doc.exists) return;
+
+    const hut = doc.data();
+    const updates = {
+      paypalSubscriptionId: data.subscriptionID,
+    };
+
+    // Falls kein aboStart gesetzt ist → jetzt starten
+    if (!hut.aboStart) {
+      updates.aboStart = new Date();
+    }
+
+    // Falls keine aboMonate vorhanden → 1 Monat eintragen
+    if (!hut.aboMonate) {
+      updates.aboMonate = 1;
+    }
+
+    // Update durchführen
+    db.collection('eierhuetten').doc(id).update(updates).then(() => {
+      chatWindow.innerHTML = '';
+      addMessage(`✅ Abo für "${hut.name}" wurde gestartet.`, 'bot');
+
+      const successBox = document.createElement('div');
+      successBox.className = 'message bot';
+      successBox.innerHTML = `
+        <div class="text-green-700 font-semibold mb-2">🎉 Vielen Dank!</div>
+        <div>Deine Hütte wurde erfolgreich registriert. Die Testphase über PayPal läuft jetzt.</div>
+        <div class="text-xs text-gray-500 mt-2">Hinweis: Eine Kündigung ist nur über dein PayPal-Konto möglich.</div>
+        <button class="choice-btn mt-2" onclick="showMyHuts()">🔄 Zur Übersicht</button>
+      `;
+      chatWindow.appendChild(successBox);
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+    });
+  });
+}
+          }).render(`#${paypalContainerId}`);
+        }, 500);
+      }
+
+      // Minikarte
+      if (d.location?.latitude && d.location?.longitude) {
+        const m = L.map(`minimap-${id}`, { zoomControl: true }).setView([d.location.latitude, d.location.longitude], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
+        const marker = L.marker([d.location.latitude, d.location.longitude], {
+          draggable: d.status === 'angenommen'
+        }).addTo(m);
+
+        if (d.status === 'angenommen') {
+          marker.on('dragend', e => {
+            const pos = e.target.getLatLng();
+            db.collection('eierhuetten').doc(id).update({
+              location: new firebase.firestore.GeoPoint(pos.lat, pos.lng)
+            }).then(() => {
+              addMessage(`📍 Neuer Standort für "${d.name}" gespeichert.`, 'bot');
+            });
+          });
+        } else {
+          const info = L.popup().setContent(`🔒 Standortänderung nur nach Freigabe möglich.`);
+          marker.bindPopup(info).openPopup();
+        }
+
+        setTimeout(() => m.invalidateSize(), 200);
+      }
+    });
+  });
+}
+  
+
+
+function saveEdit(id) {
+  const name = document.querySelector(`.edit-name[data-id='${id}']`).value;
+  const sitz = document.querySelector(`.edit-sitz[data-id='${id}']`).value;
+  const strom = document.querySelector(`.edit-strom[data-id='${id}']`).value;
+  const extras = document.querySelector(`.edit-extras[data-id='${id}']`).value;
+  const zeiten = document.querySelector(`.edit-zeiten[data-id='${id}']`).value;
+  db.collection('eierhuetten').doc(id).update({
+    name,
+    sitzplaetze: sitz,
+    strom,
+    extras,
+    oeffnungszeiten: zeiten
+  }).then(() => addMessage('✅ Änderungen gespeichert.', 'bot'));
+}
+
+function deleteHut(id) {
+  if (confirm('Möchtest du diese Hütte wirklich löschen?')) {
+    db.collection('eierhuetten').doc(id).delete().then(() => {
+      addMessage('🗑️ Hütte gelöscht.', 'bot');
+      korrigiereFehlendeAbos().then(() => {
+ 
+        showMyHuts();
+      });
+    });
+  }
+}
+
+function submitNewHut() {
+  if (!editingData.name || !editingData.location) {
+    addMessage('❌ Bitte gib alle Daten ein.', 'bot');
+    return;
+  }
+  const hut = {
+    ...editingData,
+    userId: currentUser.uid,
+    erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+    status: 'offen',
+    fotos: []
+  };
+  db.collection('eierhuetten').add(hut).then(() => {
+    addMessage('🎉 Deine Hütte wurde erfolgreich erstellt und wartet nun auf Freigabe.', 'bot');
+    addMessage('💳 Du kannst jetzt dein Abo starten. Erst nach erfolgreicher Zahlung und Freigabe wird deine Hütte freigeschaltet.', 'bot');
+    step = 0;
+    editingData = {};
+    startDialog();
+  }).catch(err => addMessage('❌ Fehler: ' + err.message, 'bot'));
+}
+
+// Authentifizierung
+auth.onAuthStateChanged(user => {
+  if (user) {
+    currentUser = user;
+    document.getElementById('login-section').classList.add('hidden');
+    document.getElementById('main-section').classList.remove('hidden');
+    startDialog();
+  }
+});
+document.getElementById('google-login').onclick = () => {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider);
+};
+sendBtn.addEventListener('click', () => {
+  const val = chatInput.value.trim();
+  if (!val) return;
+  addMessage(val, 'user');
+  chatInput.value = '';
+  processUserInput(val);
+});
+chatInput.addEventListener('keypress', e => {
+  if (e.key === 'Enter') sendBtn.click();
+});
+</script>
+</body>
+</html>
