@@ -828,8 +828,43 @@ function askForImageUpload() {
     }
   });
 }
+  
+document.addEventListener("change", async function (e) {
+  if (!e.target.classList.contains("upload-image")) return;
+
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const id = e.target.dataset.id;
+  const progress = document.getElementById(`progress-${id}`);
+  const bar = progress.querySelector("div");
+
+  progress.classList.remove("hidden");
+  bar.style.width = "0%";
+
+  const storageRef = firebase.storage().ref(`eierhuetten/${id}/${Date.now()}_${file.name}`);
+  const task = storageRef.put(file);
+
+  task.on("state_changed", (snap) => {
+    const pct = (snap.bytesTransferred / snap.totalBytes) * 100;
+    bar.style.width = `${pct}%`;
+  }, 
+  (err) => {
+    alert("❌ Fehler beim Hochladen: " + err.message);
+    progress.classList.add("hidden");
+  }, 
+  async () => {
+    const url = await task.snapshot.ref.getDownloadURL();
+    const docRef = db.collection("eierhuetten").doc(id);
+    await docRef.update({
+      fotos: firebase.firestore.FieldValue.arrayUnion(url)
+    });
+    showMyHuts();
+  });
+});
+
 // 📤 Bild-Upload mit Fortschrittsanzeige
-document.addEventListener('change', async e => {
+/*document.addEventListener('change', async e => {
   if (!e.target.classList.contains('upload-image')) return;
   const file = e.target.files[0];
   if (!file) return;
@@ -864,7 +899,7 @@ document.addEventListener('change', async e => {
       showMyHuts();
     }
   );
-});
+});*/
 
 </script>
 </body>
