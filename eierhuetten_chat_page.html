@@ -520,7 +520,28 @@ chatWindow.appendChild(statsBar);
           ` : `
             <div class="text-gray-500 italic">⛔ Änderungen sind nur möglich, wenn die Hütte angenommen wurde.</div>
           `}
-          <div id='minimap-${id}' class='minimap'></div>
+          <!-- 📷 Bild-Galerie -->
+<div class='flex gap-2 overflow-x-auto mt-2'>
+  ${(d.fotos || []).map((url, i) => `
+    <div class="relative group">
+      <img src="${url}" class="h-20 w-20 object-cover rounded shadow"/>
+      <button onclick="deleteImage('${id}', '${url}')" class="absolute top-0 right-0 bg-red-600 text-white text-xs rounded-bl px-1 opacity-0 group-hover:opacity-100 transition">
+        ✕
+      </button>
+    </div>
+  `).join('')}
+</div>
+
+<!-- 📤 Bild-Upload -->
+<label class="block mt-2 text-sm">📷 Neues Bild hochladen:
+  <input type="file" accept="image/*" data-id="${id}" class="upload-image mt-1" />
+</label>
+<div id="progress-${id}" class="w-full h-2 bg-gray-200 rounded mt-2 hidden">
+  <div class="h-2 bg-blue-500 rounded transition-all duration-200 ease-in-out" style="width: 0%;"></div>
+</div>
+
+<!-- 🗺️ Minikarte -->
+<div id='minimap-${id}' class='minimap'></div>
         </div>`;
       
       chatWindow.appendChild(div);
@@ -754,7 +775,43 @@ function askForImageUpload() {
     }
   });
 }
+// 📤 Bild-Upload mit Fortschrittsanzeige
+document.addEventListener('change', async e => {
+  if (!e.target.classList.contains('upload-image')) return;
+  const file = e.target.files[0];
+  if (!file) return;
 
+  const hutId = e.target.dataset.id;
+  const progressBar = document.querySelector(`#progress-${hutId}`);
+  const progressFill = progressBar?.firstElementChild;
+
+  progressBar?.classList.remove('hidden');
+  progressFill.style.width = '0%';
+
+  const storageRef = firebase.storage().ref();
+  const path = `huettenbilder/${hutId}/${Date.now()}_${file.name}`;
+  const uploadTask = storageRef.child(path).put(file);
+
+  uploadTask.on('state_changed',
+    snap => {
+      const percent = (snap.bytesTransferred / snap.totalBytes) * 100;
+      progressFill.style.width = `${percent}%`;
+    },
+    error => {
+      addMessage(`❌ Upload fehlgeschlagen: ${error.message}`, 'bot');
+      progressBar?.classList.add('hidden');
+    },
+    async () => {
+      const url = await uploadTask.snapshot.ref.getDownloadURL();
+      const ref = db.collection('eierhuetten').doc(hutId);
+      await ref.update({
+        fotos: firebase.firestore.FieldValue.arrayUnion(url)
+      });
+      addMessage(`✅ Bild erfolgreich hochgeladen.`, 'bot');
+      showMyHuts();
+    }
+  );
+});
 
 </script>
 </body>
