@@ -566,9 +566,11 @@ chatWindow.appendChild(statsBar);
       ${(d.fotos || []).map((url, i) => `
         <div class="relative group">
           <img src="${url}" class="h-20 w-20 object-cover rounded shadow"/>
-          <button onclick="deleteImage('${id}', '${url}')" class="absolute top-0 right-0 bg-red-600 text-white text-xs rounded-bl px-1 opacity-0 group-hover:opacity-100 transition">
-            ✕
-          </button>
+          <button 
+  onclick="deleteImage('${id}', '${img.url}', '${img.delete_url || ''}')" 
+  class="absolute top-0 right-0 bg-red-600 text-white text-xs rounded-bl px-1 opacity-0 group-hover:opacity-100 transition">
+  ✕
+</button>
         </div>
       `).join('')}
     </div>
@@ -699,25 +701,36 @@ function deleteHut(id) {
     });
   }
 }
-function deleteImage(hutId, imageUrl) {
-  if (!confirm('❌ Möchtest du dieses Bild wirklich aus deiner Hütte entfernen?')) return;
+async function deleteImage(hutId, imageUrl, deleteUrl = '') {
+  if (!confirm('❌ Bild wirklich löschen?')) return;
 
-  db.collection('eierhuetten').doc(hutId).get().then(doc => {
-    if (!doc.exists) return;
+  try {
+    // 1. Optionales Löschen von Imgbb (wenn deleteUrl vorhanden)
+    if (deleteUrl) {
+      await fetch(deleteUrl, { method: 'GET' }); // ImgBB Delete-Link aufrufen
+      console.log(`🗑️ Bild bei ImgBB gelöscht: ${deleteUrl}`);
+    } else {
+      console.warn('⚠️ Kein delete_url verfügbar – Bild wird nur aus Datenbank entfernt.');
+    }
 
-    const fotos = doc.data().fotos || [];
-    const updatedFotos = fotos.filter(url => url !== imageUrl);
+    // 2. Firestore-Dokument abrufen
+    const docRef = db.collection('eierhuetten').doc(hutId);
+    const doc = await docRef.get();
+    if (!doc.exists) throw new Error('❌ Hütte nicht gefunden.');
 
-    db.collection('eierhuetten').doc(hutId).update({
-      fotos: updatedFotos
-    }).then(() => {
-      addMessage('🗑️ Bild wurde erfolgreich entfernt (Hinweis: Bild ist evtl. weiter öffentlich über Direktlink erreichbar).', 'bot');
-      showMyHuts(); // aktualisiere Ansicht
-    });
-  }).catch(err => {
-    console.warn('❌ Fehler beim Entfernen des Bildes:', err);
-    addMessage('⚠️ Fehler beim Entfernen des Bildes.', 'bot');
-  });
+    const daten = doc.data();
+    const neueBilder = (daten.fotos || []).filter(img => img.url !== imageUrl);
+
+    // 3. Update durchführen
+    await docRef.update({ fotos: neueBilder });
+    addMessage('✅ Bild erfolgreich gelöscht.', 'bot');
+
+    // 4. Liste neu laden
+    showMyHuts();
+  } catch (err) {
+    console.error('❌ Fehler beim Löschen des Bildes:', err);
+    addMessage('❌ Fehler beim Löschen des Bildes.', 'bot');
+  }
 }
 async function submitNewHut() {
   if (!editingData.name || !editingData.location) {
