@@ -705,31 +705,28 @@ async function deleteImage(hutId, imageUrl, deleteUrl = '') {
   if (!confirm('❌ Bild wirklich löschen?')) return;
 
   try {
-    // 1. Optionales Löschen von Imgbb (wenn deleteUrl vorhanden)
+    // 1. Löschen aus Datenbank
+    const hutRef = db.collection('eierhuetten').doc(hutId);
+    const doc = await hutRef.get();
+    if (!doc.exists) return;
+
+    const data = doc.data();
+    const updatedFotos = (data.fotos || []).filter(img => img.url !== imageUrl);
+
+    await hutRef.update({ fotos: updatedFotos });
+
+    // 2. Optional: Löschen über delete_url (imgbb)
     if (deleteUrl) {
-      await fetch(deleteUrl, { method: 'GET' }); // ImgBB Delete-Link aufrufen
-      console.log(`🗑️ Bild bei ImgBB gelöscht: ${deleteUrl}`);
-    } else {
-      console.warn('⚠️ Kein delete_url verfügbar – Bild wird nur aus Datenbank entfernt.');
+      fetch(deleteUrl, { method: 'GET' })
+        .then(() => console.log('Bild bei imgbb gelöscht.'))
+        .catch(err => console.warn('Fehler beim externen Löschen:', err));
     }
 
-    // 2. Firestore-Dokument abrufen
-    const docRef = db.collection('eierhuetten').doc(hutId);
-    const doc = await docRef.get();
-    if (!doc.exists) throw new Error('❌ Hütte nicht gefunden.');
-
-    const daten = doc.data();
-    const neueBilder = (daten.fotos || []).filter(img => img.url !== imageUrl);
-
-    // 3. Update durchführen
-    await docRef.update({ fotos: neueBilder });
-    addMessage('✅ Bild erfolgreich gelöscht.', 'bot');
-
-    // 4. Liste neu laden
+    addMessage('🗑️ Bild gelöscht.', 'bot');
     showMyHuts();
   } catch (err) {
-    console.error('❌ Fehler beim Löschen des Bildes:', err);
-    addMessage('❌ Fehler beim Löschen des Bildes.', 'bot');
+    console.error('Fehler beim Löschen:', err);
+    addMessage('❌ Bild konnte nicht gelöscht werden.', 'bot');
   }
 }
 async function submitNewHut() {
@@ -905,7 +902,6 @@ container.appendChild(btn);
     });
   });
   }
-
 function askForImageUpload() {
   addMessage('📷 Möchtest du Fotos deiner Hütte hochladen?', 'bot');
   addChoiceButtons(['Ja, Bilder auswählen', 'Nein, direkt speichern'], antwort => {
@@ -924,13 +920,13 @@ function askForImageUpload() {
           const file = files[i];
           const reader = new FileReader();
 
-          try {
-            const base64 = await new Promise((resolve, reject) => {
-              reader.onload = () => resolve(reader.result.split(',')[1]);
-              reader.onerror = () => reject('❌ Fehler beim Lesen der Datei.');
-              reader.readAsDataURL(file);
-            });
+          const base64 = await new Promise((resolve, reject) => {
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = () => reject('Fehler beim Lesen der Datei.');
+            reader.readAsDataURL(file);
+          });
 
+          try {
             const formData = new FormData();
             formData.append('key', '5df04de9bfd2776f101329be4193e44c'); // dein imgbb API-Key
             formData.append('image', base64);
@@ -951,15 +947,14 @@ function askForImageUpload() {
             }
           } catch (err) {
             console.error(err);
-            addMessage(`❌ Upload-Fehler bei Bild ${i + 1}: ${err}`, 'bot');
+            addMessage(`❌ Upload-Fehler: ${err}`, 'bot');
           }
         }
 
         editingData.fotos = uploads;
-        addMessage('✅ Alle Bilder wurden erfolgreich hochgeladen.', 'bot');
+        addMessage('✅ Bilder wurden erfolgreich hochgeladen.', 'bot');
         submitNewHut();
       };
-
       uploadInput.click();
     }
   });
