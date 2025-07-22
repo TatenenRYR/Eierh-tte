@@ -702,25 +702,65 @@ function deleteHut(id) {
 
 function submitNewHut() {
   if (!editingData.name || !editingData.location) {
-    addMessage('❌ Bitte gib alle Daten ein.', 'bot');
+    addMessage('❌ Bitte gib alle Daten ein (mindestens Name und Standort).', 'bot');
     return;
   }
+
   const hut = {
     ...editingData,
     userId: currentUser.uid,
     erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
     status: 'offen',
-    fotos: []
+    fotos: [],
+    aboMonate: 1, // Optional: gleich 1 Monat eintragen
+    paypalSubscriptionId: null
   };
-  db.collection('eierhuetten').add(hut).then(() => {
+
+  db.collection('eierhuetten').add(hut).then(docRef => {
     addMessage('🎉 Deine Hütte wurde erfolgreich erstellt und wartet nun auf Freigabe.', 'bot');
-    addMessage('💳 Du kannst jetzt dein Abo starten. Erst nach erfolgreicher Zahlung und Freigabe wird deine Hütte freigeschaltet.', 'bot');
+    addMessage('💳 Du kannst jetzt dein 14-tägiges Testabo starten. Erst nach erfolgreicher Zahlung und Freigabe wird deine Hütte freigeschaltet.', 'bot');
+
+    // Optional: PayPal-Button anzeigen
+    const paypalDiv = document.createElement('div');
+    paypalDiv.id = `paypal-button-new-${docRef.id}`;
+    paypalDiv.className = 'my-2';
+    chatWindow.appendChild(paypalDiv);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    if (typeof paypal !== 'undefined') {
+      paypal.Buttons({
+        style: {
+          shape: 'pill',
+          color: 'blue',
+          layout: 'horizontal',
+          label: 'subscribe'
+        },
+        createSubscription: function (data, actions) {
+          return actions.subscription.create({
+            plan_id: 'P-0CJ41027JV244774KNBNQ7MI' // Beispiel-Plan-ID
+          });
+        },
+        onApprove: function (data, actions) {
+          db.collection('eierhuetten').doc(docRef.id).update({
+            paypalSubscriptionId: data.subscriptionID,
+            aboStart: new Date(),
+            aboMonate: 1
+          }).then(() => {
+            addMessage('✅ Abo erfolgreich gestartet! Deine Hütte wird nach Freigabe sichtbar.', 'bot');
+            showMyHuts();
+          });
+        }
+      }).render(`#paypal-button-new-${docRef.id}`);
+    }
+
+    // Reset
     step = 0;
     editingData = {};
     startDialog();
-  }).catch(err => addMessage('❌ Fehler: ' + err.message, 'bot'));
+  }).catch(err => {
+    addMessage('❌ Fehler beim Erstellen der Hütte: ' + err.message, 'bot');
+  });
 }
-
 // Authentifizierung
 auth.onAuthStateChanged(user => {
   if (user) {
