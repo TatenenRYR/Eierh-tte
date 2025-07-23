@@ -741,15 +741,24 @@ async function submitNewHut() {
     return;
   }
 
+  // 🔒 Sicherheit: Nur gültige Bilder übernehmen (mit url UND delete_url)
+  const validFotos = (editingData.fotos || []).filter(f =>
+    typeof f === 'object' &&
+    f.url &&
+    f.delete_url
+  );
+
   const hut = {
     ...editingData,
     userId: currentUser.uid,
     erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
     status: 'offen',
-    fotos: editingData.fotos || [],
+    fotos: validFotos,
     aboMonate: 1,
     paypalSubscriptionId: null
   };
+
+  console.log('📸 Fotos werden gespeichert:', JSON.stringify(hut.fotos));
 
   try {
     const docRef = await db.collection('eierhuetten').add(hut);
@@ -783,18 +792,16 @@ async function submitNewHut() {
             status: 'angenommen'
           }).then(() => {
             addMessage('✅ Abo erfolgreich gestartet! Deine Hütte ist freigeschaltet.', 'bot');
-
-            // 🕐 Verzögert den Neustart des Dialogs um 5 Sekunden
             setTimeout(() => {
-              showMyHuts(); // Optional anzeigen
-              startDialog(); // Startet neuen Dialog
+              showMyHuts();
+              startDialog();
             }, 5000);
           });
         }
       }).render(`#paypal-button-new-${docRef.id}`);
     } else {
       addMessage('⚠️ PayPal SDK nicht geladen. Button konnte nicht angezeigt werden.', 'bot');
-      setTimeout(() => startDialog(), 1500); // Auch bei Fehlschlag
+      setTimeout(() => startDialog(), 1500);
     }
 
     // Reset
