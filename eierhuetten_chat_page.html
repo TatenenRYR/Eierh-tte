@@ -920,51 +920,51 @@ function askForImageUpload() {
         if (files.length === 0) return submitNewHut(); // falls abgebrochen
 
         addMessage(`⏳ Lade ${files.length} Bild(er) hoch...`, 'bot');
-        const uploadedImages = [];
+        const uploaded = [];
 
-        for (const file of files) {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
           const reader = new FileReader();
-          const base64 = await new Promise((resolve, reject) => {
-            reader.onload = () => resolve(reader.result.split(',')[1]);
+
+          const result = await new Promise((resolve, reject) => {
+            reader.onload = () => resolve(reader.result.split(',')[1]); // Base64 ohne Präfix
             reader.onerror = () => reject('❌ Fehler beim Lesen der Datei.');
             reader.readAsDataURL(file);
           });
 
-          const formData = new FormData();
-          formData.append('key', '5df04de9bfd2776f101329be4193e44c');
-          formData.append('image', base64);
-
           try {
+            const formData = new FormData();
+            formData.append('key', '5df04de9bfd2776f101329be4193e44c'); // dein imgbb API-Key
+            formData.append('image', result);
+
             const res = await fetch('https://api.imgbb.com/1/upload', {
               method: 'POST',
               body: formData
             });
-            const json = await res.json();
 
+            const json = await res.json();
             if (json?.data?.url && json?.data?.delete_url) {
-              uploadedImages.push({
+              uploaded.push({
                 url: json.data.url,
                 delete_url: json.data.delete_url
               });
             } else {
-              addMessage(`❌ Fehler beim Hochladen eines Bildes`, 'bot');
+              addMessage(`❌ Fehler beim Hochladen von Bild ${i + 1}`, 'bot');
             }
           } catch (err) {
             console.error(err);
-            addMessage('❌ Upload-Fehler: ' + err.message, 'bot');
+            addMessage(`❌ Upload-Fehler bei Bild ${i + 1}: ${err}`, 'bot');
           }
         }
 
-        editingData.fotos = uploadedImages;
+        editingData.fotos = uploaded;
         addMessage('✅ Bilder wurden erfolgreich hochgeladen.', 'bot');
         submitNewHut();
       };
-
       uploadInput.click();
     }
   });
 }
-  
 document.body.addEventListener('change', async e => {
   if (e.target.classList.contains('upload-image')) {
     const file = e.target.files[0];
