@@ -975,62 +975,38 @@ function askForImageUpload() {
     }
   });
 }
-document.querySelectorAll('.upload-image').forEach(input => {
-  input.addEventListener('change', async e => {
-    const id = input.dataset.id;
-    const file = input.files[0];
-    if (!file) return;
-
-    const progressBar = document.querySelector(`#progress-${id}`);
-    const progressFill = progressBar?.querySelector('div');
-    progressBar?.classList.remove('hidden');
-    progressFill.style.width = '10%';
+document.body.addEventListener('change', async e => {
+  if (e.target.classList.contains('upload-image')) {
+    const file = e.target.files[0];
+    const hutId = e.target.dataset.id;
+    const progressBar = document.querySelector(`#progress-${hutId}`);
+    const progressInner = progressBar?.firstElementChild;
+    
+    if (!file || !hutId || !progressBar || !progressInner) return;
 
     try {
-      const reader = new FileReader();
-      const base64 = await new Promise((resolve, reject) => {
-        reader.onload = () => resolve(reader.result.split(',')[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
+      progressBar.classList.remove('hidden');
+      progressInner.style.width = "30%";
+      const imageUrl = await uploadToImgBB(file, percent => {
+        progressInner.style.width = `${percent}%`;
       });
-
-      const formData = new FormData();
-      formData.append('key', '5df04de9bfd2776f101329be4193e44c'); // Dein imgbb API-Key
-      formData.append('image', base64);
-
-      const res = await fetch('https://api.imgbb.com/1/upload', {
-        method: 'POST',
-        body: formData
+      progressInner.style.width = "100%";
+      await db.collection("eierhuetten").doc(hutId).update({
+        fotos: firebase.firestore.FieldValue.arrayUnion(imageUrl)
       });
-
-      const json = await res.json();
-      if (json?.data?.url && json?.data?.delete_url) {
-        const newImage = {
-          url: json.data.url,
-          delete_url: json.data.delete_url
-        };
-
-        // 🔁 Bild in Firestore speichern
-        const docRef = db.collection('eierhuetten').doc(id);
-        await docRef.update({
-          fotos: firebase.firestore.FieldValue.arrayUnion(newImage)
-        });
-
-        addMessage('✅ Neues Bild erfolgreich hochgeladen.', 'bot');
-        showMyHuts(); // Neu laden
-      } else {
-        throw new Error('Ungültige API-Antwort');
-      }
+      addMessage("✅ Bild erfolgreich hochgeladen.", "bot");
+      showMyHuts();
     } catch (err) {
-      console.error(err);
-      addMessage('❌ Fehler beim Hochladen: ' + err.message, 'bot');
+      console.error("Fehler beim Upload:", err);
+      addMessage("❌ Upload fehlgeschlagen: " + err, "bot");
     } finally {
-      if (progressBar) {
-        progressFill.style.width = '100%';
-        setTimeout(() => progressBar.classList.add('hidden'), 1000);
-      }
+      e.target.value = '';
+      setTimeout(() => {
+        progressBar.classList.add('hidden');
+        progressInner.style.width = "0%";
+      }, 2000);
     }
-  });
+  }
 });
 
 </script>
