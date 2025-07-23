@@ -699,32 +699,31 @@ function deleteHut(id) {
     });
   }
 }
-async function deleteImage(hutId, imageUrl, deleteUrl = '') {
-  if (!confirm('❌ Bild wirklich löschen?')) return;
+function deleteImage(hutId, imageUrl, deleteUrl) {
+  if (!confirm("Möchtest du dieses Bild wirklich löschen?")) return;
 
-  try {
-    const hutRef = db.collection('eierhuetten').doc(hutId);
-    const doc = await hutRef.get();
+  // 1. Lösche aus der Datenbank
+  db.collection('eierhuetten').doc(hutId).get().then(doc => {
     if (!doc.exists) return;
 
     const data = doc.data();
-    const fotos = data.fotos || [];
+    const neueBilder = (data.fotos || []).filter(img => {
+      const url = typeof img === 'string' ? img : img.url;
+      return url !== imageUrl;
+    });
 
-    const updatedFotos = fotos.filter(img => img.url !== imageUrl);
-    await hutRef.update({ fotos: updatedFotos });
+    db.collection('eierhuetten').doc(hutId).update({ fotos: neueBilder });
 
+    // 2. Versuche über delete_url von imgbb zu löschen
     if (deleteUrl) {
-      fetch(deleteUrl, { method: 'GET' })
-        .then(() => console.log('🗑️ Bild bei imgbb gelöscht.'))
-        .catch(err => console.warn('⚠️ Fehler beim Löschen bei imgbb:', err));
+      fetch(deleteUrl, { method: 'GET' }) // oder POST bei manchen Versionen
+        .then(() => console.log('🗑️ Bild bei imgbb gelöscht'))
+        .catch(err => console.warn('⚠️ Fehler beim Löschen über imgbb:', err));
     }
 
-    addMessage('✅ Bild gelöscht.', 'bot');
+    // 3. UI neu laden
     showMyHuts();
-  } catch (err) {
-    console.error('❌ Fehler beim Löschen:', err);
-    addMessage('❌ Bild konnte nicht gelöscht werden.', 'bot');
-  }
+  });
 }
 async function submitNewHut() {
   if (!editingData.name || !editingData.location) {
