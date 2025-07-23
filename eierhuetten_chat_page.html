@@ -67,6 +67,12 @@
   </section>
 
 <script>
+
+  const supabase = supabase.createClient(
+  'https://zfzutgtqktjszcvqwyjq.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpmenV0Z3Rxa3Rqc3pjdnF3eWpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMyOTk4MTAsImV4cCI6MjA2ODg3NTgxMH0.3iIPb0czBVLyoSdjaFlQPUEMYfGSswuPu2mI6uC1Ztk'
+);
+const BUCKET = 'RadlMap'; // den musst du vorher im Supabase-Dashboard erstellen
 // Konfiguration
 const firebaseConfig = {
   apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
@@ -560,12 +566,13 @@ div.innerHTML = `
       <div class="text-gray-500 italic">⛔ Änderungen sind nur möglich, wenn die Hütte angenommen wurde.</div>
     `}
 
-    <!-- 📷 Bild-Galerie (mit delete_url sichtbar) -->
+    <!-- 📷 Bild-Galerie -->
     ${Array.isArray(d.fotos) && d.fotos.length ? `
       <div class='flex flex-col gap-2 mt-2'>
         ${d.fotos.map(img => {
-          const url = typeof img === 'string' ? img : img.url;
-          const del = typeof img === 'object' ? img.delete_url : '';
+          const isString = typeof img === 'string';
+          const url = isString ? img : img.url;
+          const del = isString ? '' : (img.delete_url || img.path || '');
           return `
             <div class="flex items-center gap-4 bg-gray-50 p-2 rounded border">
               <div class="relative group">
@@ -578,7 +585,7 @@ div.innerHTML = `
               </div>
               <div class="flex-1 text-xs break-all text-gray-600">
                 <div><strong>URL:</strong><br><code>${url}</code></div>
-                <div class="mt-1"><strong>Delete-URL:</strong><br><code>${del || '<i>nicht vorhanden</i>'}</code></div>
+                <div class="mt-1"><strong>Delete/Path:</strong><br><code>${del || '<i>nicht vorhanden</i>'}</code></div>
               </div>
             </div>
           `;
@@ -596,7 +603,8 @@ div.innerHTML = `
 
     <!-- 🗺️ Minikarte -->
     <div id='minimap-${id}' class='minimap'></div>
-  </div>`;
+  </div>
+`;
       
       chatWindow.appendChild(div);
 
@@ -712,34 +720,22 @@ function deleteHut(id) {
     });
   }
 }
-async function deleteImage(hutId, imageUrl, deleteUrl) {
-  if (!confirm('❗ Möchtest du dieses Bild wirklich löschen?')) return;
-
+async function deleteImage(hutId, url, path) {
   try {
-    // 1. Firestore-Eintrag laden
-    const docRef = db.collection('eierhuetten').doc(hutId);
-    const doc = await docRef.get();
-    if (!doc.exists) return alert('❌ Hütte nicht gefunden.');
-
-    const data = doc.data();
-    const fotos = (data.fotos || []).filter(img => img.url !== imageUrl);
-
-    // 2. Firestore updaten
-    await docRef.update({ fotos });
-
-    // 3. Optional: Bild bei imgbb löschen
-    if (deleteUrl) {
-      await fetch(deleteUrl, { method: 'GET' });
-      console.log('✅ Bild bei imgbb gelöscht');
+    if (path) {
+      await supabase.storage.from(BUCKET).remove([path]);
     }
 
-    // 4. UI neu laden
-    addMessage('✅ Bild wurde gelöscht.', 'bot');
-    showMyHuts();
+    const docRef = db.collection("eierhuetten").doc(hutId);
+    await docRef.update({
+      fotos: firebase.firestore.FieldValue.arrayRemove({ url, path })
+    });
 
+    addMessage("🗑️ Bild gelöscht.", "bot");
+    showMyHuts();
   } catch (err) {
-    console.error('❌ Fehler beim Löschen:', err);
-    alert('❌ Fehler beim Löschen des Bildes.');
+    console.error(err);
+    addMessage("❌ Fehler beim Löschen: " + err.message, "bot");
   }
 }
 async function submitNewHut() {
@@ -922,63 +918,38 @@ container.appendChild(btn);
     });
   });
   }
-function askForImageUpload() {
+async function askForImageUpload() {
   addMessage('📷 Möchtest du Fotos deiner Hütte hochladen?', 'bot');
-  addChoiceButtons(['Ja, Bilder auswählen', 'Nein, direkt speichern'], antwort => {
+  addChoiceButtons(['Ja, Bilder auswählen', 'Nein, direkt speichern'], async antwort => {
     if (antwort.includes('Nein')) {
       submitNewHut(); // ohne Bilder
     } else {
-      const uploadInput = document.getElementById('image-upload');
-      uploadInput.onchange = async () => {
-        const files = Array.from(uploadInput.files);
+      const input = document.getElementById('image-upload');
+      input.onchange = async () => {
+        const files = Array.from(input.files);
         if (files.length === 0) return submitNewHut();
 
-        addMessage(`⏳ Lade ${files.length} Bild(er) hoch...`, 'bot');
-        const uploads = [];
+        const fotos = [];
 
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          const reader = new FileReader();
+        for (const file of files) {
+          const filePath = `${currentUser.uid}/${Date.now()}_${file.name}`;
 
-          const base64 = await new Promise((resolve, reject) => {
-            reader.onload = () => resolve(reader.result.split(',')[1]);
-            reader.onerror = () => reject('❌ Fehler beim Lesen der Datei.');
-            reader.readAsDataURL(file);
-          });
-
-          try {
-            const formData = new FormData();
-            formData.append('key', '5df04de9bfd2776f101329be4193e44c'); // dein imgbb Key
-            formData.append('image', base64);
-
-            const res = await fetch('https://api.imgbb.com/1/upload', {
-              method: 'POST',
-              body: formData
-            });
-
-            const json = await res.json();
-
-            if (json?.data?.url && json?.data?.delete_url) {
-              uploads.push({
-                url: json.data.url,
-                delete_url: json.data.delete_url
-              });
-            } else {
-              console.warn('❌ Upload war unvollständig oder fehlerhaft:', json);
-              addMessage(`❌ Fehler beim Hochladen von Bild ${i + 1}`, 'bot');
-            }
-
-          } catch (err) {
-            console.error(err);
-            addMessage(`❌ Upload-Fehler: ${err}`, 'bot');
+          const { error } = await supabase.storage.from(BUCKET).upload(filePath, file);
+          if (error) {
+            console.error(error);
+            addMessage('❌ Fehler beim Hochladen', 'bot');
+            continue;
           }
+
+          const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(filePath);
+          fotos.push({ url: urlData.publicUrl, path: filePath });
         }
 
-        editingData.fotos = uploads;  // Wichtig: hier speicherst du die vollständigen Objekte!
-        addMessage('✅ Bilder wurden erfolgreich hochgeladen.', 'bot');
+        editingData.fotos = fotos;
+        addMessage('✅ Bilder erfolgreich hochgeladen.', 'bot');
         submitNewHut();
       };
-      uploadInput.click();
+      input.click();
     }
   });
 }
