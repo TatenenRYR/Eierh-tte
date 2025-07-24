@@ -113,6 +113,31 @@
     stats.innerHTML = `🔢 <strong>${total}</strong> Hütten · ⚡ ${withStrom} mit Strom · 🖼️ ${withFotos} mit Fotos · 🕒 ${count247} sind 24/7 geöffnet`;
   }
 
+  async function approveFoto(hutId, index) {
+  const doc = await db.collection('eierhuetten').doc(hutId).get();
+  const fotos = doc.data().fotos || [];
+  fotos[index].status = 'freigegeben';
+  await db.collection('eierhuetten').doc(hutId).update({ fotos });
+  showNotification('✅ Bild freigegeben');
+  loadHuts();
+}
+
+async function rejectFoto(hutId, index) {
+  const doc = await db.collection('eierhuetten').doc(hutId).get();
+  const fotos = doc.data().fotos || [];
+  const { delete_url } = fotos[index];
+  fotos.splice(index, 1);
+  await db.collection('eierhuetten').doc(hutId).update({ fotos });
+
+  if (delete_url) {
+    fetch(delete_url)
+      .then(() => showNotification('🗑️ Bild gelöscht'))
+      .catch(e => console.warn('Fehler beim Löschen', e));
+  }
+
+  loadHuts();
+}
+  
   function updateField(hutId, field, value) {
     db.collection('eierhuetten').doc(hutId).update({ [field]: value });
     db.collection('eierhuetten').doc(hutId).collection('log').add({
@@ -185,6 +210,16 @@
                       class="absolute top-0 right-0 bg-red-600 text-white rounded-bl px-1 text-sm font-bold hover:bg-red-700">×</button>
             </div>`).join('') : '<p class="text-gray-500">Keine Fotos</p>'}
         </div>
+        <div class="relative">
+  <img src="${url}" class="h-24 w-24 object-cover ${status === 'wartet' ? 'opacity-50 grayscale' : ''}" />
+  ${status === 'wartet' ? `
+    <div class="absolute inset-0 bg-black/50 text-white text-xs flex flex-col items-center justify-center">
+      ⏳ Wartet
+      <button onclick="approveFoto('${hut.id}', ${i})" class="bg-green-500 px-1 rounded mt-1">✔ Freigeben</button>
+      <button onclick="rejectFoto('${hut.id}', ${i})" class="bg-red-500 px-1 rounded mt-1">✖ Löschen</button>
+    </div>
+  ` : ''}
+</div>
 
         <label>Foto hochladen:
           <input type="file" accept="image/*" onchange="uploadFoto(this, '${hut.id}')">
