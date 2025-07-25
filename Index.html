@@ -517,6 +517,20 @@ let alreadySpokenTurnIndex = {};
     let lastNavActiveState = null; // Merkt letzten bekannten Firestore-Status
 
 
+const standardUserIcon = L.icon({
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/149/149071.png', // normales User-Icon
+  iconSize: [40, 40],
+  iconAnchor: [20, 20]
+});
+
+const compassUserIcon = L.icon({
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png', // Pfeil-Icon
+  iconSize: [40, 40],
+  iconAnchor: [20, 20]
+});
+
+
+    
     //User ID bestimmen
     if (!localStorage.aliasId) {
        localStorage.aliasId = "user_" + Math.random().toString(36).substr(2, 6);
@@ -1237,7 +1251,7 @@ orientationListenerActive = true;
 enableCompassRotation();
         saveRouteToLocal(); // 💾 speichert Route
         showDashboardAlert();
-starteNavigationPfeil();
+stoppeNavigationPfeilMitMarker(userMarker);
 
         //speichere status in firebase für Raumsyncro
         db.collection("rooms").doc(roomId).set({
@@ -1296,16 +1310,14 @@ function initNaviPfeil() {
     document.body.appendChild(img);
   }
 }
-
-let naviAktiv = false;
-let kompassListener = null;
-
-function starteNavigationPfeil() {
+function starteNavigationPfeilMitMarker(userMarker) {
   const pfeil = document.getElementById('navi-arrow');
   if (!pfeil) return;
 
   naviAktiv = true;
   pfeil.style.display = 'block';
+
+  userMarker.setIcon(compassUserIcon);
 
   kompassListener = (event) => {
     if (!naviAktiv) return;
@@ -1313,6 +1325,12 @@ function starteNavigationPfeil() {
     if (alpha !== null) {
       const rotation = 360 - alpha;
       pfeil.style.transform = `translateX(-50%) rotate(${rotation}deg)`;
+
+      // Benutzer-Pfeil auf Karte drehen (Leaflet kann Marker nicht direkt rotieren, also mit CSS)
+      const icon = userMarker.getElement();
+      if (icon) {
+        icon.style.transform = `rotate(${rotation}deg)`;
+      }
     }
   };
 
@@ -1320,7 +1338,7 @@ function starteNavigationPfeil() {
   window.addEventListener(eventType, kompassListener, true);
 }
 
-function stoppeNavigationPfeil() {
+function stoppeNavigationPfeilMitMarker(userMarker) {
   naviAktiv = false;
   const pfeil = document.getElementById('navi-arrow');
   if (pfeil) pfeil.style.display = 'none';
@@ -1330,7 +1348,17 @@ function stoppeNavigationPfeil() {
     window.removeEventListener("deviceorientationabsolute", kompassListener, true);
     kompassListener = null;
   }
+
+  userMarker.setIcon(standardUserIcon);
+
+  const icon = userMarker.getElement();
+  if (icon) {
+    icon.style.transform = '';
+  }
 }
+
+    
+
 function stopNavigation() {
   clearInterval(navInterval);
   navInterval = null;
@@ -1345,7 +1373,7 @@ function stopNavigation() {
   orientationListenerActive = false;
   disableCompassRotation();
   clearRouteLines();
-stoppeNavigationPfeil();
+stoppeNavigationPfeilMitMarker(userMarker);
   //firebase syncro Raum
   db.collection("rooms").doc(roomId).set({
   navActive: false
@@ -1803,7 +1831,6 @@ function drop(ev) {
 
     function init() {
       initUsername();
-      initNaviPfeil();
       try {
          updateSelectedList();
       } catch (err) {
