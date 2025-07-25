@@ -515,7 +515,8 @@ footer a:hover {
     let lastSpokenHutIndex = -1;
 let alreadySpokenTurnIndex = {};
     let lastNavActiveState = null; // Merkt letzten bekannten Firestore-Status
-
+let userArrowMarker = null;
+let navigationAktiv = false;
 
 const standardUserIcon = L.icon({
   iconUrl: 'https://cdn-icons-png.flaticon.com/512/149/149071.png', // normales User-Icon
@@ -1251,7 +1252,7 @@ orientationListenerActive = true;
 enableCompassRotation();
         saveRouteToLocal(); // 💾 speichert Route
         showDashboardAlert();
-stoppeNavigationPfeilMitMarker(userMarker);
+startNavigationWithArrow(map, map.getCenter());
 
         //speichere status in firebase für Raumsyncro
         db.collection("rooms").doc(roomId).set({
@@ -1293,57 +1294,52 @@ window.addEventListener('deviceorientationabsolute', (event) => {
 }, true);
 
 
-let kompassListener;
-let naviAktiv = false;
+function starteKartenNavigationMitPfeil(map, startCoords) {
+  navigationAktiv = true;
 
-function starteNavigationPfeilMitMarker() {
-  const pfeil = document.getElementById('navi-arrow');
-  if (!pfeil) return;
+  // Benutzerposition als Pfeil anzeigen
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="width:40px;height:40px;transform:rotate(0deg);transition:transform 0.3s">
+             <svg viewBox="0 0 24 24" fill="red" xmlns="http://www.w3.org/2000/svg">
+               <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
+             </svg>
+           </div>`,
+    iconSize: [40, 40],
+    iconAnchor: [20, 20]
+  });
 
-  naviAktiv = true;
-  pfeil.style.display = 'block';
+  userArrowMarker = L.marker(startCoords, { icon }).addTo(map);
 
-  if (userMarker) {
-    userMarker.setIcon(compassUserIcon);
-  }
-
-  kompassListener = (event) => {
-    if (!naviAktiv) return;
-    const alpha = event.alpha;
-    if (alpha !== null) {
-      const rotation = 360 - alpha;
-      pfeil.style.transform = `translateX(-50%) rotate(${rotation}deg)`;
-
-      const icon = userMarker?.getElement();
-      if (icon) {
-        icon.style.transform = `rotate(${rotation}deg)`;
+  // Kompass aktivieren
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission().then(response => {
+      if (response === 'granted') {
+        window.addEventListener('deviceorientationabsolute', updateKompassPfeil, true);
+      } else {
+        alert('⚠️ Zugriff auf Kompass abgelehnt.');
       }
-    }
-  };
-
-  const eventType = "ondeviceorientationabsolute" in window ? "deviceorientationabsolute" : "deviceorientation";
-  window.addEventListener(eventType, kompassListener, true);
-}
-
-function stoppeNavigationPfeilMitMarker() {
-  naviAktiv = false;
-  const pfeil = document.getElementById('navi-arrow');
-  if (pfeil) pfeil.style.display = 'none';
-
-  if (kompassListener) {
-    window.removeEventListener("deviceorientation", kompassListener, true);
-    window.removeEventListener("deviceorientationabsolute", kompassListener, true);
-    kompassListener = null;
+    }).catch(console.error);
+  } else {
+    window.addEventListener('deviceorientationabsolute', updateKompassPfeil, true);
   }
 
-  if (userMarker) {
-    userMarker.setIcon(standardUserIcon);
-    const icon = userMarker.getElement();
-    if (icon) icon.style.transform = '';
-  }
+  // GPS-Tracking aktivieren
+  navigator.geolocation.watchPosition(pos => {
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    if (userArrowMarker) userArrowMarker.setLatLng([lat, lng]);
+  });
 }
 
-
+function stoppeKartenNavigationMitPfeil(map) {
+  navigationAktiv = false;
+  if (userArrowMarker) {
+    map.removeLayer(userArrowMarker);
+    userArrowMarker = null;
+  }
+  window.removeEventListener('deviceorientationabsolute', updateKompassPfeil, true);
+}
 function stopNavigation() {
   clearInterval(navInterval);
   navInterval = null;
@@ -1358,7 +1354,7 @@ function stopNavigation() {
   orientationListenerActive = false;
   disableCompassRotation();
   clearRouteLines();
-stoppeNavigationPfeilMitMarker(userMarker);
+stoppeNavigationPfeilMitMarker(map);
   //firebase syncro Raum
   db.collection("rooms").doc(roomId).set({
   navActive: false
