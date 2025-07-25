@@ -515,23 +515,8 @@ footer a:hover {
     let lastSpokenHutIndex = -1;
 let alreadySpokenTurnIndex = {};
     let lastNavActiveState = null; // Merkt letzten bekannten Firestore-Status
-let userArrowMarker = null;
-let navigationAktiv = false;
-
-const standardUserIcon = L.icon({
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/149/149071.png', // normales User-Icon
-  iconSize: [40, 40],
-  iconAnchor: [20, 20]
-});
-
-const compassUserIcon = L.icon({
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png', // Pfeil-Icon
-  iconSize: [40, 40],
-  iconAnchor: [20, 20]
-});
 
 
-    
     //User ID bestimmen
     if (!localStorage.aliasId) {
        localStorage.aliasId = "user_" + Math.random().toString(36).substr(2, 6);
@@ -1252,7 +1237,7 @@ orientationListenerActive = true;
 enableCompassRotation();
         saveRouteToLocal(); // 💾 speichert Route
         showDashboardAlert();
-startNavigationWithArrow(map, map.getCenter());
+starteNavigationPfeil();
 
         //speichere status in firebase für Raumsyncro
         db.collection("rooms").doc(roomId).set({
@@ -1294,51 +1279,57 @@ window.addEventListener('deviceorientationabsolute', (event) => {
 }, true);
 
 
-function starteKartenNavigationMitPfeil(map, startCoords) {
-  navigationAktiv = true;
-
-  // Benutzerposition als Pfeil anzeigen
-  const icon = L.divIcon({
-    className: '',
-    html: `<div style="width:40px;height:40px;transform:rotate(0deg);transition:transform 0.3s">
-             <svg viewBox="0 0 24 24" fill="red" xmlns="http://www.w3.org/2000/svg">
-               <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
-             </svg>
-           </div>`,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20]
-  });
-
-  userArrowMarker = L.marker(startCoords, { icon }).addTo(map);
-
-  // Kompass aktivieren
-  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-    DeviceOrientationEvent.requestPermission().then(response => {
-      if (response === 'granted') {
-        window.addEventListener('deviceorientationabsolute', updateKompassPfeil, true);
-      } else {
-        alert('⚠️ Zugriff auf Kompass abgelehnt.');
-      }
-    }).catch(console.error);
-  } else {
-    window.addEventListener('deviceorientationabsolute', updateKompassPfeil, true);
+function initNaviPfeil() {
+  // Stelle sicher, dass der Pfeil existiert
+  if (!document.getElementById('navi-arrow')) {
+    const img = document.createElement('img');
+    img.id = 'navi-arrow';
+    img.src = 'https://cdn-icons-png.flaticon.com/512/684/684908.png';
+    img.style.position = 'fixed';
+    img.style.top = '20px';
+    img.style.left = '50%';
+    img.style.transform = 'translateX(-50%) rotate(0deg)';
+    img.style.width = '60px';
+    img.style.height = '60px';
+    img.style.zIndex = '9999';
+    img.style.display = 'none';
+    document.body.appendChild(img);
   }
-
-  // GPS-Tracking aktivieren
-  navigator.geolocation.watchPosition(pos => {
-    const lat = pos.coords.latitude;
-    const lng = pos.coords.longitude;
-    if (userArrowMarker) userArrowMarker.setLatLng([lat, lng]);
-  });
 }
 
-function stoppeKartenNavigationMitPfeil(map) {
-  navigationAktiv = false;
-  if (userArrowMarker) {
-    map.removeLayer(userArrowMarker);
-    userArrowMarker = null;
+let naviAktiv = false;
+let kompassListener = null;
+
+function starteNavigationPfeil() {
+  const pfeil = document.getElementById('navi-arrow');
+  if (!pfeil) return;
+
+  naviAktiv = true;
+  pfeil.style.display = 'block';
+
+  kompassListener = (event) => {
+    if (!naviAktiv) return;
+    const alpha = event.alpha;
+    if (alpha !== null) {
+      const rotation = 360 - alpha;
+      pfeil.style.transform = `translateX(-50%) rotate(${rotation}deg)`;
+    }
+  };
+
+  const eventType = "ondeviceorientationabsolute" in window ? "deviceorientationabsolute" : "deviceorientation";
+  window.addEventListener(eventType, kompassListener, true);
+}
+
+function stoppeNavigationPfeil() {
+  naviAktiv = false;
+  const pfeil = document.getElementById('navi-arrow');
+  if (pfeil) pfeil.style.display = 'none';
+
+  if (kompassListener) {
+    window.removeEventListener("deviceorientation", kompassListener, true);
+    window.removeEventListener("deviceorientationabsolute", kompassListener, true);
+    kompassListener = null;
   }
-  window.removeEventListener('deviceorientationabsolute', updateKompassPfeil, true);
 }
 function stopNavigation() {
   clearInterval(navInterval);
@@ -1354,7 +1345,7 @@ function stopNavigation() {
   orientationListenerActive = false;
   disableCompassRotation();
   clearRouteLines();
-stoppeNavigationPfeilMitMarker(map);
+stoppeNavigationPfeil();
   //firebase syncro Raum
   db.collection("rooms").doc(roomId).set({
   navActive: false
@@ -1812,6 +1803,7 @@ function drop(ev) {
 
     function init() {
       initUsername();
+      initNaviPfeil();
       try {
          updateSelectedList();
       } catch (err) {
@@ -2044,17 +2036,7 @@ if (speechSynthesis.getVoices().length) {
 <a href="javascript:void(0)" onclick="openPopup('rechtliches')">Rechtliches</a> ·
 <a href="javascript:void(0)" onclick="openPopup('kontakt')">Kontakt</a>
   </footer>
-  <div id="navi-arrow" style="
-  display: none;
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  width: 60px;
-  height: 60px;
-  background: url('https://cdn-icons-png.flaticon.com/512/684/684908.png') no-repeat center;
-  background-size: contain;
-  transform: translateX(-50%) rotate(0deg);
-  z-index: 9999;
-"></div>
+  <img id="navi-arrow" src="https://cdn-icons-png.flaticon.com/512/684/684908.png" 
+     style="position: fixed; top: 20px; left: 50%; transform: translateX(-50%) rotate(0deg); width: 60px; height: 60px; z-index: 9999; display: none;" />
 </body>
 </html>
