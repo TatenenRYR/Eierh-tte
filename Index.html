@@ -1188,8 +1188,6 @@ if (progressLine) {
     challengeProgress = 0;
     currentHutIndex = 0;
 
-toggleNavigation(true);
-
     const coords = [
       [userMarker.getLatLng().lng, userMarker.getLatLng().lat],
       ...selected.map(h => [h.lng, h.lat])
@@ -1239,7 +1237,7 @@ orientationListenerActive = true;
 enableCompassRotation();
         saveRouteToLocal(); // 💾 speichert Route
         showDashboardAlert();
-
+starteNavigationPfeil();
 
         //speichere status in firebase für Raumsyncro
         db.collection("rooms").doc(roomId).set({
@@ -1280,59 +1278,59 @@ window.addEventListener('deviceorientationabsolute', (event) => {
   }
 }, true);
 
-// Nur bei aktivierter Navigation sichtbar
-function toggleNavigation(active) {
-  navigationActive = active;
-  if (navigationActive) {
-    enableUserArrow();
-  } else {
-    removeUserArrow();
+
+function initNaviPfeil() {
+  // Stelle sicher, dass der Pfeil existiert
+  if (!document.getElementById('navi-arrow')) {
+    const img = document.createElement('img');
+    img.id = 'navi-arrow';
+    img.src = 'https://cdn-icons-png.flaticon.com/512/684/684908.png';
+    img.style.position = 'fixed';
+    img.style.top = '20px';
+    img.style.left = '50%';
+    img.style.transform = 'translateX(-50%) rotate(0deg)';
+    img.style.width = '60px';
+    img.style.height = '60px';
+    img.style.zIndex = '9999';
+    img.style.display = 'none';
+    document.body.appendChild(img);
   }
 }
 
-// Benutzerpfeil auf Karte einfügen
-function enableUserArrow() {
-  if (!navigator.geolocation) return;
+let naviAktiv = false;
+let kompassListener = null;
 
-  navigator.geolocation.watchPosition((pos) => {
-    const { latitude, longitude } = pos.coords;
-    const latlng = [latitude, longitude];
+function starteNavigationPfeil() {
+  const pfeil = document.getElementById('navi-arrow');
+  if (!pfeil) return;
 
-    if (!userArrowMarker) {
-      userArrowMarker = L.marker(latlng, {
-        icon: L.divIcon({
-          className: 'user-arrow',
-          iconSize: [40, 40]
-        }),
-        rotationAngle: heading
-      }).addTo(map);
-    } else {
-      userArrowMarker.setLatLng(latlng);
+  naviAktiv = true;
+  pfeil.style.display = 'block';
+
+  kompassListener = (event) => {
+    if (!naviAktiv) return;
+    const alpha = event.alpha;
+    if (alpha !== null) {
+      const rotation = 360 - alpha;
+      pfeil.style.transform = `translateX(-50%) rotate(${rotation}deg)`;
     }
+  };
 
-    updateUserArrowRotation();
-  }, err => {
-    console.warn('Geolocation-Fehler:', err);
-  }, {
-    enableHighAccuracy: true
-  });
+  const eventType = "ondeviceorientationabsolute" in window ? "deviceorientationabsolute" : "deviceorientation";
+  window.addEventListener(eventType, kompassListener, true);
 }
 
-// Richtungspfeil drehen
-function updateUserArrowRotation() {
-  if (userArrowMarker && navigationActive) {
-    const angle = 360 - heading;
-    userArrowMarker.getElement().style.transform = `rotate(${angle}deg)`;
+function stoppeNavigationPfeil() {
+  naviAktiv = false;
+  const pfeil = document.getElementById('navi-arrow');
+  if (pfeil) pfeil.style.display = 'none';
+
+  if (kompassListener) {
+    window.removeEventListener("deviceorientation", kompassListener, true);
+    window.removeEventListener("deviceorientationabsolute", kompassListener, true);
+    kompassListener = null;
   }
 }
-
-// Richtungspfeil entfernen
-function removeUserArrow() {
-  if (userArrowMarker) {
-    map.removeLayer(userArrowMarker);
-    userArrowMarker = null;
-  }
-  }
 function stopNavigation() {
   clearInterval(navInterval);
   navInterval = null;
@@ -1347,7 +1345,7 @@ function stopNavigation() {
   orientationListenerActive = false;
   disableCompassRotation();
   clearRouteLines();
-
+stoppeNavigationPfeil();
   //firebase syncro Raum
   db.collection("rooms").doc(roomId).set({
   navActive: false
@@ -1382,7 +1380,6 @@ function stopNavigation() {
 
   updateSelectedList();
   showDashboardAlert();
-toggleNavigation(false);
   // Karte visuell nach oben schieben wieder zurücknehmen
   if (map._navOffsetApplied) {
     map.panBy([0, -100], { animate: true });
@@ -1806,6 +1803,7 @@ function drop(ev) {
 
     function init() {
       initUsername();
+      initNaviPfeil();
       try {
          updateSelectedList();
       } catch (err) {
