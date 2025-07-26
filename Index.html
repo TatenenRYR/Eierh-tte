@@ -1155,6 +1155,91 @@ function populateVoiceDropdown() {
 let currentHutIndex = 0;       // Aktuelle Zielhütte in selected[]
 function startRoute() {
   try {
+    if (!Array.isArray(selected) || selected.length === 0) {
+      showToast("❗ Bitte mindestens eine Hütte auswählen");
+      return;
+    }
+
+    // Vorherige Linien und Intervalle entfernen
+    clearRouteLines();
+    if (navInterval) {
+      clearInterval(navInterval);
+      navInterval = null;
+    }
+
+    speak("Navigation gestartet. Viel Spaß!");
+    showNavBanner("Navigation gestartet. Viel Spaß!");
+    tourStartTime = Date.now();
+    tourDistance = 0;
+    challengeProgress = 0;
+    currentHutIndex = 0;
+
+    getCurrentPosition(pos => {
+      const coords = [
+        [pos.lng, pos.lat],
+        ...selected.map(h => [h.lng, h.lat])
+      ];
+
+      fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
+        method: "POST",
+        headers: {
+          "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ coordinates: coords })
+      })
+        .then(r => r.json())
+        .then(data => {
+          const points = data.features?.[0]?.geometry?.coordinates?.map(p => [p[1], p[0]]);
+          if (!points || points.length < 2) {
+            showToast("⚠️ Route unvollständig");
+            return;
+          }
+
+          routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
+          progressLine = L.polyline([], { color: "#00f", weight: 4 }).addTo(map);
+
+          currentRoutePath = [...points];
+          navInterval = setInterval(navLoop, 10000);
+          updateSelectedList();
+
+          document.getElementById("startBtn").style.display = "none";
+          document.getElementById("stopBtn").style.display = "inline-block";
+          follow = true;
+
+          if (userMarker && map) {
+            const ll = userMarker.getLatLng();
+            map.setView(ll, 17);
+            map.panBy([0, 100], { animate: true });
+          }
+
+          orientationListenerActive = true;
+          enableCompassRotation();
+          saveRouteToLocal();
+          showDashboardAlert();
+          starteNavigationPfeil();
+
+          db.collection("rooms").doc(roomId).set({
+            navActive: true,
+            navStartedAt: Date.now()
+          }, { merge: true });
+
+          document.querySelector("button[onclick='toggleFollow()']").style.display = "none";
+        })
+        .catch(err => {
+          console.warn("❌ Routing-Fehler:", err);
+          showToast("❗ Routenberechnung fehlgeschlagen");
+        });
+    });
+
+  } catch (err) {
+    console.warn("❌ Fehler in startRoute():", err);
+  }
+}
+    
+    
+    /*function startRoute() {
+  try {
     if (!userMarker || !Array.isArray(selected) || selected.length === 0) {
       showToast("❗ Bitte mindestens eine Hütte auswählen");
       return;
@@ -1255,7 +1340,7 @@ starteNavigationPfeil();
   } catch (err) {
     console.warn("❌ Fehler in startRoute():", err);
   }
-}
+}*/
 
     // Überspringt aktuelle Hütte
     function skipHut() {
@@ -1408,9 +1493,31 @@ disableCompassRotation();
 }*/
     let lastRerouteTime = 0;
 const rerouteCooldown = 30000; // 30 Sekunden Wartezeit zwischen Routen-Neuberechnungen
-const offRouteThreshold = 80; // Meter Abstand zur Route, ab dem Neuberechnung erfolgt
-
+const offRouteThreshold = 30; // Meter Abstand zur Route, ab dem Neuberechnung erfolgt
 function checkIfOffRoute() {
+  if (!currentRoutePath || currentRoutePath.length === 0) return;
+
+  getCurrentPosition(userPos => {
+    let minDist = Infinity;
+
+    for (let i = 0; i < currentRoutePath.length; i++) {
+      const point = L.latLng(currentRoutePath[i]);
+      const dist = map.distance([userPos.lat, userPos.lng], point);
+      if (dist < minDist) minDist = dist;
+    }
+
+    if (minDist > offRouteThreshold) {
+      const now = Date.now();
+      if (now - lastRerouteTime > rerouteCooldown) {
+        lastRerouteTime = now;
+        speak("⚠️ Du hast die Route verlassen. Neuberechnung…");
+        console.warn("🔁 Route verlassen – wird neu berechnet");
+        startRoute();
+      }
+    }
+  });
+}
+/*function checkIfOffRoute() {
   if (!userMarker || !currentRoutePath || currentRoutePath.length === 0) return;
 
   const userPos = userMarker.getLatLng();
@@ -1431,7 +1538,7 @@ function checkIfOffRoute() {
       startRoute(); // Deine vorhandene Funktion zum Neuberechnen der Route
     }
   }
-}
+}*/
     // Navigationsschleife zur Routenverfolgung
 function navLoop() {
   try {
@@ -2027,6 +2134,56 @@ m.on("popupclose", () => {
 if (speechSynthesis.getVoices().length) {
   populateVoiceDropdown(); // Für manche Browser sofort nötig
 }
+
+
+    
+function getCurrentPosition(callback) {
+  if (!navigator.geolocation) {
+    showToast("❗ GPS nicht verfügbar");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      callback({ lat, lng });
+    },
+    err => {
+      console.warn("❗ GPS Fehler", err);
+      showToast("❗ GPS-Fehler");
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+    
+
+    function updateUserArrowRotation() {
+  if (!userMarker) return;
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="
+      width: 30px;
+      height: 30px;
+      transform: rotate(${heading}deg);
+      transition: transform 0.2s linear;
+    ">
+      <svg viewBox="0 0 24 24" fill="#1e40af" width="30" height="30" style="transform: rotate(-90deg);">
+        <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
+      </svg>
+    </div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15]
+  });
+  userMarker.setIcon(icon);
+    }
+    window.addEventListener('deviceorientationabsolute', (event) => {
+  if (event.alpha != null) {
+    heading = event.alpha;
+    updateUserArrowRotation();
+  }
+}, true);
   </script>
 
   <footer>
