@@ -400,9 +400,6 @@ footer a:hover {
   background-size: contain;
   transform: rotate(0deg);
     }
-    #user-arrow svg {
-  filter: drop-shadow(0 0 3px #007bff);
-    }
   </style>
 </head>
 <body>
@@ -519,24 +516,6 @@ footer a:hover {
 let alreadySpokenTurnIndex = {};
     let lastNavActiveState = null; // Merkt letzten bekannten Firestore-Status
 
-
-    const arrowIcon = L.divIcon({
-  className: '',
-  html: `
-    <div id="user-arrow" style="
-      width: 36px;
-      height: 36px;
-      transform: rotate(${heading}deg);
-      transition: transform 0.2s linear;
-    ">
-      <svg viewBox="0 0 24 24" width="36" height="36" fill="#007bff" style="transform: rotate(-90deg);">
-        <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
-      </svg>
-    </div>
-  `,
-  iconSize: [36, 36],
-  iconAnchor: [18, 18]
-});
 
     //User ID bestimmen
     if (!localStorage.aliasId) {
@@ -862,14 +841,30 @@ function startCompassListener() {
     const lat = pos.coords.latitude;
     const lng = pos.coords.longitude;
 
-    
+    const arrowIcon = L.divIcon({
+      className: '',
+      html: `<div style="
+        width: 30px; 
+        height: 30px; 
+        transform: rotate(${compassAngle}deg); 
+        transition: transform 0.2s linear;
+      ">
+        <svg viewBox="0 0 24 24" fill="#1e40af" width="30" height="30" style="transform: rotate(-90deg);">
+          <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
+        </svg>
+      </div>`,
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
+    });
 
     if (userMarker) {
-  userMarker.setLatLng([lat, lng]);
-} else {
-  userMarker = L.marker([lat, lng], { icon: arrowIcon }).addTo(map);
-}
-    
+      userMarker.setLatLng([lat, lng]);
+      userMarker.setIcon(arrowIcon);
+    } else {
+      userMarker = L.marker([lat, lng], {
+        icon: arrowIcon
+      }).addTo(map);
+    }
 
     map.setView([lat, lng], 15); // oder entferne das, wenn du kein Auto-Zoom willst
   }, err => {
@@ -1556,24 +1551,6 @@ function navLoop() {
     const hutLatLng = L.latLng(currentHut.lat, currentHut.lng);
     const dist = map.distance(pos, hutLatLng);
 
-
-
-const nextPoint = currentRoutePath[1]; // nächster Punkt der Route
-if (nextPoint) {
-  const bearingToNext = getBearing([pos.lat, pos.lng], nextPoint); // in Grad
-  const diff = Math.abs(((bearingToNext - heading + 360) % 360)); // Winkelabweichung
-
-  if (diff < 15) {
-    // 🔒 Richtung stimmt → verankern
-    anchorUserArrow();
-  } else {
-    // 🧭 Richtung unstabil → freigeben
-    unanchorUserArrow();
-  }
-}
-
-
-    
     // 🎯 Benutzer ist an aktueller Hütte angekommen
     if (dist < 40) {
       speak(`Angekommen bei ${currentHut.name}`);
@@ -1685,37 +1662,7 @@ function getVisualNavigationHint(angle, dist, name = "") {
   const angle = Math.atan2(p3[1] - p2[1], p3[0] - p2[0]) - Math.atan2(p1[1] - p2[1], p1[0] - p2[0]);
   return (angle * 180 / Math.PI + 360) % 360;
     }
-function getBearing(from, to) {
-  const lat1 = from[0] * Math.PI / 180;
-  const lat2 = to[0] * Math.PI / 180;
-  const dLon = (to[1] - from[1]) * Math.PI / 180;
 
-  const y = Math.sin(dLon) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) -
-            Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-  const brng = Math.atan2(y, x);
-  return (brng * 180 / Math.PI + 360) % 360;
-}
-    let isArrowAnchored = false;
-
-function anchorUserArrow() {
-  if (isArrowAnchored) return;
-
-  isArrowAnchored = true;
-  disableCompassRotation();
-  showToast("✅ Blickrichtung stimmt");
-  // Optional: Pfeil auf festen Winkel setzen
-  const arrowEl = document.getElementById("user-arrow");
-  if (arrowEl) arrowEl.style.transform = `rotate(0deg)`;
-}
-
-function unanchorUserArrow() {
-  if (!isArrowAnchored) return;
-
-  isArrowAnchored = false;
-  enableCompassRotation();
-  showToast("↻ Richtung neu ausrichten");
-}
     // Fortschritt updaten (Challenge)
     function updateChallenge() {
       challengeProgress++;
@@ -2244,11 +2191,30 @@ function getCurrentPosition(callback) {
     
 
     function updateUserArrowRotation() {
-  const arrowEl = document.getElementById("user-arrow");
-  if (arrowEl) {
-    arrowEl.style.transform = `rotate(${360 - heading}deg)`;
+  if (!userMarker) return;
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="
+      width: 30px;
+      height: 30px;
+      transform: rotate(${heading}deg);
+      transition: transform 0.2s linear;
+    ">
+      <svg viewBox="0 0 24 24" fill="#1e40af" width="30" height="30" style="transform: rotate(-90deg);">
+        <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
+      </svg>
+    </div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15]
+  });
+  userMarker.setIcon(icon);
+    }
+    window.addEventListener('deviceorientationabsolute', (event) => {
+  if (event.alpha != null) {
+    heading = event.alpha;
+    updateUserArrowRotation();
   }
-}
+}, true);
 
 
     function showNavPopup(html) {
