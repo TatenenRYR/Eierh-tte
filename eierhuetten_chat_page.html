@@ -543,7 +543,142 @@ async function uploadToImgBB(file, onProgress) {
   });
   }
 // Standortwahl
-function showMyHuts() {
+  function showMyHuts() { chatWindow.innerHTML = ''; db.collection('eierhuetten').where('userId', '==', currentUser.uid).get().then(snapshot => { if (snapshot.empty) return addMessage('Du hast noch keine Hütten.', 'bot');
+
+// Statistik vorbereiten
+let total = 0, angenommen = 0, offen = 0, abosAktiv = 0;
+
+snapshot.forEach(doc => {
+  const d = doc.data();
+  const id = doc.id;
+  total++;
+  if (d.status === 'angenommen') angenommen++;
+  if (d.status === 'offen') offen++;
+  if (d.paypalSubscriptionId) abosAktiv++;
+
+  const div = document.createElement('div');
+  const now = new Date();
+  let aboInfo = '';
+  let shouldReject = false;
+  const aboInfoElementId = `abo-info-${id}`;
+  aboInfo = '⏳ Lade Abo-Status...';
+
+  // auto-Fix: aboMonate setzen
+  if (d.paypalSubscriptionId && !d.aboMonate) {
+    db.collection('eierhuetten').doc(id).update({ aboMonate: 1 });
+    d.aboMonate = 1;
+  }
+
+  // auto-Fix: aboStart setzen
+  if (d.status === 'angenommen' && !d.aboStart && d.paypalSubscriptionId) {
+    db.collection('eierhuetten').doc(id).update({ aboStart: firebase.firestore.Timestamp.fromDate(now) });
+  }
+
+  if (d.aboStart && d.aboMonate) {
+    const start = d.aboStart.toDate();
+    const end = new Date(start);
+    end.setMonth(end.getMonth() + d.aboMonate);
+    const diffTage = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+    if (diffTage > 0) {
+      aboInfo = `💳 Abo aktiv bis: ${end.toLocaleDateString()} (noch ${diffTage} Tage)`;
+    } else {
+      aboInfo = '💳 Abo abgelaufen';
+      if (d.status === 'angenommen') shouldReject = true;
+    }
+  }
+
+  const paypalContainerId = `paypal-button-container-${id}`;
+
+  div.className = 'message bot';
+  div.innerHTML = `
+    <div class='space-y-2 text-sm'>
+      <div class='font-bold'>${d.name}</div>
+      <div class='font-bold'>📌 Status: ${d.status}</div>
+      <div id="${aboInfoElementId}">${aboInfo}</div>
+      ${d.aboStart && d.paypalSubscriptionId ? `
+        <details class="bg-blue-50 border border-blue-200 rounded p-2 my-2 text-sm">
+          <summary class="cursor-pointer">💳 Abo-Informationen</summary>
+          <div><strong>Start:</strong> ${d.aboStart?.toDate?.().toLocaleDateString("de-DE") || '-'}</div>
+          <div><strong>PayPal-ID:</strong> ${d.paypalSubscriptionId}</div>
+          <div><strong>Status:</strong> aktiv</div>
+          ${Array.isArray(d.aboHistory) && d.aboHistory.length > 0 ? `
+            <div class="mt-2"><strong>Zahlungsverlauf:</strong>
+              <ul class="list-disc ml-5 text-xs">
+                ${d.aboHistory.map(entry => `
+                  <li>${new Date(entry.zeitpunkt?.seconds * 1000).toLocaleDateString("de-DE")} – ${entry.betrag} € via ${entry.methode}</li>
+                `).join('')}
+              </ul>
+            </div>
+          ` : '<div class="text-xs text-gray-500 mt-2 italic">Kein Verlauf vorhanden.</div>'}
+        </details>
+      ` : `
+        <div class="my-2 text-sm">
+          <strong>💳 Kein aktives Abo</strong><br>
+          <div id="paypal-button-new-${id}" class="my-2"></div>
+        </div>
+      `}
+    </div>
+  `;
+
+  chatWindow.appendChild(div);
+
+  // PayPal nur anzeigen, wenn kein aktives Abo vorhanden
+  if (!d.aboStart || !d.paypalSubscriptionId) {
+    setTimeout(() => {
+      if (typeof paypal !== 'undefined') {
+        paypal.Buttons({
+          style: { shape: 'pill', color: 'blue', layout: 'horizontal', label: 'subscribe' },
+          createSubscription: (data, actions) => actions.subscription.create({
+            plan_id: 'P-144846983Y921400TNCFA3PA'
+          }),
+          onApprove: (data, actions) => {
+            db.collection('eierhuetten').doc(id).get().then(docSnap => {
+              if (!docSnap.exists) return;
+              const hut = docSnap.data();
+
+              const updates = {
+                paypalSubscriptionId: data.subscriptionID,
+                aboStart: new Date(),
+                aboMonate: hut.aboMonate || 1,
+                status: 'angenommen'
+              };
+
+              db.collection('eierhuetten').doc(id).update(updates).then(() => {
+                addMessage(`✅ Abo für "${hut.name}" wurde gestartet.`, 'bot');
+                showMyHuts();
+              });
+            });
+          }
+        }).render(`#paypal-button-new-${id}`);
+      }
+    }, 500);
+  }
+
+  // Automatisch deaktivieren wenn Abo abgelaufen
+  if (shouldReject) {
+    db.collection('eierhuetten').doc(id).update({ status: 'abgelehnt' });
+    db.collection('eierhuetten').doc(id).collection('log').add({
+      admin: 'System', feld: 'status', wert: 'abgelehnt', kommentar: 'Abo oder Testphase abgelaufen', zeitpunkt: new Date()
+    });
+    addMessage(`⚠️ Die Hütte "${d.name}" wurde automatisch deaktiviert, da das Abo/Testphase abgelaufen ist.`, 'bot');
+  }
+});
+
+// Infobalken erzeugen
+const statsBar = document.createElement('div');
+statsBar.className = 'flex justify-around items-center text-sm bg-green-100 text-green-900 py-2 px-4 rounded mb-3 shadow-sm border border-green-300';
+statsBar.innerHTML = `
+  <div title="Eingereichte Hütten">🥚 <strong>${total}</strong>/10</div>
+  <div title="Angenommen">✅ <strong>${angenommen}</strong></div>
+  <div title="Offen">⏳ <strong>${offen}</strong></div>
+  <div title="Abos aktiv">💳 <strong>${abosAktiv}</strong></div>
+`;
+chatWindow.appendChild(statsBar);
+
+}); }
+
+
+/*function showMyHuts() {
   chatWindow.innerHTML = '';
   db.collection('eierhuetten').where('userId', '==', currentUser.uid).get().then(snapshot => {
     if (snapshot.empty) return addMessage('Du hast noch keine Hütten.', 'bot');
@@ -755,12 +890,12 @@ div.innerHTML = `
     <div id="paypal-button-new-${id}" class="my-2"></div>
   </div>
 `}
-`;
+`;*/
       
       chatWindow.appendChild(div);
-
+      
       // PayPal-Button nur einfügen, wenn nötig
-      if (d.status === 'angenommen' && !d.aboStart && typeof paypal !== 'undefined') {
+      if (!d.aboStart || !d.paypalSubscriptionId || d.status === 'angenommen' && !d.aboStart && typeof paypal !== 'undefined') {
         setTimeout(() => {
           paypal.Buttons({
             style: {
