@@ -543,90 +543,132 @@ async function uploadToImgBB(file, onProgress) {
   });
   }
 // Standortwahl
-function showMyHuts() {
-  chatWindow.innerHTML = '';
-  db.collection('eierhuetten').where('userId', '==', currentUser.uid).get().then(snapshot => {
-    if (snapshot.empty) return addMessage('Du hast noch keine Hütten.', 'bot');
-    snapshot.forEach(doc => {
-      const d = doc.data();
-      const id = doc.id;
-      const div = document.createElement('div');
-      const now = new Date();
-      let aboInfo = '';
-      let shouldReject = false;
-      const aboInfoElementId = `abo-info-${id}`;
-      aboInfo = '⏳ Lade Abo-Status...'; // Sofort anzeigen
+// 🔍 Funktion zum Anzeigen aller eigenen eingereichten Hütten 
+function showMyHuts() { chatWindow.innerHTML = ''; db.collection('eierhuetten').where('userId', '==', currentUser.uid).get().then(snapshot => { if (snapshot.empty) return addMessage('Du hast noch keine Hütten.', 'bot');
 
-      
-// Falls Paypal-Abo vorhanden aber aboMonate fehlt → automatisch setzen
-if (d.paypalSubscriptionId && !d.aboMonate) {
-  db.collection('eierhuetten').doc(id).update({
-    aboMonate: 1
-  }).then(() => {
-    console.log(`ℹ️ aboMonate=1 automatisch gesetzt für Hütte "${d.name}" (${id})`);
-    d.aboMonate = 1; // damit Anzeige sofort korrekt ist
-  });
-}
-
-      
-      // Falls Abo-Start fehlt, aber die Hütte bestätigt ist und PayPal ID vorhanden → jetzt nachtragen
-if (d.status === 'angenommen' && !d.aboStart && d.paypalSubscriptionId) {
-  const now = new Date();
-  db.collection('eierhuetten').doc(id).update({
-    aboStart: firebase.firestore.Timestamp.fromDate(now)
-  }).then(() => {
-    console.log(`📌 aboStart nachgetragen für Hütte "${d.name}"`);
-  }).catch(err => {
-    console.error(`❌ Fehler beim Nachtragen von aboStart: ${err.message}`);
-  });
-}
-
-      if (d.aboStart && d.aboMonate) {
-        const start = d.aboStart.toDate();
-        const end = new Date(start);
-        end.setMonth(end.getMonth() + d.aboMonate);
-        const diffTage = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
-        if (diffTage > 0) {
-          aboInfo = `💳 Abo aktiv bis: ${end.toLocaleDateString()} (noch ${diffTage} Tage)`;
-        } else {
-          aboInfo = '💳 Abo abgelaufen';
-          if (d.status === 'angenommen') shouldReject = true;
-        }
-      }
-    
-     // später nachladen
-      const el = document.getElementById(aboInfoElementId);
-      updateAboInfoFallback(d.paypalSubscriptionId, el);
-      analyseUndAktualisiereHuette(id, d); // Prüft Abo-Status unabhängig, aber mit Wirkung
-   // renderHut(); // Funktion zum Anzeigen der Hütte
-  
-
-      // Automatisch deaktivieren
-      if (shouldReject) {
-        db.collection('eierhuetten').doc(id).update({ status: 'abgelehnt' });
-        db.collection('eierhuetten').doc(id).collection('log').add({
-          admin: 'System',
-          feld: 'status',
-          wert: 'abgelehnt',
-          kommentar: 'Abo oder Testphase abgelaufen',
-          zeitpunkt: new Date()
-        });
-        addMessage(`⚠️ Die Hütte "${d.name}" wurde automatisch deaktiviert, da das Abo/Testphase abgelaufen ist.`, 'bot');
-      }
-
-
-
-// Statistik berechnen
+// Statistik-Variablen
 let total = 0, angenommen = 0, offen = 0, abosAktiv = 0;
+
 snapshot.forEach(doc => {
   const d = doc.data();
+  const id = doc.id;
+  const div = document.createElement('div');
+  const now = new Date();
+  let aboInfo = '⏳ Lade Abo-Status...';
+  let shouldReject = false;
+  const aboInfoElementId = `abo-info-${id}`;
+
+  // Nachträgliche Korrekturen
+  if (d.paypalSubscriptionId && !d.aboMonate) {
+    db.collection('eierhuetten').doc(id).update({ aboMonate: 1 });
+    d.aboMonate = 1;
+  }
+  if (d.status === 'angenommen' && !d.aboStart && d.paypalSubscriptionId) {
+    const now = new Date();
+    db.collection('eierhuetten').doc(id).update({
+      aboStart: firebase.firestore.Timestamp.fromDate(now)
+    });
+  }
+
+  // Abo berechnen
+  if (d.aboStart && d.aboMonate) {
+    const start = d.aboStart.toDate();
+    const end = new Date(start);
+    end.setMonth(end.getMonth() + d.aboMonate);
+    const diffTage = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+    if (diffTage > 0) {
+      aboInfo = `💳 Abo aktiv bis: ${end.toLocaleDateString()} (noch ${diffTage} Tage)`;
+    } else {
+      aboInfo = '💳 Abo abgelaufen';
+      if (d.status === 'angenommen') shouldReject = true;
+    }
+  }
+
+  // Automatisch deaktivieren
+  if (shouldReject) {
+    db.collection('eierhuetten').doc(id).update({ status: 'abgelehnt' });
+    db.collection('eierhuetten').doc(id).collection('log').add({
+      admin: 'System', feld: 'status', wert: 'abgelehnt', kommentar: 'Abo abgelaufen', zeitpunkt: new Date()
+    });
+    addMessage(`⚠️ Die Hütte "${d.name}" wurde automatisch deaktiviert.`, 'bot');
+  }
+
+  // Statistik zählen
   total++;
   if (d.status === 'angenommen') angenommen++;
   if (d.status === 'offen') offen++;
   if (d.paypalSubscriptionId) abosAktiv++;
+
+  const paypalContainerId = `paypal-button-container-${id}`;
+
+  // HTML-Ausgabe
+  div.className = 'message bot';
+  div.innerHTML = `
+    <div class='space-y-2 text-sm'>
+      <div class='font-bold'>${d.name}</div>
+      <div class='font-bold'>📌 Status: ${d.status}</div>
+      <div id="${aboInfoElementId}">${aboInfo}</div>
+
+      ${d.status === 'angenommen' ? `
+        <label>📍 Name:<br><input type='text' data-id='${id}' class='edit-name w-full border px-2 py-1 rounded' value='${d.name}' /></label><br>
+        <label>🪑 Sitzplätze: <select data-id='${id}' class='edit-sitz border rounded px-2 py-1 ml-2'><option ${d.sitzplaetze === 'Ja' ? 'selected' : ''}>Ja</option><option ${d.sitzplaetze === 'Nein' ? 'selected' : ''}>Nein</option></select></label><br>
+        <label>🔌 Strom: <select data-id='${id}' class='edit-strom border rounded px-2 py-1 ml-2'><option ${d.strom === 'Ja' ? 'selected' : ''}>Ja</option><option ${d.strom === 'Nein' ? 'selected' : ''}>Nein</option></select></label><br>
+        <label>✨ Extras:<br><input type='text' data-id='${id}' class='edit-extras w-full border px-2 py-1 rounded' value='${d.extras || ''}' /></label><br>
+        <label>🕒 Öffnungszeiten:<br><input type='text' data-id='${id}' class='edit-zeiten w-full border px-2 py-1 rounded' value='${d.oeffnungszeiten || ''}' /></label><br>
+        <button class='edit-btn' onclick='saveEdit("${id}")'>💾 Speichern</button>
+        <button class='delete-btn' onclick='deleteHut("${id}")'>🗑️ Löschen</button>
+        ${!d.aboStart ? `<div id='${paypalContainerId}'></div>` : ''}
+      ` : `<div class="text-gray-500 italic">⛔ Nur bearbeitbar wenn angenommen</div>`}
+
+      ${d.aboStart && d.paypalSubscriptionId ? `
+        <details class="bg-blue-50 border border-blue-200 rounded p-2 my-2 text-sm">
+          <summary class="cursor-pointer">💳 Abo-Informationen</summary>
+          <div><strong>Start:</strong> ${d.aboStart?.toDate?.().toLocaleDateString("de-DE") || '-'}</div>
+          <div><strong>PayPal-ID:</strong> ${d.paypalSubscriptionId}</div>
+          <div><strong>Status:</strong> aktiv</div>
+          ${Array.isArray(d.aboHistory) && d.aboHistory.length > 0 ? `
+            <div class="mt-2"><strong>Zahlungsverlauf:</strong>
+              <ul class="list-disc ml-5 text-xs">
+                ${d.aboHistory.map(entry => `
+                  <li>${new Date(entry.zeitpunkt?.seconds * 1000).toLocaleDateString("de-DE")} – ${entry.betrag} € via ${entry.methode}</li>
+                `).join('')}
+              </ul>
+            </div>
+          ` : '<div class="text-xs text-gray-500 mt-2 italic">Kein Verlauf vorhanden.</div>'}
+        </details>
+      ` : `
+        <div class="my-2 text-sm">
+          <strong>💳 Kein aktives Abo</strong><br>
+          <div id="paypal-button-new-${id}" class="my-2"></div>
+        </div>
+      `}
+
+      <!-- Bild-Upload, Galerie & Mini-Map folgen hier -->
+    </div>
+  `;
+
+  chatWindow.appendChild(div);
+
+  if (!d.aboStart || !d.paypalSubscriptionId || d.status === 'angenommen' && !d.aboStart && typeof paypal !== 'undefined') {
+    setTimeout(() => {
+      paypal.Buttons({
+        style: { shape: 'pill', color: 'blue', layout: 'horizontal', label: 'subscribe' },
+        createSubscription: (data, actions) => actions.subscription.create({ plan_id: 'P-DEIN-LIVE-PLAN-ID' }),
+        onApprove: data => {
+          db.collection('eierhuetten').doc(id).update({
+            paypalSubscriptionId: data.subscriptionID,
+            aboStart: new Date(),
+            aboMonate: 1
+          }).then(() => {
+            showMyHuts();
+          });
+        }
+      }).render(`#${paypalContainerId}`);
+    }, 500);
+  }
 });
-initImageUpload();
-// Infobalken erzeugen
+
+// Statistik-Leiste
 const statsBar = document.createElement('div');
 statsBar.className = 'flex justify-around items-center text-sm bg-green-100 text-green-900 py-2 px-4 rounded mb-3 shadow-sm border border-green-300';
 statsBar.innerHTML = `
@@ -635,214 +677,12 @@ statsBar.innerHTML = `
   <div title="Offen">⏳ <strong>${offen}</strong></div>
   <div title="Abos aktiv">💳 <strong>${abosAktiv}</strong></div>
 `;
-chatWindow.appendChild(statsBar);
+chatWindow.prepend(statsBar);
+
+}); }
 
 
 
-
-      
-
-      const paypalContainerId = `paypal-button-container-${id}`;
-
-      div.className = 'message bot';
-div.innerHTML = `
-  <div class='space-y-2 text-sm'>
-    <div class='font-bold'>${d.name}</div>
-    <div class='font-bold'>📌 Status: ${d.status}</div>
-
-    <div id="abo-info-${id}">${aboInfo}</div>
-
-    ${d.status === 'angenommen' ? `
-      
-      <label>📍 Name:<br>
-        <input type='text' data-id='${id}' class='edit-name w-full border px-2 py-1 rounded' value='${d.name}' />
-      </label><br>
-
-      <label>🪑 Sitzplätze:
-        <select data-id='${id}' class='edit-sitz border rounded px-2 py-1 ml-2'>
-          <option ${d.sitzplaetze === 'Ja' ? 'selected' : ''}>Ja</option>
-          <option ${d.sitzplaetze === 'Nein' ? 'selected' : ''}>Nein</option>
-        </select>
-      </label><br>
-
-      <label>🔌 Strom:
-        <select data-id='${id}' class='edit-strom border rounded px-2 py-1 ml-2'>
-          <option ${d.strom === 'Ja' ? 'selected' : ''}>Ja</option>
-          <option ${d.strom === 'Nein' ? 'selected' : ''}>Nein</option>
-        </select>
-      </label><br>
-
-      <label>✨ Extras:<br>
-        <input type='text' data-id='${id}' class='edit-extras w-full border px-2 py-1 rounded' value='${d.extras || ''}' />
-      </label><br>
-
-      <label>🕒 Öffnungszeiten:<br>
-        <input type='text' data-id='${id}' class='edit-zeiten w-full border px-2 py-1 rounded' value='${d.oeffnungszeiten || ''}' />
-      </label><br>
-
-      <button class='edit-btn' onclick='saveEdit("${id}")'>💾 Speichern</button>
-      <button class='delete-btn' onclick='deleteHut("${id}")'>🗑️ Löschen</button>
-
-      ${!d.aboStart ? `<div id='${paypalContainerId}'></div>` : ''}
-    ` : `
-      <div class="text-gray-500 italic">⛔ Änderungen sind nur möglich, wenn die Hütte angenommen wurde.</div>
-    `}
-
-    <!-- 📷 Bild-Galerie -->
-    ${Array.isArray(d.fotos) && d.fotos.length ? `
-      <div class='flex flex-col gap-2 mt-2'>
-        ${d.fotos.map(img => {
-          const isString = typeof img === 'string';
-          const url = isString ? img : img.url;
-          const del = isString ? '' : (img.delete_url || '');
-          const status = isString ? 'freigegeben' : (img.status || 'freigegeben');
-          const pending = status === 'wartet';
-
-          return `
-            <div class="flex items-center gap-4 bg-gray-50 p-2 rounded border relative">
-              <div class="relative group">
-                <img src="${url}" class="h-20 w-20 object-cover rounded shadow ${pending ? 'opacity-50' : ''}"/>
-                ${!pending ? `
-                  <button 
-                    onclick="deleteImage('${id}', '${url}', '${del}')" 
-                    class="absolute top-0 right-0 bg-red-600 text-white text-xs rounded-bl px-1 opacity-0 group-hover:opacity-100 transition">
-                    ✕
-                  </button>
-                ` : ''}
-              </div>
-              <div class="flex-1 text-xs break-all text-gray-600">
-                <div><strong>URL:</strong><br><code>${url}</code></div>
-                <div class="mt-1"><strong>Status:</strong> ${pending ? '<span class="text-orange-600">⏳ wartet auf Freigabe</span>' : '✅ freigegeben'}</div>
-                <div class="mt-1"><strong>Delete-URL:</strong><br><code>${del || '<i>nicht vorhanden</i>'}</code></div>
-              </div>
-            </div>
-          `;
-        }).join('')}
-        </div>
-    ` : ''}
-
-    <!-- 📤 Bild-Upload -->
-    <label class="block mt-2 text-sm">📷 Neues Bild hochladen:
-      <input type="file" accept="image/*" data-id="${id}" class="upload-image mt-1" />
-    </label>
-    <div id="progress-${id}" class="h-2 bg-gray-200 rounded hidden mt-2">
-      <div class="h-2 bg-green-500 rounded" style="width: 0%"></div>
-    </div>
-
-    <!-- 🗺️ Minikarte -->
-    <div id='minimap-${id}' class='minimap'></div>
-  </div>
-
-  ${d.aboStart && d.paypalSubscriptionId ? `
-  <details class="bg-blue-50 border border-blue-200 rounded p-2 my-2 text-sm">
-    <summary class="cursor-pointer">💳 Abo-Informationen</summary>
-    <div><strong>Start:</strong> ${d.aboStart?.toDate?.().toLocaleDateString("de-DE") || '-'}</div>
-    <div><strong>PayPal-ID:</strong> ${d.paypalSubscriptionId}</div>
-    <div><strong>Status:</strong> aktiv</div>
-    ${Array.isArray(d.aboHistory) && d.aboHistory.length > 0 ? `
-      <div class="mt-2"><strong>Zahlungsverlauf:</strong>
-        <ul class="list-disc ml-5 text-xs">
-          ${d.aboHistory.map(entry => `
-            <li>${new Date(entry.zeitpunkt?.seconds * 1000).toLocaleDateString("de-DE")} – ${entry.betrag} € via ${entry.methode}</li>
-          `).join('')}
-        </ul>
-      </div>
-    ` : '<div class="text-xs text-gray-500 mt-2 italic">Kein Verlauf vorhanden.</div>'}
-  </details>
-` : `
-  <div class="my-2 text-sm">
-    <strong>💳 Kein aktives Abo</strong><br>
-    <div id="paypal-button-new-${id}" class="my-2"></div>
-  </div>
-`}
-`;
-      
-      chatWindow.appendChild(div);
-
-      // PayPal-Button nur einfügen, wenn nötig
-      if (/*d.status === 'angenommen' && */!d.paypalSubscriptionId && !d.aboStart /*&& typeof paypal !== 'undefined'*/) {
-        setTimeout(() => {
-          paypal.Buttons({
-            style: {
-              shape: 'pill',
-              color: 'blue',
-              layout: 'horizontal',
-              label: 'subscribe'
-            },
-            createSubscription: function (data, actions) {
-              return actions.subscription.create({
-                plan_id: 'P-144846983Y921400TNCFA3PA' // Dummy Test-Plan
-              });
-            },
-            onApprove: function (data, actions) {
-  db.collection('eierhuetten').doc(id).get().then(doc => {
-    if (!doc.exists) return;
-
-    const hut = doc.data();
-    const updates = {
-      paypalSubscriptionId: data.subscriptionID,
-    };
-
-    // Falls kein aboStart gesetzt ist → jetzt starten
-    if (!hut.aboStart) {
-      updates.aboStart = new Date();
-    }
-
-    // Falls keine aboMonate vorhanden → 1 Monat eintragen
-    if (!hut.aboMonate) {
-      updates.aboMonate = 1;
-    }
-
-    // Update durchführen
-    db.collection('eierhuetten').doc(id).update(updates).then(() => {
-      chatWindow.innerHTML = '';
-      addMessage(`✅ Abo für "${hut.name}" wurde gestartet.`, 'bot');
-
-      const successBox = document.createElement('div');
-      successBox.className = 'message bot';
-      successBox.innerHTML = `
-        <div class="text-green-700 font-semibold mb-2">🎉 Vielen Dank!</div>
-        <div>Deine Hütte wurde erfolgreich registriert. Die Testphase über PayPal läuft jetzt.</div>
-        <div class="text-xs text-gray-500 mt-2">Hinweis: Eine Kündigung ist nur über dein PayPal-Konto möglich.</div>
-        <button class="choice-btn mt-2" onclick="showMyHuts()">🔄 Zur Übersicht</button>
-      `;
-      chatWindow.appendChild(successBox);
-      chatWindow.scrollTop = chatWindow.scrollHeight;
-    });
-  });
-}
-          }).render(`#${paypalContainerId}`);
-        }, 500);
-      }
-
-      // Minikarte
-      if (d.location?.latitude && d.location?.longitude) {
-        const m = L.map(`minimap-${id}`, { zoomControl: true }).setView([d.location.latitude, d.location.longitude], 13);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
-        const marker = L.marker([d.location.latitude, d.location.longitude], {
-          draggable: d.status === 'angenommen'
-        }).addTo(m);
-
-        if (d.status === 'angenommen') {
-          marker.on('dragend', e => {
-            const pos = e.target.getLatLng();
-            db.collection('eierhuetten').doc(id).update({
-              location: new firebase.firestore.GeoPoint(pos.lat, pos.lng)
-            }).then(() => {
-              addMessage(`📍 Neuer Standort für "${d.name}" gespeichert.`, 'bot');
-            });
-          });
-        } else {
-          const info = L.popup().setContent(`🔒 Standortänderung nur nach Freigabe möglich.`);
-          marker.bindPopup(info).openPopup();
-        }
-
-        setTimeout(() => m.invalidateSize(), 200);
-      }
-    });
-  });
-}
-  
 
 
 function saveEdit(id) {
