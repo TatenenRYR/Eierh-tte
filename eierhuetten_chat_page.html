@@ -859,10 +859,9 @@ const cancelFn = functions.httpsCallable('cancelPaypalSubscription');
   });
 }*/
 
-  function deleteHut(id) {
+ function deleteHut(id) {
   if (!confirm('Möchtest du diese Hütte wirklich löschen?')) return;
 
-  // Hütte aus Firestore abrufen
   db.collection('eierhuetten').doc(id).get().then(doc => {
     if (!doc.exists) {
       addMessage('❌ Hütte nicht gefunden.', 'bot');
@@ -871,21 +870,24 @@ const cancelFn = functions.httpsCallable('cancelPaypalSubscription');
 
     const hut = doc.data();
 
-    // Prüfen, ob ein Abo existiert
     if (hut.paypalSubscriptionId) {
       addMessage('🔄 Kündige PayPal-Abo...', 'bot');
       console.log('➡️ Sende Abo-Kündigung für:', hut.paypalSubscriptionId);
 
-      // Firebase Function aufrufen (Region anpassen, falls notwendig)
-      const functions = firebase.app().functions('us-central1'); // oder 'europe-west1' falls so deployed
-      const cancelFn = functions.httpsCallable('cancelPaypalSubscription');
-
-      cancelFn({ subscriptionId: hut.paypalSubscriptionId }).then(result => {
-        if (result.data && result.data.success) {
+      // Hier neue HTTP-Funktion aufrufen
+      fetch("https://us-central1-eierhuettentour.cloudfunctions.net/cancelPaypalSubscription", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ subscriptionId: hut.paypalSubscriptionId })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
           addMessage('✅ Abo erfolgreich gekündigt.', 'bot');
           console.log('✅ PayPal-Abo gekündigt.');
 
-          // Danach Hütte löschen
           db.collection('eierhuetten').doc(id).delete().then(() => {
             addMessage('🗑️ Hütte gelöscht.', 'bot');
             console.log('✅ Dokument gelöscht:', id);
@@ -893,16 +895,16 @@ const cancelFn = functions.httpsCallable('cancelPaypalSubscription');
           });
 
         } else {
+          console.error('❌ Kündigung fehlgeschlagen:', data);
           addMessage('❌ Abo konnte nicht gekündigt werden.', 'bot');
-          console.error('❌ Rückgabe war nicht erfolgreich:', result.data);
         }
-      }).catch(err => {
+      })
+      .catch(err => {
         console.error('❌ Fehler bei Abo-Kündigung:', err.message || err);
         addMessage('❌ Fehler beim Kündigen des Abos.', 'bot');
       });
 
     } else {
-      // Kein Abo vorhanden → direkt löschen
       db.collection('eierhuetten').doc(id).delete().then(() => {
         addMessage('🗑️ Hütte gelöscht.', 'bot');
         console.log('✅ Dokument gelöscht (kein Abo):', id);
