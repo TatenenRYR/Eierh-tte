@@ -1,5 +1,4 @@
-<!DOCTYPE html>
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -8,6 +7,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-functions-compat.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.tailwindcss.com"></script>
@@ -19,369 +19,79 @@
   </style>
 </head>
 <body class="bg-gray-100">
-  <div id="notification"></div>
-
-  <div id="login-section" class="flex items-center justify-center h-screen">
+  <div id="notification"></div>  <div id="login-section" class="flex items-center justify-center h-screen">
     <button id="login-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded">
       Admin Login mit Google
     </button>
-  </div>
-
-  <div id="dashboard" class="hidden p-6 max-w-7xl mx-auto">
+  </div>  <div id="dashboard" class="hidden p-6 max-w-7xl mx-auto">
     <h1 class="text-3xl font-bold mb-6 text-green-700">🥚 Eierhütten Admin Dashboard</h1>
     <div id="stats" class="mb-6 text-gray-700"></div>
     <input id="search-input" type="text" placeholder="Suche..." class="mb-4 w-full p-3 rounded border border-gray-300" />
     <div id="hut-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
-  </div>
+  </div><script>
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.appspot.com",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+const storage = firebase.storage();
+const functions = firebase.app().functions('europe-west1');
+const cancelFn = functions.httpsCallable('cancelPaypalSubscription');
 
-<script>
-  const firebaseConfig = {
-    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-    authDomain: "eierhuettentour.firebaseapp.com",
-    projectId: "eierhuettentour",
-    storageBucket: "eierhuettentour.appspot.com",
-    messagingSenderId: "348272135205",
-    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
-  };
-  firebase.initializeApp(firebaseConfig);
-  const auth = firebase.auth();
-  const db = firebase.firestore();
-  const storage = firebase.storage();
-
-  const loginSection = document.getElementById('login-section');
-  const dashboard = document.getElementById('dashboard');
-  const hutList = document.getElementById('hut-list');
-  const searchInput = document.getElementById('search-input');
-  const notification = document.getElementById('notification');
-  const stats = document.getElementById('stats');
-  let huts = [], currentUser = null;
-
-  function showNotification(message) {
-    notification.textContent = message;
-    notification.style.display = 'block';
-    setTimeout(() => notification.style.display = 'none', 4000);
-  }
-
-  document.getElementById('login-btn').onclick = () => {
-    auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
-  };
-
-  auth.onAuthStateChanged(async user => {
-    if (user) {
-      currentUser = user;
-      const adminDoc = await db.collection('admins').doc(user.email).get();
-      if (!adminDoc.exists) {
-        alert('Zugriff verweigert: Du bist kein Admin.');
-        return;
-      }
-      loginSection.classList.add('hidden');
-      dashboard.classList.remove('hidden');
-      db.collection('eierhuetten').onSnapshot(() => {
-        showNotification('🔄 Live-Update: Hüttendaten wurden aktualisiert.');
-        loadHuts();
-      });
-    }
-  });
-
-  searchInput.addEventListener('input', () => {
-    const term = searchInput.value.toLowerCase();
-    const filtered = huts.filter(h => h.name?.toLowerCase().includes(term));
-    renderHuts(filtered);
-  });
-
-  async function loadHuts() {
-    const snapshot = await db.collection('eierhuetten').orderBy('erstelltAm', 'desc').get();
-    huts = await Promise.all(snapshot.docs.map(async doc => {
-      const data = doc.data();
-      const logSnap = await db.collection('eierhuetten').doc(doc.id).collection('log').orderBy('zeitpunkt', 'desc').get();
-      return {
-        id: doc.id,
-        ...data,
-        logCount: logSnap.size,
-        logs: logSnap.docs.map(d => d.data())
-      };
-    }));
-    renderHuts(huts);
-    renderStats(huts);
-  }
-
-  function renderStats(list) {
-    const total = list.length;
-    const withStrom = list.filter(h => h.strom === 'Ja').length;
-    const withFotos = list.filter(h => Array.isArray(h.fotos) && h.fotos.length > 0).length;
-    const count247 = list.filter(h => h.oeffnungszeiten === '24/7').length;
-    stats.innerHTML = `🔢 <strong>${total}</strong> Hütten · ⚡ ${withStrom} mit Strom · 🖼️ ${withFotos} mit Fotos · 🕒 ${count247} sind 24/7 geöffnet`;
-  }
-
-  async function approveFoto(hutId, index) {
-  const doc = await db.collection('eierhuetten').doc(hutId).get();
-  const fotos = doc.data().fotos || [];
-  fotos[index].status = 'freigegeben';
-  await db.collection('eierhuetten').doc(hutId).update({ fotos });
-  showNotification('✅ Bild freigegeben');
-  loadHuts();
+function showNotification(msg) {
+  const el = document.getElementById('notification');
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 4000);
 }
 
-async function rejectFoto(hutId, index) {
+async function cancelAbo(hutId) {
   const doc = await db.collection('eierhuetten').doc(hutId).get();
-  const fotos = doc.data().fotos || [];
-  const { delete_url } = fotos[index];
-  fotos.splice(index, 1);
-  await db.collection('eierhuetten').doc(hutId).update({ fotos });
-
-  if (delete_url) {
-    fetch(delete_url)
-      .then(() => showNotification('🗑️ Bild gelöscht'))
-      .catch(e => console.warn('Fehler beim Löschen', e));
+  const data = doc.data();
+  if (!data.paypalSubscriptionId) return showNotification('❌ Kein Abo vorhanden.');
+  try {
+    const result = await cancelFn({ subscriptionId: data.paypalSubscriptionId });
+    if (result.data.success) {
+      await db.collection('abos').doc(hutId).update({ status: 'cancelled' });
+      await logHistory(hutId, 'Abo gekündigt durch Admin');
+      showNotification('✅ Abo gekündigt.');
+    } else {
+      showNotification('❌ Fehler beim Kündigen.');
+    }
+  } catch (e) {
+    showNotification('❌ Fehler bei Aufruf der Cloud-Funktion.');
+    console.error(e);
   }
-
-  loadHuts();
 }
-  
-  function updateField(hutId, field, value) {
-    db.collection('eierhuetten').doc(hutId).update({ [field]: value });
-    db.collection('eierhuetten').doc(hutId).collection('log').add({
-      admin: currentUser.displayName || currentUser.email,
-      feld: field,
-      wert: value,
-      zeitpunkt: new Date()
-    });
-    // Reaktion auf Statusänderung für Abo-Verwaltung
-  if (field === 'status') {
-    const aboRef = db.collection('abos').doc(hutId);
 
-    if (value === 'offen') {
-      aboRef.update({
-        status: 'paused',
-        updated: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      logHistory(hutId, 'Abo automatisch pausiert wegen Status "offen"');
+async function pauseAbo(hutId) {
+  await db.collection('abos').doc(hutId).update({ status: 'paused' });
+  await logHistory(hutId, 'Abo pausiert durch Admin');
+  showNotification('⏸️ Abo pausiert.');
+}
 
-    } else if (value === 'abgelehnt') {
-      aboRef.update({
-        status: 'cancelled',
-        updated: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      logHistory(hutId, 'Abo automatisch gekündigt wegen Status "abgelehnt"');
-    }
-  }
-  }
-  
+async function logHistory(hutId, eintrag) {
+  await db.collection('eierhuetten').doc(hutId).collection('log').add({
+    admin: auth.currentUser.displayName || auth.currentUser.email,
+    feld: 'Abo',
+    wert: eintrag,
+    zeitpunkt: new Date()
+  });
+}
 
-  function renderHuts(list) {
-    hutList.innerHTML = '';
-    list.forEach(hut => {
-      const el = document.createElement('div');
-      el.className = 'bg-white p-4 rounded shadow space-y-2';
-
-      el.innerHTML = `
-  <input class="text-xl font-bold w-full mb-2" value="${hut.name || ''}" onchange="updateField('${hut.id}', 'name', this.value)">
-
-  <label>Status:
-    <select onchange="updateField('${hut.id}', 'status', this.value)" class="w-full mb-2">
-      ${['offen','angenommen','abgelehnt'].map(s => `<option ${s===hut.status?'selected':''}>${s}</option>`).join('')}
-    </select>
-  </label>
-
-  <label>Öffnungszeiten:
-    <select onchange="updateField('${hut.id}', 'oeffnungszeiten', this.value)" class="w-full mb-2">
-      ${['08:00–20:00','24/7'].map(o => `<option ${o===hut.oeffnungszeiten?'selected':''}>${o}</option>`).join('')}
-    </select>
-  </label>
-
-  <label>Strom:
-    <select onchange="updateField('${hut.id}', 'strom', this.value)" class="w-full mb-2">
-      ${['Ja','Nein'].map(o => `<option ${o===hut.strom?'selected':''}>${o}</option>`).join('')}
-    </select>
-  </label>
-
-  <label>Sitzplätze:
-    <select onchange="updateField('${hut.id}', 'sitzplaetze', this.value)" class="w-full mb-2">
-      ${['Ja','Nein'].map(o => `<option ${o===hut.sitzplaetze?'selected':''}>${o}</option>`).join('')}
-    </select>
-  </label>
-
-  <label>Fotos (freigegeben):</label>
-  <div class="flex flex-wrap gap-2 mb-2" id="fotos-container-${hut.id}">
-    ${Array.isArray(hut.fotos) ? hut.fotos.map((foto, i) => {
-      const f = typeof foto === 'string' ? { url: foto, status: 'freigegeben' } : foto;
-      if (f.status !== 'freigegeben') return '';
-      return `
-        <div class="relative w-24 h-24 rounded overflow-hidden border border-gray-300">
-          <img src="${f.url}" alt="Foto" class="object-cover w-full h-full" />
-          <button onclick="deleteFoto('${hut.id}', '${f.url}')" title="Foto löschen" 
-                  class="absolute top-0 right-0 bg-red-600 text-white rounded-bl px-1 text-sm font-bold hover:bg-red-700">×</button>
-        </div>
-      `;
-    }).join('') : '<p class="text-gray-500">Keine Fotos</p>'}
-  </div>
-
-  ${Array.isArray(hut.fotos) && hut.fotos.some(f => typeof f !== 'string' && f.status === 'wartet') ? `
-    <label>Fotos (warten auf Freigabe):</label>
-    <div class="flex flex-wrap gap-2 mb-2">
-      ${hut.fotos.map((f, i) => {
-        if (typeof f === 'string' || f.status !== 'wartet') return '';
-        return `
-          <div class="relative w-24 h-24 rounded overflow-hidden border border-yellow-400 border-dashed">
-            <img src="${f.url}" alt="wartet" class="object-cover w-full h-full opacity-50 grayscale" />
-            <div class="absolute inset-0 flex flex-col items-center justify-center text-xs text-white bg-black/50">
-              ⏳ Wartet
-              <button onclick="approveFoto('${hut.id}', ${i})" class="bg-green-600 mt-1 px-1 rounded">✔ Freigeben</button>
-              <button onclick="rejectFoto('${hut.id}', ${i})" class="bg-red-600 mt-1 px-1 rounded">✖ Löschen</button>
-            </div>
-          </div>
-        `;
-      }).join('')}
-    </div>
-  ` : ''}
-
-  <label>Foto hochladen:
-    <input type="file" accept="image/*" onchange="uploadFoto(this, '${hut.id}')">
-    <div class="progress-bar"><div class="progress-fill" id="progress-${hut.id}"></div></div>
-  </label>
-
-  <div class="minimap" id="map-${hut.id}"></div>
-
-  <details>
-    <summary>Bearbeitungs-Log (${hut.logCount})</summary>
-    <ul class="text-xs max-h-48 overflow-auto">
-      ${hut.logs.map(log => `<li><strong>${log.admin}</strong> hat <em>${log.feld}</em> auf <code>${log.wert}</code>${log.kommentar ? ` (Kommentar: ${log.kommentar})` : ''} geändert am ${new Date(log.zeitpunkt.seconds * 1000).toLocaleString()}</li>`).join('')}
-    </ul>
-  </details>
-
-  <label>Abo-Verwaltung:</label>
-    <div class="border p-2 rounded bg-gray-50 space-y-1 text-sm">
-    <div>Status: <span id="aboStatus-${hut.id}">–</span></div>
-    <button onclick="pauseAbo('${hut.id}')" class="bg-yellow-400 hover:bg-yellow-500 text-black px-2 py-1 rounded">⏸️ Pausieren</button>
-    <button onclick="cancelAbo('${hut.id}')" class="bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded">❌ Kündigen</button>
-    <button onclick="viewHistory('${hut.id}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded">📜 Verlauf</button>
-  </div>
-
-  <button onclick="deleteHut('${hut.id}', '${hut.name.replace(/'/g, "\\'")}')" class="bg-red-600 text-white px-2 py-1 rounded mt-3 w-full">Hütte löschen</button>
-`;
-
-      hutList.appendChild(el);
-
-      if (hut.location?.latitude && hut.location?.longitude) {
-        const map = L.map(`map-${hut.id}`, {
-          zoomControl: false,
-          dragging: true,
-          scrollWheelZoom: true,
-          doubleClickZoom: true,
-          boxZoom: true,
-          keyboard: true
-        }).setView([hut.location.latitude, hut.location.longitude], 13);
-
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-        const marker = L.marker([hut.location.latitude, hut.location.longitude], { draggable: true }).addTo(map);
-
-        marker.on('dragend', async (e) => {
-          const newPos = e.target.getLatLng();
-          const kommentar = prompt('Bitte Kommentar zur Standortänderung eingeben:');
-          if (kommentar === null) {
-            marker.setLatLng([hut.location.latitude, hut.location.longitude]);
-            return;
-          }
-          await db.collection('eierhuetten').doc(hut.id).update({
-            location: {
-              latitude: newPos.lat,
-              longitude: newPos.lng
-            }
-          });
-          await db.collection('eierhuetten').doc(hut.id).collection('log').add({
-            admin: currentUser.displayName || currentUser.email,
-            feld: 'location',
-            wert: `Lat: ${newPos.lat.toFixed(6)}, Lng: ${newPos.lng.toFixed(6)}`,
-            kommentar: kommentar,
-            zeitpunkt: new Date()
-          });
-          showNotification(`📍 Standort von "${hut.name}" wurde aktualisiert.`);
-        });
-      }
-    });
-  }
-
-  async function uploadFoto(input, hutId) {
-    const file = input.files[0];
-    if (!file) return;
-    const ref = storage.ref(`fotos/${hutId}/${Date.now()}_${file.name}`);
-    const task = ref.put(file);
-    task.on('state_changed', snapshot => {
-      const percent = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-      document.getElementById(`progress-${hutId}`).style.width = `${percent}%`;
-    },
-    err => alert('Upload fehlgeschlagen: ' + err.message),
-    async () => {
-      const url = await task.snapshot.ref.getDownloadURL();
-      await db.collection('eierhuetten').doc(hutId).update({
-        fotos: firebase.firestore.FieldValue.arrayUnion(url)
-      });
-      updateField(hutId, 'fotos', url);
-      showNotification('📸 Foto erfolgreich hochgeladen.');
-      document.getElementById(`progress-${hutId}`).style.width = `0%`;
-      loadHuts();
-    });
-  }
-
-  async function deleteFoto(hutId, url) {
-    // Mathe-Aufgabe generieren
-    const a = Math.floor(Math.random() * 10) + 1;
-    const b = Math.floor(Math.random() * 10) + 1;
-    const answer = a + b;
-
-    const userAnswer = prompt(`Bitte rechne zur Bestätigung: ${a} + ${b} = ?`);
-    if (userAnswer === null) return;
-    if (parseInt(userAnswer) !== answer) {
-      alert('Falsche Antwort. Foto wird nicht gelöscht.');
-      return;
-    }
-
-    if (!confirm('Foto wirklich löschen?')) return;
-
-    try {
-      await db.collection('eierhuetten').doc(hutId).update({
-        fotos: firebase.firestore.FieldValue.arrayRemove(url)
-      });
-      const storageRef = storage.refFromURL(url);
-      await storageRef.delete();
-
-      await db.collection('eierhuetten').doc(hutId).collection('log').add({
-        admin: currentUser.displayName || currentUser.email,
-        feld: 'fotos',
-        wert: `Foto gelöscht: ${url}`,
-        zeitpunkt: new Date()
-      });
-      showNotification('Foto wurde gelöscht.');
-      loadHuts();
-    } catch (e) {
-      alert('Fehler beim Löschen des Fotos: ' + e.message);
-    }
-  }
-
-  async function deleteHut(id, name) {
-    // Mathe-Aufgabe generieren
-    const a = Math.floor(Math.random() * 10) + 1;
-    const b = Math.floor(Math.random() * 10) + 1;
-    const answer = a + b;
-
-    const userAnswer = prompt(`Bitte rechne zur Bestätigung: ${a} + ${b} = ?`);
-    if (userAnswer === null) return;
-    if (parseInt(userAnswer) !== answer) {
-      alert('Falsche Antwort. Die Hütte wird nicht gelöscht.');
-      return;
-    }
-
-    if (!confirm(`Soll die Hütte "${name}" wirklich gelöscht werden?`)) return;
-
-    try {
-      await db.collection('eierhuetten').doc(id).delete();
-      showNotification(`Hütte "${name}" wurde gelöscht.`);
-      loadHuts();
-    } catch (e) {
-      alert('Fehler beim Löschen der Hütte: ' + e.message);
-    }
-  }
-</script>
-</body>
+async function viewHistory(hutId) {
+  const logs = await db.collection('eierhuetten').doc(hutId).collection('log').orderBy('zeitpunkt', 'desc').get();
+  let text = logs.docs.map(doc => {
+    const l = doc.data();
+    return `${new Date(l.zeitpunkt.seconds * 1000).toLocaleString()}: ${l.admin} änderte ${l.feld} auf "${l.wert}"`;
+  }).join('\n');
+  alert(`📜 Verlauf von Hütte ${hutId}:\n\n${text}`);
+}
+</script></body>
 </html>
