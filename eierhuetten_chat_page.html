@@ -793,7 +793,7 @@ function saveEdit(id) {
   }).then(() => addMessage('✅ Änderungen gespeichert.', 'bot'));
 }
 
-function deleteHut(id) {
+/*function deleteHut(id) {
   if (confirm('Möchtest du diese Hütte wirklich löschen?')) {
     db.collection('eierhuetten').doc(id).delete().then(() => {
       addMessage('🗑️ Hütte gelöscht.', 'bot');
@@ -803,7 +803,52 @@ function deleteHut(id) {
       });
     });
   }
+}*/
+  function deleteHut(id) {
+  if (!confirm('Möchtest du diese Hütte wirklich löschen?')) return;
+
+  // Schritt 1: Hole die Hütte inkl. PayPal-Abo
+  db.collection('eierhuetten').doc(id).get().then(doc => {
+    if (!doc.exists) {
+      addMessage('❌ Hütte nicht gefunden.', 'bot');
+      return;
+    }
+
+    const hut = doc.data();
+
+    // Schritt 2: Prüfe, ob ein Abo besteht
+    if (hut.paypalSubscriptionId) {
+      addMessage('🔄 Kündige PayPal-Abo...', 'bot');
+
+      // Schritt 3: Cloud-Funktion aufrufen
+      const cancelFn = firebase.functions().httpsCallable('cancelPaypalSubscription');
+      cancelFn({ subscriptionId: hut.paypalSubscriptionId }).then(result => {
+        if (result.data.success) {
+          addMessage('✅ Abo erfolgreich gekündigt.', 'bot');
+
+          // Schritt 4: Hütte löschen
+          db.collection('eierhuetten').doc(id).delete().then(() => {
+            addMessage('🗑️ Hütte gelöscht.', 'bot');
+            korrigiereFehlendeAbos().then(() => showMyHuts());
+          });
+        } else {
+          addMessage('❌ Abo konnte nicht gekündigt werden.', 'bot');
+        }
+      }).catch(err => {
+        console.error('❌ Fehler bei Kündigung:', err.message || err);
+        addMessage('❌ Fehler beim Kündigen des Abos.', 'bot');
+      });
+
+    } else {
+      // Kein Abo vorhanden → einfach löschen
+      db.collection('eierhuetten').doc(id).delete().then(() => {
+        addMessage('🗑️ Hütte gelöscht.', 'bot');
+        korrigiereFehlendeAbos().then(() => showMyHuts());
+      });
+    }
+  });
 }
+
 async function deleteImage(hutId, imageUrl, deleteUrl) {
   if (!confirm('❗ Möchtest du dieses Bild wirklich löschen?')) return;
 
