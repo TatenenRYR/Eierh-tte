@@ -254,13 +254,29 @@ async function rejectFoto(hutId, index) {
     </ul>
   </details>
 
-  <label>Abo-Verwaltung:</label>
-    <div class="border p-2 rounded bg-gray-50 space-y-1 text-sm">
-    <div>Status: <span id="aboStatus-${hut.id}">–</span></div>
-    <button onclick="pauseAbo('${hut.id}')" class="bg-yellow-400 hover:bg-yellow-500 text-black px-2 py-1 rounded">⏸️ Pausieren</button>
-    <button onclick="cancelAbo('${hut.id}')" class="bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded">❌ Kündigen</button>
-    <button onclick="viewHistory('${hut.id}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded">📜 Verlauf</button>
-  </div>
+  
+        <!-- Abo -->
+        ${d.aboStart && d.paypalSubscriptionId ? `
+          <details class="bg-blue-50 border border-blue-200 rounded p-2 my-2 text-sm">
+            <summary class="cursor-pointer">💳 Abo-Informationen</summary>
+            <div><strong>Start:</strong> ${d.aboStart?.toDate?.().toLocaleDateString("de-DE") || '-'}</div>
+            <div><strong>PayPal-ID:</strong> ${d.paypalSubscriptionId}</div>
+            <div><strong>Status:</strong> aktiv</div>
+            ${Array.isArray(d.aboHistory) && d.aboHistory.length ? `
+              <div class="mt-2"><strong>Zahlungsverlauf:</strong>
+                <ul class="list-disc ml-5 text-xs">
+                  ${d.aboHistory.map(e => `
+                    <li>${new Date(e.zeitpunkt?.seconds * 1000).toLocaleDateString("de-DE")} – ${e.betrag} € via ${e.methode}</li>
+                  `).join('')}
+                </ul>
+              </div>
+            ` : '<div class="text-xs text-gray-500 mt-2 italic">Kein Verlauf vorhanden.</div>'}
+          </details>
+        ` : `
+          <div class="my-2 text-sm">
+            <strong>💳 Kein aktives Abo</strong><br>
+            <div id="${paypalContainerId}" class="my-2"></div>
+          </div>
 
   <button onclick="deleteHut('${hut.id}')" class="bg-red-600 text-white px-2 py-1 rounded mt-3 w-full">Hütte löschen</button>
 `;
@@ -368,7 +384,7 @@ async function deleteHut(id) {
 
   db.collection('eierhuetten').doc(id).get().then(doc => {
     if (!doc.exists) {
-      addMessage('❌ Hütte nicht gefunden.', 'bot');
+      showNotification('❌ Hütte nicht gefunden.', 'bot');
       return;
     }
 
@@ -376,7 +392,7 @@ async function deleteHut(id) {
 
     // Prüfen, ob Abo existiert
     if (hut.paypalSubscriptionId) {
-      addMessage('🔄 Kündige PayPal-Abo...', 'bot');
+      showNotification('🔄 Kündige PayPal-Abo...', 'bot');
       console.log('➡️ Sende Abo-Kündigung für:', hut.paypalSubscriptionId);
 
       // Anfrage an HTTP-Cloud-Function (onRequest)
@@ -402,35 +418,35 @@ async function deleteHut(id) {
   // JSON auslesen, wenn Status OK
   const result = await response.json();
   if (result.success) {
-    addMessage('✅ Abo erfolgreich gekündigt.', 'bot');
+    showNotification('✅ Abo erfolgreich gekündigt.', 'bot');
     console.log('✅ Kündigung erfolgreich');
 
     // Danach Hütte löschen
     db.collection('eierhuetten').doc(id).delete().then(() => {
-      addMessage('🗑️ Hütte gelöscht.', 'bot');
+      showNotification('🗑️ Hütte gelöscht.', 'bot');
       korrigiereFehlendeAbos().then(() => showMyHuts());
     });
   } else {
     console.error('❌ Fehler bei Kündigung:', result.error || result);
-    addMessage('❌ Fehler bei Kündigung: ' + (result.error || 'Unbekannt'), 'bot');
+    showNotification('❌ Fehler bei Kündigung: ' + (result.error || 'Unbekannt'), 'bot');
   }
 })
 .catch(err => {
   console.error('❌ Fehler bei Kündigung:', err.message || err);
-  addMessage('❌ Fehler bei Kündigung: ' + (err.message || 'Unbekannt'), 'bot');
+  showNotification('❌ Fehler bei Kündigung: ' + (err.message || 'Unbekannt'), 'bot');
 });
 
 
     } else {
       // Kein Abo → direkt löschen
       db.collection('eierhuetten').doc(id).delete().then(() => {
-        addMessage('🗑️ Hütte gelöscht.', 'bot');
+        showNotification('🗑️ Hütte gelöscht.', 'bot');
         loadHuts();
       });
     }
   }).catch(err => {
     console.error('❌ Fehler beim Abrufen der Hütte:', err.message || err);
-    addMessage('❌ Fehler beim Löschen der Hütte.', 'bot');
+    showNotification('❌ Fehler beim Löschen der Hütte.', 'bot');
   });
 }
 
