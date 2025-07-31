@@ -870,44 +870,43 @@ const cancelFn = functions.httpsCallable('cancelPaypalSubscription');
 
     const hut = doc.data();
 
+    // Prüfen, ob Abo existiert
     if (hut.paypalSubscriptionId) {
       addMessage('🔄 Kündige PayPal-Abo...', 'bot');
       console.log('➡️ Sende Abo-Kündigung für:', hut.paypalSubscriptionId);
 
-      // Hier neue HTTP-Funktion aufrufen
-      fetch("https://us-central1-eierhuettentour.cloudfunctions.net/cancelPaypalSubscription", {
-        method: "POST",
+      // Anfrage an HTTP-Cloud-Function (onRequest)
+      fetch('https://us-central1-eierhuettentour.cloudfunctions.net/cancelPaypalSubscription', {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json"
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ subscriptionId: hut.paypalSubscriptionId })
       })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          addMessage('✅ Abo erfolgreich gekündigt.', 'bot');
-          console.log('✅ PayPal-Abo gekündigt.');
+        .then(res => res.json())
+        .then(result => {
+          if (result.success) {
+            addMessage('✅ Abo erfolgreich gekündigt.', 'bot');
 
-          db.collection('eierhuetten').doc(id).delete().then(() => {
-            addMessage('🗑️ Hütte gelöscht.', 'bot');
-            console.log('✅ Dokument gelöscht:', id);
-            korrigiereFehlendeAbos().then(() => showMyHuts());
-          });
-
-        } else {
-          console.error('❌ Kündigung fehlgeschlagen:', data);
-          addMessage('❌ Abo konnte nicht gekündigt werden.', 'bot');
-        }
-      })
-      .catch(err => {
-        console.error('❌ Fehler bei Abo-Kündigung:', err.message || err);
-        addMessage('❌ Fehler beim Kündigen des Abos.', 'bot');
-      });
+            // Jetzt Hütte löschen
+            db.collection('eierhuetten').doc(id).delete().then(() => {
+              addMessage('🗑️ Hütte gelöscht.', 'bot');
+              korrigiereFehlendeAbos().then(() => showMyHuts());
+            });
+          } else {
+            console.error('❌ Kündigung nicht erfolgreich:', result);
+            addMessage('❌ Abo konnte nicht gekündigt werden.', 'bot');
+          }
+        })
+        .catch(err => {
+          console.error('❌ Fehler bei Kündigung:', err);
+          addMessage('❌ Fehler beim Kündigen des Abos.', 'bot');
+        });
 
     } else {
+      // Kein Abo → direkt löschen
       db.collection('eierhuetten').doc(id).delete().then(() => {
         addMessage('🗑️ Hütte gelöscht.', 'bot');
-        console.log('✅ Dokument gelöscht (kein Abo):', id);
         korrigiereFehlendeAbos().then(() => showMyHuts());
       });
     }
@@ -916,6 +915,7 @@ const cancelFn = functions.httpsCallable('cancelPaypalSubscription');
     addMessage('❌ Fehler beim Löschen der Hütte.', 'bot');
   });
 }
+
 
 
 async function deleteImage(hutId, imageUrl, deleteUrl) {
