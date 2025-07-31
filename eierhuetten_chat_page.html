@@ -877,31 +877,45 @@ const cancelFn = functions.httpsCallable('cancelPaypalSubscription');
 
       // Anfrage an HTTP-Cloud-Function (onRequest)
       fetch('https://us-central1-eierhuettentour.cloudfunctions.net/cancelPaypalSubscription', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ subscriptionId: hut.paypalSubscriptionId })
-      })
-        .then(res => res.json())
-        .then(result => {
-          if (result.success) {
-            addMessage('✅ Abo erfolgreich gekündigt.', 'bot');
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({ subscriptionId: hut.paypalSubscriptionId })
+})
+.then(async response => {
+  if (!response.ok) {
+    // Versuche Fehlerinhalt zu lesen
+    let errorText = await response.text();
+    try {
+      const errorJson = JSON.parse(errorText);
+      throw new Error(errorJson.error || 'Unbekannter Fehler bei Kündigung');
+    } catch {
+      throw new Error(errorText);
+    }
+  }
 
-            // Jetzt Hütte löschen
-            db.collection('eierhuetten').doc(id).delete().then(() => {
-              addMessage('🗑️ Hütte gelöscht.', 'bot');
-              korrigiereFehlendeAbos().then(() => showMyHuts());
-            });
-          } else {
-            console.error('❌ Kündigung nicht erfolgreich:', result);
-            addMessage('❌ Abo konnte nicht gekündigt werden.', 'bot');
-          }
-        })
-        .catch(err => {
-          console.error('❌ Fehler bei Kündigung:', err);
-          addMessage('❌ Fehler beim Kündigen des Abos.', 'bot');
-        });
+  // JSON auslesen, wenn Status OK
+  const result = await response.json();
+  if (result.success) {
+    addMessage('✅ Abo erfolgreich gekündigt.', 'bot');
+    console.log('✅ Kündigung erfolgreich');
+
+    // Danach Hütte löschen
+    db.collection('eierhuetten').doc(id).delete().then(() => {
+      addMessage('🗑️ Hütte gelöscht.', 'bot');
+      korrigiereFehlendeAbos().then(() => showMyHuts());
+    });
+  } else {
+    console.error('❌ Fehler bei Kündigung:', result.error || result);
+    addMessage('❌ Fehler bei Kündigung: ' + (result.error || 'Unbekannt'), 'bot');
+  }
+})
+.catch(err => {
+  console.error('❌ Fehler bei Kündigung:', err.message || err);
+  addMessage('❌ Fehler bei Kündigung: ' + (err.message || 'Unbekannt'), 'bot');
+});
+
 
     } else {
       // Kein Abo → direkt löschen
