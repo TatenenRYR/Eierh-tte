@@ -1255,6 +1255,7 @@ orientationListenerActive = true;
           enableCompassRotation();
           saveRouteToLocal();
           showDashboardAlert();
+          starteNavigationPfeil();
 
 
     tourStartTime = Date.now();
@@ -1439,14 +1440,73 @@ let navigationActive = false;
 let heading = 0;
 let userArrowMarker = null;
 
+// Richtung aktualisieren
+window.addEventListener('deviceorientationabsolute', (event) => {
+  if (event.alpha != null) {
+    heading = event.alpha;
+    updateUserArrowRotation();
+  }
+}, true);
 
 
-
-
+function initNaviPfeil() {
+  // Stelle sicher, dass der Pfeil existiert
+  if (!document.getElementById('navi-arrow')) {
+    const img = document.createElement('img');
+    img.id = 'navi-arrow';
+    img.src = 'https://cdn-icons-png.flaticon.com/512/684/684908.png';
+    img.style.position = 'fixed';
+    img.style.top = '20px';
+    img.style.left = '50%';
+    img.style.transform = 'translateX(-50%) rotate(0deg)';
+    img.style.width = '60px';
+    img.style.height = '60px';
+    img.style.zIndex = '9999';
+    img.style.display = 'none';
+    document.body.appendChild(img);
+  }
+}
 
 let naviAktiv = false;
 let kompassListener = null;
+function starteNavigationPfeil() {
+  const pfeil = document.getElementById('navi-arrow');
+  if (!pfeil) return;
 
+  naviAktiv = true;
+  pfeil.style.display = 'block';
+
+  kompassListener = (event) => {
+    if (!naviAktiv) return;
+    const alpha = event.alpha;
+    if (alpha != null) {
+      const rotation = 360 - alpha;
+      pfeil.style.transform = `translateX(-50%) rotate(${rotation}deg)`;
+    }
+  };
+
+  const isIOS = typeof DeviceOrientationEvent !== 'undefined' &&
+                typeof DeviceOrientationEvent.requestPermission === 'function';
+
+  if (isIOS) {
+    DeviceOrientationEvent.requestPermission()
+      .then(response => {
+        if (response === 'granted') {
+          window.addEventListener('deviceorientation', kompassListener, true);
+        } else {
+          alert("❌ Kompass-Zugriff abgelehnt.");
+        }
+      })
+      .catch(err => {
+        console.warn("❌ iOS-Kompass-Zugriff fehlgeschlagen:", err);
+      });
+  } else {
+    const eventType = "ondeviceorientationabsolute" in window
+      ? "deviceorientationabsolute"
+      : "deviceorientation";
+    window.addEventListener(eventType, kompassListener, true);
+  }
+}
 /*
 function starteNavigationPfeil() {
   const pfeil = document.getElementById('navi-arrow');
@@ -1494,6 +1554,7 @@ function stopNavigation() {
   orientationListenerActive = false;
   disableCompassRotation();
   clearRouteLines();
+stoppeNavigationPfeil();
   toggleSidebar(true);
   //firebase  Raum
   db.collection("rooms").doc(roomId).set({
@@ -2034,11 +2095,11 @@ function drop(ev) {
 
     function init() {
       initUsername();
-      initCompass();
+      initNaviPfeil();
       try {
          updateSelectedList();
       } catch (err) {
-         console.warn("Fehler beim Initiale updateSelectedList:", err);
+         console.warn("Fehler beim Initialen updateSelectedList:", err);
       }
       map = L.map("map", { center: [47.3, 11.4], zoom: 13 });
     //  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -2321,23 +2382,6 @@ function unanchorUserArrow() {
   showToast("↻ Richtung neu ausrichten");
 }
 
-// Nur bei Nutzeraktion ausführen!
-function initCompass() {
-  if (
-    typeof DeviceOrientationEvent !== 'undefined' &&
-    typeof DeviceOrientationEvent.requestPermission === 'function'
-  ) {
-    DeviceOrientationEvent.requestPermission().then(response => {
-      if (response === 'granted') {
-        startOrientationTracking();
-      } else {
-        alert("❌ Kompass-Zugriff abgelehnt.");
-      }
-    }).catch(console.error);
-  } else {
-    startOrientationTracking();
-  }
-}
 
 
 window.addEventListener("deviceorientationabsolute", event => {
