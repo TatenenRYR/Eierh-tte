@@ -1,32 +1,70 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <title>Admin – Eierhütten</title>
-  <style>
-    body { font-family: Arial; padding: 1em; background: #f4f4f4; }
-    h1 { text-align: center; }
-    .search-bar { text-align: center; margin-bottom: 1em; }
-    input[type="text"] { padding: 0.5em; width: 60%; font-size: 1em; }
-    .hut { background: #fff; border: 1px solid #ccc; margin: 1em 0; padding: 1em; border-radius: 8px; }
-    .hut.error { background-color: #ffe5e5; color: #a00; }
-    .actions { margin-top: 0.5em; }
-    button { padding: 0.4em 0.8em; margin-right: 0.5em; }
-  </style>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
-</head>
-<body>
-  <h1>🐣 Admin – Eierhütten</h1>
-  <div class="search-bar">
-    <input type="text" id="searchInput" placeholder="Suche nach Name, Ort oder Kategorie..." onkeyup="filterHuts()">
-  </div>
-  <div id="hutList">⏳ Lade Hütten...</div>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Eierhütten Admin-Dashboard</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <script>
-    // 🔧 Deine Firebase Konfiguration einfügen
-    const firebaseConfig = {
+  <script src="https://www.paypal.com/sdk/js?client-id=AbnXzFW_R-XwHEQCBVth0OY1zkq3Rl0Op-bqTcbmvAlbQqgh45zAWtkmuWiNp4dF7ijTW4vs90Ec7gyG&vault=true&intent=subscription" data-sdk-integration-source="button-factory"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-functions-compat.js"></script>
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .minimap { height: 200px; width: 100%; border-radius: 0.5rem; margin-top: 0.5rem; }
+    .progress-bar { width: 100%; background-color: #e5e7eb; border-radius: 0.5rem; margin-top: 5px; }
+    .progress-fill { height: 8px; background-color: #10b981; border-radius: 0.5rem; width: 0%; transition: width 0.3s; }
+    #notification { position: fixed; top: 1rem; right: 1rem; background: #38bdf8; color: white; padding: 1rem; border-radius: 0.5rem; display: none; z-index: 9999; max-width: 300px; }
+  </style>
+</head>
+<body class="bg-gray-100">
+  <div id="notification"></div>
+
+  <div id="login-section" class="flex items-center justify-center h-screen">
+    <button id="login-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded">
+      Admin Login mit Google
+    </button>
+  </div>
+
+  <div id="topbar" style="display:none; justify-content:space-between; align-items:center;
+     background:#f0fdf4; padding:10px 20px; border-bottom:1px solid #ccc; font-family:sans-serif;">
+  
+  <div id="user-info" style="font-weight:bold; font-size:14px;">
+    👤 <span id="user-name">Lädt...</span>
+  </div>
+
+  <div style="display:flex; gap:10px;">
+    <button onclick="refresh()" style="background:#34d399; color:white; border:none; 
+            padding:8px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">
+      🔄
+    </button>
+    
+    <button onclick="goToMainPage()" style="background:#34d399; color:white; border:none;
+            padding:8px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">
+      🏠
+    </button>
+
+    <button onclick="logout()" style="background:#f87171; color:white; border:none; 
+            padding:8px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">
+      🔓
+    </button>
+  </div>
+</div>
+
+  <div id="dashboard" class="hidden p-6 max-w-7xl mx-auto">
+    <h1 class="text-3xl font-bold mb-6 text-green-700">🥚 Eierhütten Admin Dashboard</h1>
+    <div id="stats" class="mb-6 text-gray-700"></div>
+    <input id="search-input" type="text" placeholder="Suche..." class="mb-4 w-full p-3 rounded border border-gray-300" />
+    <div id="hut-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+  </div>
+
+<script>
+  const firebaseConfig = {
     apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
     authDomain: "eierhuettentour.firebaseapp.com",
     projectId: "eierhuettentour",
@@ -36,130 +74,463 @@
   };
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
+  const db = firebase.firestore();
   const storage = firebase.storage();
-    const db = firebase.firestore();
-    const functions = firebase.app().functions("us-central1");
 
-    let allHuts = [];
+  const loginSection = document.getElementById('login-section');
+  const dashboard = document.getElementById('dashboard');
+  const hutList = document.getElementById('hut-list');
+  const searchInput = document.getElementById('search-input');
+  const notification = document.getElementById('notification');
+  const stats = document.getElementById('stats');
+  let huts = [], currentUser = null;
 
-    function loadHuts() {
-      db.collection("eierhuetten").get()
-        .then(snapshot => {
-          allHuts = [];
-          snapshot.forEach(doc => {
-            const data = doc.data();
-            data.id = doc.id;
-            allHuts.push(data);
-          });
-          renderHuts(allHuts);
-        })
-        .catch(err => {
-          console.error("❌ Fehler beim Laden:", err);
-          document.getElementById("hutList").innerHTML = "<p>❌ Fehler beim Laden.</p>";
-        });
-    }
+  function showNotification(message) {
+    notification.textContent = message;
+    notification.style.display = 'block';
+    setTimeout(() => notification.style.display = 'none', 4000);
+  }
 
-    function renderHuts(huts) {
-      const container = document.getElementById("hutList");
-      container.innerHTML = "";
+  document.getElementById('login-btn').onclick = () => {
+    auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+  };
 
-      if (huts.length === 0) {
-        container.innerHTML = "<p>❌ Keine Hütten gefunden.</p>";
+  auth.onAuthStateChanged(async user => {
+    if (user) {
+      currentUser = user;
+      const adminDoc = await db.collection('admins').doc(user.email).get();
+      if (!adminDoc.exists) {
+        alert('Zugriff verweigert: Du bist kein Admin.');
         return;
       }
-
-      huts.forEach(hut => {
-        const div = document.createElement("div");
-        div.className = "hut";
-
-        if (!hut.name || !hut.ort) {
-          div.classList.add("error");
-          div.innerHTML = `<strong>⚠️ Fehlerhafte Hütte (ID: ${hut.id})</strong><br>Unvollständige Daten.`;
-          container.appendChild(div);
-          return;
-        }
-
-        div.innerHTML = `
-          <strong>${hut.name}</strong><br>
-          📍 ${hut.ort}<br>
-          🗂️ ${hut.kategorie || "-"}<br>
-          💬 Status: ${hut.status || "?"}<br>
-          ${hut.paypalSubscriptionId ? "💳 Abo vorhanden" : "– kein Abo –"}
-          <div class="actions">
-            <button onclick="deleteHut('${hut.id}', '${hut.paypalSubscriptionId || ''}')">🗑️ Löschen</button>
-            <button onclick="toggleStatus('${hut.id}')">🔁 Status wechseln</button>
-          </div>
-        `;
-        container.appendChild(div);
+      loginSection.classList.add('hidden');
+      dashboard.classList.remove('hidden');
+      db.collection('eierhuetten').onSnapshot(() => {
+        showNotification('🔄 Live-Update: Hüttendaten wurden aktualisiert.');
+        loadHuts();
       });
     }
+  });
 
-    function deleteHut(id, subscriptionId) {
-      if (!confirm("Diese Hütte wirklich löschen?")) return;
+  searchInput.addEventListener('input', () => {
+    const term = searchInput.value.toLowerCase();
+    const filtered = huts.filter(h => h.name?.toLowerCase().includes(term));
+    renderHuts(filtered);
+  });
 
-      if (subscriptionId) {
-        console.log("➡️ Sende Abo-Kündigung für:", subscriptionId);
-        const cancelFn = functions.httpsCallable("cancelPaypalSubscription");
+  async function loadHuts() {
+    const snapshot = await db.collection('eierhuetten').orderBy('erstelltAm', 'desc').get();
+    huts = await Promise.all(snapshot.docs.map(async doc => {
+      const data = doc.data();
+      const logSnap = await db.collection('eierhuetten').doc(doc.id).collection('log').orderBy('zeitpunkt', 'desc').get();
+      return {
+        id: doc.id,
+        ...data,
+        logCount: logSnap.size,
+        logs: logSnap.docs.map(d => d.data())
+      };
+    }));
+    renderHuts(huts);
+    renderStats(huts);
+  }
 
-        cancelFn({ subscriptionId })
-          .then(res => {
-            if (res.data && res.data.success) {
-              console.log("✅ Abo gekündigt. Hütte wird gelöscht.");
-              deleteHutFromFirestore(id);
-            } else {
-              console.warn("❌ Kündigung fehlgeschlagen:", res.data);
-              alert("❌ Kündigung fehlgeschlagen.");
+  function renderStats(list) {
+    const total = list.length;
+    const withStrom = list.filter(h => h.strom === 'Ja').length;
+    const withFotos = list.filter(h => Array.isArray(h.fotos) && h.fotos.length > 0).length;
+    const count247 = list.filter(h => h.oeffnungszeiten === '24/7').length;
+    stats.innerHTML = `🔢 <strong>${total}</strong> Hütten · ⚡ ${withStrom} mit Strom · 🖼️ ${withFotos} mit Fotos · 🕒 ${count247} sind 24/7 geöffnet`;
+  }
+
+  async function approveFoto(hutId, index) {
+  const doc = await db.collection('eierhuetten').doc(hutId).get();
+  const fotos = doc.data().fotos || [];
+  fotos[index].status = 'freigegeben';
+  await db.collection('eierhuetten').doc(hutId).update({ fotos });
+  showNotification('✅ Bild freigegeben');
+  loadHuts();
+}
+
+async function rejectFoto(hutId, index) {
+  const doc = await db.collection('eierhuetten').doc(hutId).get();
+  const fotos = doc.data().fotos || [];
+  const { delete_url } = fotos[index];
+  fotos.splice(index, 1);
+  await db.collection('eierhuetten').doc(hutId).update({ fotos });
+
+  if (delete_url) {
+    fetch(delete_url)
+      .then(() => showNotification('🗑️ Bild gelöscht'))
+      .catch(e => console.warn('Fehler beim Löschen', e));
+  }
+
+  loadHuts();
+}
+  
+  function updateField(hutId, field, value) {
+    db.collection('eierhuetten').doc(hutId).update({ [field]: value });
+    db.collection('eierhuetten').doc(hutId).collection('log').add({
+      admin: currentUser.displayName || currentUser.email,
+      feld: field,
+      wert: value,
+      zeitpunkt: new Date()
+    });
+    // Reaktion auf Statusänderung für Abo-Verwaltung
+  if (field === 'status') {
+    const aboRef = db.collection('abos').doc(hutId);
+
+    if (value === 'offen') {
+      aboRef.update({
+        status: 'paused',
+        updated: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      logHistory(hutId, 'Abo automatisch pausiert wegen Status "offen"');
+
+    } else if (value === 'abgelehnt') {
+      aboRef.update({
+        status: 'cancelled',
+        updated: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      logHistory(hutId, 'Abo automatisch gekündigt wegen Status "abgelehnt"');
+    }
+  }
+  }
+  
+
+  function renderHuts(list) {
+    hutList.innerHTML = '';
+    list.forEach(hut => {
+      const el = document.createElement('div');
+      el.className = 'bg-white p-4 rounded shadow space-y-2';
+
+      el.innerHTML = `
+  <input class="text-xl font-bold w-full mb-2" value="${hut.name || ''}" onchange="updateField('${hut.id}', 'name', this.value)">
+
+  <label>Status:
+    <select onchange="updateField('${hut.id}', 'status', this.value)" class="w-full mb-2">
+      ${['offen','angenommen','abgelehnt'].map(s => `<option ${s===hut.status?'selected':''}>${s}</option>`).join('')}
+    </select>
+  </label>
+
+  <label>Öffnungszeiten:
+    <select onchange="updateField('${hut.id}', 'oeffnungszeiten', this.value)" class="w-full mb-2">
+      ${['08:00–20:00','24/7'].map(o => `<option ${o===hut.oeffnungszeiten?'selected':''}>${o}</option>`).join('')}
+    </select>
+  </label>
+
+  <label>Strom:
+    <select onchange="updateField('${hut.id}', 'strom', this.value)" class="w-full mb-2">
+      ${['Ja','Nein'].map(o => `<option ${o===hut.strom?'selected':''}>${o}</option>`).join('')}
+    </select>
+  </label>
+
+  <label>Sitzplätze:
+    <select onchange="updateField('${hut.id}', 'sitzplaetze', this.value)" class="w-full mb-2">
+      ${['Ja','Nein'].map(o => `<option ${o===hut.sitzplaetze?'selected':''}>${o}</option>`).join('')}
+    </select>
+  </label>
+
+  <label>Fotos (freigegeben):</label>
+  <div class="flex flex-wrap gap-2 mb-2" id="fotos-container-${hut.id}">
+    ${Array.isArray(hut.fotos) ? hut.fotos.map((foto, i) => {
+      const f = typeof foto === 'string' ? { url: foto, status: 'freigegeben' } : foto;
+      if (f.status !== 'freigegeben') return '';
+      return `
+        <div class="relative w-24 h-24 rounded overflow-hidden border border-gray-300">
+          <img src="${f.url}" alt="Foto" class="object-cover w-full h-full" />
+          <button onclick="deleteFoto('${hut.id}', '${f.url}')" title="Foto löschen" 
+                  class="absolute top-0 right-0 bg-red-600 text-white rounded-bl px-1 text-sm font-bold hover:bg-red-700">×</button>
+        </div>
+      `;
+    }).join('') : '<p class="text-gray-500">Keine Fotos</p>'}
+  </div>
+
+  ${Array.isArray(hut.fotos) && hut.fotos.some(f => typeof f !== 'string' && f.status === 'wartet') ? `
+    <label>Fotos (warten auf Freigabe):</label>
+    <div class="flex flex-wrap gap-2 mb-2">
+      ${hut.fotos.map((f, i) => {
+        if (typeof f === 'string' || f.status !== 'wartet') return '';
+        return `
+          <div class="relative w-24 h-24 rounded overflow-hidden border border-yellow-400 border-dashed">
+            <img src="${f.url}" alt="wartet" class="object-cover w-full h-full opacity-50 grayscale" />
+            <div class="absolute inset-0 flex flex-col items-center justify-center text-xs text-white bg-black/50">
+              ⏳ Wartet
+              <button onclick="approveFoto('${hut.id}', ${i})" class="bg-green-600 mt-1 px-1 rounded">✔ Freigeben</button>
+              <button onclick="rejectFoto('${hut.id}', ${i})" class="bg-red-600 mt-1 px-1 rounded">✖ Löschen</button>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  ` : ''}
+
+  <label>Foto hochladen:
+    <input type="file" accept="image/*" onchange="uploadFoto(this, '${hut.id}')">
+    <div class="progress-bar"><div class="progress-fill" id="progress-${hut.id}"></div></div>
+  </label>
+
+  <div class="minimap" id="map-${hut.id}"></div>
+
+  <details>
+    <summary>Bearbeitungs-Log (${hut.logCount})</summary>
+    <ul class="text-xs max-h-48 overflow-auto">
+      ${hut.logs.map(log => `<li><strong>${log.admin}</strong> hat <em>${log.feld}</em> auf <code>${log.wert}</code>${log.kommentar ? ` (Kommentar: ${log.kommentar})` : ''} geändert am ${new Date(log.zeitpunkt.seconds * 1000).toLocaleString()}</li>`).join('')}
+    </ul>
+  </details>
+
+          <!-- Abo -->
+        ${hut.aboStart && hut.paypalSubscriptionId ? `
+          <details class="bg-blue-50 border border-blue-200 rounded p-2 my-2 text-sm">
+            <summary class="cursor-pointer">💳 Abo-Informationen</summary>
+            <div><strong>Start:</strong> ${hut.aboStart?.toDate?.().toLocaleDateString("de-DE") || '-'}</div>
+            <div><strong>PayPal-ID:</strong> ${hut.paypalSubscriptionId}</div>
+            <div><strong>Status:</strong> aktiv</div>
+            ${Array.isArray(hut.aboHistory) && hut.aboHistory.length ? `
+              <div class="mt-2"><strong>Zahlungsverlauf:</strong>
+                <ul class="list-disc ml-5 text-xs">
+                  ${hut.aboHistory.map(e => `
+                    <li>${new Date(e.zeitpunkt?.seconds * 1000).toLocaleDateString("de-DE")} – ${e.betrag} € via ${e.methode}</li>
+                  `).join('')}
+                </ul>
+              </div>
+            ` : '<div class="text-xs text-gray-500 mt-2 italic">Kein Verlauf vorhanden.</div>'}
+          </details>
+        ` : `
+          <div class="my-2 text-sm">
+            <strong>💳 Kein aktives Abo</strong><br>
+            <div id="${paypalContainerId}" class="my-2"></div>
+          </div>
+
+        `}
+
+  <button onclick="deleteHut('${hut.id}')" class="bg-red-600 text-white px-2 py-1 rounded mt-3 w-full">Hütte löschen</button>
+`;
+
+      hutList.appendChild(el);
+
+      if (hut.location?.latitude && hut.location?.longitude) {
+        const map = L.map(`map-${hut.id}`, {
+          zoomControl: false,
+          dragging: true,
+          scrollWheelZoom: true,
+          doubleClickZoom: true,
+          boxZoom: true,
+          keyboard: true
+        }).setView([hut.location.latitude, hut.location.longitude], 13);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        const marker = L.marker([hut.location.latitude, hut.location.longitude], { draggable: true }).addTo(map);
+
+        marker.on('dragend', async (e) => {
+          const newPos = e.target.getLatLng();
+          const kommentar = prompt('Bitte Kommentar zur Standortänderung eingeben:');
+          if (kommentar === null) {
+            marker.setLatLng([hut.location.latitude, hut.location.longitude]);
+            return;
+          }
+          await db.collection('eierhuetten').doc(hut.id).update({
+            location: {
+              latitude: newPos.lat,
+              longitude: newPos.lng
             }
-          })
-          .catch(err => {
-            console.error("❌ Fehler bei Kündigung:", err.message || err);
-            alert("Fehler beim Kündigen des Abos.");
           });
-      } else {
-        deleteHutFromFirestore(id);
+          await db.collection('eierhuetten').doc(hut.id).collection('log').add({
+            admin: currentUser.displayName || currentUser.email,
+            feld: 'location',
+            wert: `Lat: ${newPos.lat.toFixed(6)}, Lng: ${newPos.lng.toFixed(6)}`,
+            kommentar: kommentar,
+            zeitpunkt: new Date()
+          });
+          showNotification(`📍 Standort von "${hut.name}" wurde aktualisiert.`);
+        });
       }
+    });
+  }
+
+  async function uploadFoto(input, hutId) {
+    const file = input.files[0];
+    if (!file) return;
+    const ref = storage.ref(`fotos/${hutId}/${Date.now()}_${file.name}`);
+    const task = ref.put(file);
+    task.on('state_changed', snapshot => {
+      const percent = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+      document.getElementById(`progress-${hutId}`).style.width = `${percent}%`;
+    },
+    err => alert('Upload fehlgeschlagen: ' + err.message),
+    async () => {
+      const url = await task.snapshot.ref.getDownloadURL();
+      await db.collection('eierhuetten').doc(hutId).update({
+        fotos: firebase.firestore.FieldValue.arrayUnion(url)
+      });
+      updateField(hutId, 'fotos', url);
+      showNotification('📸 Foto erfolgreich hochgeladen.');
+      document.getElementById(`progress-${hutId}`).style.width = `0%`;
+      loadHuts();
+    });
+  }
+
+  async function deleteFoto(hutId, url) {
+    // Mathe-Aufgabe generieren
+    const a = Math.floor(Math.random() * 10) + 1;
+    const b = Math.floor(Math.random() * 10) + 1;
+    const answer = a + b;
+
+    const userAnswer = prompt(`Bitte rechne zur Bestätigung: ${a} + ${b} = ?`);
+    if (userAnswer === null) return;
+    if (parseInt(userAnswer) !== answer) {
+      alert('Falsche Antwort. Foto wird nicht gelöscht.');
+      return;
     }
 
-    function deleteHutFromFirestore(id) {
-      db.collection("eierhuetten").doc(id).delete()
-        .then(() => {
-          console.log("🗑️ Hütte gelöscht:", id);
-          allHuts = allHuts.filter(h => h.id !== id);
-          renderHuts(allHuts);
-        })
-        .catch(err => {
-          console.error("❌ Fehler beim Löschen:", err);
-          alert("Fehler beim Löschen.");
-        });
+    if (!confirm('Foto wirklich löschen?')) return;
+
+    try {
+      await db.collection('eierhuetten').doc(hutId).update({
+        fotos: firebase.firestore.FieldValue.arrayRemove(url)
+      });
+      const storageRef = storage.refFromURL(url);
+      await storageRef.delete();
+
+      await db.collection('eierhuetten').doc(hutId).collection('log').add({
+        admin: currentUser.displayName || currentUser.email,
+        feld: 'fotos',
+        wert: `Foto gelöscht: ${url}`,
+        zeitpunkt: new Date()
+      });
+      showNotification('Foto wurde gelöscht.');
+      loadHuts();
+    } catch (e) {
+      alert('Fehler beim Löschen des Fotos: ' + e.message);
+    }
+  }
+async function deleteHut(id) {
+  if (!confirm('Möchtest du diese Hütte wirklich löschen?')) return;
+
+  db.collection('eierhuetten').doc(id).get().then(doc => {
+    if (!doc.exists) {
+      showNotification('❌ Hütte nicht gefunden.', 'bot');
+      return;
     }
 
-    function toggleStatus(id) {
-      const hut = allHuts.find(h => h.id === id);
-      if (!hut) return;
+    const hut = doc.data();
 
-      const neuerStatus = hut.status === "aktiv" ? "offen" : "aktiv";
-      db.collection("eierhuetten").doc(id).update({ status: neuerStatus })
-        .then(() => {
-          hut.status = neuerStatus;
-          renderHuts(allHuts);
-        })
-        .catch(err => {
-          console.error("❌ Fehler beim Ändern des Status:", err);
-          alert("Fehler beim Statuswechsel.");
-        });
+    // Prüfen, ob Abo existiert
+    if (hut.paypalSubscriptionId) {
+      showNotification('🔄 Kündige PayPal-Abo...', 'bot');
+      console.log('➡️ Sende Abo-Kündigung für:', hut.paypalSubscriptionId);
+
+      // Anfrage an HTTP-Cloud-Function (onRequest)
+      fetch('https://us-central1-eierhuettentour.cloudfunctions.net/cancelPaypalSubscription', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({ subscriptionId: hut.paypalSubscriptionId })
+})
+.then(async response => {
+  if (!response.ok) {
+    // Versuche Fehlerinhalt zu lesen
+    let errorText = await response.text();
+    try {
+      const errorJson = JSON.parse(errorText);
+      throw new Error(errorJson.error || 'Unbekannter Fehler bei Kündigung');
+    } catch {
+      throw new Error(errorText);
+    }
+  }
+
+  // JSON auslesen, wenn Status OK
+  const result = await response.json();
+  if (result.success) {
+    showNotification('✅ Abo erfolgreich gekündigt.', 'bot');
+    console.log('✅ Kündigung erfolgreich');
+
+    // Danach Hütte löschen
+    db.collection('eierhuetten').doc(id).delete().then(() => {
+      showNotification('🗑️ Hütte gelöscht.', 'bot');
+      korrigiereFehlendeAbos().then(() => showMyHuts());
+    });
+  } else {
+    console.error('❌ Fehler bei Kündigung:', result.error || result);
+    showNotification('❌ Fehler bei Kündigung: ' + (result.error || 'Unbekannt'), 'bot');
+  }
+})
+.catch(err => {
+  console.error('❌ Fehler bei Kündigung:', err.message || err);
+  showNotification('❌ Fehler bei Kündigung: ' + (err.message || 'Unbekannt'), 'bot');
+});
+
+
+    } else {
+      // Kein Abo → direkt löschen
+      db.collection('eierhuetten').doc(id).delete().then(() => {
+        showNotification('🗑️ Hütte gelöscht.', 'bot');
+        loadHuts();
+      });
+    }
+  }).catch(err => {
+    console.error('❌ Fehler beim Abrufen der Hütte:', err.message || err);
+    showNotification('❌ Fehler beim Löschen der Hütte.', 'bot');
+  });
+}
+
+
+
+  /*async function deleteHut(id, name) {
+    // Mathe-Aufgabe generieren
+    const a = Math.floor(Math.random() * 10) + 1;
+    const b = Math.floor(Math.random() * 10) + 1;
+    const answer = a + b;
+
+    const userAnswer = prompt(`Bitte rechne zur Bestätigung: ${a} + ${b} = ?`);
+    if (userAnswer === null) return;
+    if (parseInt(userAnswer) !== answer) {
+      alert('Falsche Antwort. Die Hütte wird nicht gelöscht.');
+      return;
     }
 
-    function filterHuts() {
-      const val = document.getElementById("searchInput").value.toLowerCase();
-      const filtered = allHuts.filter(hut =>
-        (hut.name || "").toLowerCase().includes(val) ||
-        (hut.ort || "").toLowerCase().includes(val) ||
-        (hut.kategorie || "").toLowerCase().includes(val)
-      );
-      renderHuts(filtered);
-    }
+    if (!confirm(`Soll die Hütte "${name}" wirklich gelöscht werden?`)) return;
 
-    loadHuts();
-  </script>
+    try {
+      await db.collection('eierhuetten').doc(id).delete();
+      showNotification(`Hütte "${name}" wurde gelöscht.`);
+      loadHuts();
+    } catch (e) {
+      alert('Fehler beim Löschen der Hütte: ' + e.message);
+    }
+  }*/
+
+   // Warten bis DOM geladen ist
+  document.addEventListener('DOMContentLoaded', () => {
+    firebase.auth().onAuthStateChanged(user => {
+      const nameEl = document.getElementById('user-name');
+      const topbar = document.getElementById('topbar');
+
+      if (user) {
+        // Eingeloggt → Zeige Topbar
+        nameEl.textContent = user.displayName || user.email || 'Unbekannt';
+        topbar.style.display = 'flex';
+      } else {
+        // Nicht eingeloggt → Weiterleiten
+        //window.location.href = 'login.html'; // oder deine Login-Seite
+      }
+    });
+  });
+  
+function logout() {
+  firebase.auth().signOut().then(() => {
+    location.reload(); // Seite neu laden nach Logout
+  }).catch(error => {
+    alert('Fehler beim Abmelden: ' + error.message);
+  });
+}
+function goToMainPage() {
+  window.location.href = '/'; // Passe ggf. die URL an (z. B. '/index.html')
+}
+function refresh() {
+  header("refresh: 5;");
+}
+</script>
 </body>
 </html>
