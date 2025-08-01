@@ -197,7 +197,7 @@ async function rejectFoto(hutId, index) {
   }
   
 
-  function renderHuts(list) {
+  /*function renderHuts(list) {
     hutList.innerHTML = '';
     list.forEach(hut => {
       const el = document.createElement('div');
@@ -346,6 +346,186 @@ async function rejectFoto(hutId, index) {
         });
       }
     });
+  }*/
+  function renderHuts(list) {
+  hutList.innerHTML = '';
+  list.forEach(hut => {
+    try {
+      const el = document.createElement('div');
+      el.className = 'bg-white p-4 rounded shadow space-y-2';
+
+      const logs = Array.isArray(hut.logs) ? hut.logs : [];
+      const aboHistory = Array.isArray(hut.aboHistory) ? hut.aboHistory : [];
+      const fotos = Array.isArray(hut.fotos) ? hut.fotos : [];
+
+      const paypalContainerId = `paypal-${hut.id}`;
+
+      el.innerHTML = `
+        <input class="text-xl font-bold w-full mb-2" value="${hut.name || ''}" onchange="updateField('${hut.id}', 'name', this.value)">
+
+        <!-- Status -->
+        <label>Status:
+          <select onchange="updateField('${hut.id}', 'status', this.value)" class="w-full mb-2">
+            ${['offen','angenommen','abgelehnt'].map(s => `<option ${s===hut.status?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </label>
+
+        <!-- Öffnungszeiten -->
+        <label>Öffnungszeiten:
+          <select onchange="updateField('${hut.id}', 'oeffnungszeiten', this.value)" class="w-full mb-2">
+            ${['08:00–20:00','24/7'].map(o => `<option ${o===hut.oeffnungszeiten?'selected':''}>${o}</option>`).join('')}
+          </select>
+        </label>
+
+        <!-- Strom & Sitzplätze -->
+        <label>Strom:
+          <select onchange="updateField('${hut.id}', 'strom', this.value)" class="w-full mb-2">
+            ${['Ja','Nein'].map(o => `<option ${o===hut.strom?'selected':''}>${o}</option>`).join('')}
+          </select>
+        </label>
+
+        <label>Sitzplätze:
+          <select onchange="updateField('${hut.id}', 'sitzplaetze', this.value)" class="w-full mb-2">
+            ${['Ja','Nein'].map(o => `<option ${o===hut.sitzplaetze?'selected':''}>${o}</option>`).join('')}
+          </select>
+        </label>
+
+        <!-- Fotos -->
+        <label>Fotos (freigegeben):</label>
+        <div class="flex flex-wrap gap-2 mb-2" id="fotos-container-${hut.id}">
+          ${
+            fotos.some(f => (typeof f !== 'string' && f.status === 'freigegeben') || typeof f === 'string')
+              ? fotos.map((foto, i) => {
+                  const f = typeof foto === 'string' ? { url: foto, status: 'freigegeben' } : foto;
+                  if (f.status !== 'freigegeben') return '';
+                  return `
+                    <div class="relative w-24 h-24 rounded overflow-hidden border border-gray-300">
+                      <img src="${f.url}" alt="Foto" class="object-cover w-full h-full" />
+                      <button onclick="deleteFoto('${hut.id}', '${f.url}')" title="Foto löschen" 
+                              class="absolute top-0 right-0 bg-red-600 text-white rounded-bl px-1 text-sm font-bold hover:bg-red-700">×</button>
+                    </div>`;
+                }).join('')
+              : '<p class="text-gray-500">Keine Fotos</p>'
+          }
+        </div>
+
+        <!-- Fotos in Warteschlange -->
+        ${
+          fotos.some(f => typeof f === 'object' && f.status === 'wartet') ? `
+            <label>Fotos (warten auf Freigabe):</label>
+            <div class="flex flex-wrap gap-2 mb-2">
+              ${fotos.map((f, i) => {
+                if (typeof f === 'string' || f.status !== 'wartet') return '';
+                return `
+                  <div class="relative w-24 h-24 rounded overflow-hidden border border-yellow-400 border-dashed">
+                    <img src="${f.url}" alt="wartet" class="object-cover w-full h-full opacity-50 grayscale" />
+                    <div class="absolute inset-0 flex flex-col items-center justify-center text-xs text-white bg-black/50">
+                      ⏳ Wartet
+                      <button onclick="approveFoto('${hut.id}', ${i})" class="bg-green-600 mt-1 px-1 rounded">✔ Freigeben</button>
+                      <button onclick="rejectFoto('${hut.id}', ${i})" class="bg-red-600 mt-1 px-1 rounded">✖ Löschen</button>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          ` : ''
+        }
+
+        <!-- Upload -->
+        <label>Foto hochladen:
+          <input type="file" accept="image/*" onchange="uploadFoto(this, '${hut.id}')">
+          <div class="progress-bar"><div class="progress-fill" id="progress-${hut.id}"></div></div>
+        </label>
+
+        <!-- Minimap -->
+        <div class="minimap" id="map-${hut.id}"></div>
+
+        <!-- Logs -->
+        <details>
+          <summary>Bearbeitungs-Log (${logs.length})</summary>
+          <ul class="text-xs max-h-48 overflow-auto">
+            ${logs.map(log => `
+              <li><strong>${log.admin}</strong> hat <em>${log.feld}</em> auf <code>${log.wert}</code>${log.kommentar ? ` (Kommentar: ${log.kommentar})` : ''} geändert am ${new Date(log.zeitpunkt?.seconds * 1000 || Date.now()).toLocaleString()}</li>
+            `).join('')}
+          </ul>
+        </details>
+
+        <!-- Abo-Info -->
+        ${hut.aboStart && hut.paypalSubscriptionId ? `
+          <details class="bg-blue-50 border border-blue-200 rounded p-2 my-2 text-sm">
+            <summary class="cursor-pointer">💳 Abo-Informationen</summary>
+            <div><strong>Start:</strong> ${hut.aboStart?.toDate?.().toLocaleDateString("de-DE") || '-'}</div>
+            <div><strong>PayPal-ID:</strong> ${hut.paypalSubscriptionId}</div>
+            <div><strong>Status:</strong> aktiv</div>
+            ${
+              aboHistory.length ? `
+                <div class="mt-2"><strong>Zahlungsverlauf:</strong>
+                  <ul class="list-disc ml-5 text-xs">
+                    ${aboHistory.map(e => `
+                      <li>${new Date(e.zeitpunkt?.seconds * 1000 || Date.now()).toLocaleDateString("de-DE")} – ${e.betrag} € via ${e.methode}</li>
+                    `).join('')}
+                  </ul>
+                </div>
+              ` : '<div class="text-xs text-gray-500 mt-2 italic">Kein Verlauf vorhanden.</div>'
+            }
+          </details>
+        ` : `
+          <div class="my-2 text-sm text-gray-600 italic">
+            💳 Kein aktives Abo vorhanden.
+          </div>
+        `}
+
+        <button onclick="deleteHut('${hut.id}')" class="bg-red-600 text-white px-2 py-1 rounded mt-3 w-full">Hütte löschen</button>
+      `;
+
+      hutList.appendChild(el);
+
+      // Minimap
+      if (hut.location?.latitude && hut.location?.longitude) {
+        const map = L.map(`map-${hut.id}`, {
+          zoomControl: false,
+          dragging: true,
+          scrollWheelZoom: true,
+          doubleClickZoom: true,
+          boxZoom: true,
+          keyboard: true
+        }).setView([hut.location.latitude, hut.location.longitude], 13);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        const marker = L.marker([hut.location.latitude, hut.location.longitude], { draggable: true }).addTo(map);
+
+        marker.on('dragend', async (e) => {
+          const newPos = e.target.getLatLng();
+          const kommentar = prompt('Bitte Kommentar zur Standortänderung eingeben:');
+          if (kommentar === null) {
+            marker.setLatLng([hut.location.latitude, hut.location.longitude]);
+            return;
+          }
+          await db.collection('eierhuetten').doc(hut.id).update({
+            location: {
+              latitude: newPos.lat,
+              longitude: newPos.lng
+            }
+          });
+          await db.collection('eierhuetten').doc(hut.id).collection('log').add({
+            admin: currentUser.displayName || currentUser.email,
+            feld: 'location',
+            wert: `Lat: ${newPos.lat.toFixed(6)}, Lng: ${newPos.lng.toFixed(6)}`,
+            kommentar,
+            zeitpunkt: new Date()
+          });
+          showNotification(`📍 Standort von "${hut.name}" wurde aktualisiert.`);
+        });
+      }
+    } catch (err) {
+      console.warn(`❌ Hütte konnte nicht gerendert werden: ${hut?.id || 'unbekannt'}`, err);
+      const fallback = document.createElement('div');
+      fallback.className = 'bg-red-100 text-red-800 p-2 rounded mb-2';
+      fallback.textContent = `⚠️ Hütte konnte nicht geladen werden (ID: ${hut?.id || 'unbekannt'})`;
+      hutList.appendChild(fallback);
+    }
+  });
   }
 
   async function uploadFoto(input, hutId) {
