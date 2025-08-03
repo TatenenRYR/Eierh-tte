@@ -1187,26 +1187,44 @@ function populateVoiceDropdown() {
   const select = document.getElementById("voiceLang");
   if (!select) return;
 
-  select.innerHTML = ""; // Leeren
+  // Diese 7 Sprachen erlauben
+  const allowedLangs = {
+    "de-DE": "🇩🇪 Deutsch",
+    "en-GB": "🇬🇧 Englisch",
+    "fr-FR": "🇫🇷 Französisch",
+    "it-IT": "🇮🇹 Italienisch",
+    "es-ES": "🇪🇸 Spanisch",
+    "tr-TR": "🇹🇷 Türkisch",
+    "pl-PL": "🇵🇱 Polnisch"
+  };
 
-  const voices = speechSynthesis.getVoices();
+  // Stimmen holen
+  const voices = window.speechSynthesis.getVoices();
+  select.innerHTML = ""; // vorherige leeren
 
-  voices.forEach((voice, index) => {
-    const option = document.createElement("option");
-    option.value = index;
-    option.textContent = `${voice.name} [${voice.lang}]${voice.default ? " (Standard)" : ""}`;
-    if (voice.lang === localStorage.lang) option.selected = true;
-    select.appendChild(option);
+  // Nur erlaubte Sprachen einfügen
+  voices.forEach(v => {
+    if (allowedLangs[v.lang] && ![...select.options].some(o => o.value === v.lang)) {
+      const option = document.createElement("option");
+      option.value = v.lang;
+      option.textContent = allowedLangs[v.lang];
+      select.appendChild(option);
+    }
   });
 
-  // Auswahl speichern
-  select.addEventListener("change", () => {
-    const selectedVoice = voices[select.value];
-    localStorage.lang = selectedVoice.lang;
-    speak("Sprache gespeichert.");
-  });
+  // Sprache aus localStorage laden oder auf "de-DE" setzen
+  select.value = localStorage.getItem("lang") || "de-DE";
+
+  select.onchange = () => {
+    localStorage.setItem("lang", select.value);
+    showToast("🔊 Sprache: " + allowedLangs[select.value]);
+  };
 }
 
+// Stimmen werden manchmal asynchron geladen
+if (typeof speechSynthesis !== "undefined") {
+  speechSynthesis.onvoiceschanged = populateVoiceDropdown;
+}
     function initVoiceSelector() {
   const select = document.getElementById("voiceLang");
   if (!select) return;
@@ -1251,16 +1269,15 @@ function populateVoiceDropdown() {
   if (!window.speechSynthesis) return;
 
   const utterance = new SpeechSynthesisUtterance(text);
+  const lang = localStorage.getItem("lang") || "de-DE";
+  utterance.lang = lang;
+
   const voices = speechSynthesis.getVoices();
-  const select = document.getElementById("voiceLang");
-  const selectedVoice = voices[select?.value] || voices[0];
+  const voice = voices.find(v => v.lang === lang);
+  if (voice) utterance.voice = voice;
 
-  if (selectedVoice) {
-    utterance.voice = selectedVoice;
-    utterance.lang = selectedVoice.lang;
-  }
-
-  speechSynthesis.speak(utterance);
+  window.speechSynthesis.cancel(); // alte Spracheingabe abbrechen
+  window.speechSynthesis.speak(utterance);
     }
     // Startet die Route
    let currentRoutePath = [];     // Aktuelle Routing-Punkte (alle)
