@@ -823,29 +823,20 @@ const heading = 360 - event.alpha;
     /////////////////////////////////////////
     // 🧩 Hilfsfunktionen
     /////////////////////////////////////////
-async function translateTextLingva(text, from = "de", to = "tr") {
-  const url = `https://lingva.ml/api/v1/${from}/${to}/${encodeURIComponent(text)}`;
-  try {
-    const res = await fetch(url);
-    const data = await res.json();
-    return data.translation || text;
-  } catch (e) {
-    console.warn("Lingva-Übersetzung fehlgeschlagen:", e);
-    return text;
-  }
-}
+
     // Zeigt eine Toast-Nachricht am unteren Bildschirmrand
-    async function showToast(msg) {
-  const langFull = localStorage.getItem("lang") || "de-DE";
-  const langShort = langFull.slice(0, 2);
+    async function showToast(text, timeout = 3000) {
+  const translated = await translateIfNeeded(text);
 
-⁰
+  const toast = document.createElement("div");
+  toast.textContent = translated;
+  toast.className = "fixed bottom-4 left-1/2 -translate-x-1/2 bg-black text-white px-4 py-2 rounded shadow z-50 text-sm";
+  document.body.appendChild(toast);
 
-  const t = document.getElementById("toast");
-  t.innerText = translated;
-  t.style.display = "block";
-  setTimeout(() => t.style.display = "none", 3000);
-    }
+  setTimeout(() => {
+    toast.remove();
+  }, timeout);
+}
 
     // Debug-Ausgabe im unteren linken Fenster
     function logDebug(msg) {
@@ -1188,7 +1179,30 @@ function leaveRoom() {
     /////////////////////////////////////////
     // 🧭 Routingfunktionen
     /////////////////////////////////////////
+async function translateIfNeeded(text) {
+  const langFull = localStorage.getItem("lang") || "de-DE";
+  const langShort = langFull.slice(0, 2);
+  if (langShort === "de") return text;
 
+  try {
+    const res = await fetch("https://libretranslate.de/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        q: text,
+        source: "de",
+        target: langShort,
+        format: "text"
+      })
+    });
+
+    const data = await res.json();
+    return data.translatedText || text;
+  } catch (e) {
+    console.warn("Übersetzung fehlgeschlagen:", e);
+    return text;
+  }
+    }
     // Follow-Modus umschalten
     function toggleFollow() {
       follow = !follow;
@@ -1288,18 +1302,8 @@ function initVoiceSelector() {
   if (!window.speechSynthesis) return;
 
   const langFull = localStorage.getItem("lang") || "de-DE";
-  const langShort = langFull.slice(0, 2);
+  const translated = await translateIfNeeded(text);
 
-  let translated = text;
-
-  // Nur übersetzen, wenn nicht Deutsch
-  if (langShort !== "de") {
-    try {
-      translated = await translateTextLingva(text, "de", langShort);
-    } catch (e) {
-      console.warn("Übersetzung fehlgeschlagen:", e);
-    }
-  }
   const utterance = new SpeechSynthesisUtterance(translated);
   utterance.lang = langFull;
 
@@ -2607,7 +2611,7 @@ setTimeout(() => {
     document.getElementById("loading-screen")?.classList.add("hidden");
   }
 }, 5000);
-window.addEventListener("load", init);
+
   </script>
 <div id="iosCompassPrompt" class="hidden fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-white text-center shadow-lg px-4 py-3 rounded-lg border border-gray-200 z-50">
   <p class="text-sm text-gray-700 mb-2">📍 Tippe hier, um die Kompass-Funktion zu aktivieren.</p>
