@@ -545,6 +545,7 @@ footer a:hover {
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+  <script src="https://unpkg.com/leaflet-geometryutil"></script>
   <script src="i18n.js"></script>
 
   <!-- Beginn des JavaScript-Codes -->
@@ -959,7 +960,7 @@ function startCompassListener() {
     mapPane.style.transform = `rotate(${heading}deg)`;
   }
 }
-    function startTrackingUser(map) {
+  /*  function startTrackingUser(map) {
   if (!navigator.geolocation) return alert("GPS nicht verfügbar");
 
   navigator.geolocation.watchPosition(pos => {
@@ -997,7 +998,75 @@ function startCompassListener() {
   }, {
     enableHighAccuracy: true
   });
-}
+}*/
+    function startTrackingUser(map) {
+  if (!navigator.geolocation) return alert("GPS nicht verfügbar");
+
+  navigator.geolocation.watchPosition(pos => {
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+
+    const gpsLatLng = L.latLng(lat, lng);
+
+    // ➕ Snapping nur wenn Route existiert
+    const finalLatLng = (Array.isArray(currentRoutePath) && currentRoutePath.length > 1)
+      ? snapToRoute(gpsLatLng, currentRoutePath)
+      : gpsLatLng;
+
+    const arrowIcon = L.divIcon({
+      className: '',
+      html: `<div style="
+        width: 30px; 
+        height: 30px; 
+        transform: rotate(${compassAngle}deg); 
+        transition: transform 0.2s linear;
+      ">
+        <svg viewBox="0 0 24 24" fill="#1e40af" width="30" height="30" style="transform: rotate(-90deg);">
+          <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
+        </svg>
+      </div>`,
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
+    });
+
+    if (userMarker) {
+      userMarker.setLatLng(finalLatLng);
+      userMarker.setIcon(arrowIcon);
+    } else {
+      userMarker = L.marker(finalLatLng, {
+        icon: arrowIcon
+      }).addTo(map);
+    }
+
+    map.setView(finalLatLng, 15); // oder entferne das, wenn du kein Auto-Zoom willst
+
+  }, err => {
+    console.error("GPS-Fehler", err);
+  }, {
+    enableHighAccuracy: true
+  });
+    }
+    function snapToRoute(gpsLatLng, routePoints) {
+  if (!Array.isArray(routePoints) || routePoints.length < 2) return gpsLatLng;
+
+  let closestPoint = null;
+  let minDistance = Infinity;
+
+  for (let i = 0; i < routePoints.length - 1; i++) {
+    const p1 = L.latLng(routePoints[i]);
+    const p2 = L.latLng(routePoints[i + 1]);
+    const snapped = L.GeometryUtil.closest(map, [p1, p2], gpsLatLng);
+    const dist = map.distance(gpsLatLng, snapped);
+
+    if (dist < minDistance) {
+      minDistance = dist;
+      closestPoint = snapped;
+    }
+  }
+
+  // Optional: Nur „snappen“, wenn innerhalb von 50 m
+  return minDistance < 50 ? closestPoint : gpsLatLng;
+    }
     /////////////////////////////////////////
     // 👥 Gruppenfunktionen
     /////////////////////////////////////////
