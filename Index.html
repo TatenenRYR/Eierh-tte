@@ -825,12 +825,18 @@ const heading = 360 - event.alpha;
     /////////////////////////////////////////
 
     // Zeigt eine Toast-Nachricht am unteren Bildschirmrand
-    function showToast(msg) {
-      const t = document.getElementById("toast");
-      t.innerText = msg;
-      t.style.display = "block";
-      setTimeout(() => t.style.display = "none", 3000);
-    }
+    async function showToast(text, timeout = 3000) {
+  const translated = await translateIfNeeded(text);
+
+  const toast = document.createElement("div");
+  toast.textContent = translated;
+  toast.className = "fixed bottom-4 left-1/2 -translate-x-1/2 bg-black text-white px-4 py-2 rounded shadow z-50 text-sm";
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    toast.remove();
+  }, timeout);
+}
 
     // Debug-Ausgabe im unteren linken Fenster
     function logDebug(msg) {
@@ -1173,7 +1179,30 @@ function leaveRoom() {
     /////////////////////////////////////////
     // 🧭 Routingfunktionen
     /////////////////////////////////////////
+async function translateIfNeeded(text) {
+  const langFull = localStorage.getItem("lang") || "de-DE";
+  const langShort = langFull.slice(0, 2);
+  if (langShort === "de") return text;
 
+  try {
+    const res = await fetch("https://libretranslate.de/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        q: text,
+        source: "de",
+        target: langShort,
+        format: "text"
+      })
+    });
+
+    const data = await res.json();
+    return data.translatedText || text;
+  } catch (e) {
+    console.warn("Übersetzung fehlgeschlagen:", e);
+    return text;
+  }
+    }
     // Follow-Modus umschalten
     function toggleFollow() {
       follow = !follow;
@@ -1269,19 +1298,21 @@ function initVoiceSelector() {
 
   speechSynthesis.speak(utterance);
 }*/
-    function speak(text) {
+    async function speak(text) {
   if (!window.speechSynthesis) return;
 
-  const utterance = new SpeechSynthesisUtterance(text);
-  const lang = localStorage.getItem("lang") || "de-DE";
-  utterance.lang = lang;
+  const langFull = localStorage.getItem("lang") || "de-DE";
+  const translated = await translateIfNeeded(text);
+
+  const utterance = new SpeechSynthesisUtterance(translated);
+  utterance.lang = langFull;
 
   const voices = speechSynthesis.getVoices();
-  const voice = voices.find(v => v.lang === lang);
+  const voice = voices.find(v => v.lang === langFull);
   if (voice) utterance.voice = voice;
 
-  window.speechSynthesis.cancel(); // alte Spracheingabe abbrechen
-  window.speechSynthesis.speak(utterance);
+  speechSynthesis.cancel();
+  speechSynthesis.speak(utterance);
     }
     // Startet die Route
    let currentRoutePath = [];     // Aktuelle Routing-Punkte (alle)
