@@ -450,10 +450,32 @@ footer a:hover {
 .hidden {
   display: none;
 }
-
+.ui-disabled * {
+  pointer-events: none !important;
+  opacity: 0.4;
+      }
   </style>
 </head>
 <body>
+<!-- Overlay mit Text -->
+<div id="gpsOverlay" style="
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(255,255,255,0.8);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #2e7d32;
+  text-align: center;
+  pointer-events: all;
+">
+  📡 GPS-Signal wird gesucht...
+</div>
+  
   <!-- 🔝 Navigationsbanner -->
 <div id="navBanner">
   <span id="navInstruction">🚴 Navigation aktiv</span>
@@ -2525,11 +2547,29 @@ m.on("popupclose", () => {
 
 let watchId;
 let gpsRetryPending = false;
+let usingFallback = false;
+
+function lockUIUntilGPS() {
+  document.getElementById("gpsOverlay").style.display = "flex";
+  document.getElementById("dashboard").classList.add("ui-disabled");
+  document.getElementById("bottomButtons").classList.add("ui-disabled");
+}
+
+function unlockUI() {
+  document.getElementById("gpsOverlay").style.display = "none";
+  document.getElementById("dashboard").classList.remove("ui-disabled");
+  document.getElementById("bottomButtons").classList.remove("ui-disabled");
+}
 
 async function startLocationTracking() {
+  lockUIUntilGPS();
   if (!navigator.geolocation) {
-    showToast("📡 GPS nicht unterstützt, versuche IP-Standort...");
-    return await fallbackIPLocation();
+    showToast("📡 GPS nicht unterstützt, versuche IP...");
+    const ipCoords = await fallbackIPLocation();
+    updatePosition(ipCoords);
+    gpsRetryPending = true;
+    scheduleGPSRetry();
+    return ipCoords;
   }
 
   return new Promise(resolve => {
@@ -2544,41 +2584,42 @@ async function startLocationTracking() {
             resolved = true;
             resolve(pos.coords);
           }
+          usingFallback = false;
           gpsRetryPending = false;
           updatePosition(pos.coords);
+          unlockUI();
         },
         async err => {
           console.warn("🚫 GPS fehlgeschlagen:", err.message);
-
           if (!resolved) {
             resolved = true;
             const ipCoords = await fallbackIPLocation();
-            resolve(ipCoords);
             updatePosition(ipCoords);
-            gpsRetryPending = true; // aktivieren des GPS-Retry-Modus
+            gpsRetryPending = true;
+            usingFallback = true;
+            resolve(ipCoords);
+            scheduleGPSRetry();
           }
         },
         {
           enableHighAccuracy: true,
           timeout: 8000,
-          maximumAge: 1000
+          maximumAge: 0
         }
       );
     }
 
     tryGPS();
 
-    // Nach 10 Sekunden: wenn noch nichts passiert ist, IP-Fallback
     setTimeout(async () => {
       if (!resolved) {
         console.warn("⏱️ GPS Timeout – nutze IP");
         resolved = true;
         const ipCoords = await fallbackIPLocation();
-        resolve(ipCoords);
         updatePosition(ipCoords);
         gpsRetryPending = true;
-
-        // Erneuter GPS-Versuch in 10 Sekunden
+        usingFallback = true;
+        resolve(ipCoords);
         scheduleGPSRetry();
       }
     }, 10000);
@@ -2587,14 +2628,12 @@ async function startLocationTracking() {
 
 function scheduleGPSRetry() {
   if (!gpsRetryPending) return;
-
   setTimeout(() => {
     if (gpsRetryPending) {
-      console.log("🔄 Neuer GPS-Versuch (nach IP)");
-      gpsRetryPending = false;
-      startLocationTracking(); // neu starten
+      console.log("🔄 Neuer GPS-Versuch");
+      startLocationTracking(); // automatischer Restart
     }
-  }, 10000); // versuche nach 10 Sekunden erneut
+  }, 10000); // alle 10s erneut versuchen
 }
 
 async function fallbackIPLocation() {
@@ -2608,9 +2647,11 @@ async function fallbackIPLocation() {
     };
   } catch (e) {
     showToast("🚫 Standort nicht verfügbar");
-    return { latitude: 47.3, longitude: 11.4 }; // Notfall-Koordinaten
+    return { latitude: 47.3, longitude: 11.4 };
   }
 }
+
+
 
 function updatePosition(coords) {
   const ll = [coords.latitude, coords.longitude];
