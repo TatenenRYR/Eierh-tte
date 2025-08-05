@@ -2523,6 +2523,9 @@ m.on("popupclose", () => {
     startTrackingUser(map);
     
 
+let watchId;
+let gpsRetryPending = false;
+
 async function startLocationTracking() {
   if (!navigator.geolocation) {
     showToast("📡 GPS nicht unterstützt, versuche IP-Standort...");
@@ -2532,27 +2535,40 @@ async function startLocationTracking() {
   return new Promise(resolve => {
     let resolved = false;
 
-    const watchId = navigator.geolocation.watchPosition(
-      pos => {
-        if (!resolved) {
-          resolved = true;
-          resolve(pos.coords);
-        }
-        updatePosition(pos.coords);
-      },
-      async err => {
-        console.warn("🚫 GPS fehlgeschlagen:", err.message);
-        if (!resolved) {
-          resolved = true;
-          const ipCoords = await fallbackIPLocation();
-          resolve(ipCoords);
-          updatePosition(ipCoords);
-        }
-      },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 3000 }
-    );
+    function tryGPS() {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
 
-    // Optional: nach 10s Fallback erzwingen
+      watchId = navigator.geolocation.watchPosition(
+        pos => {
+          if (!resolved) {
+            resolved = true;
+            resolve(pos.coords);
+          }
+          gpsRetryPending = false;
+          updatePosition(pos.coords);
+        },
+        async err => {
+          console.warn("🚫 GPS fehlgeschlagen:", err.message);
+
+          if (!resolved) {
+            resolved = true;
+            const ipCoords = await fallbackIPLocation();
+            resolve(ipCoords);
+            updatePosition(ipCoords);
+            gpsRetryPending = true; // aktivieren des GPS-Retry-Modus
+          }
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 8000,
+          maximumAge: 1000
+        }
+      );
+    }
+
+    tryGPS();
+
+    // Nach 10 Sekunden: wenn noch nichts passiert ist, IP-Fallback
     setTimeout(async () => {
       if (!resolved) {
         console.warn("⏱️ GPS Timeout – nutze IP");
@@ -2560,9 +2576,25 @@ async function startLocationTracking() {
         const ipCoords = await fallbackIPLocation();
         resolve(ipCoords);
         updatePosition(ipCoords);
+        gpsRetryPending = true;
+
+        // Erneuter GPS-Versuch in 10 Sekunden
+        scheduleGPSRetry();
       }
     }, 10000);
   });
+}
+
+function scheduleGPSRetry() {
+  if (!gpsRetryPending) return;
+
+  setTimeout(() => {
+    if (gpsRetryPending) {
+      console.log("🔄 Neuer GPS-Versuch (nach IP)");
+      gpsRetryPending = false;
+      startLocationTracking(); // neu starten
+    }
+  }, 10000); // versuche nach 10 Sekunden erneut
 }
 
 async function fallbackIPLocation() {
