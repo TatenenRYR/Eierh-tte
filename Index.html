@@ -1253,7 +1253,7 @@ function leaveRoom() {
     /////////////////////////////////////////
     // 🧭 Routingfunktionen
     /////////////////////////////////////////
-async function translateIfNeeded(text) {
+/*async function translateIfNeeded(text) {
   const langFull = localStorage.getItem("lang") || "de-DE";
   const langShort = langFull.slice(0, 2);
   if (langShort === "de") return text;
@@ -1362,7 +1362,97 @@ function initVoiceSelector() {
 
   speechSynthesis.cancel();
   speechSynthesis.speak(utterance);
+    }*/
+    async function translateIfNeeded(text) {
+  const langFull = localStorage.getItem("lang") || "de-DE";
+  const langShort = langFull.slice(0, 2);
+  if (langShort === "de") return text;
+
+  try {
+    const res = await fetch("https://translate.mentality.rip/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        q: text,
+        source: "de",
+        target: langShort,
+        format: "text"
+      })
+    });
+
+    const data = await res.json();
+    return data.translatedText || text;
+  } catch (e) {
+    console.warn("Übersetzung fehlgeschlagen:", e);
+    return text;
+  }
+}
+
+// Sprachwahl
+const allowedLangs = {
+  "de": "🇩🇪 Deutsch",
+  "en": "🇬🇧 Englisch",
+  "fr": "🇫🇷 Französisch",
+  "it": "🇮🇹 Italienisch",
+  "es": "🇪🇸 Spanisch",
+  "tr": "🇹🇷 Türkisch",
+  "pl": "🇵🇱 Polnisch"
+};
+
+function populateVoiceDropdown() {
+  const select = document.getElementById("voiceLang");
+  if (!select) return;
+
+  const voices = speechSynthesis.getVoices();
+  if (!voices.length) {
+    setTimeout(populateVoiceDropdown, 200);
+    return;
+  }
+
+  select.innerHTML = "";
+
+  voices.forEach(v => {
+    const shortLang = v.lang.slice(0, 2);
+    if (allowedLangs[shortLang] && ![...select.options].some(o => o.value === v.lang)) {
+      const option = document.createElement("option");
+      option.value = v.lang;
+      option.textContent = allowedLangs[shortLang];
+      select.appendChild(option);
     }
+  });
+
+  const saved = localStorage.getItem("lang");
+  const match = [...select.options].find(o => o.value === saved);
+  select.value = match ? saved : select.options[0]?.value || "";
+  localStorage.setItem("lang", select.value);
+
+  select.onchange = () => {
+    localStorage.setItem("lang", select.value);
+    showToast("🔊 Sprache: " + allowedLangs[select.value.slice(0, 2)]);
+  };
+}
+
+// Wird automatisch ausgeführt, wenn Stimmen bereit sind
+if ('speechSynthesis' in window) {
+  window.speechSynthesis.onvoiceschanged = populateVoiceDropdown;
+}
+
+async function speak(text) {
+  if (!window.speechSynthesis) return;
+
+  const langFull = localStorage.getItem("lang") || "de-DE";
+  const translated = await translateIfNeeded(text);
+
+  const utterance = new SpeechSynthesisUtterance(translated);
+  utterance.lang = langFull;
+
+  const voices = speechSynthesis.getVoices();
+  const voice = voices.find(v => v.lang === langFull);
+  if (voice) utterance.voice = voice;
+
+  speechSynthesis.cancel();
+  speechSynthesis.speak(utterance);
+}
     // Startet die Route
    let currentRoutePath = [];     // Aktuelle Routing-Punkte (alle)
 let currentHutIndex = 0;       // Aktuelle Zielhütte in selected[]
