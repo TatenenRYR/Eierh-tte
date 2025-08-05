@@ -450,54 +450,10 @@ footer a:hover {
 .hidden {
   display: none;
 }
-.ui-disabled * {
-  pointer-events: none !important;
-  opacity: 0.4;
-      }
 
-    .gps-icon {
-  font-size: 3rem;
-  animation: pulseIcon 2s infinite ease-in-out;
-}
-
-.gps-text {
-  margin-top: 1rem;
-  animation: pulseText 2s infinite;
-}
-
-@keyframes pulseText {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%      { opacity: 0.6; transform: scale(1.05); }
-}
-
-@keyframes pulseIcon {
-  0%   { transform: rotate(0deg) scale(1); }
-  50%  { transform: rotate(15deg) scale(1.1); }
-  100% { transform: rotate(0deg) scale(1); }
-}
   </style>
 </head>
 <body>
-<!-- Overlay mit Text -->
-<div id="gpsOverlay" style="
-  position: fixed;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  background: rgba(255, 255, 255, 0.9);
-  z-index: 99999; /* HÖHER ALS "Lade Karte" */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  font-size: 1.5rem;
-  font-weight: bold;
-  color: #2e7d32;
-  text-align: center;
-  pointer-events: all;
-">
-  <div class="gps-icon">📡</div>
-  <div class="gps-text">GPS-Signal wird gesucht...</div>
-</div>
   <!-- 🔝 Navigationsbanner -->
 <div id="navBanner">
   <span id="navInstruction">🚴 Navigation aktiv</span>
@@ -2569,33 +2525,11 @@ m.on("popupclose", () => {
 
 let watchId;
 let gpsRetryPending = false;
-let usingFallback = false;
-
-let gpsOverlayShown = false;
-
-function lockUIUntilGPS() {
-  if (gpsOverlayShown) return;
-  gpsOverlayShown = true;
-  document.getElementById("gpsOverlay").style.display = "flex";
-  document.getElementById("dashboard").classList.add("ui-disabled");
-  document.getElementById("bottomButtons").classList.add("ui-disabled");
-      }
-
-function unlockUI() {
-  document.getElementById("gpsOverlay").style.display = "none";
-  document.getElementById("dashboard").classList.remove("ui-disabled");
-  document.getElementById("bottomButtons").classList.remove("ui-disabled");
-}
 
 async function startLocationTracking() {
-  lockUIUntilGPS();
   if (!navigator.geolocation) {
-    showToast("📡 GPS nicht unterstützt, versuche IP...");
-    const ipCoords = await fallbackIPLocation();
-    updatePosition(ipCoords);
-    gpsRetryPending = true;
-    scheduleGPSRetry();
-    return ipCoords;
+    showToast("📡 GPS nicht unterstützt, versuche IP-Standort...");
+    return await fallbackIPLocation();
   }
 
   return new Promise(resolve => {
@@ -2610,42 +2544,41 @@ async function startLocationTracking() {
             resolved = true;
             resolve(pos.coords);
           }
-          usingFallback = false;
           gpsRetryPending = false;
           updatePosition(pos.coords);
-          unlockUI();
         },
         async err => {
           console.warn("🚫 GPS fehlgeschlagen:", err.message);
+
           if (!resolved) {
             resolved = true;
             const ipCoords = await fallbackIPLocation();
-            updatePosition(ipCoords);
-            gpsRetryPending = true;
-            usingFallback = true;
             resolve(ipCoords);
-            scheduleGPSRetry();
+            updatePosition(ipCoords);
+            gpsRetryPending = true; // aktivieren des GPS-Retry-Modus
           }
         },
         {
           enableHighAccuracy: true,
           timeout: 8000,
-          maximumAge: 0
+          maximumAge: 1000
         }
       );
     }
 
     tryGPS();
 
+    // Nach 10 Sekunden: wenn noch nichts passiert ist, IP-Fallback
     setTimeout(async () => {
       if (!resolved) {
         console.warn("⏱️ GPS Timeout – nutze IP");
         resolved = true;
         const ipCoords = await fallbackIPLocation();
+        resolve(ipCoords);
         updatePosition(ipCoords);
         gpsRetryPending = true;
-        usingFallback = true;
-        resolve(ipCoords);
+
+        // Erneuter GPS-Versuch in 10 Sekunden
         scheduleGPSRetry();
       }
     }, 10000);
@@ -2654,12 +2587,14 @@ async function startLocationTracking() {
 
 function scheduleGPSRetry() {
   if (!gpsRetryPending) return;
+
   setTimeout(() => {
     if (gpsRetryPending) {
-      console.log("🔄 Neuer GPS-Versuch");
-      startLocationTracking(); // automatischer Restart
+      console.log("🔄 Neuer GPS-Versuch (nach IP)");
+      gpsRetryPending = false;
+      startLocationTracking(); // neu starten
     }
-  }, 10000); // alle 10s erneut versuchen
+  }, 10000); // versuche nach 10 Sekunden erneut
 }
 
 async function fallbackIPLocation() {
@@ -2673,7 +2608,7 @@ async function fallbackIPLocation() {
     };
   } catch (e) {
     showToast("🚫 Standort nicht verfügbar");
-    return { latitude: 47.3, longitude: 11.4 };
+    return { latitude: 47.3, longitude: 11.4 }; // Notfall-Koordinaten
   }
 }
 
@@ -2683,6 +2618,7 @@ function updatePosition(coords) {
   if (!userMarker) {
     userMarker = L.marker(ll).addTo(map);
     map.setView(ll, 15);
+    document.getElementById("loader").style.display = "none";
   } else {
     userMarker.setLatLng(ll);
     if (follow && map) {
@@ -2695,10 +2631,8 @@ function updatePosition(coords) {
 
   userMarker.setRotationAngle(coords.heading ?? 0);
   updateGroup();
+          }
 
-  // ✅ Overlay und UI freigeben – egal ob GPS oder IP
-  unlockUI();
-}
     
 function getCurrentPosition(callback) {
   if (!navigator.geolocation) {
