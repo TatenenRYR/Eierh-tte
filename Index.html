@@ -1,6 +1,14 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
+  <!-- Vorschau für WhatsApp, Facebook, Google etc. -->
+<meta property="og:title" content="🏠🚲 Tourplaner" />
+<meta property="og:description" content="Plane deine Radtour mit Hütten! Mit GPS, Tourenspeicher, Kommentaren & Abo-Verwaltung." />
+<meta property="og:image" content="https://eierhuette.netlify.app/assets/preview.jpg" />
+<meta property="og:url" content="https://eierhuette.netlify.app" />
+<meta name="twitter:card" content="summary_large_image" />
+
+  
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>RadlMap Navigation</title>
@@ -2313,7 +2321,7 @@ document.addEventListener("DOMContentLoaded", () => {
 if (select) select.value = localStorage.lang || "de-DE";
 //document.addEventListener("deviceready", () => {
   
-
+const position = await startLocationTracking();
       window.navigator.geolocation.watchPosition(
   p => {
     const ll = [p.coords.latitude, p.coords.longitude];
@@ -2515,7 +2523,83 @@ m.on("popupclose", () => {
     startTrackingUser(map);
     
 
+async function startLocationTracking() {
+  if (!navigator.geolocation) {
+    showToast("📡 GPS nicht unterstützt, versuche IP-Standort...");
+    return await fallbackIPLocation();
+  }
 
+  return new Promise(resolve => {
+    let resolved = false;
+
+    const watchId = navigator.geolocation.watchPosition(
+      pos => {
+        if (!resolved) {
+          resolved = true;
+          resolve(pos.coords);
+        }
+        updatePosition(pos.coords);
+      },
+      async err => {
+        console.warn("🚫 GPS fehlgeschlagen:", err.message);
+        if (!resolved) {
+          resolved = true;
+          const ipCoords = await fallbackIPLocation();
+          resolve(ipCoords);
+          updatePosition(ipCoords);
+        }
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 3000 }
+    );
+
+    // Optional: nach 10s Fallback erzwingen
+    setTimeout(async () => {
+      if (!resolved) {
+        console.warn("⏱️ GPS Timeout – nutze IP");
+        resolved = true;
+        const ipCoords = await fallbackIPLocation();
+        resolve(ipCoords);
+        updatePosition(ipCoords);
+      }
+    }, 10000);
+  });
+}
+
+async function fallbackIPLocation() {
+  try {
+    const res = await fetch("https://ipapi.co/json/");
+    const data = await res.json();
+    showToast("📍 IP-Standort verwendet");
+    return {
+      latitude: data.latitude,
+      longitude: data.longitude
+    };
+  } catch (e) {
+    showToast("🚫 Standort nicht verfügbar");
+    return { latitude: 47.3, longitude: 11.4 }; // Notfall-Koordinaten
+  }
+}
+
+function updatePosition(coords) {
+  const ll = [coords.latitude, coords.longitude];
+
+  if (!userMarker) {
+    userMarker = L.marker(ll).addTo(map);
+    map.setView(ll, 15);
+    document.getElementById("loader").style.display = "none";
+  } else {
+    userMarker.setLatLng(ll);
+    if (follow && map) {
+      map.setView(ll, map.getZoom(), {
+        animate: true,
+        paddingTopLeft: [0, 100]
+      });
+    }
+  }
+
+  userMarker.setRotationAngle(coords.heading ?? 0);
+  updateGroup();
+          }
 
     
 function getCurrentPosition(callback) {
