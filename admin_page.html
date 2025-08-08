@@ -72,7 +72,23 @@
 
   <!-- Hüttenliste -->
   <div id="hut-list" class="space-y-4"></div>
-
+<!-- Support-Anfragen -->
+<h2 class="text-2xl font-bold mt-10 mb-4 text-blue-800">📩 Support-Anfragen</h2>
+<div id="support-tabelle" class="overflow-auto bg-white rounded shadow">
+  <table class="min-w-full text-sm">
+    <thead class="bg-blue-100 text-left">
+      <tr>
+        <th class="px-4 py-2">Zeit</th>
+        <th class="px-4 py-2">Nachricht</th>
+        <th class="px-4 py-2">Status</th>
+        <th class="px-4 py-2">Aktion</th>
+      </tr>
+    </thead>
+    <tbody id="support-body" class="divide-y divide-gray-200">
+      <!-- Dynamischer Inhalt -->
+    </tbody>
+  </table>
+</div>
   <!-- Pagination -->
   <div id="pagination" class="mt-4 flex flex-wrap justify-center gap-2"></div>
 </div>
@@ -765,6 +781,7 @@ async function deleteHut(id) {
         // Eingeloggt → Zeige Topbar
         nameEl.textContent = user.displayName || user.email || 'Unbekannt';
         topbar.style.display = 'flex';
+        ladeSupportAnfragen(); // ⬅️ Support-Anfragen laden
       } else {
         // Nicht eingeloggt → Weiterleiten
         //window.location.href = 'login.html'; // oder deine Login-Seite
@@ -784,6 +801,41 @@ function goToMainPage() {
 }
 function refresh() {
  location.reload(); // ⬅️ Das lädt die gesamte Seite neu
+}
+
+  async function ladeSupportAnfragen() {
+  const snapshot = await db.collection('support_anfragen').orderBy('zeitpunkt', 'desc').limit(100).get();
+  const body = document.getElementById('support-body');
+  body.innerHTML = ''; // Tabelle leeren
+
+  snapshot.forEach(doc => {
+    const anfrage = doc.data();
+    const zeile = document.createElement('tr');
+
+    zeile.innerHTML = `
+      <td class="px-4 py-2 text-xs text-gray-600">${anfrage.zeitpunkt?.toDate().toLocaleString('de-DE') || '-'}</td>
+      <td class="px-4 py-2">${anfrage.nachricht || '(leer)'}</td>
+      <td class="px-4 py-2">${anfrage.status || 'offen'}</td>
+      <td class="px-4 py-2 space-x-2">
+        <button onclick="archiviereSupport('${doc.id}')" class="text-sm bg-green-600 text-white px-2 py-1 rounded">Archivieren</button>
+        <button onclick="loescheSupport('${doc.id}')" class="text-sm bg-red-600 text-white px-2 py-1 rounded">Löschen</button>
+      </td>
+    `;
+
+    body.appendChild(zeile);
+  });
+  }
+  async function archiviereSupport(id) {
+  await db.collection('support_anfragen').doc(id).update({ status: 'archiviert' });
+  showNotification('📁 Support-Anfrage archiviert.');
+  ladeSupportAnfragen();
+}
+
+async function loescheSupport(id) {
+  if (!confirm('Möchtest du diese Support-Anfrage wirklich löschen?')) return;
+  await db.collection('support_anfragen').doc(id).delete();
+  showNotification('🗑️ Support-Anfrage gelöscht.');
+  ladeSupportAnfragen();
 }
 </script>
 </body>
