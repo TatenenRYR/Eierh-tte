@@ -227,7 +227,7 @@ function showTimePicker() {
 function startDialog() {
   chatWindow.innerHTML = '';
   addMessage('Hallo 👋 Ich bin dein Assistent für Fahrradstops. Was möchtest du tun?', 'bot');
-  addChoiceButtons(['🥚 Neue Hütte erstellen','📋 Meine Hütten anzeigen'], handleIntent);
+  addChoiceButtons(['🥚 Neue Hütte erstellen','📋 Meine Hütten anzeigen','🎫 Support Anfragen'], handleIntent);
 }
 function handleIntent(input) {
   const txt = input.toLowerCase();
@@ -237,7 +237,9 @@ function handleIntent(input) {
       showMyHuts();
     });
   }
-
+if (txt.includes('support')) {
+    ladeMeineSupportTickets();
+}
   if (txt.includes('neu')) {
   addMessage(`
     🛡️ <b>Bevor du deine Hütte einträgst, akzeptiere bitte die Datenschutzerklärung:</b><br>
@@ -1443,7 +1445,41 @@ function goToMainPage() {
 function refresh() {
   location.reload(); // ⬅️ Das lädt die gesamte Seite neu
 }
+async function ladeMeineSupportTickets() {
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    addMessage('⚠️ Du musst angemeldet sein, um deine Support-Tickets zu sehen.', 'bot');
+    return;
+  }
 
+  const snapshot = await db.collection('supportTickets')
+    .where('userId', '==', user.uid)
+    .orderBy('createdAt', 'desc')
+    .limit(10)
+    .get();
+
+  if (snapshot.empty) {
+    addMessage('📭 Du hast noch keine Support-Anfragen gestellt.', 'bot');
+    return;
+  }
+
+  addMessage(`📨 Hier sind deine letzten Support-Anfragen:`, 'bot');
+
+  snapshot.forEach(doc => {
+    const t = doc.data();
+    const datum = t.createdAt?.toDate().toLocaleString('de-DE') || '-';
+    const status = t.status || 'offen';
+    const message = t.message || '(leer)';
+
+    addMessage(`
+      <div style="background:#f9f9f9; padding:10px; border-left:4px solid #3b82f6; margin-bottom:10px; font-size: 0.9rem;">
+        <div><strong>📅 ${datum}</strong></div>
+        <div class="mt-1">💬 ${message}</div>
+        <div class="mt-1 text-sm text-gray-600">Status: <strong>${status}</strong></div>
+      </div>
+    `, 'bot', true);
+  });
+}
   function showTutorial() {
   chatWindow.innerHTML = '';
   addMessage('👋 Moin moin! Ich bin dein Assistent für Fahrradstops.');
