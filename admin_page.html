@@ -72,24 +72,25 @@
 
   <!-- Hüttenliste -->
   <div id="hut-list" class="space-y-4"></div>
-<!-- Support-Anfragen -->
-<h2 class="text-2xl font-bold mt-10 mb-4 text-blue-800">📩 Support-Anfragen</h2>
-<div id="support-tabelle" class="overflow-auto bg-white rounded shadow">
+<!-- Support-Tickets -->
+<h2 class="text-2xl font-bold mt-10 mb-4 text-blue-800">📨 Support-Tickets</h2>
+<div class="overflow-auto bg-white rounded shadow mb-10">
   <table class="min-w-full text-sm">
     <thead class="bg-blue-100 text-left">
       <tr>
-        <th class="px-4 py-2">Zeit</th>
+        <th class="px-4 py-2">Datum</th>
+        <th class="px-4 py-2">User</th>
         <th class="px-4 py-2">Nachricht</th>
         <th class="px-4 py-2">Status</th>
-        <th class="px-4 py-2">Aktion</th>
+        <th class="px-4 py-2">Aktionen</th>
       </tr>
     </thead>
-    <tbody id="support-body" class="divide-y divide-gray-200">
-      <!-- Dynamischer Inhalt -->
+    <tbody id="support-tickets-body" class="divide-y divide-gray-200">
+      <!-- Wird per JS befüllt -->
     </tbody>
   </table>
 </div>
-  <!-- Pagination -->
+    <!-- Pagination -->
   <div id="pagination" class="mt-4 flex flex-wrap justify-center gap-2"></div>
 </div>
 
@@ -781,7 +782,7 @@ async function deleteHut(id) {
         // Eingeloggt → Zeige Topbar
         nameEl.textContent = user.displayName || user.email || 'Unbekannt';
         topbar.style.display = 'flex';
-        ladeSupportAnfragen(); // ⬅️ Support-Anfragen laden
+        ladeSupportTickets(); // ⬅️ Support-Anfragen laden
       } else {
         // Nicht eingeloggt → Weiterleiten
         //window.location.href = 'login.html'; // oder deine Login-Seite
@@ -802,9 +803,59 @@ function goToMainPage() {
 function refresh() {
  location.reload(); // ⬅️ Das lädt die gesamte Seite neu
 }
+async function ladeSupportTickets() {
+  const snapshot = await db.collection('supportTickets').orderBy('createdAt', 'desc').get();
+  const body = document.getElementById('support-tickets-body');
+  body.innerHTML = '';
 
-  async function ladeSupportAnfragen() {
-  const snapshot = await db.collection('support_anfragen').orderBy('zeitpunkt', 'desc').limit(100).get();
+  snapshot.forEach(doc => {
+    const ticket = doc.data();
+    const id = doc.id;
+    const datum = ticket.createdAt?.toDate().toLocaleString('de-DE') || '-';
+    const email = ticket.email || '-';
+    const status = ticket.status || 'offen';
+    const message = ticket.message || '(keine Nachricht)';
+
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td class="px-4 py-2 text-xs text-gray-600">${datum}</td>
+      <td class="px-4 py-2 text-xs">${email}</td>
+      <td class="px-4 py-2 text-sm">${message}</td>
+      <td class="px-4 py-2">
+        <select onchange="updateSupportStatus('${id}', this.value)" class="border rounded px-2 py-1 text-sm">
+          ${['offen', 'bearbeitet', 'archiviert'].map(opt => `
+            <option value="${opt}" ${opt === status ? 'selected' : ''}>${opt}</option>
+          `).join('')}
+        </select>
+      </td>
+      <td class="px-4 py-2 space-x-2">
+        <button onclick="mailtoSupport('${email}', \`${message.replace(/`/g, "'")}\`)" class="bg-blue-600 text-white text-xs px-2 py-1 rounded">Antworten</button>
+        <button onclick="loescheSupportTicket('${id}')" class="bg-red-600 text-white text-xs px-2 py-1 rounded">Löschen</button>
+      </td>
+    `;
+    body.appendChild(row);
+  });
+}
+
+  function mailtoSupport(email, message) {
+  const subject = 'Supportanfrage zu Eierhütten-Tour';
+  const body = `Hallo,\n\nzu deiner Supportanfrage:\n\n"${message}"\n\nAntwort:\n\n[Hier deine Antwort einfügen]`;
+  window.open(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
+}
+
+async function updateSupportStatus(id, neuerStatus) {
+  await db.collection('supportTickets').doc(id).update({ status: neuerStatus });
+  showNotification('✅ Status aktualisiert');
+}
+
+async function loescheSupportTicket(id) {
+  if (!confirm('Dieses Support-Ticket wirklich löschen?')) return;
+  await db.collection('supportTickets').doc(id).delete();
+  showNotification('🗑️ Support-Ticket gelöscht');
+  ladeSupportTickets();
+}
+ /* async function ladeSupportAnfragen() {
+  const snapshot = await db.collection('supportTickets').orderBy('zeitpunkt', 'desc').limit(100).get();
   const body = document.getElementById('support-body');
   body.innerHTML = ''; // Tabelle leeren
 
@@ -826,17 +877,17 @@ function refresh() {
   });
   }
   async function archiviereSupport(id) {
-  await db.collection('support_anfragen').doc(id).update({ status: 'archiviert' });
+  await db.collection('supportTickets').doc(id).update({ status: 'archiviert' });
   showNotification('📁 Support-Anfrage archiviert.');
   ladeSupportAnfragen();
 }
 
 async function loescheSupport(id) {
   if (!confirm('Möchtest du diese Support-Anfrage wirklich löschen?')) return;
-  await db.collection('support_anfragen').doc(id).delete();
+  await db.collection('supportTickets').doc(id).delete();
   showNotification('🗑️ Support-Anfrage gelöscht.');
   ladeSupportAnfragen();
-}
+}*/
 </script>
 </body>
 </html>
