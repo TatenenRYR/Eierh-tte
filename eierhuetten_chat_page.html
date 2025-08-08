@@ -1531,42 +1531,53 @@ function refresh() {
     `, 'bot', true);
   });
 }*/
-  async function ladeMeineSupportTickets() {
+async function ladeMeineSupportTickets() {
   const user = firebase.auth().currentUser;
-  console.log('🔐 Angemeldeter Nutzer:', user);
+  console.log('🔐 Aktueller Nutzer:', user);
 
   if (!user) {
     addMessage('⚠️ Du musst angemeldet sein, um deine Support-Tickets zu sehen.', 'bot');
     return;
   }
 
-  const snapshot = await db.collection('supportTickets')
-    .where('userId', '==', user.uid)
-    .orderBy('createdAt', 'desc')
-    .limit(10)
-    .get();
+  try {
+    const ref = db.collection('supportTickets')
+      .where('userId', '==', user.uid)
+      .orderBy('createdAt', 'desc')
+      .limit(10);
 
-  if (snapshot.empty) {
-    addMessage('📭 Du hast noch keine Support-Anfragen gestellt.', 'bot');
-    return;
+    console.log('📤 Firestore-Query:', ref);
+
+    const snapshot = await ref.get();
+    console.log('📥 Gefundene Tickets:', snapshot.size);
+
+    if (snapshot.empty) {
+      addMessage('📭 Du hast noch keine Support-Anfragen gestellt.', 'bot');
+      return;
+    }
+
+    addMessage(`📨 Hier sind deine letzten Support-Anfragen:`, 'bot');
+
+    snapshot.forEach(doc => {
+      const t = doc.data();
+      console.log('📄 Ticket:', t);
+
+      const datum = t.createdAt?.toDate().toLocaleString('de-DE') || '-';
+      const status = t.status || 'offen';
+      const message = t.message || '(leer)';
+
+      addMessage(`
+        <div style="background:#f9f9f9; padding:10px; border-left:4px solid #3b82f6; margin-bottom:10px; font-size: 0.9rem;">
+          <div><strong>📅 ${datum}</strong></div>
+          <div class="mt-1">💬 ${message}</div>
+          <div class="mt-1 text-sm text-gray-600">Status: <strong>${status}</strong></div>
+        </div>
+      `, 'bot', true);
+    });
+  } catch (err) {
+    console.error('❌ Fehler beim Laden der Tickets:', err);
+    addMessage('❌ Fehler beim Abrufen deiner Tickets. Bitte später erneut versuchen.', 'bot');
   }
-
-  addMessage(`📨 Hier sind deine letzten Support-Anfragen:`, 'bot');
-
-  snapshot.forEach(doc => {
-    const t = doc.data();
-    const datum = t.createdAt?.toDate().toLocaleString('de-DE') || '-';
-    const status = t.status || 'offen';
-    const message = t.message || '(leer)';
-
-    addMessage(`
-      <div style="background:#f9f9f9; padding:10px; border-left:4px solid #3b82f6; margin-bottom:10px; font-size: 0.9rem;">
-        <div><strong>📅 ${datum}</strong></div>
-        <div class="mt-1">💬 ${message}</div>
-        <div class="mt-1 text-sm text-gray-600">Status: <strong>${status}</strong></div>
-      </div>
-    `, 'bot', true);
-  });
 }
   function showTutorial() {
   chatWindow.innerHTML = '';
