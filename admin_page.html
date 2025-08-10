@@ -99,11 +99,10 @@
     <input type="text" id="admin-hut-name" class="w-full border px-3 py-2 rounded" required>
   </label>
 
-  <label class="block">
-    <span class="font-semibold">📍 Standort (Lat,Lng)</span>
-    <input type="text" id="admin-hut-lat" placeholder="Breitengrad" class="w-full border px-3 py-2 rounded mb-1" required>
-    <input type="text" id="admin-hut-lng" placeholder="Längengrad" class="w-full border px-3 py-2 rounded" required>
-  </label>
+  <div>
+    <span class="font-semibold block mb-1">📍 Standort auswählen</span>
+    <div id="admin-map" style="height: 300px; border-radius: 8px;"></div>
+  </div>
 
   <label class="block">
     <span class="font-semibold">📷 Bilder (optional)</span>
@@ -139,15 +138,45 @@
   const notification = document.getElementById('notification');
   const stats = document.getElementById('stats');
   let huts = [], currentUser = null;
+let adminMarker;
+let adminMap;
+let adminLocation;
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Leaflet-Karte initialisieren
+  adminMap = L.map('admin-map').setView([51.1657, 10.4515], 6); // Mitte Deutschland
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(adminMap);
+
+  // Startmarker
+  adminMarker = L.marker([51.1657, 10.4515], { draggable: true }).addTo(adminMap);
+
+  // Marker-Bewegung überwachen
+  adminMarker.on('dragend', e => {
+    const pos = e.target.getLatLng();
+    adminLocation = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
+  });
+
+  // Standort automatisch setzen, falls verfügbar
+  navigator.geolocation.getCurrentPosition(pos => {
+    const { latitude, longitude } = pos.coords;
+    adminMap.setView([latitude, longitude], 13);
+    adminMarker.setLatLng([latitude, longitude]);
+    adminLocation = new firebase.firestore.GeoPoint(latitude, longitude);
+  });
+});
+
+// Formular absenden
 document.getElementById('admin-hut-form').addEventListener('submit', async (e) => {
   e.preventDefault();
 
+  if (!adminLocation) {
+    alert('❌ Bitte wähle einen Standort auf der Karte.');
+    return;
+  }
+
   editingData = {
     name: document.getElementById('admin-hut-name').value.trim(),
-    location: new firebase.firestore.GeoPoint(
-      parseFloat(document.getElementById('admin-hut-lat').value),
-      parseFloat(document.getElementById('admin-hut-lng').value)
-    ),
+    location: adminLocation,
     fotos: []
   };
 
@@ -155,7 +184,6 @@ document.getElementById('admin-hut-form').addEventListener('submit', async (e) =
   if (files.length > 0) {
     addMessage(`⏳ Lade ${files.length} Bild(er) hoch...`, 'bot');
     const uploads = [];
-
     for (let file of files) {
       try {
         const img = await uploadToImgBB(file);
@@ -165,7 +193,6 @@ document.getElementById('admin-hut-form').addEventListener('submit', async (e) =
         addMessage('❌ Fehler beim Hochladen eines Bildes.', 'bot');
       }
     }
-
     editingData.fotos = uploads;
   }
 
