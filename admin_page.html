@@ -104,10 +104,6 @@
     <div id="admin-map" style="height: 300px; border-radius: 8px;"></div>
   </div>
 
-  <label class="block">
-    <span class="font-semibold">📷 Bilder (optional)</span>
-    <input type="file" id="admin-hut-images" accept="image/*" multiple>
-  </label>
 
   <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">
     ➕ Hütte anlegen
@@ -605,10 +601,12 @@ async function rejectFoto(hutId, index) {
         }
 
         <!-- Upload -->
-        <label>Foto hochladen:
-          <input type="file" accept="image/*" onchange="uploadFoto(this, '${hut.id}')">
-          <div class="progress-bar"><div class="progress-fill" id="progress-${hut.id}"></div></div>
+        <label class="block mt-2 text-sm">📷 Neues Bild:
+          <input type="file" accept="image/*" data-id="${id}" class="upload-image mt-1" />
         </label>
+        <div id="progress-${id}" class="h-2 bg-gray-200 rounded hidden mt-2">
+          <div class="h-2 bg-green-500 rounded" style="width: 0%"></div>
+        </div>
 
         <!-- Minimap -->
         <div class="minimap" id="map-${hut.id}"></div>
@@ -739,7 +737,46 @@ function renderPagination(totalItems) {
   }
 }
 
-  async function uploadFoto(input, hutId) {
+  function initImageUpload() {
+  document.querySelectorAll(".upload-image").forEach(input => {
+    input.addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      const id = e.target.dataset.id;
+      if (!file || !id) return;
+
+      const storageRef = firebase.storage().ref();
+      const fileRef = storageRef.child(`eierhuetten/${hutId}/${Date.now()}_${file.name}`);
+      const uploadTask = fileRef.put(file);
+
+      const progressBar = document.querySelector(`#progress-${id}`);
+      const progressFill = progressBar?.firstElementChild;
+
+      if (progressBar) progressBar.classList.remove("hidden");
+
+      uploadTask.on("state_changed",
+        (snapshot) => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          if (progressFill) progressFill.style.width = `${progress.toFixed(0)}%`;
+        },
+        (error) => {
+          console.error("❌ Upload-Fehler:", error);
+          addMessage("❌ Fehler beim Hochladen des Bildes.", "bot");
+        },
+        async () => {
+          const url = await uploadTask.snapshot.ref.getDownloadURL();
+          // 📎 URL in die Datenbank einfügen
+          const hutRef = db.collection("eierhuetten").doc(id);
+          await hutRef.update({
+            fotos: firebase.firestore.FieldValue.arrayUnion(url)
+          });
+          addMessage("✅ Bild erfolgreich hochgeladen.", "bot");
+          showMyHuts(); // Seite aktualisieren
+        }
+      );
+    });
+  });
+  }
+  /*async function uploadFoto(input, hutId) {
     const file = input.files[0];
     if (!file) return;
     const ref = storage.ref(`fotos/${hutId}/${Date.now()}_${file.name}`);
@@ -759,7 +796,7 @@ function renderPagination(totalItems) {
       document.getElementById(`progress-${hutId}`).style.width = `0%`;
       loadHuts();
     });
-  }
+  }*/
 
   async function deleteFoto(hutId, url) {
     // Mathe-Aufgabe generieren
