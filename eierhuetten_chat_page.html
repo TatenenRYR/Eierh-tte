@@ -1507,29 +1507,21 @@ document.body.addEventListener('change', async e => {
 
   // Warten bis DOM geladen ist
   document.addEventListener('DOMContentLoaded', () => {
-    firebase.auth().onAuthStateChanged(user => {
-  if (!user) {
-    // Nicht eingeloggt
-    return;
-  }
+  firebase.auth().onAuthStateChanged(user => {
+    if (!user) {
+      // Nicht eingeloggt
+      return;
+    }
 
-  const consentGiven = localStorage.getItem('consentGiven');
-  if (consentGiven === 'true') {
-    startApp(user);
-  } else {
-    checkConsent(user);
-  }
+    const consentGiven = localStorage.getItem('consentGiven');
+    if (consentGiven === 'true') {
+      startApp(user);
+    } else {
+      // Consent nur einmal initialisieren
+      showConsentModal(user);
+    }
+  });
 });
-    });
-
-function startApp(user) {
-  const nameEl = document.getElementById('user-name');
-  const topbar = document.getElementById('topbar');
-
-  nameEl.textContent = user.displayName || user.email || 'Unbekannt';
-  topbar.style.display = 'flex';
-}
-  
   
 function logout() {
   firebase.auth().signOut().then(() => {
@@ -1661,6 +1653,8 @@ async function ladeMeineSupportTickets() {
 
 
 // Consent Modal Funktion
+let consentModalInitialized = false;
+
 function showConsentModal(user) {
   const modal = document.getElementById('consent-modal');
   const btn = document.getElementById('consent-accept');
@@ -1677,10 +1671,15 @@ function showConsentModal(user) {
     btn.style.opacity = enabled ? '1' : '0.6';
   }
 
-  privacyCb.checked = false;
-  cookiesCb.checked = false;
-  privacyCb.addEventListener('change', updateButtonState);
-  cookiesCb.addEventListener('change', updateButtonState);
+  // Nur einmal Event-Listener setzen
+  if (!consentModalInitialized) {
+    privacyCb.addEventListener('change', updateButtonState);
+    cookiesCb.addEventListener('change', updateButtonState);
+    consentModalInitialized = true;
+  }
+
+  // Standardmäßig deaktiviert, falls noch nichts angehakt
+  updateButtonState();
 
   btn.onclick = async () => {
     if (!privacyCb.checked || !cookiesCb.checked) return;
@@ -1688,7 +1687,6 @@ function showConsentModal(user) {
     localStorage.setItem('consentGiven', 'true');
 
     try {
-      // Optional Firestore speichern
       await firebase.firestore().collection('consents').doc(user.uid).set({
         privacy: true,
         cookies: true,
