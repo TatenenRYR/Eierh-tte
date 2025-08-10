@@ -743,7 +743,7 @@ async function initImageUpload(input, hutId) {
 
   showNotification(`⏳ Lade ${files.length} Bild(er) hoch...`);
 
-  if (!huts[hutId]) huts[hutId] = { fotos: [] };
+  const uploadedUrls = [];
 
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
@@ -767,26 +767,33 @@ async function initImageUpload(input, hutId) {
 
       const json = await res.json();
 
-      if (json?.data?.url && json?.data?.delete_url) {
-        const fotoObj = {
-          url: json.data.url,
-          delete_url: json.data.delete_url,
-          status: 'wartet', // oder 'freigegeben', je nach Workflow
-        };
-        huts[hutId].fotos.push(fotoObj);
+      if (json?.data?.url) {
+        uploadedUrls.push(json.data.url);
       } else {
         console.warn('❌ Upload war unvollständig oder fehlerhaft:', json);
         showNotification(`❌ Fehler beim Hochladen von Bild ${i + 1}`);
       }
-
     } catch (err) {
       console.error(err);
       showNotification(`❌ Upload-Fehler: ${err}`);
     }
   }
 
-  showNotification('✅ Bilder wurden erfolgreich hochgeladen.');
+  if (uploadedUrls.length > 0) {
+    try {
+      // URLs als Strings zu Firestore hinzufügen
+      await db.collection('eierhuetten').doc(hutId).update({
+        fotos: firebase.firestore.FieldValue.arrayUnion(...uploadedUrls)
+      });
+      showNotification('✅ Bilder wurden erfolgreich hochgeladen.');
+      loadHuts(); // falls du die Liste neu laden willst
+    } catch (err) {
+      console.error(err);
+      showNotification('❌ Fehler beim Speichern der Bilder in der Datenbank: ' + err.message);
+    }
+  }
 }
+
 // Beispiel Upload-Funktion aus HTML
 function uploadFoto(input, hutId) {
   initImageUpload(input, hutId)
