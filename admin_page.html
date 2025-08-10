@@ -93,33 +93,27 @@
     <!-- Pagination -->
   <div id="pagination" class="mt-4 flex flex-wrap justify-center gap-2"></div>
 </div>
-<div>
-  <h2>Hütte anlegen (Admin)</h2>
-  <form id="admin-hut-form">
-    <input type="text" id="hut-name" placeholder="Hüttenname" required />
+<form id="admin-hut-form" class="space-y-3">
+  <label class="block">
+    <span class="font-semibold">🏠 Hüttenname</span>
+    <input type="text" id="admin-hut-name" class="w-full border px-3 py-2 rounded" required>
+  </label>
 
-    <label for="hut-kategorie">Kategorie:</label>
-    <select id="hut-kategorie" required>
-      <option value="">Bitte wählen</option>
-      <option value="standard">Standard</option>
-      <option value="mit-strom">Mit Strom</option>
-      <option value="bio">Bio</option>
-      <!-- weitere Kategorien -->
-    </select>
+  <label class="block">
+    <span class="font-semibold">📍 Standort (Lat,Lng)</span>
+    <input type="text" id="admin-hut-lat" placeholder="Breitengrad" class="w-full border px-3 py-2 rounded mb-1" required>
+    <input type="text" id="admin-hut-lng" placeholder="Längengrad" class="w-full border px-3 py-2 rounded" required>
+  </label>
 
-    <label>
-      <input type="checkbox" id="ohne-paypal" />
-      Ohne PayPal-Abo anlegen
-    </label>
+  <label class="block">
+    <span class="font-semibold">📷 Bilder (optional)</span>
+    <input type="file" id="admin-hut-images" accept="image/*" multiple>
+  </label>
 
-    <p>Bitte Standort auf der Karte auswählen:</p>
-    <div id="map" style="height: 400px; border: 1px solid #ccc;"></div>
-    <input type="hidden" id="latitude" />
-    <input type="hidden" id="longitude" />
-
-    <button type="submit">Hütte speichern</button>
-  </form>
-</div>
+  <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">
+    ➕ Hütte anlegen
+  </button>
+</form>
 
 
 <script>
@@ -145,74 +139,74 @@
   const notification = document.getElementById('notification');
   const stats = document.getElementById('stats');
   let huts = [], currentUser = null;
-
-
-// Firestore initialisieren (angenommen schon firebase app konfiguriert
-
-const map = L.map('map').setView([51.1657, 10.4515], 6); // Deutschland zentriert
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution:
-    '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-}).addTo(map);
-
-let marker;
-
-// Klick auf Karte, um Standort zu setzen
-map.on('click', function (e) {
-  const { lat, lng } = e.latlng;
-
-  // Marker neu setzen / verschieben
-  if (marker) {
-    marker.setLatLng(e.latlng);
-  } else {
-    marker = L.marker(e.latlng).addTo(map);
-  }
-
-  // Versteckte Inputs füllen
-  document.getElementById('latitude').value = lat;
-  document.getElementById('longitude').value = lng;
-});
-
-// Formular speichern
 document.getElementById('admin-hut-form').addEventListener('submit', async (e) => {
   e.preventDefault();
 
-  const name = document.getElementById('hut-name').value.trim();
-  const kategorie = document.getElementById('hut-kategorie').value;
-  const ohnePaypal = document.getElementById('ohne-paypal').checked;
-  const lat = parseFloat(document.getElementById('latitude').value);
-  const lng = parseFloat(document.getElementById('longitude').value);
+  editingData = {
+    name: document.getElementById('admin-hut-name').value.trim(),
+    location: new firebase.firestore.GeoPoint(
+      parseFloat(document.getElementById('admin-hut-lat').value),
+      parseFloat(document.getElementById('admin-hut-lng').value)
+    ),
+    fotos: []
+  };
 
-  if (!lat || !lng) {
-    alert('Bitte wähle einen Standort auf der Karte aus.');
+  const files = document.getElementById('admin-hut-images').files;
+  if (files.length > 0) {
+    addMessage(`⏳ Lade ${files.length} Bild(er) hoch...`, 'bot');
+    const uploads = [];
+
+    for (let file of files) {
+      try {
+        const img = await uploadToImgBB(file);
+        uploads.push(img);
+      } catch (err) {
+        console.error('❌ Upload-Fehler:', err);
+        addMessage('❌ Fehler beim Hochladen eines Bildes.', 'bot');
+      }
+    }
+
+    editingData.fotos = uploads;
+  }
+
+  // Direkt speichern ohne PayPal
+  submitNewHutAdmin();
+});
+async function submitNewHutAdmin() {
+  if (!editingData.name || !editingData.location) {
+    addMessage('❌ Bitte gib alle Daten ein (mindestens Name und Standort).', 'bot');
     return;
   }
 
-  const hutData = {
-    name,
-    kategorie,
-    paypalAbo: !ohnePaypal, // true = Abo, false = kein Abo
-    status: 'aktiv',
-    standort: new firebase.firestore.GeoPoint(lat, lng),
+  // 🔒 Nur gültige Bilder übernehmen
+  const validFotos = (editingData.fotos || []).filter(f =>
+    typeof f === 'object' && f.url && f.delete_url
+  );
+
+  const hut = {
+    ...editingData,
+    userId: currentUser.uid,
     erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+    status: 'angenommen',        // ✅ Direkt freigeschaltet
+    fotos: validFotos,
+    aboMonate: null,             // Kein Abo
+    paypalSubscriptionId: null,  // Kein PayPal
+    datenschutzZustimmung: {
+      bestätigtAm: firebase.firestore.FieldValue.serverTimestamp(),
+      durch: firebase.auth().currentUser?.email || "Admin"
+    }
   };
 
   try {
-    await db.collection('eierhuetten').add(hutData);
-    alert('Hütte erfolgreich gespeichert!');
-    e.target.reset();
-
-    // Marker entfernen
-    if (marker) {
-      map.removeLayer(marker);
-      marker = null;
-    }
-  } catch (error) {
-    console.error('Fehler beim Speichern:', error);
-    alert('Fehler beim Speichern der Hütte.');
+    await db.collection('eierhuetten').add(hut);
+    addMessage('✅ Hütte ohne PayPal erfolgreich erstellt und freigeschaltet.', 'bot');
+    step = 0;
+    editingData = {};
+    showMyHuts(); // Aktualisieren
+  } catch (err) {
+    addMessage('❌ Fehler beim Erstellen der Hütte: ' + err.message, 'bot');
   }
-});
+}
 
   
   function showNotification(message) {
