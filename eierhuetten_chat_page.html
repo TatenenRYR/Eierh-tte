@@ -1544,14 +1544,6 @@ document.body.addEventListener('change', async e => {
   }
 });
     });
-
-function startApp(user) {
-  const nameEl = document.getElementById('user-name');
-  const topbar = document.getElementById('topbar');
-
-  nameEl.textContent = user.displayName || user.email || 'Unbekannt';
-  topbar.style.display = 'flex';
-}
   
   
 function logout() {
@@ -1720,7 +1712,6 @@ function showConsentModal(user) {
   currentUserForConsent = user;
   document.getElementById('consent-modal').classList.remove('hidden');
 }
-
 async function acceptConsent() {
   const privacyAccepted = document.getElementById('consent-privacy').checked;
   const cookiesAccepted = document.getElementById('consent-cookies').checked;
@@ -1729,28 +1720,48 @@ async function acceptConsent() {
     alert('Bitte stimmen Sie der Datenschutzerklärung zu.');
     return;
   }
-
   if (!cookiesAccepted) {
     alert('Bitte stimmen Sie der Verwendung von Cookies zu.');
     return;
   }
 
   const consentData = {
-    privacyAccepted: privacyAccepted,
-    cookiesAccepted: cookiesAccepted,
+    privacyAccepted: true,
+    cookiesAccepted: true,
     consentDate: new Date(),
     privacyVersion: '1.0'
   };
 
-//  await db.collection('users').doc(currentUserForConsent.uid).set(consentData, { merge: true });
+  if (currentUserForConsent && currentUserForConsent.uid) {
+    // User eingeloggt: Zustimmung in Firebase speichern
+    try {
+      await db.collection('users').doc(currentUserForConsent.uid).set(consentData, { merge: true });
+    } catch (error) {
+      console.error('Fehler beim Speichern in Firebase:', error);
+      // Falls gewünscht: lokale Speicherung trotzdem machen
+    }
+  } else {
+    console.log('User nicht eingeloggt, speichere Zustimmung nur lokal');
+  }
+
+  // Zustimmung immer lokal speichern
   localStorage.setItem('userConsent', JSON.stringify(consentData));
 
-  // Falls du Scripts nur bei Cookie-Zustimmung laden willst
   loadTrackingScripts(consentData);
-
   document.getElementById('consent-modal').classList.add('hidden');
   loadApp(currentUserForConsent);
 }
+function checkConsentOnLoad() {
+  const consent = localStorage.getItem('userConsent');
+  if (consent) {
+    loadApp(currentUserForConsent);
+  } else {
+    document.getElementById('consent-modal').classList.remove('hidden');
+  }
+}
+  window.onload = () => {
+  checkConsentOnLoad();
+};
 </script>
 <!-- Consent Modal -->
 <div id="consent-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px;">  
