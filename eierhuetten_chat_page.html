@@ -1274,7 +1274,14 @@ auth.onAuthStateChanged(user => {
 });
 document.getElementById('google-login').onclick = () => {
   const provider = new firebase.auth.GoogleAuthProvider();
-  auth.signInWithPopup(provider);
+  auth.signInWithPopup(provider)
+    .then(result => {
+      const user = result.user;
+      checkConsent(user);
+    })
+    .catch(error => {
+      console.error('Login fehlgeschlagen:', error);
+    });
 };
 sendBtn.addEventListener('click', () => {
   const val = chatInput.value.trim();
@@ -1286,7 +1293,39 @@ sendBtn.addEventListener('click', () => {
 chatInput.addEventListener('keypress', e => {
   if (e.key === 'Enter') sendBtn.click();
 });
-  
+  function checkConsent(user) {
+  const consentGiven = localStorage.getItem('consentGiven');
+
+  if (consentGiven === 'true') {
+    startApp(user);
+    return;
+  }
+
+  const modal = document.getElementById('consent-modal');
+  modal.style.display = 'flex';
+
+  document.getElementById('consent-accept').onclick = async () => {
+    const privacyChecked = document.getElementById('consent-privacy').checked;
+    const cookiesChecked = document.getElementById('consent-cookies').checked;
+
+    if (!privacyChecked || !cookiesChecked) {
+      alert('Bitte beide Kästchen ankreuzen, um fortzufahren.');
+      return;
+    }
+
+    localStorage.setItem('consentGiven', 'true');
+
+    // Optional: In Firestore dokumentieren
+    await db.collection('consents').doc(user.uid).set({
+      privacy: true,
+      cookies: true,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    modal.style.display = 'none';
+    startApp(user);
+  };
+    }
 
 function showMap() {
   const container = document.createElement('div');
@@ -1469,19 +1508,28 @@ document.body.addEventListener('change', async e => {
   // Warten bis DOM geladen ist
   document.addEventListener('DOMContentLoaded', () => {
     firebase.auth().onAuthStateChanged(user => {
-      const nameEl = document.getElementById('user-name');
-      const topbar = document.getElementById('topbar');
+  if (!user) {
+    // Nicht eingeloggt
+    return;
+  }
 
-      if (user) {
-        // Eingeloggt → Zeige Topbar
-        nameEl.textContent = user.displayName || user.email || 'Unbekannt';
-        topbar.style.display = 'flex';
-      } else {
-        // Nicht eingeloggt → Weiterleiten
-        //window.location.href = 'login.html'; // oder deine Login-Seite
-      }
+  const consentGiven = localStorage.getItem('consentGiven');
+  if (consentGiven === 'true') {
+    startApp(user);
+  } else {
+    checkConsent(user);
+  }
+});
     });
-  });
+
+function startApp(user) {
+  const nameEl = document.getElementById('user-name');
+  const topbar = document.getElementById('topbar');
+
+  nameEl.textContent = user.displayName || user.email || 'Unbekannt';
+  topbar.style.display = 'flex';
+}
+  
   
 function logout() {
   firebase.auth().signOut().then(() => {
@@ -1609,6 +1657,97 @@ async function ladeMeineSupportTickets() {
     addChoiceButtons(['🥚 Neue Hütte erstellen', '📋 Meine Hütten anzeigen'], handleIntent);
   }, 12000);
   }
+
+  let currentUserForConsent = null;
+
+function loadTrackingScripts(consent) {
+  // Statistik
+  if (consent.cookieStats) {
+    const gaScript = document.createElement('script');
+    gaScript.src = "https://www.googletagmanager.com/gtag/js?id=UA-XXXXXXX-X"; // Deine GA-ID
+    gaScript.async = true;
+    document.head.appendChild(gaScript);
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'UA-XXXXXXX-X'); // Deine GA-ID
+  }
+
+  // Marketing
+  if (consent.cookieMarketing) {
+    const fbScript = document.createElement('script');
+    fbScript.innerHTML = `
+      !function(f,b,e,v,n,t,s)
+      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+      n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t,s)}(window, document,'script',
+      'https://connect.facebook.net/en_US/fbevents.js');
+      fbq('init', 'YOUR_PIXEL_ID');
+      fbq('track', 'PageView');
+    `;
+    document.head.appendChild(fbScript);
+  }
+}
+
+function showConsentModal(user) {
+  currentUserForConsent = user;
+  document.getElementById('consent-modal').classList.remove('hidden');
+}
+
+async function acceptConsent() {
+  const privacyAccepted = document.getElementById('privacy-checkbox').checked;
+  const stats = document.getElementById('cookie-stats').checked;
+  const marketing = document.getElementById('cookie-marketing').checked;
+
+  if (!privacyAccepted) {
+    alert('Bitte stimmen Sie der Datenschutzerklärung zu.');
+    return;
+  }
+
+  const consentData = {
+    privacyAccepted: true,
+    cookieStats: stats,
+    cookieMarketing: marketing,
+    consentDate: new Date(),
+    privacyVersion: '1.0'
+  };
+
+  await db.collection('users').doc(currentUserForConsent.uid).set(consentData, { merge: true });
+  localStorage.setItem('userConsent', JSON.stringify(consentData));
+
+  loadTrackingScripts(consentData);
+
+  document.getElementById('consent-modal').classList.add('hidden');
+  loadApp(currentUserForConsent);
+}
 </script>
+<!-- Consent Modal -->
+<div id="consent-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center;">
+  <div style="background:white; padding:20px; max-width:500px; border-radius:8px;">
+    <h2>Datenschutz & Cookies</h2>
+    <p>Wir verwenden Cookies und ähnliche Technologien, um unsere Dienste bereitzustellen und zu verbessern. 
+       Mehr dazu in unserer <a href="/datenschutz.html" target="_blank">Datenschutzerklärung</a>.</p>
+    
+    <label style="display:block; margin-top:10px;">
+      <input type="checkbox" id="consent-privacy">
+      Ich stimme der Datenschutzerklärung zu
+    </label>
+    <label style="display:block; margin-top:5px;">
+      <input type="checkbox" id="consent-cookies">
+      Ich stimme der Verwendung von Cookies zu
+    </label>
+
+    <div style="margin-top:15px; text-align:right;">
+      <button id="consent-accept" style="padding:8px 16px; background:#4CAF50; color:white; border:none; border-radius:4px; cursor:pointer;">
+        Zustimmen
+      </button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
