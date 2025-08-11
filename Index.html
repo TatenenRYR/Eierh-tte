@@ -1248,16 +1248,67 @@ function leaveRoom() {
     /////////////////////////////////////////
 
     // Sendet Notrufposition
-    function sendSOS() {
-      if (!confirm("⚠️ Bist du sicher, dass du ein SOS senden möchtest?")) return;
+    async function sendSOS() {
+  // Sicherheitsabfrage
+  if (!confirm("⚠️ Bist du sicher, dass du ein SOS senden möchtest?")) return;
 
-     if (userMarker) {
-        const pos = userMarker.getLatLng();
-        showToast("⚠️ SOS gesendet: " + pos.lat.toFixed(5) + "," + pos.lng.toFixed(5));
-        logDebug("SOS at " + pos);
-      }
+  let lat, lng;
+
+  // Falls userMarker gesetzt ist (z. B. Leaflet-Marker)
+  if (typeof userMarker !== "undefined" && userMarker?.getLatLng) {
+    const pos = userMarker.getLatLng();
+    lat = pos.lat;
+    lng = pos.lng;
+  } else {
+    // Fallback: Browser-Geolocation
+    try {
+      const position = await new Promise((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject)
+      );
+      lat = position.coords.latitude;
+      lng = position.coords.longitude;
+    } catch (err) {
+      alert("❌ Standort konnte nicht ermittelt werden.");
+      console.error("Geolocation error:", err);
+      return;
     }
+  }
 
+  const latFixed = lat.toFixed(5);
+  const lngFixed = lng.toFixed(5);
+
+  // Meldung anzeigen
+  showToast(`🚨 SOS gesendet: ${latFixed}, ${lngFixed}`);
+  console.log(`SOS at ${latFixed}, ${lngFixed}`);
+
+  // Google Maps Link
+  const mapsLink = `https://maps.google.com/?q=${latFixed},${lngFixed}`;
+  console.log("Google Maps:", mapsLink);
+
+  // Falls User eingeloggt, in Firestore speichern
+  if (typeof currentUser !== "undefined" && currentUser?.uid) {
+    try {
+      await db.collection("sos_alerts").add({
+        userId: currentUser.uid,
+        latitude: lat,
+        longitude: lng,
+        mapsLink: mapsLink,
+        timestamp: new Date()
+      });
+      console.log("✅ SOS in Firestore gespeichert.");
+    } catch (err) {
+      console.error("❌ Fehler beim Speichern in Firestore:", err);
+    }
+  } else {
+    console.warn("⚠️ SOS nur lokal gesendet (kein Login).");
+    localStorage.setItem("lastSOS", JSON.stringify({
+      latitude: lat,
+      longitude: lng,
+      mapsLink: mapsLink,
+      timestamp: new Date()
+    }));
+  }
+    }
     /////////////////////////////////////////
     // 🧭 Routingfunktionen
     /////////////////////////////////////////
