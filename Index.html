@@ -666,6 +666,43 @@ function openPopup(page) {
   document.body.style.overflow = "hidden"; // Verhindert Scroll-Shift
   document.getElementById("popupInner").innerHTML = getPageContent(id);
 }*/
+async function getBestPosition(onUpdate, opts = {}) {
+  const desiredAccuracy = opts.desiredAccuracy || 20;
+  const highAccTimeout = opts.highAccTimeout || 12000;
+
+  try {
+    navigator.geolocation.getCurrentPosition(pos => {
+      onUpdate(pos);
+    }, err => {
+      console.warn('Coarse Position error', err);
+    }, { enableHighAccuracy: false, maximumAge: 60000, timeout: 3000 });
+  } catch(e) { console.warn(e); }
+
+  let watchId = null;
+  let acceptTimer = null;
+  return new Promise((resolve) => {
+    try {
+      watchId = navigator.geolocation.watchPosition(pos => {
+        const acc = pos.coords.accuracy || 9999;
+        onUpdate(pos);
+        if (acc <= desiredAccuracy) {
+          navigator.geolocation.clearWatch(watchId);
+          clearTimeout(acceptTimer);
+          resolve(pos);
+        }
+      }, err => {
+        console.warn('watchPosition error', err);
+      }, { enableHighAccuracy: true, maximumAge: 0, timeout: highAccTimeout });
+    } catch (e) {
+      console.warn('watchPosition exception', e);
+    }
+
+    acceptTimer = setTimeout(() => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+      resolve(null);
+    }, highAccTimeout + 1000);
+  });
+    }
 
 function closePopup() {
   document.getElementById("popupOverlay").style.display = "none";
@@ -2681,8 +2718,15 @@ function getCurrentPosition(callback) {
     showToast("❗ GPS nicht verfügbar");
     return;
   }
-
-  navigator.geolocation.getCurrentPosition(
+  getBestPosition(
+    (position) => {
+        const { lat, lng } = position.coords;
+        callback({ lat, lng });
+        // ... Positionsverarbeitung
+    },
+    { desiredAccuracy: 20, highAccTimeout: 12000 }
+);
+ /* navigator.geolocation.getCurrentPosition(
     pos => {
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
@@ -2693,9 +2737,9 @@ function getCurrentPosition(callback) {
       showToast("❗ GPS-Fehler");
     },
     { enableHighAccuracy: true, timeout: 10000 }
-  );
+  );*/
 }
-
+   
     function getBearing(from, to) {
   const lat1 = from[0] * Math.PI / 180;
   const lat2 = to[0] * Math.PI / 180;
