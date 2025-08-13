@@ -2711,8 +2711,43 @@ function updatePosition(coords) {
   userMarker.setRotationAngle(coords.heading ?? 0);
   updateGroup();
           }
+// 🆕 Snap-to-Road mit OpenRouteService
+async function snapToRoad(lat, lng) {
+  const apiKey = "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87"; // <-- deinen API-Key hier eintragen
+  const url = `https://api.openrouteservice.org/v2/snap/driving-car?api_key=${apiKey}&point=${lng},${lat}`;
 
-    
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data && data.snapped_points && data.snapped_points.length > 0) {
+      const snapped = data.snapped_points[0].location; // [lng, lat]
+      console.log("Snap-to-road erfolgreich:", snapped[1], snapped[0]);
+      return { lat: snapped[1], lng: snapped[0] };
+    } else {
+      console.warn("Snap-to-road: keine Straße gefunden");
+    }
+  } catch (e) {
+    console.error("Snap-to-road Fehler:", e);
+  }
+  // Fallback: Originalkoordinaten verwenden
+  return { lat, lng };
+    }
+    function getCurrentPosition(callback) {
+  if (!navigator.geolocation) {
+    showToast("❗ GPS nicht verfügbar");
+    return;
+  }
+  getBestPosition(
+    async (position) => {
+        const { latitude, longitude } = position.coords;
+        // Snap auf nächste Straße
+        const snappedPos = await snapToRoad(latitude, longitude);
+        callback(snappedPos);
+    },
+    { desiredAccuracy: 20, highAccTimeout: 12000 }
+  );
+    }
+    /*
 function getCurrentPosition(callback) {
   if (!navigator.geolocation) {
     showToast("❗ GPS nicht verfügbar");
@@ -2727,7 +2762,7 @@ function getCurrentPosition(callback) {
     { desiredAccuracy: 20, highAccTimeout: 12000 }
   );
    
-}
+}*/
 /*  navigator.geolocation.getCurrentPosition(
     pos => {
       const lat = pos.coords.latitude;
