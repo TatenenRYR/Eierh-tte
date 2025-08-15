@@ -250,8 +250,10 @@ function showTimePicker() {
 function startDialog() {
   chatWindow.innerHTML = '';
   addMessage('Hallo 👋 Ich bin dein Assistent für Fahrradstops. Was möchtest du tun?', 'bot');
-  addChoiceButtons(['🥚 Neue Hütte erstellen','📋 Meine Hütten anzeigen','🎫 Support Anfragen'], handleIntent);}
-function handleIntent(input) {
+  addChoiceButtons(['🥚 Neue Hütte erstellen','📋 Meine Hütten anzeigen','🎫 Support Anfragen','📩 Hütte vorschlagen'], handleIntent);
+}
+  
+  function handleIntent(input) {
   const txt = input.toLowerCase();
 
   if (txt.includes('support')) {
@@ -265,6 +267,11 @@ function handleIntent(input) {
       showMyHuts();
     });
     return;
+  }
+  if (txt.includes('vorschlag')) {
+  addMessage('📩 Bitte gib die E-Mail-Adresse des Besitzers ein, den du vorschlagen möchtest:', 'bot');
+  step = 'suggest_email';
+  return;
   }
 
   if (txt.includes('neu')) {
@@ -360,6 +367,25 @@ function handleIntent(input) {
 }
 */
 function processUserInput(txt) {
+  if (step === 'suggest_email') {
+  editingData = { email: input.trim() };
+  addMessage('✅ Danke! Möchtest du noch einen Kommentar hinzufügen?', 'bot');
+  step = 'suggest_comment';
+  return;
+}
+
+if (step === 'suggest_comment') {
+  editingData.comment = input.trim();
+  addMessage('📷 Lade jetzt bitte Fotos hoch (du kannst mehrere auswählen).', 'bot');
+
+  // Button zum Upload im Chat anzeigen
+  addMessage(`
+    <input type="file" id="suggest-fotos" multiple accept="image/*" onchange="uploadSuggestionFotos(this)">
+  `, 'bot', true);
+
+  step = 'suggest_upload';
+  return;
+}
   if (step === 1) {
     editingData.name = txt;
     step = 2;
@@ -1046,7 +1072,37 @@ const cancelFn = functions.httpsCallable('cancelPaypalSubscription');
     addMessage('❌ Fehler beim Löschen der Hütte.', 'bot');
   });
 }*/
+async function uploadSuggestionFotos(inputEl) {
+  const files = inputEl.files;
+  const fotos = [];
 
+  for (let f of files) {
+    const ref = firebase.storage().ref("vorschlagFotos/" + Date.now() + "-" + f.name);
+    await ref.put(f);
+    fotos.push(await ref.getDownloadURL());
+  }
+
+  editingData.fotos = fotos;
+
+  // in Firestore speichern
+  const docRef = await db.collection("vorschlaege").add({
+    emailBesitzer: editingData.email,
+    kommentar: editingData.comment || "",
+    fotos: fotos,
+    erstelltAm: new Date(),
+    status: "vorgeschlagen"
+  });
+
+  // Firebase Function für Mail triggern
+  await fetch("https://us-central1-YOUR_PROJECT.cloudfunctions.net/sendSuggestionMail", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: docRef.id, email: editingData.email })
+  });
+
+  addMessage("✅ Dein Vorschlag wurde gespeichert und eine E-Mail an den Besitzer gesendet!", "bot");
+  step = null;
+}
 
 
 function deleteHut(id) {
