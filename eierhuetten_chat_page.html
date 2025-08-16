@@ -378,29 +378,12 @@ function processUserInput(txt) {
   }
 
   if (step === 'suggest_comment') {
-  editingData.comment = txt.trim();
-  addMessage('📍 Bitte wähle den Standort deiner Hütte aus.', 'bot');
+    editingData.comment = txt.trim();
+    addMessage('📍 Bitte wähle den Standort deiner Hütte aus.', 'bot');
 
-  showSuggestionMap(); // zeigt Karte und Button zum Senden
+    showSuggestionMap(); // zeigt Karte + Button zum Senden
 
-  step = 'suggest_location';
-  return;
-}
-
-  if (step === 'suggest_upload') {
-    addMessage('✅ Alle Daten gesammelt! Senden wir deinen Vorschlag...', 'bot');
-
-    // Firebase Function aufrufen
-    firebase.functions().httpsCallable('sendSuggestionMail')({
-      email: editingData.email,
-      id: generateUniqueId(),  // eindeutige Vorschlags-ID
-      comment: editingData.comment,
-      fotos: editingData.fotos || [] // falls du Upload URLs hast
-    })
-    .then(res => addMessage('✅ Vorschlag erfolgreich gesendet!', 'bot'))
-    .catch(err => addMessage('❌ Fehler beim Senden: ' + err.message, 'bot'));
-
-    step = null; // Flow beenden
+    step = 'suggest_location';
     return;
   }
 
@@ -432,7 +415,7 @@ function processUserInput(txt) {
       if (ans === 'Immer geöffnet') {
         editingData.oeffnungszeiten = 'Immer geöffnet';
         step = 6;
-        showMap();
+        showMap(); // Karte für Hütten-Standort
       } else {
         showTimePicker();
       }
@@ -440,6 +423,7 @@ function processUserInput(txt) {
     return;
   }
 }
+
 
 // Neue Funktion mit Fallback
 function updateAboInfoFallback(subId, el) {
@@ -1447,33 +1431,36 @@ function showSuggestionMap() {
         editingData.location = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
       });
 
-      // Erste Position speichern
       editingData.location = new firebase.firestore.GeoPoint(latitude, longitude);
 
-      // Weiter-Button ersetzt durch Vorschlag senden
       const btn = document.createElement('button');
       btn.className = 'choice-btn mt-2';
       btn.textContent = '✅ Vorschlag senden';
       btn.onclick = () => {
         container.remove();
-        // Firebase Function aufrufen
-        firebase.functions().httpsCallable('sendSuggestionMail')({
-          email: editingData.email,
+       fetch('https://us-central1-eierhuettentour.cloudfunctions.net/sendSuggestionMail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           id: generateUniqueId(),
+          email: editingData.email,
           comment: editingData.comment,
-          location: editingData.location
-        })
-        .then(res => addMessage('✅ Vorschlag erfolgreich gesendet!', 'bot'))
-        .catch(err => addMessage('❌ Fehler beim Senden: ' + err.message, 'bot'));
+          location: editingData.location, // { latitude, longitude }
+        }),
+      })
+      .then(res => res.json())
+      .then(data => addMessage('✅ Vorschlag erfolgreich gesendet!', 'bot'))
+      .catch(err => addMessage('❌ Fehler beim Senden: ' + err.message, 'bot'));
+        step = null;
       };
       container.appendChild(btn);
-
       chatWindow.scrollTop = chatWindow.scrollHeight;
     }, 100);
   }, () => {
     addMessage('❌ Standort konnte nicht ermittelt werden.', 'bot');
   });
 }
+
 
 function showMap() {
   const container = document.createElement('div');
