@@ -378,17 +378,14 @@ function processUserInput(txt) {
   }
 
   if (step === 'suggest_comment') {
-    editingData.comment = txt.trim();
-    addMessage('📷 Lade jetzt bitte Fotos hoch (du kannst mehrere auswählen).', 'bot');
+  editingData.comment = txt.trim();
+  addMessage('📍 Bitte wähle den Standort deiner Hütte aus.', 'bot');
 
-    // Button zum Upload im Chat anzeigen
-    addMessage(`
-      <input type="file" id="suggest-fotos" multiple accept="image/*" onchange="uploadSuggestionFotos(this)">
-    `, 'bot', true);
+  showSuggestionMap(); // zeigt Karte und Button zum Senden
 
-    step = 'suggest_upload';
-    return;
-  }
+  step = 'suggest_location';
+  return;
+}
 
   if (step === 'suggest_upload') {
     addMessage('✅ Alle Daten gesammelt! Senden wir deinen Vorschlag...', 'bot');
@@ -1431,6 +1428,52 @@ chatInput.addEventListener('keypress', e => {
     startApp(user);
   };
     }
+function showSuggestionMap() {
+  const container = document.createElement('div');
+  container.className = 'message bot';
+  container.innerHTML = `<div class="font-bold mb-1">📍 Bitte wähle den Standort deiner Hütte:</div><div id="map"></div>`;
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+
+  navigator.geolocation.getCurrentPosition(pos => {
+    const { latitude, longitude } = pos.coords;
+    setTimeout(() => {
+      map = L.map('map').setView([latitude, longitude], 15);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      marker = L.marker([latitude, longitude], { draggable: true }).addTo(map);
+
+      marker.on('dragend', e => {
+        const pos = e.target.getLatLng();
+        editingData.location = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
+      });
+
+      // Erste Position speichern
+      editingData.location = new firebase.firestore.GeoPoint(latitude, longitude);
+
+      // Weiter-Button ersetzt durch Vorschlag senden
+      const btn = document.createElement('button');
+      btn.className = 'choice-btn mt-2';
+      btn.textContent = '✅ Vorschlag senden';
+      btn.onclick = () => {
+        container.remove();
+        // Firebase Function aufrufen
+        firebase.functions().httpsCallable('sendSuggestionMail')({
+          email: editingData.email,
+          id: generateUniqueId(),
+          comment: editingData.comment,
+          location: editingData.location
+        })
+        .then(res => addMessage('✅ Vorschlag erfolgreich gesendet!', 'bot'))
+        .catch(err => addMessage('❌ Fehler beim Senden: ' + err.message, 'bot'));
+      };
+      container.appendChild(btn);
+
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+    }, 100);
+  }, () => {
+    addMessage('❌ Standort konnte nicht ermittelt werden.', 'bot');
+  });
+}
 
 function showMap() {
   const container = document.createElement('div');
