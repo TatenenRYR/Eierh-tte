@@ -306,7 +306,7 @@ function startDialog() {
 
   // Falls kein Befehl erkannt wurde
   addMessage('❓ Ich habe das leider nicht verstanden. Bitte wähle eine Option aus.', 'bot');
-  addChoiceButtons(['🥚 Neue Hütte erstellen','📋 Meine Hütten anzeigen','🎫 Support Anfragen'], handleIntent);
+  addChoiceButtons(['🥚 Neue Hütte erstellen','📋 Meine Hütten anzeigen','🎫 Support Anfragen','📩 Hütte vorschlagen'], handleIntent);
 }
   
   /*function handleIntent(input) {
@@ -367,25 +367,49 @@ function startDialog() {
 }
 */
 function processUserInput(txt) {
+  // ==========================
+  // Vorschlags-Flow
+  // ==========================
   if (step === 'suggest_email') {
-  editingData = { email: input.trim() };
-  addMessage('✅ Danke! Möchtest du noch einen Kommentar hinzufügen?', 'bot');
-  step = 'suggest_comment';
-  return;
-}
+    editingData = { email: txt.trim() };
+    addMessage('✅ Danke! Möchtest du noch einen Kommentar hinzufügen?', 'bot');
+    step = 'suggest_comment';
+    return;
+  }
 
-if (step === 'suggest_comment') {
-  editingData.comment = input.trim();
-  addMessage('📷 Lade jetzt bitte Fotos hoch (du kannst mehrere auswählen).', 'bot');
+  if (step === 'suggest_comment') {
+    editingData.comment = txt.trim();
+    addMessage('📷 Lade jetzt bitte Fotos hoch (du kannst mehrere auswählen).', 'bot');
 
-  // Button zum Upload im Chat anzeigen
-  addMessage(`
-    <input type="file" id="suggest-fotos" multiple accept="image/*" onchange="uploadSuggestionFotos(this)">
-  `, 'bot', true);
+    // Button zum Upload im Chat anzeigen
+    addMessage(`
+      <input type="file" id="suggest-fotos" multiple accept="image/*" onchange="uploadSuggestionFotos(this)">
+    `, 'bot', true);
 
-  step = 'suggest_upload';
-  return;
-}
+    step = 'suggest_upload';
+    return;
+  }
+
+  if (step === 'suggest_upload') {
+    addMessage('✅ Alle Daten gesammelt! Senden wir deinen Vorschlag...', 'bot');
+
+    // Firebase Function aufrufen
+    firebase.functions().httpsCallable('sendSuggestionMail')({
+      email: editingData.email,
+      id: generateUniqueId(),  // eindeutige Vorschlags-ID
+      comment: editingData.comment,
+      fotos: editingData.fotos || [] // falls du Upload URLs hast
+    })
+    .then(res => addMessage('✅ Vorschlag erfolgreich gesendet!', 'bot'))
+    .catch(err => addMessage('❌ Fehler beim Senden: ' + err.message, 'bot'));
+
+    step = null; // Flow beenden
+    return;
+  }
+
+  // ==========================
+  // Hütten-Flow (nummerierte Steps)
+  // ==========================
   if (step === 1) {
     editingData.name = txt;
     step = 2;
@@ -402,6 +426,7 @@ if (step === 'suggest_comment') {
     });
     return;
   }
+
   if (step === 4) {
     editingData.extras = txt.toLowerCase() === 'keine' ? '' : txt;
     step = 5;
@@ -418,6 +443,7 @@ if (step === 'suggest_comment') {
     return;
   }
 }
+
 // Neue Funktion mit Fallback
 function updateAboInfoFallback(subId, el) {
   if (!el) return;
