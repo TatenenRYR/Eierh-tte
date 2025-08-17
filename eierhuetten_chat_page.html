@@ -1223,74 +1223,73 @@ function zeigeSupportFormularMitVorschlag(vorlage) {
 }
 
 */
-  function deleteHut(id) {
+  async function deleteHut(id) {
   if (!confirm('❗ Möchtest du diese Hütte wirklich löschen?')) return;
 
-  db.collection('eierhuetten').doc(id).get().then(async (doc) => {
-    if (!doc.exists) {
-      addMessage('❌ Hütte nicht gefunden.', 'bot');
-      return;
-    }
-
-    const hut = doc.data();
-    const user = firebase.auth().currentUser;
-
-    if (!hut.paypalSubscriptionId) {
-      addMessage(
-        `⚠️ Es wurde keine PayPal-Abo-ID gefunden.<br><br>
-         Wenn du trotzdem ein Abo vermutest, <a href='#' onclick='zeigeSupportFormularMitVorschlag(\`Ich möchte die Hütte \\\"${hut.name || 'Unbekannt'}\\\" löschen, aber es ist keine PayPal-Abo-ID gespeichert. Bitte prüft, ob ein aktives Abo besteht.\`)'>kontaktiere den Support</a>.`,
-        'bot'
-      );
-
-      if (confirm("❓ Es wurde keine Abo-ID gefunden. Trotzdem archivieren?")) {
-        db.collection('eierhuetten').doc(id).update({
-          status: "archiviert",
-          archiviertAm: firebase.firestore.FieldValue.serverTimestamp()
-        }).then(() => {
-          addMessage('🗃️ Hütte wurde archiviert und ist für dich nicht mehr sichtbar.', 'bot');
-          korrigiereFehlendeAbos().then(() => showMyHuts());
-        });
-      }
-      return;
-    }
-
-    addMessage('🔄 Versuche, dein PayPal-Abo zu kündigen...', 'bot');
-
-    try {
-      const token = await user.getIdToken(); // ✅ Firebase Auth Token holen
-
-      const res = await fetch("https://cancelpaypalsubscription-348272135205.europe-west1.run.app", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}` // ✅ Auth Header
-        },
-        body: JSON.stringify({ subscriptionId: hut.paypalSubscriptionId })
-      });
-
-      const result = await res.json();
-
-      if (result.success) {
-        addMessage('✅ Abo erfolgreich gekündigt.', 'bot');
-        await db.collection('eierhuetten').doc(id).update({
-          status: "archiviert",
-          archiviertAm: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        addMessage('🗃️ Hütte wurde archiviert und ist für dich nicht mehr sichtbar.', 'bot');
-        korrigiereFehlendeAbos().then(() => showMyHuts());
-      } else {
-        addMessage('⚠️ Abo konnte nicht gekündigt werden. Die Hütte wurde NICHT gelöscht.', 'bot');
-        frageSupportBeiAboProblem(user, hut);
-      }
-    } catch (err) {
-      console.error("❌ Fehler bei Kündigung:", err);
-      addMessage('❌ Fehler beim Kündigen. Die Hütte wurde NICHT gelöscht.', 'bot');
-      frageSupportBeiAboProblem(user, hut);
-    }
-  });
+  const doc = await db.collection('eierhuetten').doc(id).get();
+  if (!doc.exists) {
+    addMessage('❌ Hütte nicht gefunden.', 'bot');
+    return;
   }
 
+  const hut = doc.data();
+  const user = firebase.auth().currentUser;
 
+  if (!hut.paypalSubscriptionId) {
+    addMessage(
+      `⚠️ Es wurde keine PayPal-Abo-ID für diese Hütte gefunden.<br><br>
+       Wenn du trotzdem ein Abo vermutest, <a href='#' onclick='zeigeSupportFormularMitVorschlag(\`Ich möchte die Hütte \\\"${hut.name || 'Unbekannt'}\\\" löschen, aber es ist keine PayPal-Abo-ID gespeichert. Bitte prüft, ob ein aktives Abo besteht.\`)'>kontaktiere den Support</a>.`,
+      'bot'
+    );
+
+    if (confirm("❓ Es wurde keine Abo-ID gefunden. Trotzdem archivieren?")) {
+      await db.collection('eierhuetten').doc(id).update({
+        status: "archiviert",
+        archiviertAm: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      addMessage('🗃️ Hütte wurde archiviert und ist für dich nicht mehr sichtbar.', 'bot');
+      korrigiereFehlendeAbos().then(() => showMyHuts());
+    }
+    return;
+  }
+
+  addMessage('🔄 Versuche, dein PayPal-Abo zu kündigen...', 'bot');
+
+  try {
+    // ✅ Firebase Auth Token holen
+    const token = await user.getIdToken();
+
+    // ✅ Cloud Run Endpoint aufrufen
+    const res = await fetch("https://cancelpaypalsubscription-348272135205.europe-west1.run.app", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({ subscriptionId: hut.paypalSubscriptionId })
+    });
+
+    const result = await res.json();
+
+    if (res.ok && result.success) {
+      addMessage('✅ Abo erfolgreich gekündigt.', 'bot');
+      await db.collection('eierhuetten').doc(id).update({
+        status: "archiviert",
+        archiviertAm: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      addMessage('🗃️ Hütte wurde archiviert und ist für dich nicht mehr sichtbar.', 'bot');
+      korrigiereFehlendeAbos().then(() => showMyHuts());
+    } else {
+      addMessage('⚠️ Abo konnte nicht gekündigt werden. Die Hütte wurde NICHT gelöscht.', 'bot');
+      frageSupportBeiAboProblem(user, hut);
+    }
+
+  } catch (err) {
+    console.error('❌ Fehler bei Kündigung:', err);
+    addMessage('❌ Fehler beim Kündigen. Die Hütte wurde NICHT gelöscht.', 'bot');
+    frageSupportBeiAboProblem(user, hut);
+  }
+}
 async function deleteImage(hutId, imageUrl, deleteUrl) {
   if (!confirm('❗ Möchtest du dieses Bild wirklich löschen?')) return;
 
