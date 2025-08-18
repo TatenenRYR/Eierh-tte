@@ -1128,54 +1128,40 @@ function deleteHut(id) {
          Wenn du trotzdem ein Abo vermutest, <a href='#' onclick='zeigeSupportFormularMitVorschlag(\`Ich möchte die Hütte \\\"${hut.name || 'Unbekannt'}\\\" löschen, aber es ist keine PayPal-Abo-ID gespeichert. Bitte prüft, ob ein aktives Abo besteht.\`)'>kontaktiere den Support</a>.`,
         'bot'
       );
+      return;
+    }
 
-      if (confirm("❓ Es wurde keine Abo-ID gefunden. Trotzdem archivieren?")) {
+    addMessage('🔄 Versuche, dein PayPal-Abo zu kündigen...', 'bot');
+
+    fetch('https://cancelpaypalsubscription-q24emlt4ja-uc.a.run.app', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscriptionId: hut.paypalSubscriptionId })
+    })
+    .then(res => res.json())
+    .then(result => {
+      if (result.success) {
+        addMessage('✅ Abo erfolgreich gekündigt.', 'bot');
         db.collection('eierhuetten').doc(id).update({
-          status: "archiviert",
+          status: 'archiviert',
           archiviertAm: firebase.firestore.FieldValue.serverTimestamp()
         }).then(() => {
           addMessage('🗃️ Hütte wurde archiviert und ist für dich nicht mehr sichtbar.', 'bot');
           korrigiereFehlendeAbos().then(() => showMyHuts());
         });
       } else {
-        addMessage("❌ Hütte wurde nicht archiviert.", "bot");
-      }
-      return;
-    }
-
-    // ==== PayPal-Abo kündigen ====
-    addMessage('🔄 Versuche, dein PayPal-Abo zu kündigen...', 'bot');
-
-    fetch("https://cancelpaypalsubscription-q24emlt4ja-uc.a.run.app", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subscriptionId: hut.paypalSubscriptionId })
-    })
-      .then(res => res.json())
-      .then(result => {
-        if (result.success) {
-          addMessage('✅ Abo erfolgreich gekündigt.', 'bot');
-          db.collection('eierhuetten').doc(id).update({
-            status: "archiviert",
-            archiviertAm: firebase.firestore.FieldValue.serverTimestamp()
-          }).then(() => {
-            addMessage('🗃️ Hütte wurde archiviert und ist für dich nicht mehr sichtbar.', 'bot');
-            korrigiereFehlendeAbos().then(() => showMyHuts());
-          });
-        } else {
-          console.error("⚠️ Kündigungsfehler:", result);
-          addMessage('⚠️ Abo konnte nicht gekündigt werden. Die Hütte wurde NICHT gelöscht.', 'bot');
-          frageSupportBeiAboProblem(user, hut);
-        }
-      })
-      .catch(err => {
-        console.error('❌ Fehler bei Kündigung:', err);
-        addMessage('❌ Fehler beim Kündigen. Die Hütte wurde NICHT gelöscht.', 'bot');
+        console.error('⚠️ Kündigungsfehler:', result);
+        addMessage('⚠️ Abo konnte nicht gekündigt werden. Die Hütte wurde NICHT gelöscht.', 'bot');
         frageSupportBeiAboProblem(user, hut);
-      });
+      }
+    })
+    .catch(err => {
+      console.error('❌ Fehler bei Kündigung:', err);
+      addMessage('❌ Fehler beim Kündigen. Die Hütte wurde NICHT gelöscht.', 'bot');
+      frageSupportBeiAboProblem(user, hut);
+    });
   });
 }
-
 /*function deleteHut(id) {
   if (!confirm('❗ Möchtest du diese Hütte wirklich löschen?')) return;
 
