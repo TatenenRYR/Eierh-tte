@@ -695,6 +695,291 @@ async function showMyHuts() {
   chatWindow.innerHTML = '';
 
   const snapshot = await db.collection('eierhuetten')
+    .where('userId', '==', currentUser.uid)
+    .get();
+
+  const docs = snapshot.docs.filter(doc => {
+    const status = doc.data().status;
+    return status !== "archiviert" && status !== "nicht sichtbar";
+  });
+
+  if (docs.length === 0) return addMessage('Du hast noch keine Hütten.', 'bot');
+
+  let total = 0, angenommen = 0, offen = 0, abosAktiv = 0;
+
+  docs.forEach(doc => {
+    const d = doc.data();
+    total++;
+    if (d.status === 'angenommen') angenommen++;
+    if (d.status === 'offen') offen++;
+    if (d.paypalSubscriptionId) abosAktiv++;
+  });
+
+  // Statistik-Balken
+  const statsBar = document.createElement('div');
+  statsBar.className = 'flex justify-around items-center text-sm bg-green-100 text-green-900 py-2 px-4 rounded mb-3 shadow-sm border border-green-300';
+  statsBar.innerHTML = `
+    <div title="Eingereichte Hütten">🥚 <strong>${total}</strong>/10</div>
+    <div title="Angenommen">✅ <strong>${angenommen}</strong></div>
+    <div title="Offen">⏳ <strong>${offen}</strong></div>
+    <div title="Abos aktiv">💳 <strong>${abosAktiv}</strong></div>
+  `;
+  chatWindow.appendChild(statsBar);
+
+  docs.forEach(doc => {
+    const d = doc.data();
+    const id = doc.id;
+    const div = document.createElement('div');
+    div.className = 'message bot';
+
+    const now = new Date();
+    let aboInfo = '';
+    let shouldReject = false;
+
+    // Nachtrag fehlender Abo-Werte
+    if (d.paypalSubscriptionId && !d.aboMonate) {
+      db.collection('eierhuetten').doc(id).update({ aboMonate: 1 });
+      d.aboMonate = 1;
+    }
+    if (d.status === 'angenommen' && !d.aboStart && d.paypalSubscriptionId) {
+      const now = new Date();
+      db.collection('eierhuetten').doc(id).update({
+        aboStart: firebase.firestore.Timestamp.fromDate(now)
+      });
+      d.aboStart = firebase.firestore.Timestamp.fromDate(now);
+    }
+
+    // Abo prüfen
+    if (d.aboStart && d.aboMonate) {
+      const start = d.aboStart.toDate();
+      const end = new Date(start);
+      end.setMonth(end.getMonth() + d.aboMonate);
+      const diffTage = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+
+      if (diffTage > 0) {
+        aboInfo = `💳 Abo aktiv bis: ${end.toLocaleDateString()} (noch ${diffTage} Tage)`;
+      } else {
+        aboInfo = '💳 Abo abgelaufen';
+        if (d.status === 'angenommen') shouldReject = true;
+      }
+    }
+
+    if (shouldReject) {
+      db.collection('eierhuetten').doc(id).update({ status: 'abgelehnt' });
+      db.collection('eierhuetten').doc(id).collection('log').add({
+        admin: 'System',
+        feld: 'status',
+        wert: 'abgelehnt',
+        kommentar: 'Abo oder Testphase abgelaufen',
+        zeitpunkt: new Date()
+      });
+      addMessage(`⚠️ Die Hütte "${d.name}" wurde deaktiviert.`, 'bot');
+    }
+
+    const paypalContainerId = `paypal-button-new-${id}`;
+    const minimapId = `minimap-${id}`;
+
+    div.innerHTML = `
+      <div class="text-sm space-y-2 ${diffTage <= 0 ? 'bg-red-50 p-2 rounded' : ''}">
+        <div class='font-bold'>${d.name}</div>
+        <div class='font-bold status-${d.status}'>📌 Status: ${d.status}</div>
+        <div>${aboInfo}</div>
+
+        ${d.status === 'angenommen' ? `
+          <label>📍 Name:<br>
+            <input type='text' data-id='${id}' class='edit-name w-full border px-2 py-1 rounded' value='${d.name}' />
+          </label><br>
+
+          <label>🪑 Sitzplätze:
+            <select data-id='${id}' class='edit-sitz border rounded px-2 py-1 ml-2'>
+              <option ${d.sitzplaetze === 'Ja' ? 'selected' : ''}>Ja</option>
+              <option ${d.sitzplaetze === 'Nein' ? 'selected' : ''}>Nein</option>
+            </select>
+          </label><br>
+
+          <label>🔌 Strom:
+            <select data-id='${id}' class='edit-strom border rounded px-2 py-1 ml-2'>
+              <option ${d.strom === 'Ja' ? 'selected' : ''}>Ja</option>
+              <option ${d.strom === 'Nein' ? 'selected' : ''}>Nein</option>
+            </select>
+          </label><br>
+
+          <label>✨ Extras:<br>
+            <input type='text' data-id='${id}' class='edit-extras w-full border px-2 py-1 rounded' value='${d.extras || ''}' />
+          </label><br>
+
+          <label>🕒 Öffnungszeiten:<br>
+            <input type='text' data-id='${id}' class='edit-zeiten w-full border px-2 py-1 rounded' value='${d.oeffnungszeiten || ''}' />
+          </label><br>
+
+          <button class='edit-btn' onclick='saveEdit("${id}")'>💾 Speichern</button>
+          <button class='delete-btn' onclick='deleteHut("${id}")'>🗑️ Löschen</button>
+        ` : `
+          <div class="text-gray-500 italic">⛔ Nur nach Freigabe bearbeitbar.</div>
+          <button class='delete-btn' onclick='deleteHut("${id}")'>🗑️ Löschen</button>
+        `}
+
+        <!-- Bildergalerie -->
+        ${Array.isArray(d.fotos) && d.fotos.length ? `
+          <div class='flex flex-col gap-2 mt-2'>
+            ${d.fotos.map(img => {
+              const isString = typeof img === 'string';
+              const url = isString ? img : img.url;
+              const del = isString ? '' : (img.delete_url || '');
+              const status = isString ? 'freigegeben' : (img.status || 'freigegeben');
+              const pending = status === 'wartet';
+              return `
+                <div class="flex items-center gap-4 bg-gray-50 p-2 rounded border relative">
+                  <div class="relative group">
+                    <img src="${url}" class="h-20 w-20 object-cover rounded shadow ${pending ? 'opacity-50' : ''}"/>
+                    ${!pending ? `
+                      <button onclick="deleteImage('${id}', '${url}', '${del}')" 
+                        class="absolute top-0 right-0 bg-red-600 text-white text-xs rounded-bl px-1 opacity-0 group-hover:opacity-100 transition">
+                        ✕
+                      </button>
+                    ` : ''}
+                  </div>
+                  <div class="flex-1 text-xs break-all text-gray-600">
+                    <div><strong>Status:</strong> ${pending ? '<span class="text-orange-600">⏳ wartet</span>' : '✅ frei'}</div>
+                    <div><strong>Delete:</strong><br><code>${del || '-'}</code></div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : ''}
+
+        <!-- Upload -->
+        <label class="block mt-2 text-sm">📷 Neues Bild:
+          <input type="file" accept="image/*" data-id="${id}" class="upload-image mt-1" />
+        </label>
+        <div id="progress-${id}" class="h-2 bg-gray-200 rounded hidden mt-2">
+          <div class="h-2 bg-green-500 rounded" style="width: 0%"></div>
+        </div>
+
+        <!-- Mini-Map -->
+        <div id="${minimapId}" class="minimap h-40 mt-2 rounded border"></div>
+
+        <!-- Abo -->
+        ${(!d.aboStart || !d.paypalSubscriptionId || diffTage <= 0) ? `
+          <div class="my-2 text-sm">
+            <strong>💳 Kein aktives Abo</strong><br>
+            <div id="${paypalContainerId}" class="my-2"></div>
+          </div>
+        ` : `
+          <details class="bg-blue-50 border border-blue-200 rounded p-2 my-2 text-sm">
+            <summary class="cursor-pointer">💳 Abo-Informationen</summary>
+            <div><strong>Start:</strong> ${d.aboStart?.toDate?.().toLocaleDateString("de-DE") || '-'}</div>
+            <div><strong>PayPal-ID:</strong> ${d.paypalSubscriptionId}</div>
+            <div><strong>Status:</strong> aktiv</div>
+            ${Array.isArray(d.aboHistory) && d.aboHistory.length ? `
+              <div class="mt-2"><strong>Zahlungsverlauf:</strong>
+                <ul class="list-disc ml-5 text-xs">
+                  ${d.aboHistory.map(e => `
+                    <li>${new Date(e.zeitpunkt?.seconds * 1000).toLocaleDateString("de-DE")} – ${e.betrag} € via ${e.methode}</li>
+                  `).join('')}
+                </ul>
+              </div>
+            ` : '<div class="text-xs text-gray-500 mt-2 italic">Kein Verlauf vorhanden.</div>'}
+          </details>
+        `}
+      </div>
+    `;
+
+    chatWindow.appendChild(div);
+// PayPal-Button nur anzeigen wenn kein aktives Abo
+    if (!d.aboStart || !d.paypalSubscriptionId || diffTage <= 0) {
+      if (typeof paypal !== "undefined") {
+        paypal.Buttons({
+          createSubscription: function(data, actions) {
+            return actions.subscription.create({
+              plan_id: "DEIN_PAYPAL_PLAN_ID" // TODO: richtigen Plan einsetzen
+            });
+          },
+          onApprove: function(data, actions) {
+            db.collection('eierhuetten').doc(id).update({
+              paypalSubscriptionId: data.subscriptionID,
+              aboStart: firebase.firestore.Timestamp.fromDate(new Date()),
+              aboMonate: 1,
+              status: "angenommen"
+            }).then(() => {
+              db.collection('eierhuetten').doc(id).collection('log').add({
+                admin: 'System',
+                feld: 'paypalSubscriptionId',
+                wert: data.subscriptionID,
+                kommentar: 'Abo neu abgeschlossen',
+                zeitpunkt: new Date()
+              });
+              addMessage(`🎉 Abo erfolgreich für Hütte "${d.name}" gestartet.`, 'bot');
+              showMyHuts(); // neu laden
+            });
+          },
+          onError: function(err) {
+            console.error("PayPal Fehler:", err);
+            addMessage("❌ Fehler beim Starten des Abos. Bitte erneut versuchen.", "bot");
+          }
+        }).render(`#${paypalContainerId}`);
+      }
+    }
+
+    // Leaflet Karte initialisieren
+    if (d.location) {
+      const map = L.map(minimapId, {
+        center: [d.location.latitude, d.location.longitude],
+        zoom: 14,
+        zoomControl: false,
+        attributionControl: false
+      });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19
+      }).addTo(map);
+      L.marker([d.location.latitude, d.location.longitude]).addTo(map);
+    }
+  });
+
+  // Event-Handler für Bild-Uploads
+  document.querySelectorAll('.upload-image').forEach(input => {
+    input.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const hutId = e.target.getAttribute('data-id');
+      const progressBar = document.querySelector(`#progress-${hutId}`);
+      const progressFill = progressBar.querySelector('div');
+      progressBar.classList.remove('hidden');
+
+      const storageRef = firebase.storage().ref(`huetten/${hutId}/${Date.now()}_${file.name}`);
+      const uploadTask = storageRef.put(file);
+
+      uploadTask.on('state_changed', (snap) => {
+        const percent = (snap.bytesTransferred / snap.totalBytes) * 100;
+        progressFill.style.width = `${percent}%`;
+      }, (err) => {
+        console.error("❌ Upload-Fehler:", err);
+        addMessage("❌ Fehler beim Hochladen des Bildes.", "bot");
+        progressBar.classList.add('hidden');
+      }, async () => {
+        const url = await uploadTask.snapshot.ref.getDownloadURL();
+        await db.collection('eierhuetten').doc(hutId).update({
+          fotos: firebase.firestore.FieldValue.arrayUnion({
+            url,
+            status: 'wartet',
+            hochgeladenAm: new Date()
+          })
+        });
+        addMessage("📷 Bild hochgeladen und wartet auf Freigabe.", "bot");
+        showMyHuts();
+      });
+    });
+  });
+}
+    
+    
+    
+    /*async function showMyHuts() {
+  chatWindow.innerHTML = '';
+
+  const snapshot = await db.collection('eierhuetten')
   .where('userId', '==', currentUser.uid)
   .get();
 
@@ -931,7 +1216,7 @@ const docs = snapshot.docs.filter(doc => {
       }, 300);
     }
   });
-}
+}*/
 
 
 
