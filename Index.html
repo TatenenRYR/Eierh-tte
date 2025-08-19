@@ -676,11 +676,13 @@ let alreadySpokenTurnIndex = {};
     }
     const alias = localStorage.aliasId;
 const spielplatzIcon = L.icon({
-  iconUrl: "https://cdn-icons-png.flaticon.com/512/3774/3774299.png", // Beispiel: Spielplatz-Symbol
+  iconUrl: "https://cdn-icons-png.flaticon.com/512/3774/3774299.png", // Spielplatz Icon
   iconSize: [32, 32],
   iconAnchor: [16, 32],
   popupAnchor: [0, -32]
 });
+    const hutListIcon = "🏠";        // oder eigenes kleines Icon-Bild
+const spielplatzListIcon = "🛝"; // oder eigenes kleines Icon-Bild
    /////////////////////////////////////////
    // 🧩 UI Funktion
    /////////////////////////////////////////
@@ -2561,6 +2563,47 @@ function loadRouteFromLocal() {
   });
 }*/
     function updateSelectedList() {
+  const container = document.getElementById("selectedList");
+  if (!container) return;
+
+  if (!selectedList || selectedList.length === 0) {
+    container.innerHTML = "<i>Keine Ziele ausgewählt</i>";
+    return;
+  }
+
+  container.innerHTML = "";
+
+  selectedList.forEach(key => {
+    const [typ, id] = key.split("-");
+    let label = "";
+    let icon = "";
+
+    if (typ === "hütte") {
+      const hut = huts.find(h => h.id === id);
+      label = hut ? hut.name : "(Unbekannte Hütte)";
+      icon = hutListIcon;
+    } else if (typ === "spielplatz") {
+      // Falls du eine globale Variable `spielplaetze` pflegen willst, ähnlich wie `huts`
+      const sp = (window.spielplaetze || []).find(s => s.id === id);
+      label = sp ? sp.name : "(Unbekannter Spielplatz)";
+      icon = spielplatzListIcon;
+    }
+
+    const item = document.createElement("div");
+    item.className = "selected-item";
+    item.innerHTML = `
+      <span class="icon">${icon}</span>
+      <span class="label">${label}</span>
+      <button onclick="removeFromSelection('${key}')">❌</button>
+    `;
+    container.appendChild(item);
+  });
+}
+    function removeFromSelection(key) {
+  selectedList = selectedList.filter(x => x !== key);
+  updateSelectedList();
+    }
+ /*   function updateSelectedList() {
   const ul = document.getElementById("selectedList");
   if (!ul || !Array.isArray(selected)) return;
 
@@ -2586,7 +2629,7 @@ function loadRouteFromLocal() {
     `;
     ul.appendChild(li);
   });
-    }
+    }*/
 // Drag & Drop-Logik
 function allowDrop(ev) {
   ev.preventDefault();
@@ -2852,11 +2895,11 @@ if (roomToggle) {
 db.collection("spielplaetze").onSnapshot(snap => {
   snap.forEach(doc => {
     const d = doc.data();
-    if (!d.location || d.status != "angenommen") return;
+    if (!d.location || d.status !== "angenommen") return;
 
     const popupId = `spielplatz-${doc.id}`;
     const freigegebeneBilder = Array.isArray(d.fotos)
-      ? d.fotos.filter(f => typeof f === "string" || f.status === "freigegeben")
+      ? d.fotos.filter(f => typeof f === "string" || f.status === "angenommen")
       : [];
 
     const bilderUrls = freigegebeneBilder.map(f =>
@@ -2865,7 +2908,10 @@ db.collection("spielplaetze").onSnapshot(snap => {
     const fotos64 = btoa(JSON.stringify(bilderUrls));
     const erstesBild = bilderUrls[0];
 
-    const m = L.marker([d.location.latitude, d.location.longitude], { icon: spielplatzIcon }).bindPopup(`
+    const m = L.marker(
+      [d.location.latitude, d.location.longitude],
+      { icon: spielplatzIcon }
+    ).bindPopup(`
       <div id="${popupId}" style="min-width:220px; font-size:14px">
         <div class="popup-image-container" style="position:relative;">
           ${
@@ -2881,15 +2927,18 @@ db.collection("spielplaetze").onSnapshot(snap => {
           }
         </div>
         <b>${d.name || "Spielplatz"}</b><br/>
-        🛝 <b>Extras:</b> ${d.extras || "–"}<br/>
-        📍 <b>Adresse:</b> ${d.adresse || "-"}<br/>
+        🪑 <b>Sitzplätze:</b> ${d.sitz === "Ja" ? "✅" : "❌"}<br/>
+        🏷️ <b>Tags:</b> ${(d.tags || []).join(", ") || "–"}<br/>
+        🛝 <b>Typ:</b> ${d.typ || "-"}<br/>
+        📅 <b>Erstellt am:</b> ${d.erstelltAm?.toDate?.().toLocaleString("de-DE") || "-"}<br/>
+        <hr style="margin:6px 0"/>
+        <button onclick="toggleSelection('${doc.id}', 'spielplatz')">✅ Hinzufügen</button>
       </div>
     `);
 
     cluster.addLayer(m);
   });
 });
-
       //hütten
       db.collection("eierhuetten").onSnapshot(snap => {
         huts = [];
