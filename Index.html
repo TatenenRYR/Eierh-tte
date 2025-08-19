@@ -655,8 +655,7 @@ footer a:hover {
     let follow = true;
     let voice = true;
     let cluster = L.markerClusterGroup();
-    let huts = [], selected = [];
-    let routingLine, progressLine, navInterval;
+    let huts = [], spielplaetze = [], selected = [];    let routingLine, progressLine, navInterval;
     let groupMarkers = {};
     let roomId = "default";
    //let alias = "User" + Math.floor(Math.random() * 1000);
@@ -2566,25 +2565,17 @@ function loadRouteFromLocal() {
   const list = document.getElementById("selectedList");
   list.innerHTML = "";
 
-  selected.forEach(sel => {
-    if (sel.typ === "hütte") {
-      const li = document.createElement("li");
-      li.innerHTML = `🥚 ${sel.name || "Hütte"} 
-        <button onclick="toggleSelection('${sel.id}', 'hütte')">❌ Entfernen</button>`;
-      list.appendChild(li);
-    }
-
-    if (sel.typ === "spielplatz") {
-      db.collection("spielplaetze").doc(sel.id).get().then(doc => {
-        const d = doc.data();
-        if (!d) return;
-        const li = document.createElement("li");
-        li.innerHTML = `🛝 ${d.name || "Spielplatz"} 
-          <button onclick="toggleSelection('${sel.id}', 'spielplatz')">❌ Entfernen</button>`;
-        list.appendChild(li);
-      });
-    }
+  selected.forEach((item, idx) => {
+    const icon = item.type === "spielplatz" ? spielplatzListIcon : hutListIcon;
+    const li = document.createElement("li");
+    li.innerHTML = `${icon} ${item.name} <button onclick="removeSelected(${idx})">❌</button>`;
+    list.appendChild(li);
   });
+}
+
+function removeSelected(index) {
+  selected.splice(index, 1);
+  updateSelectedList();
 }
   /*  function updateSelectedList() {
   const container = document.getElementById("selectedList");
@@ -2714,43 +2705,21 @@ function drop(ev) {
 }
 
     // Fügt Hütte zur Auswahlliste hinzu
-function toggleSelection(type, id) {
-  let item;
+    function toggleSelection(place, type) {
+  // Prüfen, ob schon in der Liste
+  const index = selected.findIndex(s => s.id === place.id && s.type === type);
 
-  if (type === "hütte") {
-    item = huts.find(h => h.id === id);
-    if (!item) {
-      showToast("❗ Hütte nicht gefunden");
-      return;
-    }
-  } else if (type === "spielplatz") {
-    item = playgrounds.find(s => s.id === id);
-    if (!item) {
-      showToast("❗ Spielplatz nicht gefunden");
-      return;
-    }
+  if (index >= 0) {
+    // schon drin → entfernen
+    selected.splice(index, 1);
+    showToast(`${place.name} entfernt`);
+  } else {
+    // neu hinzufügen
+    selected.push({ ...place, type });
+    showToast(`${place.name} hinzugefügt`);
   }
 
-  // Typ ins Objekt mit aufnehmen
-  const entry = { ...item, type };
-
-  if (selected.some(h => h.id === id && h.type === type)) {
-    showToast("⚠️ Bereits ausgewählt");
-    return;
-  }
-
-  selected.push(entry);
   updateSelectedList();
-  showToast(`✔️ Hinzugefügt: ${type} - ${item.name}`);
-  showDashboardAlert();
-
-  // Wenn Route läuft → neu berechnen
-  if (navInterval) {
-    showToast("➕ Neues Ziel hinzugefügt, Route wird neu berechnet.");
-    speak("Neues Ziel hinzugefügt, Route wird aktualisiert.");
-    clearInterval(navInterval);
-    startRoute();
-  }
 }
 
     /////////////////////////////////////////
