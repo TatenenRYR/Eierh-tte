@@ -1125,24 +1125,40 @@ function startCompassListener() {
     enableHighAccuracy: true
   });
 }*/
-    function smoothSnap(gpsLatLng, routePoints, lastLatLng) {
-  const snapped = snapToRoute(gpsLatLng, routePoints);
-  const dist = map.distance(gpsLatLng, snapped);
+function snapToRouteSmooth(gpsLatLng, routePoints, lastLatLng) {
+  if (!Array.isArray(routePoints) || routePoints.length < 2) {
+    return gpsLatLng; // Fallback
+  }
 
-  // Wenn sehr nah → echten GPS-Punkt nehmen
-  if (dist < 10) return gpsLatLng;
+  let closestPoint = null;
+  let minDistance = Infinity;
 
-  // Wenn mittel weit weg → Zwischenposition berechnen
-  if (dist < 50 && lastLatLng) {
+  // Nächstgelegenen Punkt auf der Route suchen
+  for (let i = 0; i < routePoints.length - 1; i++) {
+    const p1 = L.latLng(routePoints[i]);
+    const p2 = L.latLng(routePoints[i + 1]);
+    const snapped = L.GeometryUtil.closest(map, [p1, p2], gpsLatLng);
+    const dist = map.distance(gpsLatLng, snapped);
+
+    if (dist < minDistance) {
+      minDistance = dist;
+      closestPoint = snapped;
+    }
+  }
+
+  if (!closestPoint) return gpsLatLng;
+
+  // 🚀 Smooth: weiche Bewegung statt hartem Sprung
+  if (lastLatLng) {
     return L.latLng(
-      lastLatLng.lat + (snapped.lat - lastLatLng.lat) * 0.3,
-      lastLatLng.lng + (snapped.lng - lastLatLng.lng) * 0.3
+      lastLatLng.lat + (closestPoint.lat - lastLatLng.lat) * 0.3,
+      lastLatLng.lng + (closestPoint.lng - lastLatLng.lng) * 0.3
     );
   }
 
-  // Wenn weit weg → hart snappen
-  return snapped;
+  return closestPoint;
 }
+
 
    /* function startTrackingUser(map) {
   if (!navigator.geolocation) return alert("GPS nicht verfügbar");
@@ -1203,10 +1219,13 @@ function startTrackingUser(map) {
     const lng = pos.coords.longitude;
     const gpsLatLng = L.latLng(lat, lng);
 
-    // 📍 Immer auf die Route snappen
-    const finalLatLng = snapToRoute(gpsLatLng, currentRoutePath);
+    // Sanftes Snapping auf Route
+    const finalLatLng = snapToRouteSmooth(
+      gpsLatLng,
+      currentRoutePath,
+      userMarker?.getLatLng()
+    );
 
-    // 🔄 Benutzerpfeil-Icon (kannst du anpassen)
     const arrowIcon = L.divIcon({
       className: '',
       html: `<div style="
@@ -1230,11 +1249,10 @@ function startTrackingUser(map) {
       userMarker.setIcon(arrowIcon);
     }
 
-    // 🚲 Karte folgt nur, wenn Follow aktiv
+    // Follow-Modus: Karte bewegen, nicht Marker
     if (follow) {
       map.setView(finalLatLng, map.getZoom(), { animate: true });
-      // Optional: nach unten verschieben für bessere Sicht wie in Google Maps
-      map.panBy([0, 100], { animate: true });
+      map.panBy([0, 100], { animate: true }); // Marker nach unten versetzt wie bei Google Maps
     }
 
   }, err => {
@@ -1243,6 +1261,7 @@ function startTrackingUser(map) {
     enableHighAccuracy: true
   });
 }
+
 /*
     function snapToRoute(gpsLatLng, routePoints) {
   if (!Array.isArray(routePoints) || routePoints.length < 2) return gpsLatLng;
