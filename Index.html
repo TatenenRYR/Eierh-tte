@@ -1125,6 +1125,25 @@ function startCompassListener() {
     enableHighAccuracy: true
   });
 }*/
+    function smoothSnap(gpsLatLng, routePoints, lastLatLng) {
+  const snapped = snapToRoute(gpsLatLng, routePoints);
+  const dist = map.distance(gpsLatLng, snapped);
+
+  // Wenn sehr nah → echten GPS-Punkt nehmen
+  if (dist < 10) return gpsLatLng;
+
+  // Wenn mittel weit weg → Zwischenposition berechnen
+  if (dist < 50 && lastLatLng) {
+    return L.latLng(
+      lastLatLng.lat + (snapped.lat - lastLatLng.lat) * 0.3,
+      lastLatLng.lng + (snapped.lng - lastLatLng.lng) * 0.3
+    );
+  }
+
+  // Wenn weit weg → hart snappen
+  return snapped;
+}
+
     function startTrackingUser(map) {
   if (!navigator.geolocation) return alert("GPS nicht verfügbar");
 
@@ -1135,9 +1154,7 @@ function startCompassListener() {
     const gpsLatLng = L.latLng(lat, lng);
 
     // ➕ Snapping nur wenn Route existiert
-    const finalLatLng = (Array.isArray(currentRoutePath) && currentRoutePath.length > 1)
-      ? snapToRoute(gpsLatLng, currentRoutePath)
-      : gpsLatLng;
+    const finalLatLng = smoothSnap(gpsLatLng, currentRoutePath, userMarker?.getLatLng());
 
     const arrowIcon = L.divIcon({
       className: '',
@@ -1164,7 +1181,10 @@ function startCompassListener() {
       }).addTo(map);
     }
 
-    map.setView(finalLatLng, 15); // oder entferne das, wenn du kein Auto-Zoom willst
+   if (follow && map.distance(userMarker.getLatLng(), finalLatLng) > 30) {
+  map.setView(finalLatLng, map.getZoom(), { animate: true });
+}
+
 
   }, err => {
     console.error("GPS-Fehler", err);
