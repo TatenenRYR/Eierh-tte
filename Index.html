@@ -2563,6 +2563,33 @@ function loadRouteFromLocal() {
   });
 }*/
     function updateSelectedList() {
+  const list = document.getElementById("selectedList");
+  list.innerHTML = "";
+
+  selected.forEach(sel => {
+    if (sel.typ === "spielplatz") {
+      // aus DB holen
+      db.collection("spielplaetze").doc(sel.id).get().then(doc => {
+        const d = doc.data();
+        if (!d) return;
+        const li = document.createElement("li");
+        li.textContent = "🛝 " + (d.name || "Spielplatz");
+        list.appendChild(li);
+      });
+    }
+
+    if (sel.typ === "hütte") {
+      db.collection("eierhuetten").doc(sel.id).get().then(doc => {
+        const d = doc.data();
+        if (!d) return;
+        const li = document.createElement("li");
+        li.textContent = "🥚 " + (d.name || "Hütte");
+        list.appendChild(li);
+      });
+    }
+  });
+}
+  /*  function updateSelectedList() {
   const container = document.getElementById("selectedList");
   if (!container) return;
 
@@ -2598,7 +2625,7 @@ function loadRouteFromLocal() {
     `;
     container.appendChild(item);
   });
-}
+}*/
     function removeFromSelection(key) {
   selectedList = selectedList.filter(x => x !== key);
   updateSelectedList();
@@ -2690,31 +2717,38 @@ function drop(ev) {
 }
 
     // Fügt Hütte zur Auswahlliste hinzu
-    function toggleSelection(id) {
-      const hut = huts.find(h => h.id === id);
-      if (!hut) {
-        showToast("❗ Hütte nicht gefunden");
-        return;
-      }
-      if (selected.some(h => h.id === id)) {
-        showToast("⚠️ Bereits ausgewählt");
-        return;
-      }
-      
-      selected.push(hut);
-      updateSelectedList();
-      showToast("✔️ Hinzugefügt: " + hut.name);
-      showDashboardAlert();
-    
-    // Wenn die Route gestartet ist und eine neue Hütte hinzugefügt wird :
-     if (navInterval) {
-        showToast("➕ Neue Hütte hinzugefügt, Route wird neu berechnet.");
-        speak("Neue Hütte hinzugefügt, Route wird aktualisiert.");
-        clearInterval(navInterval);
-        startRoute();
-     }
-    
+    function toggleSelection(id, typ) {
+  if (!window.selected) window.selected = [];
+
+  let obj;
+  if (typ === "hütte") {
+    obj = huts.find(h => h.id === id);
+    if (!obj) {
+      showToast("❗ Hütte nicht gefunden");
+      return;
     }
+  } else if (typ === "spielplatz") {
+    // Spielplätze liegen nicht in `huts`, also direkt aus DB holen
+    obj = { id, typ: "spielplatz" };
+  }
+
+  if (selected.some(s => s.id === id && s.typ === typ)) {
+    showToast("⚠️ Bereits ausgewählt");
+    return;
+  }
+
+  selected.push({ ...obj, typ });
+  updateSelectedList();
+  showToast(`✔️ Hinzugefügt: ${obj.name || typ}`);
+  showDashboardAlert();
+
+  if (navInterval) {
+    showToast("➕ Neue Station hinzugefügt, Route wird neu berechnet.");
+    speak("Neue Station hinzugefügt, Route wird aktualisiert.");
+    clearInterval(navInterval);
+    startRoute();
+  }
+}
 
     /////////////////////////////////////////
     // 🚀 Initialisierung
