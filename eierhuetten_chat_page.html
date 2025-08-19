@@ -1272,20 +1272,27 @@ async function deleteHut(id) {
 
   try {
     const user = firebase.auth().currentUser;
-  if (!user) {
-    addMessage("❌ Du musst eingeloggt sein, um dein Abo zu kündigen.", "bot");
-    return;
-  }
+    if (!user) {
+      addMessage("❌ Du musst eingeloggt sein, um dein Abo zu kündigen.", "bot");
+      return;
+    }
 
-  // Token refresh sicherstellen
-  await user.getIdToken(true);
+    // 🔑 ID-Token holen
+    const idToken = await user.getIdToken(true);
 
-    
-    const functions = firebase.app().functions('us-central1');
-    const cancelPaypalSubscription = functions.httpsCallable('cancelPaypalSubscription');
-    const result = await cancelPaypalSubscription({ subscriptionId: hut.paypalSubscriptionId });
+    // 🔗 HTTPS Request an deine Cloud Function (onRequest)
+    const res = await fetch("https://us-central1-eierhuettentour.cloudfunctions.net/cancelPaypalSubscription", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${idToken}`, // wichtig!
+      },
+      body: JSON.stringify({ subscriptionId: hut.paypalSubscriptionId }),
+    });
 
-    if (result.data.success) {
+    const result = await res.json();
+
+    if (res.ok && result.success) {
       addMessage('✅ Abo erfolgreich gekündigt.', 'bot');
 
       await db.collection('eierhuetten').doc(id).update({
@@ -1295,7 +1302,10 @@ async function deleteHut(id) {
       addMessage('🗃️ Hütte archiviert.', 'bot');
       korrigiereFehlendeAbos();
       showMyHuts();
+    } else {
+      throw new Error(result.error || "Unbekannter Fehler");
     }
+
   } catch (err) {
     console.error('❌ Fehler bei Kündigung:', err);
     addMessage('❌ Abo konnte nicht gekündigt werden. Support kontaktieren.', 'bot');
