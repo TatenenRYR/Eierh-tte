@@ -675,7 +675,12 @@ let alreadySpokenTurnIndex = {};
        localStorage.aliasId = "user_" + Math.random().toString(36).substr(2, 6);
     }
     const alias = localStorage.aliasId;
-
+const spielplatzIcon = L.icon({
+  iconUrl: "https://cdn-icons-png.flaticon.com/512/3774/3774299.png", // Beispiel: Spielplatz-Symbol
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -32]
+});
    /////////////////////////////////////////
    // 🧩 UI Funktion
    /////////////////////////////////////////
@@ -2843,7 +2848,49 @@ if (roomToggle) {
   speak("Willkommen bei der Navigation.");
 }, 2000);
 */
-      
+      // 🛝 Spielplätze auf der Karte anzeigen
+db.collection("spielplaetze").onSnapshot(snap => {
+  snap.forEach(doc => {
+    const d = doc.data();
+    if (!d.location || d.status != "angenommen") return;
+
+    const popupId = `spielplatz-${doc.id}`;
+    const freigegebeneBilder = Array.isArray(d.fotos)
+      ? d.fotos.filter(f => typeof f === "string" || f.status === "freigegeben")
+      : [];
+
+    const bilderUrls = freigegebeneBilder.map(f =>
+      typeof f === "string" ? f : f.url
+    );
+    const fotos64 = btoa(JSON.stringify(bilderUrls));
+    const erstesBild = bilderUrls[0];
+
+    const m = L.marker([d.location.latitude, d.location.longitude], { icon: spielplatzIcon }).bindPopup(`
+      <div id="${popupId}" style="min-width:220px; font-size:14px">
+        <div class="popup-image-container" style="position:relative;">
+          ${
+            bilderUrls.length > 0
+              ? `<img src="${erstesBild}" data-index="0" data-fotos64="${fotos64}" style="width:100%; border-radius:8px; max-height:140px; object-fit:cover;">`
+              : `<div style="height:140px; background:#ccc; display:flex; align-items:center; justify-content:center; border-radius:8px;">Kein Bild</div>`
+          }
+          ${
+            bilderUrls.length > 1
+              ? `<button style="position:absolute;top:50%;left:0;transform:translateY(-50%);background:#0008;color:#fff;border:none;padding:4px 8px;border-radius:0 6px 6px 0;cursor:pointer;" onclick="changePopupImage('${popupId}', -1)">←</button>
+                 <button style="position:absolute;top:50%;right:0;transform:translateY(-50%);background:#0008;color:#fff;border:none;padding:4px 8px;border-radius:6px 0 0 6px;cursor:pointer;" onclick="changePopupImage('${popupId}', 1)">→</button>`
+              : ""
+          }
+        </div>
+        <b>${d.name || "Spielplatz"}</b><br/>
+        🛝 <b>Extras:</b> ${d.extras || "–"}<br/>
+        📍 <b>Adresse:</b> ${d.adresse || "-"}<br/>
+      </div>
+    `);
+
+    cluster.addLayer(m);
+  });
+});
+
+      //hütten
       db.collection("eierhuetten").onSnapshot(snap => {
         huts = [];
         cluster.clearLayers();
