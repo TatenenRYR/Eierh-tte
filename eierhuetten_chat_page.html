@@ -709,24 +709,7 @@ function saveSpielplatz(data) {
     addMessage("❌ Fehler beim Eintragen des Spielplatzes.", "bot");
   });
 }
-  function zeigeMapFuerSpielplatz() {
-  const mapContainer = document.createElement('div');
-  mapContainer.id = "map-spielplatz";
-  mapContainer.style = "height:300px; margin:10px 0; border-radius:8px; overflow:hidden;";
-  chatWindow.appendChild(mapContainer);
-
-  const map = L.map(mapContainer.id).setView([51.1657, 10.4515], 6); // Deutschland Mitte
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-  let marker;
-  map.on('click', e => {
-    if (marker) marker.remove();
-    marker = L.marker(e.latlng).addTo(map);
-    editingData.location = new firebase.firestore.GeoPoint(e.latlng.lat, e.latlng.lng);
-    addMessage("📍 Standort gespeichert. Weiter geht’s!", "bot");
-    processUserInput("location_set"); // Damit der Flow weiterläuft
-  });
-  }
+  
   function zeigeUploadKomponente(context) {
   const upload = document.createElement('input');
   upload.type = 'file';
@@ -2332,7 +2315,44 @@ function showSuggestionMap() {
     addMessage('❌ Standort konnte nicht ermittelt werden.', 'bot');
   });
 }
+function zeigeMapFuerSpielplatz() {
+  const container = document.createElement('div');
+  container.className = 'message bot';
+  container.innerHTML = `<div class="font-bold mb-1">📍 Bitte wähle den Standort des Spielplatzes:</div><div id="map"></div>`;
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
 
+  navigator.geolocation.getCurrentPosition(pos => {
+    const { latitude, longitude } = pos.coords;
+    setTimeout(() => {
+      map = L.map('map').setView([latitude, longitude], 15);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      marker = L.marker([latitude, longitude], { draggable: true }).addTo(map);
+
+      marker.on('dragend', e => {
+        const pos = e.target.getLatLng();
+        editingData.location = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
+      });
+
+      // Erste Position speichern
+      editingData.location = new firebase.firestore.GeoPoint(latitude, longitude);
+
+      // Weiter-Button
+      // Weiter-Button mit Upload-Option
+const btn = document.createElement('button');
+btn.className = 'choice-btn mt-2';
+btn.textContent = '✅ Weiter zu Bilderupload';
+btn.onclick = () => {
+  container.remove();
+  processUserInput("location_set"); // ⬅️ Nächster Schritt
+};
+container.appendChild(btn);
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+    }, 100);
+  }, () => {
+    addMessage('❌ Standort konnte nicht ermittelt werden.', 'bot');
+  });
+}
 
 function showMap() {
   const container = document.createElement('div');
