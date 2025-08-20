@@ -418,16 +418,31 @@ const Support = {
 
 // ===== Kartenfunktionen =====
 function renderHutMap(containerId, hutId, lat, lng) {
-  const map = L.map(containerId).setView([lat || 52.5, lng || 7.5], 13);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:19 }).addTo(map);
+  const container = document.getElementById(containerId);
+  if (!container) return;
 
-  const marker = L.marker([lat || 52.5, lng || 7.5], { draggable:true }).addTo(map);
+  // Fallback-Höhe setzen, falls CSS fehlt
+  if (!container.style.height) {
+    container.style.height = "200px";
+  }
+
+  const map = L.map(containerId).setView([lat || 52.5, lng || 7.5], 15);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+  }).addTo(map);
+
+  const marker = L.marker([lat || 52.5, lng || 7.5], { draggable: true }).addTo(map);
+
+  // Nach kurzer Zeit sicherstellen, dass die Karte richtig gerendert wird
+  setTimeout(() => {
+    map.invalidateSize();
+  }, 300);
 
   marker.on("dragend", async () => {
     const pos = marker.getLatLng();
     if (confirm("Neue Position speichern?")) {
       await db.collection("eierhuetten").doc(hutId).update({
-        location: new firebase.firestore.GeoPoint(pos.lat, pos.lng)
+        location: new firebase.firestore.GeoPoint(pos.lat, pos.lng),
       });
       UI.toast("Position gespeichert");
     } else {
@@ -437,16 +452,31 @@ function renderHutMap(containerId, hutId, lat, lng) {
 }
 
 function renderPlaygroundMap(containerId, spielId, lat, lng) {
-  const map = L.map(containerId).setView([lat || 52.5, lng || 7.5], 13);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:19 }).addTo(map);
+  const container = document.getElementById(containerId);
+  if (!container) return;
 
-  const marker = L.marker([lat || 52.5, lng || 7.5], { draggable:true }).addTo(map);
+  // Fallback-Höhe setzen, falls CSS fehlt
+  if (!container.style.height) {
+    container.style.height = "200px";
+  }
+
+  const map = L.map(containerId).setView([lat || 52.5, lng || 7.5], 15);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+  }).addTo(map);
+
+  const marker = L.marker([lat || 52.5, lng || 7.5], { draggable: true }).addTo(map);
+
+  // Nach kurzer Zeit sicherstellen, dass die Karte richtig gerendert wird
+  setTimeout(() => {
+    map.invalidateSize();
+  }, 300);
 
   marker.on("dragend", async () => {
     const pos = marker.getLatLng();
     if (confirm("Neue Position speichern?")) {
       await db.collection("spielplaetze").doc(spielId).update({
-        location: new firebase.firestore.GeoPoint(pos.lat, pos.lng)
+        location: new firebase.firestore.GeoPoint(pos.lat, pos.lng),
       });
       UI.toast("Position gespeichert");
     } else {
@@ -454,7 +484,6 @@ function renderPlaygroundMap(containerId, spielId, lat, lng) {
     }
   });
 }
-
 async function confirmUpdate(collection, id, patch) {
   if (!confirm("Änderung wirklich speichern?")) return;
   try {
