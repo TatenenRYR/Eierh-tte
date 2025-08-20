@@ -341,21 +341,12 @@ const Playgrounds = {
             ${fotosHtml}
           </div>
         </div>
-
-<div class="mt-3">
-  <label class="label">📍 Standort</label>
-  <div id="map-spiel-${d.id}" class="map-box"></div>
-</div>
-
         
-
         <div class="pt-3 border-t flex gap-2">
           <button class="px-3 py-2 rounded bg-red-600 text-white" onclick="Playgrounds.remove('${d.id}')">🗑️ Spielplatz löschen</button>
         </div>
       `;
-       <script>
-       renderPlaygroundMap("map-spiel-${d.id}", "${d.id}", ${lat || "null"}, ${lng || "null"});
-       </script>
+       
 
       list.appendChild(el);
     });
