@@ -120,31 +120,129 @@ const firebaseConfig = {
     auth.signOut().then(() => location.reload());
   }
 
-  // Hütten laden
-  async function loadHuts() {
-    const snap = await db.collection('eierhuetten').orderBy('name').get();
-    const list = document.getElementById('hut-list');
-    list.innerHTML = '';
-    snap.forEach(doc => {
-      const d = doc.data();
-      const el = document.createElement('div');
-      el.className = "bg-white p-4 rounded shadow";
-      el.innerHTML = `
-        <input value="${d.name || ''}" onchange="db.collection('eierhuetten').doc('${doc.id}').update({name:this.value})"
-          class="font-bold text-lg mb-2 w-full border rounded p-1">
-        <label>Status:
-          <select onchange="db.collection('eierhuetten').doc('${doc.id}').update({status:this.value})" class="w-full border p-1 rounded">
-            ${['offen','angenommen','abgelehnt'].map(s => `<option ${s===d.status?'selected':''}>${s}</option>`).join('')}
-          </select>
-        </label>
-        <button onclick="db.collection('eierhuetten').doc('${doc.id}').delete()" class="bg-red-600 text-white px-3 py-1 rounded mt-3 w-full">🗑️ Löschen</button>
-      `;
-      list.appendChild(el);
-    });
-  }
 
-  // Spielplätze laden
-  // Spielplätze laden
+// =============================
+// 🥚 Hütten laden
+// =============================
+async function loadHuts() {
+  const snap = await db.collection('eierhuetten').orderBy('name').get();
+  const list = document.getElementById('hut-list');
+  list.innerHTML = '';
+  
+  snap.forEach(doc => {
+    const d = doc.data();
+    const el = document.createElement('div');
+    el.className = "bg-white p-4 rounded shadow space-y-3";
+
+    // Fotos vorbereiten
+    let fotosHtml = "";
+    if (Array.isArray(d.fotos) && d.fotos.length > 0) {
+      fotosHtml = d.fotos.map((f, i) => {
+        const url = typeof f === "string" ? f : f.url;
+        const status = typeof f === "string" ? "freigegeben" : (f.status || "offen");
+
+        return `
+          <div class="mb-2">
+            <img src="${url}" class="w-full h-32 object-cover rounded mb-1">
+            <p class="text-xs text-gray-500">Status: ${status}</p>
+            ${status !== "freigegeben" ? `
+              <div class="flex gap-2">
+                <button onclick="updateHutFoto('${doc.id}', ${i}, 'freigegeben')" 
+                  class="bg-green-600 text-white px-2 py-1 rounded text-xs">✅ Freigeben</button>
+                <button onclick="deleteHutFoto('${doc.id}', ${i})" 
+                  class="bg-red-600 text-white px-2 py-1 rounded text-xs">🗑️ Löschen</button>
+              </div>` : ""
+            }
+          </div>
+        `;
+      }).join("");
+    } else {
+      fotosHtml = `<p class="text-sm text-gray-400">Keine Fotos hochgeladen</p>`;
+    }
+
+    // HTML
+    el.innerHTML = `
+      <input value="${d.name || ''}" 
+        onchange="db.collection('eierhuetten').doc('${doc.id}').update({name:this.value})"
+        class="font-bold text-lg mb-2 w-full border rounded p-1">
+
+      <label>Status:
+        <select onchange="db.collection('eierhuetten').doc('${doc.id}').update({status:this.value})" 
+          class="w-full border p-1 rounded mb-2">
+          ${['offen','angenommen','abgelehnt'].map(s => `<option ${s===d.status?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </label>
+
+      <label>Öffnungszeiten:
+        <input value="${d.oeffnungszeiten || ''}" 
+          onchange="db.collection('eierhuetten').doc('${doc.id}').update({oeffnungszeiten:this.value})"
+          class="w-full border p-1 rounded mb-2">
+      </label>
+
+      <label>Strom:
+        <select onchange="db.collection('eierhuetten').doc('${doc.id}').update({strom:this.value})" 
+          class="w-full border p-1 rounded mb-2">
+          ${['Ja','Nein'].map(o => `<option ${o===d.strom?'selected':''}>${o}</option>`).join('')}
+        </select>
+      </label>
+
+      <label>Sitzplätze:
+        <select onchange="db.collection('eierhuetten').doc('${doc.id}').update({sitzplaetze:this.value})" 
+          class="w-full border p-1 rounded mb-2">
+          ${['Ja','Nein'].map(o => `<option ${o===d.sitzplaetze?'selected':''}>${o}</option>`).join('')}
+        </select>
+      </label>
+
+      <label>Extras:
+        <textarea onchange="db.collection('eierhuetten').doc('${doc.id}').update({extras:this.value})"
+          class="w-full border p-1 rounded mb-2">${d.extras || ''}</textarea>
+      </label>
+
+      <label>Abo Monate:
+        <input type="number" value="${d.aboMonate || 0}" 
+          onchange="db.collection('eierhuetten').doc('${doc.id}').update({aboMonate:parseInt(this.value)})"
+          class="w-full border p-1 rounded mb-2">
+      </label>
+
+      <label>Abo Start:
+        <input type="date" value="${d.aboStart ? new Date(d.aboStart.toDate()).toISOString().split('T')[0] : ''}" 
+          onchange="db.collection('eierhuetten').doc('${doc.id}').update({aboStart:new Date(this.value)})"
+          class="w-full border p-1 rounded mb-2">
+      </label>
+
+      <h4 class="font-semibold">💳 PayPal Info</h4>
+      <label>Client ID:
+        <input value="${d.paypalClient || ''}" 
+          onchange="db.collection('eierhuetten').doc('${doc.id}').update({paypalClient:this.value})"
+          class="w-full border p-1 rounded mb-2">
+      </label>
+      <label>Secret:
+        <input value="${d.paypalSecret || ''}" 
+          onchange="db.collection('eierhuetten').doc('${doc.id}').update({paypalSecret:this.value})"
+          class="w-full border p-1 rounded mb-2">
+      </label>
+      <label>Subscription ID:
+        <input value="${d.paypalSubId || ''}" 
+          onchange="db.collection('eierhuetten').doc('${doc.id}').update({paypalSubId:this.value})"
+          class="w-full border p-1 rounded mb-2">
+      </label>
+
+      <div>
+        <p class="font-semibold mb-1">📷 Fotos:</p>
+        ${fotosHtml}
+      </div>
+
+      <button onclick="db.collection('eierhuetten').doc('${doc.id}').delete()" 
+        class="bg-red-600 text-white px-3 py-1 rounded mt-3 w-full">🗑️ Hütte löschen</button>
+    `;
+
+    list.appendChild(el);
+  });
+}
+
+// =============================
+// 🛝 Spielplätze laden
+// =============================
 async function loadSpielplaetze() {
   const snap = await db.collection('spielplaetze').orderBy('name').get();
   const list = document.getElementById('spielplatz-list');
@@ -155,13 +253,12 @@ async function loadSpielplaetze() {
     const el = document.createElement('div');
     el.className = "bg-white p-4 rounded shadow space-y-3";
 
-    // Bilder vorbereiten
+    // Fotos
     let fotosHtml = "";
     if (Array.isArray(d.fotos) && d.fotos.length > 0) {
       fotosHtml = d.fotos.map((f, i) => {
         const url = typeof f === "string" ? f : f.url;
         const status = typeof f === "string" ? "freigegeben" : (f.status || "offen");
-
         return `
           <div class="mb-2">
             <img src="${url}" class="w-full h-32 object-cover rounded mb-1">
@@ -181,7 +278,7 @@ async function loadSpielplaetze() {
       fotosHtml = `<p class="text-sm text-gray-400">Keine Fotos hochgeladen</p>`;
     }
 
-    // HTML bauen
+    // HTML
     el.innerHTML = `
       <input value="${d.name || ''}" 
         onchange="db.collection('spielplaetze').doc('${doc.id}').update({name:this.value})"
@@ -194,11 +291,23 @@ async function loadSpielplaetze() {
         </select>
       </label>
 
+      <label>Typ:
+        <input value="${d.typ || ''}" 
+          onchange="db.collection('spielplaetze').doc('${doc.id}').update({typ:this.value})"
+          class="w-full border p-1 rounded mb-2">
+      </label>
+
       <label>Sitzplätze:
         <select onchange="db.collection('spielplaetze').doc('${doc.id}').update({sitz:this.value})" 
           class="w-full border p-1 rounded mb-3">
           ${['Ja','Nein'].map(o => `<option ${o===d.sitz?'selected':''}>${o}</option>`).join('')}
         </select>
+      </label>
+
+      <label>Tags:
+        <input value="${(d.tags || []).join(', ')}" 
+          onchange="db.collection('spielplaetze').doc('${doc.id}').update({tags:this.value.split(',').map(t=>t.trim())})"
+          class="w-full border p-1 rounded mb-2">
       </label>
 
       <div>
@@ -214,31 +323,54 @@ async function loadSpielplaetze() {
   });
 }
 
-// Foto freigeben
+// =============================
+// 📷 Foto-Handling für Hütten
+// =============================
+function updateHutFoto(docId, index, newStatus) {
+  const ref = db.collection('eierhuetten').doc(docId);
+  ref.get().then(doc => {
+    if (!doc.exists) return;
+    const d = doc.data();
+    if (!Array.isArray(d.fotos)) return;
+    d.fotos[index].status = newStatus;
+    ref.update({ fotos: d.fotos }).then(() => loadHuts());
+  });
+}
+function deleteHutFoto(docId, index) {
+  const ref = db.collection('eierhuetten').doc(docId);
+  ref.get().then(doc => {
+    if (!doc.exists) return;
+    const d = doc.data();
+    if (!Array.isArray(d.fotos)) return;
+    d.fotos.splice(index, 1);
+    ref.update({ fotos: d.fotos }).then(() => loadHuts());
+  });
+}
+
+// =============================
+// 📷 Foto-Handling für Spielplätze
+// =============================
 function updateSpielplatzFoto(docId, index, newStatus) {
   const ref = db.collection('spielplaetze').doc(docId);
   ref.get().then(doc => {
     if (!doc.exists) return;
     const d = doc.data();
     if (!Array.isArray(d.fotos)) return;
-
     d.fotos[index].status = newStatus;
     ref.update({ fotos: d.fotos }).then(() => loadSpielplaetze());
   });
 }
-
-// Foto löschen
 function deleteSpielplatzFoto(docId, index) {
   const ref = db.collection('spielplaetze').doc(docId);
   ref.get().then(doc => {
     if (!doc.exists) return;
     const d = doc.data();
     if (!Array.isArray(d.fotos)) return;
-
     d.fotos.splice(index, 1);
     ref.update({ fotos: d.fotos }).then(() => loadSpielplaetze());
   });
 }
+
   // Support laden
   async function loadSupportTickets() {
     const snap = await db.collection('supportTickets').orderBy('createdAt','desc').get();
