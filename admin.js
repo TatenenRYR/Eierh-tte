@@ -25,10 +25,10 @@ const UI = {
     } catch { return ''; }
   },
   toTimestamp(val) {
-    if (!val) return firebase.firestore.FieldValue.delete(); // leeren
+    if (!val) return firebase.firestore.FieldValue.delete();
     const d = new Date(val);
     if (isNaN(d)) return firebase.firestore.FieldValue.delete();
-    return d; // Firestore compat wandelt Date korrekt
+    return d;
   }
 };
 
@@ -47,7 +47,6 @@ const Admin = {
       document.getElementById('dashboard').classList.remove('hidden');
       document.getElementById('user-name').textContent = user.displayName || user.email || 'Angemeldet';
 
-      // Laden
       Huts.load();
       Playgrounds.load();
       Support.load();
@@ -87,10 +86,9 @@ const Huts = {
     filtered.forEach(d => {
       const el = document.createElement('div');
       el.className = 'card';
-      const lat = d.location?.latitude ?? '';
-      const lng = d.location?.longitude ?? '';
+      const lat = d.location?.latitude ?? 52.5;
+      const lng = d.location?.longitude ?? 7.5;
 
-      // Fotos: Strings ODER Objekte {url, status}
       const fotosHtml = Array.isArray(d.fotos) && d.fotos.length
         ? d.fotos.map((f, i) => {
             const url = (typeof f === 'string') ? f : (f?.url || '');
@@ -161,18 +159,7 @@ const Huts = {
               </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-              <div>
-                <label class="label">Lat</label>
-                <input class="field" value="${lat}" 
-                  onchange="Huts.updateLocation('${d.id}', this.value, null)">
-              </div>
-              <div>
-                <label class="label">Lng</label>
-                <input class="field" value="${lng}" 
-                  onchange="Huts.updateLocation('${d.id}', null, this.value)">
-              </div>
-            </div>
+            <div id="map-hut-${d.id}" class="h-48 w-full mt-3"></div>
 
             <div class="mt-3 text-xs text-gray-600">
               <div>📅 Erstellt am: ${d.erstelltAm?.toDate?.().toLocaleString('de-DE') || '-'}</div>
@@ -193,27 +180,11 @@ const Huts = {
       `;
 
       list.appendChild(el);
+      setTimeout(() => renderHutMap(`map-hut-${d.id}`, d.id, lat, lng), 100);
     });
   },
   async update(id, patch) {
-   confirmUpdate('eierhuetten', id, patch);
-  },
-  async updateLocation(id, lat, lng) {
-    try {
-      const ref = db.collection('eierhuetten').doc(id);
-      const snap = await ref.get();
-      if (!snap.exists) return;
-      const d = snap.data();
-      const cur = d.location || {};
-      const newLat = (lat !== null && lat !== undefined) ? parseFloat(lat) : cur.latitude;
-      const newLng = (lng !== null && lng !== undefined) ? parseFloat(lng) : cur.longitude;
-      if (isNaN(newLat) || isNaN(newLng)) {
-        UI.toast('Ungültige Koordinaten');
-        return;
-      }
-      await ref.update({ location: new firebase.firestore.GeoPoint(newLat, newLng) });
-      UI.toast('Position gespeichert');
-    } catch (e) { console.warn(e); UI.toast('Fehler Position'); }
+    confirmUpdate('eierhuetten', id, patch);
   },
   async deletePhoto(id, index) {
     try {
@@ -229,7 +200,6 @@ const Huts = {
     } catch (e) { console.warn(e); UI.toast('Fehler beim Löschen'); }
   },
   async approvePhoto(id, index) {
-    // Unterstützt nur, wenn fotos als Objekte vorliegen
     try {
       const ref = db.collection('eierhuetten').doc(id);
       const snap = await ref.get();
@@ -252,7 +222,6 @@ const Huts = {
     catch (e) { console.warn(e); UI.toast('Fehler beim Löschen'); }
   }
 };
-
 // ===== Spielplätze =====
 const Playgrounds = {
   cache: [],
@@ -280,6 +249,8 @@ const Playgrounds = {
     filtered.forEach(d => {
       const el = document.createElement('div');
       el.className = 'card';
+      const lat = d.location?.latitude ?? 52.5;
+      const lng = d.location?.longitude ?? 7.5;
 
       const fotosHtml = Array.isArray(d.fotos) && d.fotos.length
         ? d.fotos.map((f, i) => {
@@ -330,6 +301,8 @@ const Playgrounds = {
               </div>
             </div>
 
+            <div id="map-spiel-${d.id}" class="h-48 w-full mt-3"></div>
+
             <div class="mt-3 text-xs text-gray-600">
               <div>📅 Erstellt am: ${d.erstelltAm?.toDate?.().toLocaleString('de-DE') || '-'}</div>
               <div>👤 User: ${d.userId || '-'}</div>
@@ -346,9 +319,9 @@ const Playgrounds = {
           <button class="px-3 py-2 rounded bg-red-600 text-white" onclick="Playgrounds.remove('${d.id}')">🗑️ Spielplatz löschen</button>
         </div>
       `;
-       
 
       list.appendChild(el);
+      setTimeout(() => renderPlaygroundMap(`map-spiel-${d.id}`, d.id, lat, lng), 100);
     });
   },
   async update(id, patch) {
@@ -442,13 +415,34 @@ const Support = {
     catch (e) { console.warn(e); UI.toast('Fehler beim Löschen'); }
   }
 };
+
+// ===== Kartenfunktionen =====
+function renderHutMap(containerId, hutId, lat, lng) {
+  const map = L.map(containerId).setView([lat || 52.5, lng || 7.5], 13);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:19 }).addTo(map);
+
+  const marker = L.marker([lat || 52.5, lng || 7.5], { draggable:true }).addTo(map);
+
+  marker.on("dragend", async () => {
+    const pos = marker.getLatLng();
+    if (confirm("Neue Position speichern?")) {
+      await db.collection("eierhuetten").doc(hutId).update({
+        location: new firebase.firestore.GeoPoint(pos.lat, pos.lng)
+      });
+      UI.toast("Position gespeichert");
+    } else {
+      marker.setLatLng([lat || 52.5, lng || 7.5]);
+    }
+  });
+}
+
 function renderPlaygroundMap(containerId, spielId, lat, lng) {
   const map = L.map(containerId).setView([lat || 52.5, lng || 7.5], 13);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:19 }).addTo(map);
 
   const marker = L.marker([lat || 52.5, lng || 7.5], { draggable:true }).addTo(map);
 
-  marker.on("dragend", async (e) => {
+  marker.on("dragend", async () => {
     const pos = marker.getLatLng();
     if (confirm("Neue Position speichern?")) {
       await db.collection("spielplaetze").doc(spielId).update({
@@ -460,6 +454,7 @@ function renderPlaygroundMap(containerId, spielId, lat, lng) {
     }
   });
 }
+
 async function confirmUpdate(collection, id, patch) {
   if (!confirm("Änderung wirklich speichern?")) return;
   try {
@@ -470,8 +465,9 @@ async function confirmUpdate(collection, id, patch) {
     UI.toast("Fehler beim Speichern");
   }
 }
+
 // ===== Boot =====
-window.Admin = Admin; // für Buttons
+window.Admin = Admin;
 window.UI = UI;
 window.Huts = Huts;
 window.Playgrounds = Playgrounds;
