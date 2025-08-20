@@ -345,6 +345,16 @@ const Playgrounds = {
           </div>
         </div>
 
+<div class="mt-3">
+  <label class="label">📍 Standort</label>
+  <div id="map-spiel-${d.id}" class="map-box"></div>
+</div>
+<script>
+  renderPlaygroundMap("map-spiel-${d.id}", "${d.id}", ${lat || "null"}, ${lng || "null"});
+</script>
+
+        
+
         <div class="pt-3 border-t flex gap-2">
           <button class="px-3 py-2 rounded bg-red-600 text-white" onclick="Playgrounds.remove('${d.id}')">🗑️ Spielplatz löschen</button>
         </div>
@@ -445,7 +455,34 @@ const Support = {
     catch (e) { console.warn(e); UI.toast('Fehler beim Löschen'); }
   }
 };
+function renderPlaygroundMap(containerId, spielId, lat, lng) {
+  const map = L.map(containerId).setView([lat || 52.5, lng || 7.5], 13);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:19 }).addTo(map);
 
+  const marker = L.marker([lat || 52.5, lng || 7.5], { draggable:true }).addTo(map);
+
+  marker.on("dragend", async (e) => {
+    const pos = marker.getLatLng();
+    if (confirm("Neue Position speichern?")) {
+      await db.collection("spielplaetze").doc(spielId).update({
+        location: new firebase.firestore.GeoPoint(pos.lat, pos.lng)
+      });
+      UI.toast("Position gespeichert");
+    } else {
+      marker.setLatLng([lat || 52.5, lng || 7.5]);
+    }
+  });
+}
+async function confirmUpdate(collection, id, patch) {
+  if (!confirm("Änderung wirklich speichern?")) return;
+  try {
+    await db.collection(collection).doc(id).update(patch);
+    UI.toast("Gespeichert");
+  } catch (e) {
+    console.warn(e);
+    UI.toast("Fehler beim Speichern");
+  }
+}
 // ===== Boot =====
 window.Admin = Admin; // für Buttons
 window.UI = UI;
