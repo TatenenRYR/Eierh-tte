@@ -196,10 +196,7 @@ const Huts = {
     });
   },
   async update(id, patch) {
-    try {
-      await db.collection('eierhuetten').doc(id).update(patch);
-      UI.toast('Gespeichert');
-    } catch (e) { console.warn(e); UI.toast('Fehler beim Speichern'); }
+   confirmUpdate('eierhuetten', id, patch);
   },
   async updateLocation(id, lat, lng) {
     try {
@@ -349,9 +346,6 @@ const Playgrounds = {
   <label class="label">📍 Standort</label>
   <div id="map-spiel-${d.id}" class="map-box"></div>
 </div>
-<script>
-  renderPlaygroundMap("map-spiel-${d.id}", "${d.id}", ${lat || "null"}, ${lng || "null"});
-</script>
 
         
 
@@ -359,12 +353,15 @@ const Playgrounds = {
           <button class="px-3 py-2 rounded bg-red-600 text-white" onclick="Playgrounds.remove('${d.id}')">🗑️ Spielplatz löschen</button>
         </div>
       `;
+       <script>
+       renderPlaygroundMap("map-spiel-${d.id}", "${d.id}", ${lat || "null"}, ${lng || "null"});
+       </script>
+
       list.appendChild(el);
     });
   },
   async update(id, patch) {
-    try { await db.collection('spielplaetze').doc(id).update(patch); UI.toast('Gespeichert'); }
-    catch (e) { console.warn(e); UI.toast('Fehler beim Speichern'); }
+   confirmUpdate('spielplaetze', id, patch);
   },
   async deletePhoto(id, index) {
     try {
@@ -446,8 +443,7 @@ const Support = {
     });
   },
   async update(id, patch) {
-    try { await db.collection('supportTickets').doc(id).update(patch); UI.toast('Ticket gespeichert'); }
-    catch (e) { console.warn(e); UI.toast('Fehler beim Speichern'); }
+   confirmUpdate('supportTickets', id, patch);
   },
   async remove(id) {
     if (!confirm('Ticket wirklich löschen?')) return;
