@@ -1821,6 +1821,20 @@ async function speak(text) {
   speechSynthesis.cancel();
   speechSynthesis.speak(utterance);
 }
+    function setInstagramButtonActive(active) {
+  const btn = document.getElementById("instagram-btn");
+  if (!btn) return;
+
+  if (active) {
+    btn.classList.remove("disabled");
+    btn.style.pointerEvents = "auto";   // wieder klickbar
+    btn.style.opacity = "1";            // normale Sichtbarkeit
+  } else {
+    btn.classList.add("disabled");
+    btn.style.pointerEvents = "none";   // Klick blockieren
+    btn.style.opacity = "0.5";          // optisch als deaktiviert
+  }
+    }
     // Startet die Route
 let currentRoutePath = [];     // Aktuelle Routing-Punkte (alle)
 let currentHutIndex = 0;       // Aktuelle Zielhütte in selected[]
@@ -1861,7 +1875,7 @@ function startRoute() {
     enableCompassRotation();
     saveRouteToLocal();
     showDashboardAlert();
-
+setInstagramButtonActive(false);
     tourStartTime = Date.now();
     tourDistance = 0;
     challengeProgress = 0;
@@ -2073,7 +2087,7 @@ function stopNavigation() {
   orientationListenerActive = false;
   disableCompassRotation();
   clearRouteLines();
-
+setInstagramButtonActive(true);
   toggleSidebar(true);
   //firebase  Raum
   db.collection("rooms").doc(roomId).set({
@@ -2265,14 +2279,16 @@ function checkIfOffRoute() {
   try {
     document.getElementById("routeInfo").style.display = "block";
 
-    updateRouteInfo(); // 👈 hier wird dynamisch aktualisiert
+    // 🧭 Route-Info + automatische Weiterleitung zur nächsten Station + dynamische Geschwindigkeit
+    updateRouteInfo();
 
-    // Banner
+    // Banner Distanz
     document.getElementById("navDistance").innerText = `${Math.round(dist)} m`;
 
     updateGroup();
     checkIfOffRoute();
 
+    // Sanft der Karte folgen
     if (follow && userMarker && map) {
       const ll = userMarker.getLatLng();
       if (!map.getBounds().pad(-0.3).contains(ll)) {
@@ -2282,57 +2298,93 @@ function checkIfOffRoute() {
   } catch (err) {
     console.warn("⚠️ Fehler in navLoop():", err);
   }
-    }
+        }
     // 👉 Neue Funktion für dynamische Routeninfos
+// globale Variablen (einmal definieren)
+let lastUserPos = null;
+let lastUserTime = null;
+
 function updateRouteInfo() {
-  if (!userMarker || !currentRoutePath || currentRoutePath.length === 0) return;
+  try {
+    if (!userMarker || !currentRoutePath || currentRoutePath.length === 0) return;
 
-  const userPos = userMarker.getLatLng();
-  const target = selected[currentHutIndex];
-  if (!target || !Number.isFinite(target.lat) || !Number.isFinite(target.lng)) return;
+    const userPos = userMarker.getLatLng();
+    const target = selected[currentHutIndex];
+    if (!target || !Number.isFinite(target.lat) || !Number.isFinite(target.lng)) return;
 
-  // Typ dynamisch bestimmen
-  let targetType = "🏡 Hütte";
-  if (spielplaetze.find(s => s.id === target.id)) targetType = "🛝 Spielplatz";
+    // Typ dynamisch bestimmen
+    let targetType = "🏡 Hütte";
+    if (spielplaetze.find(s => s.id === target.id)) targetType = "🛝 Spielplatz";
 
-  // Restdistanz entlang der Route berechnen
-  let remainingDistance = 0;
-  let foundUser = false;
+    // Distanz zum Zielpunkt
+    const targetPos = L.latLng(target.lat, target.lng);
+    const directDist = userPos.distanceTo(targetPos);
 
-  for (let i = 0; i < currentRoutePath.length - 1; i++) {
-    const p1 = L.latLng(currentRoutePath[i]);
-    const p2 = L.latLng(currentRoutePath[i + 1]);
-
-    if (!foundUser) {
-      const distToSegment = L.GeometryUtil.distanceSegment(map, userPos, p1, p2);
-      if (distToSegment < 40) foundUser = true; // Startpunkt auf der Route gefunden
+    // Wenn nah genug dran (50 m Toleranz) -> nächste Station
+    if (directDist < 50) {
+      if (currentHutIndex < selected.length - 1) {
+        currentHutIndex++;
+        const nextTarget = selected[currentHutIndex];
+        const nextType = spielplaetze.find(s => s.id === nextTarget.id) ? "🛝 Spielplatz" : "🏡 Hütte";
+        speak(`✅ ${targetType} ${target.name || ""} erreicht. Weiter zur nächsten Station.`);
+        showToast(`✅ ${targetType} ${target.name || ""} erreicht`);
+      } else {
+        speak("🎉 Tour abgeschlossen!");
+        showToast("🎉 Alle Ziele erreicht!");
+        stopRoute(); // deine Stop-Logik
+        return;
+      }
     }
 
-    if (foundUser) {
-      remainingDistance += p1.distanceTo(p2);
+    // Restdistanz entlang der Route berechnen
+    let remainingDistance = 0;
+    let foundUser = false;
+
+    for (let i = 0; i < currentRoutePath.length - 1; i++) {
+      const p1 = L.latLng(currentRoutePath[i]);
+      const p2 = L.latLng(currentRoutePath[i + 1]);
+
+      if (!foundUser) {
+        const distToSegment = L.GeometryUtil.distanceSegment(map, userPos, p1, p2);
+        if (distToSegment < 40) foundUser = true;
+      }
+
+      if (foundUser) {
+        remainingDistance += p1.distanceTo(p2);
+      }
     }
-  }
 
-  // Falls User noch nicht auf Route, fallback: direkte Distanz
-  if (!foundUser) {
-    remainingDistance = userPos.distanceTo(L.latLng(target.lat, target.lng));
-  }
+    if (!foundUser) remainingDistance = directDist;
 
-  const kmLeft = (remainingDistance / 1000).toFixed(2);
-  const speed = 15; // km/h
-  const etaMinutes = Math.round((remainingDistance / 1000) / speed * 60);
-
-  const infoEl = document.getElementById("routeInfo");
-  if (infoEl) {
-    infoEl.style.display = "block";
-    infoEl.innerHTML = `
-      🎯 Ziel: ${targetType} ${target.name || "Unbenannt"}<br>
-      📏 Noch ${kmLeft} km<br>
-      ⏱️ ca. ${etaMinutes} Minuten<br>
-      🔢 Fortschritt: ${currentHutIndex + 1} von ${selected.length} Stationen
-    `;
-  }
+    // Dynamische Geschwindigkeit berechnen
+    let speedMps = 15 / 3.6; // Fallback 15 km/h
+    const now = Date.now();
+    if (lastUserPos && lastUserTime) {
+      const distMoved = userPos.distanceTo(lastUserPos); // Meter
+      const dt = (now - lastUserTime) / 1000; // Sekunden
+      if (dt > 0) speedMps = distMoved / dt;
     }
+    lastUserPos = userPos;
+    lastUserTime = now;
+
+    const etaMinutes = Math.round(remainingDistance / speedMps / 60);
+    const kmLeft = (remainingDistance / 1000).toFixed(2);
+
+    // Anzeige in #routeInfo aktualisieren
+    const infoEl = document.getElementById("routeInfo");
+    if (infoEl) {
+      infoEl.style.display = "block";
+      infoEl.innerHTML = `
+        🎯 Ziel: ${targetType} ${target.name || "Unbenannt"}<br>
+        📏 Noch ${kmLeft} km<br>
+        ⏱️ ca. ${etaMinutes} Minuten<br>
+        🔢 Fortschritt: ${currentHutIndex + 1} von ${selected.length} Stationen
+      `;
+    }
+  } catch (err) {
+    console.warn("⚠️ Fehler in updateRouteInfo():", err);
+  }
+}
     
     /*function navLoop() {
   try {
