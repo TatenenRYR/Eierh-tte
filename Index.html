@@ -2563,6 +2563,10 @@ function loadRouteFromLocal() {
 }*/
     function updateSelectedList() {
   const list = document.getElementById("selectedList");
+  if (!list) {
+    console.warn('updateSelectedList: #selectedList nicht gefunden');
+    return;
+  }
   list.innerHTML = "";
 
   selected.forEach((item, idx) => {
@@ -2571,7 +2575,7 @@ function loadRouteFromLocal() {
     li.innerHTML = `${icon} ${item.name} <button onclick="removeSelected(${idx})">❌</button>`;
     list.appendChild(li);
   });
-}
+    }
 
 function removeSelected(index) {
   selected.splice(index, 1);
@@ -2704,23 +2708,29 @@ function drop(ev) {
   }
 }
 
-    // Fügt Hütte zur Auswahlliste hinzu
-    function toggleSelection(place, type) {
-  // Prüfen, ob schon in der Liste
-  const index = selected.findIndex(s => s.id === place.id && s.type === type);
+// Eine einzige, robuste Funktion für beide Typen:
+function toggleSelect(type, id) {
+  const src = type === 'spielplatz' ? spielplaetze : huts;
+  const place = src.find(p => p.id === id);
 
-  if (index >= 0) {
-    // schon drin → entfernen
-    selected.splice(index, 1);
-    showToast(`${place.name} entfernt`);
-  } else {
-    // neu hinzufügen
-    selected.push({ ...place, type });
-    showToast(`${place.name} hinzugefügt`);
+  if (!place) {
+    console.warn('toggleSelect: Eintrag nicht gefunden', { type, id, srcLen: src?.length });
+    return;
   }
 
+  const i = selected.findIndex(s => s.id === id && s.type === type);
+  if (i >= 0) {
+    selected.splice(i, 1);
+    showToast(`${place.name || type} entfernt`);
+  } else {
+    selected.push({ ...place, type });
+    showToast(`${place.name || type} hinzugefügt`);
+  }
   updateSelectedList();
 }
+
+// ⬅️ Damit inline-onclick sie sicher findet:
+window.toggleSelect = toggleSelect;
 
     /////////////////////////////////////////
     // 🚀 Initialisierung
@@ -2900,6 +2910,7 @@ if (roomToggle) {
       cluster.clearLayers();
       // 🛝 Spielplätze auf der Karte anzeigen
 db.collection("spielplaetze").onSnapshot(snap => {
+  spielplaetze = []; // reset
   snap.forEach(doc => {
     const d = doc.data();
     if (!d.location || d.status !== "angenommen") return;
@@ -2949,8 +2960,8 @@ db.collection("spielplaetze").onSnapshot(snap => {
         🛝 <b>Typ:</b> ${d.typ || "-"}<br/>
         📅 <b>Erstellt am:</b> ${d.erstelltAm?.toDate?.().toLocaleString("de-DE") || "-"}<br/>
         <hr style="margin:6px 0"/>
-        <button onclick="toggleSelection(${JSON.stringify(sp)}, 'spielplatz')">✅ Hinzufügen</button>
-      </div>
+        <button onclick="toggleSelect('spielplatz','${doc.id}')">✅ Hinzufügen</button>
+        </div>
     `);
 
     cluster.addLayer(m);
@@ -3021,8 +3032,8 @@ const m = L.marker([h.lat, h.lng]).bindPopup(`
     💳 <b>Abo:</b> ${d.aboMonate || 0} Monate<br/>
     📅 <b>Start:</b> ${d.aboStart?.toDate?.().toLocaleDateString("de-DE") || "-"}<br/>
     <hr style="margin:6px 0"/>
-    <button onclick="toggleSelection(${JSON.stringify(h)}, 'hütte')">✅ Hinzufügen</button>
-  </div>
+    <button onclick="toggleSelect('hütte','${doc.id}')">✅ Hinzufügen</button>
+    </div>
 `);
           // Automatisches Deaktivieren von Follow beim manuellen Bewegen
 map.on("dragstart zoomstart", () => {
