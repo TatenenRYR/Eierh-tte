@@ -2285,58 +2285,54 @@ function checkIfOffRoute() {
     }
     // 👉 Neue Funktion für dynamische Routeninfos
 function updateRouteInfo() {
-  try {
-    if (!window.currentRoute || !userMarker) return;
+  if (!userMarker || !currentRoutePath || currentRoutePath.length === 0) return;
 
-    const userPos = userMarker.getLatLng();
-    const legs = window.currentRoute.features[0].properties.segments[0].steps;
+  const userPos = userMarker.getLatLng();
+  const target = selected[currentHutIndex];
+  if (!target || !Number.isFinite(target.lat) || !Number.isFinite(target.lng)) return;
 
-    let nextTarget = null;
-    let distToNext = Infinity;
+  // Typ dynamisch bestimmen
+  let targetType = "🏡 Hütte";
+  if (spielplaetze.find(s => s.id === target.id)) targetType = "🛝 Spielplatz";
 
-    // Nächste Station suchen
-    for (let step of legs) {
-      if (!step.way_points) continue;
+  // Restdistanz entlang der Route berechnen
+  let remainingDistance = 0;
+  let foundUser = false;
 
-      const [wpIndex] = step.way_points;
-      const coord = window.currentRoute.features[0].geometry.coordinates[wpIndex];
-      const latlng = L.latLng(coord[1], coord[0]);
+  for (let i = 0; i < currentRoutePath.length - 1; i++) {
+    const p1 = L.latLng(currentRoutePath[i]);
+    const p2 = L.latLng(currentRoutePath[i + 1]);
 
-      const d = userPos.distanceTo(latlng);
-      if (d < distToNext) {
-        distToNext = d;
-        nextTarget = step;
-      }
+    if (!foundUser) {
+      const distToSegment = L.GeometryUtil.distanceSegment(map, userPos, p1, p2);
+      if (distToSegment < 40) foundUser = true; // Startpunkt auf der Route gefunden
     }
 
-    if (!nextTarget) return;
-
-    // 🚲 Zeitabschätzung (angenommen 15 km/h Durchschnitt)
-    const speedMps = 15000 / 3600; 
-    const etaSeconds = distToNext / speedMps;
-
-    // Art der Station bestimmen (Hütte oder Spielplatz)
-    let targetType = "Station";
-    if (nextTarget.name) {
-      const lower = nextTarget.name.toLowerCase();
-      if (lower.includes("hütte")) targetType = "Hütte";
-      if (lower.includes("spielplatz")) targetType = "Spielplatz";
+    if (foundUser) {
+      remainingDistance += p1.distanceTo(p2);
     }
-
-    // 📌 Anzeige aktualisieren
-    const infoEl = document.getElementById("routeInfo");
-    if (infoEl) {
-      infoEl.style.display = "block";
-      infoEl.innerHTML = `
-        Nächste ${targetType}: ${Math.round(distToNext)} m entfernt <br>
-        ETA: ${Math.round(etaSeconds / 60)} min
-      `;
-    }
-  } catch (err) {
-    console.warn("⚠️ Fehler in updateRouteInfo():", err);
   }
-}
-  
+
+  // Falls User noch nicht auf Route, fallback: direkte Distanz
+  if (!foundUser) {
+    remainingDistance = userPos.distanceTo(L.latLng(target.lat, target.lng));
+  }
+
+  const kmLeft = (remainingDistance / 1000).toFixed(2);
+  const speed = 15; // km/h
+  const etaMinutes = Math.round((remainingDistance / 1000) / speed * 60);
+
+  const infoEl = document.getElementById("routeInfo");
+  if (infoEl) {
+    infoEl.style.display = "block";
+    infoEl.innerHTML = `
+      🎯 Ziel: ${targetType} ${target.name || "Unbenannt"}<br>
+      📏 Noch ${kmLeft} km<br>
+      ⏱️ ca. ${etaMinutes} Minuten<br>
+      🔢 Fortschritt: ${currentHutIndex + 1} von ${selected.length} Stationen
+    `;
+  }
+    }
     
     /*function navLoop() {
   try {
