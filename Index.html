@@ -2235,13 +2235,14 @@ function navLoop() {
     }
 
     // 📊 Reststrecke + UI aktualisieren
-    const remaining = currentRoutePath.reduce((sum, p, i, arr) =>
+  /*  const remaining = currentRoutePath.reduce((sum, p, i, arr) =>
       i > 0 ? sum + map.distance(arr[i - 1], p) : 0, 0);
 
-    document.getElementById("routeInfo").innerText =
+   document.getElementById("routeInfo").innerText =
       `${(remaining / 1000).toFixed(1)} km · ${Math.round(remaining / 250)} Min · ${currentHut.name}`;
     document.getElementById("routeInfo").style.display = "block";
-
+*/
+    updateRouteInfo();
     // Banner
     document.getElementById("navDistance").innerText = `${Math.round(dist)} m`;
 
@@ -2260,7 +2261,82 @@ function navLoop() {
     console.warn("⚠️ Fehler in navLoop():", err);
   }
 }
+function updateRouteInfo() {
+  if (!userMarker || !currentRoutePath || currentRoutePath.length === 0) return;
 
+  const userPos = userMarker.getLatLng();
+  const target = selected[currentHutIndex];
+
+  if (!target || !Number.isFinite(target.lat) || !Number.isFinite(target.lng)) {
+    console.warn("❗ Ungültiges Ziel in updateRouteInfo()");
+    return;
+  }
+
+  // Typ dynamisch bestimmen
+  const targetType = target.type === "spielplatz" ? "🛝 Spielplatz" : "🏡 Hütte";
+
+  // Fortschritt berechnen
+  const totalStations = selected.length;
+  const currentStation = currentHutIndex + 1;
+
+  // Distanz zum aktuellen Zielpunkt
+  const targetPos = L.latLng(target.lat, target.lng);
+  const directDist = userPos.distanceTo(targetPos);
+
+  // Wenn nah genug dran (50 m Toleranz) -> nächste Station
+  if (directDist < 50) {
+    if (currentHutIndex < selected.length - 1) {
+      currentHutIndex++;
+      speak(`✅ ${targetType} ${target.name || ""} erreicht. Weiter zur nächsten Station.`);
+      showToast(`✅ ${targetType} ${target.name || ""} erreicht`);
+    } else {
+      speak("🎉 Tour abgeschlossen!");
+      showToast("🎉 Alle Ziele erreicht!");
+      stopRoute(); // deine Stop-Logik
+      return;
+    }
+  }
+
+  // Route entlang ablaufen und Restdistanz berechnen
+  let remainingDistance = 0;
+  let foundUser = false;
+
+  for (let i = 0; i < currentRoutePath.length - 1; i++) {
+    const p1 = L.latLng(currentRoutePath[i]);
+    const p2 = L.latLng(currentRoutePath[i + 1]);
+
+    if (!foundUser) {
+      const distToSegment = L.GeometryUtil.distanceSegment(map, userPos, p1, p2);
+      if (distToSegment < 40) {
+        foundUser = true;
+      }
+    }
+
+    if (foundUser) {
+      remainingDistance += p1.distanceTo(p2);
+    }
+  }
+
+  if (!foundUser) {
+    remainingDistance = directDist;
+  }
+
+  const kmLeft = (remainingDistance / 1000).toFixed(2);
+  const speed = 15; // km/h
+  const hoursLeft = remainingDistance / 1000 / speed;
+  const minutesLeft = Math.round(hoursLeft * 60);
+
+  // Anzeige in #routeInfo aktualisieren
+  const infoEl = document.getElementById("routeInfo");
+  if (infoEl) {
+    infoEl.innerHTML = `
+      🎯 Ziel: ${targetType} ${target.name || "Unbenannt"}<br>
+      📏 Noch ${kmLeft} km<br>
+      ⏱️ ca. ${minutesLeft} Minuten<br>
+      🔢 Fortschritt: ${currentStation} von ${totalStations} Stationen
+    `;
+  }
+                             }
     
     /*function navLoop() {
   try {
