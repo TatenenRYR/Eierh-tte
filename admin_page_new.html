@@ -1,394 +1,234 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Admin Dashboard</title>
-
-  <!-- Firebase -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
-
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-  <!-- Tailwind -->
-  <script src="https://cdn.tailwindcss.com"></script>
-
+  <meta charset="UTF-8">
+  <title>Admin Bereich</title>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script>
+    // ⚠️ Firebase Config eintragen
+    const firebaseConfig = {
+      apiKey: "XXX",
+      authDomain: "XXX",
+      projectId: "XXX"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+  </script>
   <style>
-    .section { display:none; }
-    .active-tab { background:#059669; color:white; }
+    body { font-family: sans-serif; margin: 20px; background: #f8fafc; }
+    .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+    .tab { padding: 10px 15px; border-radius: 8px; cursor: pointer; }
+    .tab.active { background: #2563eb; color: white; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .card { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,.1); margin-bottom: 15px; }
+    img { border-radius: 8px; }
+    .relative { position: relative; }
+    .absolute { position: absolute; }
+    .foto-x { top: 5px; right: 5px; background:#dc2626; color:#fff; border:none; border-radius:50%; width:24px; height:24px; cursor:pointer; }
   </style>
 </head>
-<body class="bg-gray-100">
-  <!-- Login -->
-  <div id="login-section" class="flex items-center justify-center h-screen">
-    <button id="login-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded">
-      Admin Login mit Google
-    </button>
+<body>
+
+  <h1 class="mb-4">Admin Bereich</h1>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('huetten')">🏡 Hütten</div>
+    <div class="tab" onclick="switchTab('spielplaetze')">🛝 Spielplätze</div>
   </div>
 
-  <!-- Dashboard -->
-  <div id="dashboard" class="hidden p-6 max-w-7xl mx-auto">
-    <div class="flex justify-between items-center mb-6">
-      <h1 class="text-3xl font-bold text-green-700">Admin Dashboard</h1>
-      <div>
-        <span id="user-name" class="font-semibold mr-4">...</span>
-        <button onclick="logout()" class="bg-red-600 text-white px-3 py-1 rounded">Logout</button>
-      </div>
+  <!-- Hütten -->
+  <div id="huetten" class="panel active">
+    <div class="flex gap-2 mb-4">
+      <input id="searchHut" type="text" placeholder="🔍 Suche nach Name..." oninput="renderHuts()" />
+      <select id="statusHut" onchange="renderHuts()">
+        <option value="">Alle</option>
+        <option value="offen">Offen</option>
+        <option value="angenommen">Angenommen</option>
+        <option value="abgelehnt">Abgelehnt</option>
+      </select>
     </div>
+    <div id="hut-list"></div>
+  </div>
 
-    <!-- Tabs -->
-    <div class="flex gap-3 mb-6">
-      <button onclick="showSection('huts')" id="tab-huts" class="px-4 py-2 rounded bg-green-600 text-white">🥚 Hütten</button>
-      <button onclick="showSection('spielplaetze')" id="tab-spielplaetze" class="px-4 py-2 rounded bg-blue-600 text-white">🛝 Spielplätze</button>
-      <button onclick="showSection('support')" id="tab-support" class="px-4 py-2 rounded bg-gray-600 text-white">📨 Support</button>
+  <!-- Spielplätze -->
+  <div id="spielplaetze" class="panel">
+    <div class="flex gap-2 mb-4">
+      <input id="searchSpiel" type="text" placeholder="🔍 Suche nach Name..." oninput="renderSpielplaetze()" />
+      <select id="statusSpiel" onchange="renderSpielplaetze()">
+        <option value="">Alle</option>
+        <option value="offen">Offen</option>
+        <option value="angenommen">Angenommen</option>
+        <option value="abgelehnt">Abgelehnt</option>
+      </select>
     </div>
-
-    <!-- Hütten -->
-    <div id="section-huts" class="section">
-      <h2 class="text-2xl font-bold mb-2 text-green-700">🥚 Eierhütten Verwaltung</h2>
-      <p class="text-gray-500 mb-4">🏢 Zuständige Abteilung: Verwaltung Hütten</p>
-      <div id="hut-list" class="space-y-4"></div>
-    </div>
-
-    <!-- Spielplätze -->
-    <div id="section-spielplaetze" class="section">
-      <h2 class="text-2xl font-bold mb-2 text-blue-700">🛝 Spielplätze Verwaltung</h2>
-      <p class="text-gray-500 mb-4">🏢 Zuständige Abteilung: Spielplatzfreigabe</p>
-      <div id="spielplatz-list" class="space-y-4"></div>
-    </div>
-
-    <!-- Support -->
-    <div id="section-support" class="section">
-      <h2 class="text-2xl font-bold mb-2 text-gray-700">📨 Support-Tickets</h2>
-      <table class="min-w-full text-sm bg-white rounded shadow">
-        <thead class="bg-blue-100 text-left">
-          <tr>
-            <th class="px-4 py-2">Datum</th>
-            <th class="px-4 py-2">User</th>
-            <th class="px-4 py-2">Nachricht</th>
-            <th class="px-4 py-2">Status</th>
-            <th class="px-4 py-2">Aktionen</th>
-          </tr>
-        </thead>
-        <tbody id="support-tickets-body" class="divide-y divide-gray-200"></tbody>
-      </table>
-    </div>
+    <div id="spielplatz-list"></div>
   </div>
 
 <script>
-  // Firebase Setup
-const firebaseConfig = {
-    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-    authDomain: "eierhuettentour.firebaseapp.com",
-    projectId: "eierhuettentour",
-    storageBucket: "eierhuettentour.appspot.com",
-    messagingSenderId: "348272135205",
-    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
-  };
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.firestore();
-  const auth = firebase.auth();
+let hutsCache = [];
+let spielplatzCache = [];
 
-  // Tabs
-  function showSection(section) {
-    document.querySelectorAll('.section').forEach(s => s.style.display = 'none');
-    document.getElementById('section-' + section).style.display = 'block';
-  }
+// Tabs
+function switchTab(id) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelector(`.tab[onclick="switchTab('${id}')"]`).classList.add('active');
+  document.getElementById(id).classList.add('active');
+}
 
-  // Login
-  document.getElementById('login-btn').onclick = () => {
-    auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
-  };
-  auth.onAuthStateChanged(user => {
-    if (user) {
-      document.getElementById('login-section').classList.add('hidden');
-      document.getElementById('dashboard').classList.remove('hidden');
-      document.getElementById('user-name').textContent = user.displayName || user.email;
-      loadHuts();
-      loadSpielplaetze();
-      loadSupportTickets();
-      showSection('huts');
-    }
-  });
-
-  function logout() {
-    auth.signOut().then(() => location.reload());
-  }
-
-
-// =============================
-// 🥚 Hütten laden
-// =============================
+// HÜTTEN
 async function loadHuts() {
   const snap = await db.collection('eierhuetten').orderBy('name').get();
+  hutsCache = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  renderHuts();
+}
+function renderHuts() {
   const list = document.getElementById('hut-list');
   list.innerHTML = '';
-  
-  snap.forEach(doc => {
-    const d = doc.data();
+  const search = document.getElementById('searchHut').value.toLowerCase();
+  const status = document.getElementById('statusHut').value;
+  const filtered = hutsCache.filter(d => {
+    return (!search || (d.name||'').toLowerCase().includes(search)) &&
+           (!status || d.status === status);
+  });
+
+  filtered.forEach(d => {
     const el = document.createElement('div');
-    el.className = "bg-white p-4 rounded shadow space-y-3";
+    el.className = "card";
 
-    // Fotos vorbereiten
-    let fotosHtml = "";
-    if (Array.isArray(d.fotos) && d.fotos.length > 0) {
-      fotosHtml = d.fotos.map((f, i) => {
-        const url = typeof f === "string" ? f : f.url;
-        const status = typeof f === "string" ? "freigegeben" : (f.status || "offen");
-
-        return `
-          <div class="mb-2">
-            <img src="${url}" class="w-full h-32 object-cover rounded mb-1">
-            <p class="text-xs text-gray-500">Status: ${status}</p>
-            ${status !== "freigegeben" ? `
-              <div class="flex gap-2">
-                <button onclick="updateHutFoto('${doc.id}', ${i}, 'freigegeben')" 
-                  class="bg-green-600 text-white px-2 py-1 rounded text-xs">✅ Freigeben</button>
-                <button onclick="deleteHutFoto('${doc.id}', ${i})" 
-                  class="bg-red-600 text-white px-2 py-1 rounded text-xs">🗑️ Löschen</button>
-              </div>` : ""
-            }
-          </div>
-        `;
-      }).join("");
-    } else {
-      fotosHtml = `<p class="text-sm text-gray-400">Keine Fotos hochgeladen</p>`;
-    }
-
-    // HTML
     el.innerHTML = `
-      <input value="${d.name || ''}" 
-        onchange="db.collection('eierhuetten').doc('${doc.id}').update({name:this.value})"
-        class="font-bold text-lg mb-2 w-full border rounded p-1">
+      <input value="${d.name||''}" onchange="db.collection('eierhuetten').doc('${d.id}').update({name:this.value})" class="font-bold text-lg w-full mb-2">
 
       <label>Status:
-        <select onchange="db.collection('eierhuetten').doc('${doc.id}').update({status:this.value})" 
-          class="w-full border p-1 rounded mb-2">
-          ${['offen','angenommen','abgelehnt'].map(s => `<option ${s===d.status?'selected':''}>${s}</option>`).join('')}
+        <select onchange="db.collection('eierhuetten').doc('${d.id}').update({status:this.value})">
+          ${['offen','angenommen','abgelehnt'].map(s=>`<option ${s===d.status?'selected':''}>${s}</option>`).join('')}
         </select>
-      </label>
+      </label><br><br>
 
       <label>Öffnungszeiten:
-        <input value="${d.oeffnungszeiten || ''}" 
-          onchange="db.collection('eierhuetten').doc('${doc.id}').update({oeffnungszeiten:this.value})"
-          class="w-full border p-1 rounded mb-2">
-      </label>
+        <input value="${d.oeffnungszeiten||''}" onchange="db.collection('eierhuetten').doc('${d.id}').update({oeffnungszeiten:this.value})">
+      </label><br><br>
 
       <label>Strom:
-        <select onchange="db.collection('eierhuetten').doc('${doc.id}').update({strom:this.value})" 
-          class="w-full border p-1 rounded mb-2">
-          ${['Ja','Nein'].map(o => `<option ${o===d.strom?'selected':''}>${o}</option>`).join('')}
+        <select onchange="db.collection('eierhuetten').doc('${d.id}').update({strom:this.value})">
+          ${['Ja','Nein'].map(o=>`<option ${o===d.strom?'selected':''}>${o}</option>`).join('')}
         </select>
-      </label>
-
-      <label>Sitzplätze:
-        <select onchange="db.collection('eierhuetten').doc('${doc.id}').update({sitzplaetze:this.value})" 
-          class="w-full border p-1 rounded mb-2">
-          ${['Ja','Nein'].map(o => `<option ${o===d.sitzplaetze?'selected':''}>${o}</option>`).join('')}
-        </select>
-      </label>
-
-      <label>Extras:
-        <textarea onchange="db.collection('eierhuetten').doc('${doc.id}').update({extras:this.value})"
-          class="w-full border p-1 rounded mb-2">${d.extras || ''}</textarea>
-      </label>
+      </label><br><br>
 
       <label>Abo Monate:
-        <input type="number" value="${d.aboMonate || 0}" 
-          onchange="db.collection('eierhuetten').doc('${doc.id}').update({aboMonate:parseInt(this.value)})"
-          class="w-full border p-1 rounded mb-2">
-      </label>
+        <input type="number" value="${d.aboMonate||0}" onchange="db.collection('eierhuetten').doc('${d.id}').update({aboMonate:parseInt(this.value)})">
+      </label><br><br>
 
       <label>Abo Start:
         <input type="date" value="${d.aboStart ? new Date(d.aboStart.toDate()).toISOString().split('T')[0] : ''}" 
-          onchange="db.collection('eierhuetten').doc('${doc.id}').update({aboStart:new Date(this.value)})"
-          class="w-full border p-1 rounded mb-2">
-      </label>
+          onchange="db.collection('eierhuetten').doc('${d.id}').update({aboStart:new Date(this.value)})">
+      </label><br><br>
 
-      <h4 class="font-semibold">💳 PayPal Info</h4>
-      <label>Client ID:
-        <input value="${d.paypalClient || ''}" 
-          onchange="db.collection('eierhuetten').doc('${doc.id}').update({paypalClient:this.value})"
-          class="w-full border p-1 rounded mb-2">
-      </label>
-      <label>Secret:
-        <input value="${d.paypalSecret || ''}" 
-          onchange="db.collection('eierhuetten').doc('${doc.id}').update({paypalSecret:this.value})"
-          class="w-full border p-1 rounded mb-2">
-      </label>
+      <h4>💳 PayPal</h4>
       <label>Subscription ID:
-        <input value="${d.paypalSubId || ''}" 
-          onchange="db.collection('eierhuetten').doc('${doc.id}').update({paypalSubId:this.value})"
-          class="w-full border p-1 rounded mb-2">
-      </label>
+        <input value="${d.paypalSubscriptionId||''}" onchange="db.collection('eierhuetten').doc('${d.id}').update({paypalSubscriptionId:this.value})">
+      </label><br><br>
+
+      <p>📅 Erstellt am: ${d.erstelltAm?.toDate?.().toLocaleString("de-DE") || '-'}</p>
+      <p>🔒 Datenschutz: ${d.datenschutzZustimmung?.durch||'-'} (${d.datenschutzZustimmung?.bestätigtAm?.toDate?.().toLocaleString("de-DE")||'-'})</p>
 
       <div>
-        <p class="font-semibold mb-1">📷 Fotos:</p>
-        ${fotosHtml}
+        <p><b>📷 Fotos:</b></p>
+        ${(Array.isArray(d.fotos) ? d.fotos.map((url,i)=>`
+          <div class="relative inline-block mr-2 mb-2">
+            <img src="${url}" class="w-32 h-24 object-cover">
+            <button class="absolute foto-x" onclick="deleteHutFoto('${d.id}',${i})">✖</button>
+          </div>`).join('') : '<p>Keine Fotos</p>')}
       </div>
 
-      <button onclick="db.collection('eierhuetten').doc('${doc.id}').delete()" 
-        class="bg-red-600 text-white px-3 py-1 rounded mt-3 w-full">🗑️ Hütte löschen</button>
+      <button onclick="db.collection('eierhuetten').doc('${d.id}').delete()" class="bg-red-600 text-white px-3 py-1 rounded mt-3">🗑️ Löschen</button>
     `;
-
     list.appendChild(el);
   });
 }
+function deleteHutFoto(docId,index){
+  const ref = db.collection('eierhuetten').doc(docId);
+  ref.get().then(doc=>{
+    if(!doc.exists) return;
+    const d = doc.data();
+    if(!Array.isArray(d.fotos)) return;
+    d.fotos.splice(index,1);
+    ref.update({fotos:d.fotos}).then(()=>loadHuts());
+  });
+}
 
-// =============================
-// 🛝 Spielplätze laden
-// =============================
+// SPIELPLÄTZE
 async function loadSpielplaetze() {
   const snap = await db.collection('spielplaetze').orderBy('name').get();
+  spielplatzCache = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  renderSpielplaetze();
+}
+function renderSpielplaetze() {
   const list = document.getElementById('spielplatz-list');
   list.innerHTML = '';
-  
-  snap.forEach(doc => {
-    const d = doc.data();
+  const search = document.getElementById('searchSpiel').value.toLowerCase();
+  const status = document.getElementById('statusSpiel').value;
+  const filtered = spielplatzCache.filter(d => {
+    return (!search || (d.name||'').toLowerCase().includes(search)) &&
+           (!status || d.status === status);
+  });
+
+  filtered.forEach(d => {
     const el = document.createElement('div');
-    el.className = "bg-white p-4 rounded shadow space-y-3";
+    el.className = "card";
 
-    // Fotos
-    let fotosHtml = "";
-    if (Array.isArray(d.fotos) && d.fotos.length > 0) {
-      fotosHtml = d.fotos.map((f, i) => {
-        const url = typeof f === "string" ? f : f.url;
-        const status = typeof f === "string" ? "freigegeben" : (f.status || "offen");
-        return `
-          <div class="mb-2">
-            <img src="${url}" class="w-full h-32 object-cover rounded mb-1">
-            <p class="text-xs text-gray-500">Status: ${status}</p>
-            ${status !== "freigegeben" ? `
-              <div class="flex gap-2">
-                <button onclick="updateSpielplatzFoto('${doc.id}', ${i}, 'freigegeben')" 
-                  class="bg-green-600 text-white px-2 py-1 rounded text-xs">✅ Freigeben</button>
-                <button onclick="deleteSpielplatzFoto('${doc.id}', ${i})" 
-                  class="bg-red-600 text-white px-2 py-1 rounded text-xs">🗑️ Löschen</button>
-              </div>` : ""
-            }
-          </div>
-        `;
-      }).join("");
-    } else {
-      fotosHtml = `<p class="text-sm text-gray-400">Keine Fotos hochgeladen</p>`;
-    }
-
-    // HTML
     el.innerHTML = `
-      <input value="${d.name || ''}" 
-        onchange="db.collection('spielplaetze').doc('${doc.id}').update({name:this.value})"
-        class="font-bold text-lg mb-2 w-full border rounded p-1">
+      <input value="${d.name||''}" onchange="db.collection('spielplaetze').doc('${d.id}').update({name:this.value})" class="font-bold text-lg w-full mb-2">
 
       <label>Status:
-        <select onchange="db.collection('spielplaetze').doc('${doc.id}').update({status:this.value})" 
-          class="w-full border p-1 rounded mb-2">
-          ${['offen','angenommen','abgelehnt'].map(s => `<option ${s===d.status?'selected':''}>${s}</option>`).join('')}
+        <select onchange="db.collection('spielplaetze').doc('${d.id}').update({status:this.value})">
+          ${['offen','angenommen','abgelehnt'].map(s=>`<option ${s===d.status?'selected':''}>${s}</option>`).join('')}
         </select>
-      </label>
-
-      <label>Typ:
-        <input value="${d.typ || ''}" 
-          onchange="db.collection('spielplaetze').doc('${doc.id}').update({typ:this.value})"
-          class="w-full border p-1 rounded mb-2">
-      </label>
+      </label><br><br>
 
       <label>Sitzplätze:
-        <select onchange="db.collection('spielplaetze').doc('${doc.id}').update({sitz:this.value})" 
-          class="w-full border p-1 rounded mb-3">
-          ${['Ja','Nein'].map(o => `<option ${o===d.sitz?'selected':''}>${o}</option>`).join('')}
+        <select onchange="db.collection('spielplaetze').doc('${d.id}').update({sitz:this.value})">
+          ${['Ja','Nein'].map(o=>`<option ${o===d.sitz?'selected':''}>${o}</option>`).join('')}
         </select>
-      </label>
+      </label><br><br>
+
+      <label>Typ:
+        <input value="${d.typ||''}" onchange="db.collection('spielplaetze').doc('${d.id}').update({typ:this.value})">
+      </label><br><br>
 
       <label>Tags:
-        <input value="${(d.tags || []).join(', ')}" 
-          onchange="db.collection('spielplaetze').doc('${doc.id}').update({tags:this.value.split(',').map(t=>t.trim())})"
-          class="w-full border p-1 rounded mb-2">
-      </label>
+        <input value="${(d.tags||[]).join(', ')}" onchange="db.collection('spielplaetze').doc('${d.id}').update({tags:this.value.split(',').map(t=>t.trim())})">
+      </label><br><br>
 
       <div>
-        <p class="font-semibold mb-1">📷 Fotos:</p>
-        ${fotosHtml}
+        <p><b>📷 Fotos:</b></p>
+        ${(Array.isArray(d.fotos) ? d.fotos.map((url,i)=>`
+          <div class="relative inline-block mr-2 mb-2">
+            <img src="${url}" class="w-32 h-24 object-cover">
+            <button class="absolute foto-x" onclick="deleteSpielplatzFoto('${d.id}',${i})">✖</button>
+          </div>`).join('') : '<p>Keine Fotos</p>')}
       </div>
 
-      <button onclick="db.collection('spielplaetze').doc('${doc.id}').delete()" 
-        class="bg-red-600 text-white px-3 py-1 rounded mt-3 w-full">🗑️ Spielplatz löschen</button>
+      <button onclick="db.collection('spielplaetze').doc('${d.id}').delete()" class="bg-red-600 text-white px-3 py-1 rounded mt-3">🗑️ Löschen</button>
     `;
-
     list.appendChild(el);
   });
 }
-
-// =============================
-// 📷 Foto-Handling für Hütten
-// =============================
-function updateHutFoto(docId, index, newStatus) {
-  const ref = db.collection('eierhuetten').doc(docId);
-  ref.get().then(doc => {
-    if (!doc.exists) return;
-    const d = doc.data();
-    if (!Array.isArray(d.fotos)) return;
-    d.fotos[index].status = newStatus;
-    ref.update({ fotos: d.fotos }).then(() => loadHuts());
-  });
-}
-function deleteHutFoto(docId, index) {
-  const ref = db.collection('eierhuetten').doc(docId);
-  ref.get().then(doc => {
-    if (!doc.exists) return;
-    const d = doc.data();
-    if (!Array.isArray(d.fotos)) return;
-    d.fotos.splice(index, 1);
-    ref.update({ fotos: d.fotos }).then(() => loadHuts());
-  });
-}
-
-// =============================
-// 📷 Foto-Handling für Spielplätze
-// =============================
-function updateSpielplatzFoto(docId, index, newStatus) {
+function deleteSpielplatzFoto(docId,index){
   const ref = db.collection('spielplaetze').doc(docId);
-  ref.get().then(doc => {
-    if (!doc.exists) return;
+  ref.get().then(doc=>{
+    if(!doc.exists) return;
     const d = doc.data();
-    if (!Array.isArray(d.fotos)) return;
-    d.fotos[index].status = newStatus;
-    ref.update({ fotos: d.fotos }).then(() => loadSpielplaetze());
-  });
-}
-function deleteSpielplatzFoto(docId, index) {
-  const ref = db.collection('spielplaetze').doc(docId);
-  ref.get().then(doc => {
-    if (!doc.exists) return;
-    const d = doc.data();
-    if (!Array.isArray(d.fotos)) return;
-    d.fotos.splice(index, 1);
-    ref.update({ fotos: d.fotos }).then(() => loadSpielplaetze());
+    if(!Array.isArray(d.fotos)) return;
+    d.fotos.splice(index,1);
+    ref.update({fotos:d.fotos}).then(()=>loadSpielplaetze());
   });
 }
 
-  // Support laden
-  async function loadSupportTickets() {
-    const snap = await db.collection('supportTickets').orderBy('createdAt','desc').get();
-    const body = document.getElementById('support-tickets-body');
-    body.innerHTML = '';
-    snap.forEach(doc => {
-      const t = doc.data();
-      body.innerHTML += `
-        <tr>
-          <td class="px-4 py-2 text-xs">${t.createdAt?.toDate().toLocaleString('de-DE') || '-'}</td>
-          <td class="px-4 py-2 text-xs">${t.email || '-'}</td>
-          <td class="px-4 py-2">${t.message || ''}</td>
-          <td class="px-4 py-2">${t.status || 'offen'}</td>
-          <td class="px-4 py-2"><button onclick="db.collection('supportTickets').doc('${doc.id}').delete()" class="bg-red-600 text-white px-2 py-1 rounded">🗑️</button></td>
-        </tr>
-      `;
-    });
-  }
+// Start laden
+loadHuts();
+loadSpielplaetze();
 </script>
 </body>
 </html>
