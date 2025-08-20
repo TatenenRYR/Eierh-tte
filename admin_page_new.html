@@ -1,234 +1,160 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <title>Admin Bereich</title>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <script>
-    // ⚠️ Firebase Config eintragen
-    const firebaseConfig = {
-      apiKey: "XXX",
-      authDomain: "XXX",
-      projectId: "XXX"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin Dashboard</title>
+
+  <!-- Firebase (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
   <style>
-    body { font-family: sans-serif; margin: 20px; background: #f8fafc; }
-    .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
-    .tab { padding: 10px 15px; border-radius: 8px; cursor: pointer; }
-    .tab.active { background: #2563eb; color: white; }
-    .panel { display: none; }
-    .panel.active { display: block; }
-    .card { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,.1); margin-bottom: 15px; }
-    img { border-radius: 8px; }
-    .relative { position: relative; }
-    .absolute { position: absolute; }
-    .foto-x { top: 5px; right: 5px; background:#dc2626; color:#fff; border:none; border-radius:50%; width:24px; height:24px; cursor:pointer; }
+    .section { display:none; }
+    .active-tab { background:#2563eb; color:white; }
+    .photo-tile { position:relative; display:inline-block; margin:6px 6px 0 0; }
+    .photo-tile img { width:130px; height:100px; object-fit:cover; border-radius:8px; }
+    .photo-x {
+      position:absolute; top:6px; right:6px; width:24px; height:24px;
+      background:#dc2626; color:#fff; border:none; border-radius:50%;
+      display:flex; align-items:center; justify-content:center; cursor:pointer; opacity:.9;
+    }
+    .field { @apply w-full border rounded p-2; }
+    .label { @apply text-sm text-gray-600 mb-1 block; }
+    .card { @apply bg-white p-4 rounded shadow space-y-3; }
+    .pill { @apply inline-block px-2 py-0.5 text-xs rounded bg-gray-100; }
   </style>
 </head>
-<body>
-
-  <h1 class="mb-4">Admin Bereich</h1>
-  <div class="tabs">
-    <div class="tab active" onclick="switchTab('huetten')">🏡 Hütten</div>
-    <div class="tab" onclick="switchTab('spielplaetze')">🛝 Spielplätze</div>
-  </div>
-
-  <!-- Hütten -->
-  <div id="huetten" class="panel active">
-    <div class="flex gap-2 mb-4">
-      <input id="searchHut" type="text" placeholder="🔍 Suche nach Name..." oninput="renderHuts()" />
-      <select id="statusHut" onchange="renderHuts()">
-        <option value="">Alle</option>
-        <option value="offen">Offen</option>
-        <option value="angenommen">Angenommen</option>
-        <option value="abgelehnt">Abgelehnt</option>
-      </select>
+<body class="bg-gray-50">
+  <!-- Login -->
+  <div id="login-section" class="flex items-center justify-center min-h-screen">
+    <div class="bg-white p-8 rounded-xl shadow max-w-sm w-full text-center space-y-4">
+      <h1 class="text-2xl font-bold">Admin Login</h1>
+      <p class="text-gray-500">Bitte mit Google anmelden.</p>
+      <button id="login-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded w-full">
+        Mit Google anmelden
+      </button>
     </div>
-    <div id="hut-list"></div>
   </div>
 
-  <!-- Spielplätze -->
-  <div id="spielplaetze" class="panel">
-    <div class="flex gap-2 mb-4">
-      <input id="searchSpiel" type="text" placeholder="🔍 Suche nach Name..." oninput="renderSpielplaetze()" />
-      <select id="statusSpiel" onchange="renderSpielplaetze()">
-        <option value="">Alle</option>
-        <option value="offen">Offen</option>
-        <option value="angenommen">Angenommen</option>
-        <option value="abgelehnt">Abgelehnt</option>
-      </select>
+  <!-- Dashboard -->
+  <div id="dashboard" class="hidden p-6 max-w-7xl mx-auto space-y-6">
+    <div class="flex justify-between items-center">
+      <div>
+        <h1 class="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+        <p class="text-gray-500 text-sm">Verwalte Hütten, Spielplätze und Support-Tickets</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="user-name" class="pill">–</span>
+        <button onclick="Admin.logout()" class="bg-red-600 text-white px-3 py-1 rounded">Logout</button>
+      </div>
     </div>
-    <div id="spielplatz-list"></div>
+
+    <!-- Tabs -->
+    <div class="flex gap-3">
+      <button onclick="UI.showSection('huts')" id="tab-huts" class="px-4 py-2 rounded bg-blue-600 text-white active-tab">🥚 Hütten</button>
+      <button onclick="UI.showSection('spielplaetze')" id="tab-spielplaetze" class="px-4 py-2 rounded bg-blue-100">🛝 Spielplätze</button>
+      <button onclick="UI.showSection('support')" id="tab-support" class="px-4 py-2 rounded bg-blue-100">📨 Support</button>
+      <button onclick="Admin.reloadAll()" class="ml-auto px-3 py-2 rounded bg-gray-200 hover:bg-gray-300">↻ Neu laden</button>
+    </div>
+
+    <!-- Hütten -->
+    <div id="section-huts" class="section" style="display:block">
+      <div class="flex flex-wrap gap-2 items-end mb-4">
+        <div>
+          <label class="label">Suche</label>
+          <input id="searchHut" type="text" placeholder="Name…" class="field" oninput="Huts.render()" />
+        </div>
+        <div>
+          <label class="label">Status</label>
+          <select id="statusHut" class="field" onchange="Huts.render()">
+            <option value="">Alle</option>
+            <option value="offen">Offen</option>
+            <option value="angenommen">Angenommen</option>
+            <option value="abgelehnt">Abgelehnt</option>
+          </select>
+        </div>
+        <div class="text-gray-500 text-sm ml-auto">🏢 Zuständige Abteilung: Verwaltung Hütten</div>
+      </div>
+      <div id="hut-list" class="space-y-4"></div>
+    </div>
+
+    <!-- Spielplätze -->
+    <div id="section-spielplaetze" class="section">
+      <div class="flex flex-wrap gap-2 items-end mb-4">
+        <div>
+          <label class="label">Suche</label>
+          <input id="searchSpiel" type="text" placeholder="Name…" class="field" oninput="Playgrounds.render()" />
+        </div>
+        <div>
+          <label class="label">Status</label>
+          <select id="statusSpiel" class="field" onchange="Playgrounds.render()">
+            <option value="">Alle</option>
+            <option value="offen">Offen</option>
+            <option value="angenommen">Angenommen</option>
+            <option value="abgelehnt">Abgelehnt</option>
+          </select>
+        </div>
+        <div class="text-gray-500 text-sm ml-auto">🏢 Zuständige Abteilung: Spielplatzfreigabe</div>
+      </div>
+      <div id="spielplatz-list" class="space-y-4"></div>
+    </div>
+
+    <!-- Support -->
+    <div id="section-support" class="section">
+      <div class="flex flex-wrap gap-2 items-end mb-4">
+        <div>
+          <label class="label">Suche</label>
+          <input id="searchSupport" type="text" placeholder="Mail / Text…" class="field" oninput="Support.render()" />
+        </div>
+        <div>
+          <label class="label">Status</label>
+          <select id="statusSupport" class="field" onchange="Support.render()">
+            <option value="">Alle</option>
+            <option value="offen">offen</option>
+            <option value="in_bearbeitung">in_bearbeitung</option>
+            <option value="geschlossen">geschlossen</option>
+          </select>
+        </div>
+      </div>
+      <div class="overflow-auto bg-white rounded shadow">
+        <table class="min-w-full text-sm">
+          <thead class="bg-blue-100 text-left">
+          <tr>
+            <th class="px-4 py-2">Datum</th>
+            <th class="px-4 py-2">User</th>
+            <th class="px-4 py-2">Nachricht</th>
+            <th class="px-4 py-2">Status</th>
+            <th class="px-4 py-2">Aktionen</th>
+          </tr>
+          </thead>
+          <tbody id="support-tickets-body" class="divide-y divide-gray-200"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
-<script>
-let hutsCache = [];
-let spielplatzCache = [];
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-4 py-2 rounded hidden"></div>
 
-// Tabs
-function switchTab(id) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  document.querySelector(`.tab[onclick="switchTab('${id}')"]`).classList.add('active');
-  document.getElementById(id).classList.add('active');
-}
-
-// HÜTTEN
-async function loadHuts() {
-  const snap = await db.collection('eierhuetten').orderBy('name').get();
-  hutsCache = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  renderHuts();
-}
-function renderHuts() {
-  const list = document.getElementById('hut-list');
-  list.innerHTML = '';
-  const search = document.getElementById('searchHut').value.toLowerCase();
-  const status = document.getElementById('statusHut').value;
-  const filtered = hutsCache.filter(d => {
-    return (!search || (d.name||'').toLowerCase().includes(search)) &&
-           (!status || d.status === status);
-  });
-
-  filtered.forEach(d => {
-    const el = document.createElement('div');
-    el.className = "card";
-
-    el.innerHTML = `
-      <input value="${d.name||''}" onchange="db.collection('eierhuetten').doc('${d.id}').update({name:this.value})" class="font-bold text-lg w-full mb-2">
-
-      <label>Status:
-        <select onchange="db.collection('eierhuetten').doc('${d.id}').update({status:this.value})">
-          ${['offen','angenommen','abgelehnt'].map(s=>`<option ${s===d.status?'selected':''}>${s}</option>`).join('')}
-        </select>
-      </label><br><br>
-
-      <label>Öffnungszeiten:
-        <input value="${d.oeffnungszeiten||''}" onchange="db.collection('eierhuetten').doc('${d.id}').update({oeffnungszeiten:this.value})">
-      </label><br><br>
-
-      <label>Strom:
-        <select onchange="db.collection('eierhuetten').doc('${d.id}').update({strom:this.value})">
-          ${['Ja','Nein'].map(o=>`<option ${o===d.strom?'selected':''}>${o}</option>`).join('')}
-        </select>
-      </label><br><br>
-
-      <label>Abo Monate:
-        <input type="number" value="${d.aboMonate||0}" onchange="db.collection('eierhuetten').doc('${d.id}').update({aboMonate:parseInt(this.value)})">
-      </label><br><br>
-
-      <label>Abo Start:
-        <input type="date" value="${d.aboStart ? new Date(d.aboStart.toDate()).toISOString().split('T')[0] : ''}" 
-          onchange="db.collection('eierhuetten').doc('${d.id}').update({aboStart:new Date(this.value)})">
-      </label><br><br>
-
-      <h4>💳 PayPal</h4>
-      <label>Subscription ID:
-        <input value="${d.paypalSubscriptionId||''}" onchange="db.collection('eierhuetten').doc('${d.id}').update({paypalSubscriptionId:this.value})">
-      </label><br><br>
-
-      <p>📅 Erstellt am: ${d.erstelltAm?.toDate?.().toLocaleString("de-DE") || '-'}</p>
-      <p>🔒 Datenschutz: ${d.datenschutzZustimmung?.durch||'-'} (${d.datenschutzZustimmung?.bestätigtAm?.toDate?.().toLocaleString("de-DE")||'-'})</p>
-
-      <div>
-        <p><b>📷 Fotos:</b></p>
-        ${(Array.isArray(d.fotos) ? d.fotos.map((url,i)=>`
-          <div class="relative inline-block mr-2 mb-2">
-            <img src="${url}" class="w-32 h-24 object-cover">
-            <button class="absolute foto-x" onclick="deleteHutFoto('${d.id}',${i})">✖</button>
-          </div>`).join('') : '<p>Keine Fotos</p>')}
-      </div>
-
-      <button onclick="db.collection('eierhuetten').doc('${d.id}').delete()" class="bg-red-600 text-white px-3 py-1 rounded mt-3">🗑️ Löschen</button>
-    `;
-    list.appendChild(el);
-  });
-}
-function deleteHutFoto(docId,index){
-  const ref = db.collection('eierhuetten').doc(docId);
-  ref.get().then(doc=>{
-    if(!doc.exists) return;
-    const d = doc.data();
-    if(!Array.isArray(d.fotos)) return;
-    d.fotos.splice(index,1);
-    ref.update({fotos:d.fotos}).then(()=>loadHuts());
-  });
-}
-
-// SPIELPLÄTZE
-async function loadSpielplaetze() {
-  const snap = await db.collection('spielplaetze').orderBy('name').get();
-  spielplatzCache = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  renderSpielplaetze();
-}
-function renderSpielplaetze() {
-  const list = document.getElementById('spielplatz-list');
-  list.innerHTML = '';
-  const search = document.getElementById('searchSpiel').value.toLowerCase();
-  const status = document.getElementById('statusSpiel').value;
-  const filtered = spielplatzCache.filter(d => {
-    return (!search || (d.name||'').toLowerCase().includes(search)) &&
-           (!status || d.status === status);
-  });
-
-  filtered.forEach(d => {
-    const el = document.createElement('div');
-    el.className = "card";
-
-    el.innerHTML = `
-      <input value="${d.name||''}" onchange="db.collection('spielplaetze').doc('${d.id}').update({name:this.value})" class="font-bold text-lg w-full mb-2">
-
-      <label>Status:
-        <select onchange="db.collection('spielplaetze').doc('${d.id}').update({status:this.value})">
-          ${['offen','angenommen','abgelehnt'].map(s=>`<option ${s===d.status?'selected':''}>${s}</option>`).join('')}
-        </select>
-      </label><br><br>
-
-      <label>Sitzplätze:
-        <select onchange="db.collection('spielplaetze').doc('${d.id}').update({sitz:this.value})">
-          ${['Ja','Nein'].map(o=>`<option ${o===d.sitz?'selected':''}>${o}</option>`).join('')}
-        </select>
-      </label><br><br>
-
-      <label>Typ:
-        <input value="${d.typ||''}" onchange="db.collection('spielplaetze').doc('${d.id}').update({typ:this.value})">
-      </label><br><br>
-
-      <label>Tags:
-        <input value="${(d.tags||[]).join(', ')}" onchange="db.collection('spielplaetze').doc('${d.id}').update({tags:this.value.split(',').map(t=>t.trim())})">
-      </label><br><br>
-
-      <div>
-        <p><b>📷 Fotos:</b></p>
-        ${(Array.isArray(d.fotos) ? d.fotos.map((url,i)=>`
-          <div class="relative inline-block mr-2 mb-2">
-            <img src="${url}" class="w-32 h-24 object-cover">
-            <button class="absolute foto-x" onclick="deleteSpielplatzFoto('${d.id}',${i})">✖</button>
-          </div>`).join('') : '<p>Keine Fotos</p>')}
-      </div>
-
-      <button onclick="db.collection('spielplaetze').doc('${d.id}').delete()" class="bg-red-600 text-white px-3 py-1 rounded mt-3">🗑️ Löschen</button>
-    `;
-    list.appendChild(el);
-  });
-}
-function deleteSpielplatzFoto(docId,index){
-  const ref = db.collection('spielplaetze').doc(docId);
-  ref.get().then(doc=>{
-    if(!doc.exists) return;
-    const d = doc.data();
-    if(!Array.isArray(d.fotos)) return;
-    d.fotos.splice(index,1);
-    ref.update({fotos:d.fotos}).then(()=>loadSpielplaetze());
-  });
-}
-
-// Start laden
-loadHuts();
-loadSpielplaetze();
-</script>
+  <!-- Deine Firebase Config + App -->
+  <script>
+    // 🔧 Firebase Config HIER eintragen
+    const firebaseConfig = {
+    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+    authDomain: "eierhuettentour.firebaseapp.com",
+    projectId: "eierhuettentour",
+    storageBucket: "eierhuettentour.appspot.com",
+    messagingSenderId: "348272135205",
+    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+  };
+    firebase.initializeApp(firebaseConfig);
+  </script>
+  <script src="admin.js"></script>
 </body>
 </html>
