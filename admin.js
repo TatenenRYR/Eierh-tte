@@ -39,56 +39,56 @@ const Admin = {
 
     auth.onAuthStateChanged(async user => {
       if (!user) {
+        // Login-Formular anzeigen
         document.getElementById('login-section').classList.remove('hidden');
         document.getElementById('dashboard').classList.add('hidden');
         return;
       }
 
       try {
-        // ✅ 1. Mail muss verifiziert sein
-        if (!user.emailVerified) {
-          alert("Bitte bestätige zuerst deine E-Mail-Adresse.");
-          console.warn("Login blockiert: Email nicht verifiziert", user.email);
-          await auth.signOut();
-          return;
-        }
-
         const email = user.email;
-        console.log("🔐 Prüfe Admin-Berechtigung für:", email);
+        console.log("🔐 Prüfe Admin für:", email);
 
-        // ✅ 2. Versuch: Admin-Eintrag per Doc-ID (E-Mail als ID)
+        // 1. Doc-ID = Email
         let doc = await db.collection("admins").doc(email).get();
 
-        // ✅ 3. Falls nicht vorhanden: Suche in allen Admin-Dokumenten (email-Feld)
+        // 2. Falls nicht: Suche nach Feld "email"
         if (!doc.exists) {
-          const snap = await db.collection("admins").where("email", "==", email).limit(1).get();
+          const snap = await db.collection("admins")
+            .where("email", "==", email)
+            .limit(1)
+            .get();
           if (!snap.empty) {
             doc = snap.docs[0];
           }
         }
 
-        // ✅ 4. Kein Treffer → Kein Zugriff
+        // 3. Abbruch wenn kein Treffer
         if (!doc || !doc.exists) {
-          alert("Kein Zugriff! Deine Email ist nicht als Admin eingetragen.");
-          console.warn("❌ Kein Admin-Dokument gefunden für:", email);
+          console.warn("❌ Kein Admin-Eintrag gefunden für:", email);
+          alert("Kein Zugriff! Diese Email ist nicht als Admin eingetragen.");
           await auth.signOut();
+          document.getElementById('login-section').classList.remove('hidden');
+          document.getElementById('dashboard').classList.add('hidden');
           return;
         }
 
-        // ✅ 5. Optional: Rolle checken
-        const data = doc.data() || {};
+        // 4. Optional: Rolle checken
+        const data = doc.data();
         if (data.role && data.role !== "admin") {
+          console.warn("❌ Rolle nicht admin:", data.role);
           alert("Kein Zugriff! Rolle nicht ausreichend.");
-          console.warn("❌ Rolle verweigert für:", email, data.role);
           await auth.signOut();
+          document.getElementById('login-section').classList.remove('hidden');
+          document.getElementById('dashboard').classList.add('hidden');
           return;
         }
 
         // ✅ Zugriff erlaubt
-        console.log("✅ Zugriff erlaubt für:", email);
+        console.log("✅ Zugriff erlaubt:", email);
         document.getElementById('login-section').classList.add('hidden');
         document.getElementById('dashboard').classList.remove('hidden');
-        document.getElementById('user-name').textContent = user.displayName || email || 'Angemeldet';
+        document.getElementById('user-name').textContent = user.displayName || email;
 
         Huts.load();
         Playgrounds.load();
@@ -98,10 +98,14 @@ const Admin = {
         console.error("⚠️ Admin-Check Fehler:", err);
         alert("Fehler beim Admin-Check.");
         await auth.signOut();
+        document.getElementById('login-section').classList.remove('hidden');
+        document.getElementById('dashboard').classList.add('hidden');
       }
     });
   },
+
   logout() { auth.signOut().then(() => location.reload()); },
+
   reloadAll() {
     Huts.load(); Playgrounds.load(); Support.load();
     UI.toast('Neu geladen');
