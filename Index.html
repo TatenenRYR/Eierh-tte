@@ -1262,11 +1262,80 @@ function setUserMarker(latlng) {
 /////////////////////////////////////////////////////////
 
 // 🔄 Bearing zwischen zwei Punkten berechnen
+// 🔄 Bearing berechnen
 function getBearing(from, to) {
   const y = Math.sin(to.lng - from.lng) * Math.cos(to.lat);
   const x = Math.cos(from.lat) * Math.sin(to.lat) -
             Math.sin(from.lat) * Math.cos(to.lat) * Math.cos(to.lng - from.lng);
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+// 👉 Richtung der Route an aktueller Position berechnen
+function getRouteBearingAt(latlng, routePoints) {
+  let closestDist = Infinity;
+  let closestBearing = 0;
+
+  for (let i = 0; i < routePoints.length - 1; i++) {
+    const p1 = L.latLng(routePoints[i]);
+    const p2 = L.latLng(routePoints[i + 1]);
+    const snapped = L.GeometryUtil.closest(map, [p1, p2], latlng);
+    const dist = map.distance(latlng, snapped);
+
+    if (dist < closestDist) {
+      closestDist = dist;
+      closestBearing = getBearing(p1, p2); // Richtung des Segments
+    }
+  }
+
+  return closestBearing;
+}
+
+let lastLatLng = null;
+let lastBearing = 0;
+
+function updateUserMarker(gpsLatLng) {
+  if (!currentRoutePath || currentRoutePath.length < 2) return;
+
+  const snapped = snapToRoute(gpsLatLng, currentRoutePath);
+
+  if (lastLatLng) {
+    // Sanfte Position
+    const smooth = L.latLng(
+      lastLatLng.lat + (snapped.lat - lastLatLng.lat) * 0.2,
+      lastLatLng.lng + (snapped.lng - lastLatLng.lng) * 0.2
+    );
+
+    // 👉 Sollrichtung der Route an aktueller Position
+    const routeBearing = getRouteBearingAt(smooth, currentRoutePath);
+
+    // 👉 Tatsächliche Fahrtrichtung (Bewegung)
+    const userBearing = getBearing(lastLatLng, smooth);
+
+    // Prüfen ob gegenläufig
+    const diff = Math.abs(routeBearing - userBearing);
+    let displayBearing = routeBearing;
+
+    if (diff > 150 && diff < 210) {
+      // Gegenrichtung
+      displayBearing = (routeBearing + 180) % 360;
+      showToast("⚠️ Du fährst in die falsche Richtung!");
+      speak("Bitte umdrehen, du fährst falsch.");
+    }
+
+    // Smooth Rotation
+    lastBearing = lastBearing + (displayBearing - lastBearing) * 0.25;
+
+    // Marker setzen
+    setUserMarker(smooth, lastBearing);
+
+    // Off-Route Check
+    checkOffRoute(gpsLatLng);
+
+    lastLatLng = smooth;
+  } else {
+    lastLatLng = snapped;
+    setUserMarker(snapped, lastBearing);
+  }
 }
 
 // ⚠️ Prüfen ob Nutzer falsch fährt
@@ -1298,55 +1367,7 @@ function checkOffRoute(gpsLatLng) {
   }
 }
 
-let lastLatLng = null;
-let lastBearing = 0;
 
-// 🧭 Marker-Update mit Soll-Richtung der Route
-function updateUserMarker(gpsLatLng) {
-  if (!currentRoutePath || currentRoutePath.length < 2) return;
-
-  const snapped = snapToRoute(gpsLatLng, currentRoutePath);
-
-  if (lastLatLng) {
-    // Glätten der Position
-    const smooth = L.latLng(
-      lastLatLng.lat + (snapped.lat - lastLatLng.lat) * 0.2,
-      lastLatLng.lng + (snapped.lng - lastLatLng.lng) * 0.2
-    );
-
-    // 👉 Soll-Bearing entlang der Route
-    const nextPoint = L.latLng(currentRoutePath[1]);
-    const routeBearing = getBearing(smooth, nextPoint);
-
-    // 👉 Ist-Bearing aus Bewegung
-    const userBearing = getBearing(lastLatLng, smooth);
-
-    // Prüfen ob man falsch fährt
-    const diff = Math.abs(routeBearing - userBearing);
-    let displayBearing = routeBearing;
-
-    if (diff > 150 && diff < 210) {
-      // Nutzer fährt entgegengesetzt → Pfeil 180° drehen
-      displayBearing = (routeBearing + 180) % 360;
-      showToast("⚠️ Du fährst in die falsche Richtung!");
-      speak("Bitte umdrehen, du fährst falsch.");
-    }
-
-    // Smooth Rotation
-    lastBearing = lastBearing + (displayBearing - lastBearing) * 0.25;
-
-    // Marker setzen
-    setUserMarker(smooth, lastBearing);
-
-    // Off-Route Check
-    checkOffRoute(gpsLatLng);
-
-    lastLatLng = smooth;
-  } else {
-    lastLatLng = snapped;
-    setUserMarker(snapped, lastBearing);
-  }
-}
 // 🔄 Marker mit Richtung zeichnen
 function setUserMarker(latlng, bearing) {
   const icon = L.divIcon({
