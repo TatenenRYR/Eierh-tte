@@ -4,11 +4,43 @@ const auth = firebase.auth();
 
 const UI = {
   showSection(section) {
+    // alle Sektionen verstecken
     document.querySelectorAll('.section').forEach(s => s.style.display = 'none');
+    // gewünschte Section zeigen
     document.getElementById(`section-${section}`).style.display = 'block';
 
+    // Tabs aktualisieren
     document.querySelectorAll('[id^="tab-"]').forEach(t => t.classList.remove('active-tab'));
     document.getElementById(`tab-${section}`).classList.add('active-tab');
+
+    // ✅ Fix: Leaflet Maps nach dem Umschalten refreshen
+    setTimeout(() => {
+      document.querySelectorAll('[id^="map-hut-"], [id^="map-spiel-"]').forEach(c => {
+        if (c._leaflet_map) {
+          c._leaflet_map.invalidateSize();
+        }
+      });
+    }, 250);
+  },
+  toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    clearTimeout(UI._t);
+    UI._t = setTimeout(() => el.classList.add('hidden'), 2200);
+  },
+  safeDateValue(ts) {
+    try {
+      if (!ts) return '';
+      const d = typeof ts.toDate === 'function' ? ts.toDate() : new Date(ts);
+      return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+    } catch { return ''; }
+  },
+  toTimestamp(val) {
+    if (!val) return firebase.firestore.FieldValue.delete();
+    const d = new Date(val);
+    if (isNaN(d)) return firebase.firestore.FieldValue.delete();
+    return d;
   },
   toast(msg) {
     const el = document.getElementById('toast');
@@ -460,21 +492,13 @@ const Support = {
 function renderHutMap(containerId, hutId, lat, lng) {
   const container = document.getElementById(containerId);
   if (!container) return;
-const map = L.map(containerId, {
-          zoomControl: false,
-          dragging: true,
-          scrollWheelZoom: true,
-          doubleClickZoom: true,
-          boxZoom: true,
-          keyboard: true
-        }).setView([lat, lng], 13);
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  const map = L.map(containerId, { zoomControl: false }).setView([lat, lng], 13);
+  container._leaflet_map = map;  // 👈 Map-Instanz am DOM-Element merken
 
-        const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
 
-
-  // Fix: Map an Containergröße anpassen
   setTimeout(() => map.invalidateSize(), 400);
 
   marker.on("dragend", async () => {
@@ -489,12 +513,12 @@ const map = L.map(containerId, {
     }
   });
 }
-
 function renderPlaygroundMap(containerId, spielId, lat, lng) {
   const container = document.getElementById(containerId);
   if (!container) return;
 
   const map = L.map(containerId, { zoomControl: true }).setView([lat || 52.5, lng || 7.5], 15);
+  container._leaflet_map = map;  // 👈 merken
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: '&copy; <a href="https://www.openstreetmap.org/">OSM</a>',
