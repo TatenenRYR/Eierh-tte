@@ -37,7 +37,7 @@ const Admin = {
     document.getElementById('login-btn').onclick = () =>
       auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
 
-    auth.onAuthStateChanged(async user => {
+   /* auth.onAuthStateChanged(async user => {
   if (!user) {
     // Login-Formular anzeigen
     document.getElementById('login-section').classList.remove('hidden');
@@ -90,7 +90,27 @@ const Admin = {
     document.getElementById('login-section').classList.remove('hidden');
     document.getElementById('dashboard').classList.add('hidden');
   }
-});
+});*/
+    auth.onAuthStateChanged(async user => {
+    if (user) {
+      currentUser = user;
+      const adminDoc = await db.collection('admins').doc(user.email).get();
+      if (!adminDoc.exists) {
+        alert('Zugriff verweigert: Du bist kein Admin.');
+        return;
+      }
+          // ✅ Zugriff erlaubt
+    console.log("✅ Zugriff erlaubt:", email);
+    document.getElementById('login-section').classList.add('hidden');
+    document.getElementById('dashboard').classList.remove('hidden');
+    document.getElementById('user-name').textContent = user.displayName || email;
+    // Module laden
+    Huts.load();
+    Playgrounds.load();
+    Support.load();
+      
+    }
+  });
   },
 
   logout() { auth.signOut().then(() => location.reload()); },
