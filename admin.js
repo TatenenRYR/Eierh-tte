@@ -532,6 +532,63 @@ window.Huts = Huts;
 window.Playgrounds = Playgrounds;
 window.Support = Support;
 
+document.getElementById('login-btn').onclick = () =>
+      auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+
+    auth.onAuthStateChanged(async user => {
+  if (!user) {
+    // Login-Formular anzeigen
+    document.getElementById('login-section').classList.remove('hidden');
+    document.getElementById('dashboard').classList.add('hidden');
+    return;
+  }
+
+  try {
+    const email = user.email;
+    console.log("🔐 Prüfe Admin für:", email);
+
+    // Admin-Dokument per Email-ID laden
+    const docSnap = await db.collection("admins").doc(email).get();
+
+    if (!docSnap.exists) {
+      console.warn("❌ Kein Admin-Eintrag gefunden für:", email);
+      alert("Kein Zugriff! Diese Email ist nicht als Admin eingetragen.");
+      await auth.signOut();
+      document.getElementById('login-section').classList.remove('hidden');
+      document.getElementById('dashboard').classList.add('hidden');
+      return;
+    }
+
+    // Rolle prüfen (falls vorhanden)
+    const data = docSnap.data();
+    if (data.role && data.role !== "admin") {
+      console.warn("❌ Rolle nicht admin:", data.role);
+      alert("Kein Zugriff! Rolle nicht ausreichend.");
+      await auth.signOut();
+      document.getElementById('login-section').classList.remove('hidden');
+      document.getElementById('dashboard').classList.add('hidden');
+      return;
+    }
+
+    // ✅ Zugriff erlaubt
+    console.log("✅ Zugriff erlaubt:", email);
+    document.getElementById('login-section').classList.add('hidden');
+    document.getElementById('dashboard').classList.remove('hidden');
+    document.getElementById('user-name').textContent = user.displayName || email;
+
+    // Module laden
+    Huts.load();
+    Playgrounds.load();
+    Support.load();
+
+  } catch (err) {
+    console.error("⚠️ Admin-Check Fehler:", err);
+    alert("Fehler beim Admin-Check.");
+    await auth.signOut();
+    document.getElementById('login-section').classList.remove('hidden');
+    document.getElementById('dashboard').classList.add('hidden');
+  }
+});
 /*document.getElementById('login-btn')?.addEventListener('click', () =>
   auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())
 );
