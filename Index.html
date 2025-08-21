@@ -1301,41 +1301,44 @@ function checkOffRoute(gpsLatLng) {
 let lastLatLng = null;
 let lastBearing = 0;
 
-// 🧭 Marker-Update mit Smooth-Rotation
+// 🧭 Marker-Update mit Soll-Richtung der Route
 function updateUserMarker(gpsLatLng) {
   if (!currentRoutePath || currentRoutePath.length < 2) return;
 
   const snapped = snapToRoute(gpsLatLng, currentRoutePath);
 
   if (lastLatLng) {
-    // 🔄 Position glätten (20% Interpolation)
+    // Glätten der Position
     const smooth = L.latLng(
       lastLatLng.lat + (snapped.lat - lastLatLng.lat) * 0.2,
       lastLatLng.lng + (snapped.lng - lastLatLng.lng) * 0.2
     );
 
-    // 👉 Richtung berechnen
-    let bearing;
-    if (gpsLatLng.heading && gpsLatLng.speed > 0.5) {
-      // Falls Browser Heading liefert
-      bearing = gpsLatLng.heading;
-    } else {
-      // Fallback: Richtung aus Bewegung
-      bearing = getBearing(lastLatLng, smooth);
+    // 👉 Soll-Bearing entlang der Route
+    const nextPoint = L.latLng(currentRoutePath[1]);
+    const routeBearing = getBearing(smooth, nextPoint);
+
+    // 👉 Ist-Bearing aus Bewegung
+    const userBearing = getBearing(lastLatLng, smooth);
+
+    // Prüfen ob man falsch fährt
+    const diff = Math.abs(routeBearing - userBearing);
+    let displayBearing = routeBearing;
+
+    if (diff > 150 && diff < 210) {
+      // Nutzer fährt entgegengesetzt → Pfeil 180° drehen
+      displayBearing = (routeBearing + 180) % 360;
+      showToast("⚠️ Du fährst in die falsche Richtung!");
+      speak("Bitte umdrehen, du fährst falsch.");
     }
 
-    // 🛑 Zittern verhindern → Deadzone von 5°
-    const diff = Math.abs(bearing - lastBearing);
-    if (diff > 5) {
-      // Weiche Rotation (näher an letzten Wert)
-      lastBearing = lastBearing + (bearing - lastBearing) * 0.25;
-    }
+    // Smooth Rotation
+    lastBearing = lastBearing + (displayBearing - lastBearing) * 0.25;
 
     // Marker setzen
     setUserMarker(smooth, lastBearing);
 
-    // Checks
-    checkDirection(smooth);
+    // Off-Route Check
     checkOffRoute(gpsLatLng);
 
     lastLatLng = smooth;
@@ -1344,7 +1347,6 @@ function updateUserMarker(gpsLatLng) {
     setUserMarker(snapped, lastBearing);
   }
 }
-
 // 🔄 Marker mit Richtung zeichnen
 function setUserMarker(latlng, bearing) {
   const icon = L.divIcon({
@@ -1352,7 +1354,7 @@ function setUserMarker(latlng, bearing) {
     html: `<div style="
       width: 30px; height: 30px;
       transform: rotate(${bearing}deg);
-      transition: transform 0.25s linear;  /* smooth rotation */
+      transition: transform 0.25s linear;
     ">
       <svg viewBox="0 0 24 24" fill="#1e40af" width="30" height="30" style="transform: rotate(-90deg);">
         <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
@@ -1366,14 +1368,14 @@ function setUserMarker(latlng, bearing) {
     userMarker = L.marker(latlng, { icon }).addTo(map);
   } else {
     userMarker.setLatLng(latlng);
-    userMarker.setIcon(icon);
+    //userMarker.setIcon(icon);
   }
 
   if (follow) {
     map.setView(latlng, map.getZoom(), { animate: true });
     map.panBy([0, 100], { animate: true });
   }
-}
+    }
 
 // 🔄 Re-Routing wenn man die Route verlässt
 function recalcRoute(startLatLng) {
