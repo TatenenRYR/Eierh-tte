@@ -201,7 +201,7 @@ const Huts = {
               </div>
             </div>
 
-            <div id="map-hut-${d.id}" class="h-48 w-full mt-3"></div>
+            <div id="map-hut-${d.id}" class="minimap"></div>
 
             <div class="mt-3 text-xs text-gray-600">
               <div>📅 Erstellt am: ${d.erstelltAm?.toDate?.().toLocaleString('de-DE') || '-'}</div>
