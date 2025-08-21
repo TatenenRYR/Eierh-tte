@@ -64,7 +64,7 @@ const Admin = {
         }
 
         // 3. Abbruch wenn kein Treffer
-        if (!doc || !doc.exists) {
+        if (/*!doc || */!doc.exists) {
           console.warn("❌ Kein Admin-Eintrag gefunden für:", email);
           alert("Kein Zugriff! Diese Email ist nicht als Admin eingetragen.");
           await auth.signOut();
