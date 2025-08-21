@@ -38,70 +38,59 @@ const Admin = {
       auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
 
     auth.onAuthStateChanged(async user => {
-      if (!user) {
-        // Login-Formular anzeigen
-        document.getElementById('login-section').classList.remove('hidden');
-        document.getElementById('dashboard').classList.add('hidden');
-        return;
-      }
+  if (!user) {
+    // Login-Formular anzeigen
+    document.getElementById('login-section').classList.remove('hidden');
+    document.getElementById('dashboard').classList.add('hidden');
+    return;
+  }
 
-      try {
-        const email = user.email;
-        console.log("🔐 Prüfe Admin für:", email);
+  try {
+    const email = user.email;
+    console.log("🔐 Prüfe Admin für:", email);
 
-        // 1. Doc-ID = Email
-        let doc = await db.collection("admins").doc(email).get();
+    // Admin-Dokument per Email-ID laden
+    const docSnap = await db.collection("admins").doc(email).get();
 
-        // 2. Falls nicht: Suche nach Feld "email"
-        if (!doc.exists) {
-          const snap = await db.collection("admins")
-            .where("email", "==", email)
-            .limit(1)
-            .get();
-          if (!snap.empty) {
-            doc = snap.docs[0];
-          }
-        }
+    if (!docSnap.exists) {
+      console.warn("❌ Kein Admin-Eintrag gefunden für:", email);
+      alert("Kein Zugriff! Diese Email ist nicht als Admin eingetragen.");
+      await auth.signOut();
+      document.getElementById('login-section').classList.remove('hidden');
+      document.getElementById('dashboard').classList.add('hidden');
+      return;
+    }
 
-        // 3. Abbruch wenn kein Treffer
-        if (/*!doc || */!doc.exists) {
-          console.warn("❌ Kein Admin-Eintrag gefunden für:", email);
-          alert("Kein Zugriff! Diese Email ist nicht als Admin eingetragen.");
-          await auth.signOut();
-          document.getElementById('login-section').classList.remove('hidden');
-          document.getElementById('dashboard').classList.add('hidden');
-          return;
-        }
+    // Rolle prüfen (falls vorhanden)
+    const data = docSnap.data();
+    if (data.role && data.role !== "admin") {
+      console.warn("❌ Rolle nicht admin:", data.role);
+      alert("Kein Zugriff! Rolle nicht ausreichend.");
+      await auth.signOut();
+      document.getElementById('login-section').classList.remove('hidden');
+      document.getElementById('dashboard').classList.add('hidden');
+      return;
+    }
 
-        // 4. Optional: Rolle checken
-        const data = doc.data();
-        if (data.role && data.role !== "admin") {
-          console.warn("❌ Rolle nicht admin:", data.role);
-          alert("Kein Zugriff! Rolle nicht ausreichend.");
-          await auth.signOut();
-          document.getElementById('login-section').classList.remove('hidden');
-          document.getElementById('dashboard').classList.add('hidden');
-          return;
-        }
+    // ✅ Zugriff erlaubt
+    console.log("✅ Zugriff erlaubt:", email);
+    document.getElementById('login-section').classList.add('hidden');
+    document.getElementById('dashboard').classList.remove('hidden');
+    document.getElementById('user-name').textContent = user.displayName || email;
 
-        // ✅ Zugriff erlaubt
-        console.log("✅ Zugriff erlaubt:", email);
-        document.getElementById('login-section').classList.add('hidden');
-        document.getElementById('dashboard').classList.remove('hidden');
-        document.getElementById('user-name').textContent = user.displayName || email;
+    // Module laden
+    Huts.load();
+    Playgrounds.load();
+    Support.load();
 
-        Huts.load();
-        Playgrounds.load();
-        Support.load();
-
-      } catch (err) {
-        console.error("⚠️ Admin-Check Fehler:", err);
-        alert("Fehler beim Admin-Check.");
-        await auth.signOut();
-        document.getElementById('login-section').classList.remove('hidden');
-        document.getElementById('dashboard').classList.add('hidden');
-      }
-    });
+  } catch (err) {
+    console.error("⚠️ Admin-Check Fehler:", err);
+    alert("Fehler beim Admin-Check.");
+    await auth.signOut();
+    document.getElementById('login-section').classList.remove('hidden');
+    document.getElementById('dashboard').classList.add('hidden');
+  }
+});
   },
 
   logout() { auth.signOut().then(() => location.reload()); },
