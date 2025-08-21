@@ -1223,7 +1223,7 @@ function snapToRouteSmooth(gpsLatLng, routePoints, lastLatLng) {
     }*/
     let lastLatLng = null;
 
-function updateUserMarker(gpsLatLng) {
+/*function updateUserMarker(gpsLatLng) {
   if (!currentRoutePath || currentRoutePath.length < 2) return;
 
   // 📍 Punkt auf Route finden
@@ -1256,6 +1256,153 @@ function setUserMarker(latlng) {
     map.setView(latlng, map.getZoom(), { animate: true });
     map.panBy([0, 100], { animate: true });
   }
+}*/
+    /////////////////////////////////////////////////////////
+// 🚴 Erweiterte Navigation – Fahrtrichtung + Re-Routing
+/////////////////////////////////////////////////////////
+
+// 🔄 Bearing zwischen zwei Punkten berechnen
+function getBearing(from, to) {
+  const y = Math.sin(to.lng - from.lng) * Math.cos(to.lat);
+  const x = Math.cos(from.lat) * Math.sin(to.lat) -
+            Math.sin(from.lat) * Math.cos(to.lat) * Math.cos(to.lng - from.lng);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+// ⚠️ Prüfen ob Nutzer falsch fährt
+function checkDirection(latlng) {
+  if (!currentRoutePath || currentRoutePath.length < 2 || !lastLatLng) return;
+
+  const nextPoint = L.latLng(currentRoutePath[1]);
+  const routeBearing = getBearing(latlng, nextPoint);
+  const userBearing = getBearing(lastLatLng, latlng);
+
+  const diff = Math.abs(routeBearing - userBearing);
+  if (diff > 150 && diff < 210) {
+    showToast("⚠️ Du fährst in die falsche Richtung!");
+    speak("Bitte umdrehen, du fährst falsch.");
+  }
+}
+
+// 🛑 Prüfen ob Nutzer von der Route abweicht
+function checkOffRoute(gpsLatLng) {
+  if (!currentRoutePath || currentRoutePath.length < 2) return;
+
+  const snapped = snapToRoute(gpsLatLng, currentRoutePath);
+  const dist = map.distance(gpsLatLng, snapped);
+
+  if (dist > 50) {  // 50m Toleranz
+    showToast("🔄 Route wird neu berechnet...");
+    speak("Route wird neu berechnet.");
+    recalcRoute(gpsLatLng); // 👉 automatische Neuberechnung
+  }
+}
+
+// 🧭 Marker-Update mit Richtung & Checks
+function updateUserMarker(gpsLatLng) {
+  if (!currentRoutePath || currentRoutePath.length < 2) return;
+
+  const snapped = snapToRoute(gpsLatLng, currentRoutePath);
+
+  if (lastLatLng) {
+    const smooth = L.latLng(
+      lastLatLng.lat + (snapped.lat - lastLatLng.lat) * 0.2,
+      lastLatLng.lng + (snapped.lng - lastLatLng.lng) * 0.2
+    );
+
+    // 👉 Richtung berechnen
+    const bearing = getBearing(lastLatLng, smooth);
+
+    // Marker setzen
+    setUserMarker(smooth, bearing);
+
+    // Checks
+    checkDirection(smooth);
+    checkOffRoute(gpsLatLng);
+
+    lastLatLng = smooth;
+  } else {
+    lastLatLng = snapped;
+    setUserMarker(snapped, 0);
+  }
+}
+
+// 🔄 Marker mit Richtung zeichnen
+function setUserMarker(latlng, bearing) {
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="
+      width: 30px; height: 30px;
+      transform: rotate(${bearing}deg);
+      transition: transform 0.15s linear;
+    ">
+      <svg viewBox="0 0 24 24" fill="#1e40af" width="30" height="30" style="transform: rotate(-90deg);">
+        <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
+      </svg>
+    </div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+  });
+
+  if (!userMarker) {
+    userMarker = L.marker(latlng, { icon }).addTo(map);
+  } else {
+    userMarker.setLatLng(latlng);
+    userMarker.setIcon(icon);
+  }
+
+  if (follow) {
+    map.setView(latlng, map.getZoom(), { animate: true });
+    map.panBy([0, 100], { animate: true });
+  }
+}
+
+// 🔄 Re-Routing wenn man die Route verlässt
+function recalcRoute(startLatLng) {
+  const coords = [
+    [startLatLng.lng, startLatLng.lat],
+    ...selected.map(h => [h.lng, h.lat])
+  ];
+
+  fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
+    method: "POST",
+    headers: {
+      "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ coordinates: coords })
+  })
+  .then(r => r.json())
+  .then(data => {
+    const points = data.features?.[0]?.geometry?.coordinates?.map(p => [p[1], p[0]]);
+    if (!points || points.length < 2) {
+      showToast("❌ Route konnte nicht neu berechnet werden");
+      return;
+    }
+
+    // Alte Linien entfernen
+    clearRouteLines();
+
+    // Neue Route einzeichnen
+    routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
+    progressLine = L.polyline([], { color: "#00f", weight: 4 }).addTo(map);
+
+    // Pfad ersetzen
+    currentRoutePath = [...points];
+
+    // Karte auf neue Route anpassen
+    if (userMarker && follow) {
+      map.flyTo(userMarker.getLatLng(), 17, { animate: true });
+    }
+
+    // 🔊 Feedback
+    showToast("✅ Neue Route berechnet");
+    speak("Neue Route berechnet. Bitte folge den Anweisungen.");
+  })
+  .catch(err => {
+    console.warn("❌ Re-Routing Fehler:", err);
+    showToast("⚠️ Routen-Neuberechnung fehlgeschlagen");
+  });
 }
 
     let gpsWatchId = null;
