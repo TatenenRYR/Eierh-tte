@@ -460,15 +460,19 @@ const Support = {
 function renderHutMap(containerId, hutId, lat, lng) {
   const container = document.getElementById(containerId);
   if (!container) return;
+const map = L.map(containerId, {
+          zoomControl: false,
+          dragging: true,
+          scrollWheelZoom: true,
+          doubleClickZoom: true,
+          boxZoom: true,
+          keyboard: true
+        }).setView([lat, lng], 13);
 
-  const map = L.map(containerId, { zoomControl: true }).setView([lat || 52.5, lng || 7.5], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/">OSM</a>',
-    maxZoom: 19
-  }).addTo(map);
+        const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
 
-  const marker = L.marker([lat || 52.5, lng || 7.5], { draggable: true }).addTo(map);
 
   // Fix: Map an Containergröße anpassen
   setTimeout(() => map.invalidateSize(), 400);
