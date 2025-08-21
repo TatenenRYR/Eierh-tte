@@ -1263,6 +1263,7 @@ function setUserMarker(latlng) {
 
 // 🔄 Bearing zwischen zwei Punkten berechnen
 // 🔄 Bearing berechnen
+// 🔄 Bearing zwischen zwei Punkten berechnen
 function getBearing(from, to) {
   const y = Math.sin(to.lng - from.lng) * Math.cos(to.lat);
   const x = Math.cos(from.lat) * Math.sin(to.lat) -
@@ -1270,7 +1271,7 @@ function getBearing(from, to) {
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
-// 👉 Richtung der Route an aktueller Position berechnen
+// 👉 Richtung der Route an der aktuellen Position bestimmen
 function getRouteBearingAt(latlng, routePoints) {
   let closestDist = Infinity;
   let closestBearing = 0;
@@ -1293,36 +1294,42 @@ function getRouteBearingAt(latlng, routePoints) {
 let lastLatLng = null;
 let lastBearing = 0;
 
+// 🧭 Marker-Update mit Soll-Richtung der Route
 function updateUserMarker(gpsLatLng) {
   if (!currentRoutePath || currentRoutePath.length < 2) return;
 
   const snapped = snapToRoute(gpsLatLng, currentRoutePath);
 
   if (lastLatLng) {
-    // Sanfte Position
+    // Sanfte Bewegung (20% Interpolation)
     const smooth = L.latLng(
       lastLatLng.lat + (snapped.lat - lastLatLng.lat) * 0.2,
       lastLatLng.lng + (snapped.lng - lastLatLng.lng) * 0.2
     );
 
-    // 👉 Sollrichtung der Route an aktueller Position
+    // Sollrichtung aus Route
     const routeBearing = getRouteBearingAt(smooth, currentRoutePath);
 
-    // 👉 Tatsächliche Fahrtrichtung (Bewegung)
+    // Tatsächliche Bewegungsrichtung
     const userBearing = getBearing(lastLatLng, smooth);
 
-    // Prüfen ob gegenläufig
-    const diff = Math.abs(routeBearing - userBearing);
+    // Standard: Route-Bearing
     let displayBearing = routeBearing;
 
+    // Prüfen ob Nutzer gegenläufig fährt
+    const diff = Math.abs(routeBearing - userBearing);
     if (diff > 150 && diff < 210) {
-      // Gegenrichtung
       displayBearing = (routeBearing + 180) % 360;
-      showToast("⚠️ Du fährst in die falsche Richtung!");
-      speak("Bitte umdrehen, du fährst falsch.");
+
+      // ❗ Banner + Sprachwarnung
+      document.getElementById("navInstruction").innerText = "⚠️ Bitte wenden!";
+      speak("Bitte wenden, du fährst falsch.");
+    } else {
+      // Normal weiter
+      document.getElementById("navInstruction").innerText = "🚴 Weiter der Route folgen";
     }
 
-    // Smooth Rotation
+    // Weiche Rotation
     lastBearing = lastBearing + (displayBearing - lastBearing) * 0.25;
 
     // Marker setzen
@@ -1337,6 +1344,37 @@ function updateUserMarker(gpsLatLng) {
     setUserMarker(snapped, lastBearing);
   }
 }
+
+// 🔄 Marker mit Richtung zeichnen
+function setUserMarker(latlng, bearing) {
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="
+      width: 30px; height: 30px;
+      transform: rotate(${bearing}deg);
+      transition: transform 0.3s linear;
+    ">
+      <svg viewBox="0 0 24 24" fill="#1e40af" width="30" height="30" style="transform: rotate(-90deg);">
+        <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
+      </svg>
+    </div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+  });
+
+  if (!userMarker) {
+    userMarker = L.marker(latlng, { icon }).addTo(map);
+  } else {
+    userMarker.setLatLng(latlng);
+    userMarker.setIcon(icon);
+  }
+
+  if (follow) {
+    map.setView(latlng, map.getZoom(), { animate: true });
+    map.panBy([0, 100], { animate: true });
+  }
+}
+
 
 // ⚠️ Prüfen ob Nutzer falsch fährt
 function checkDirection(latlng) {
@@ -1368,35 +1406,6 @@ function checkOffRoute(gpsLatLng) {
 }
 
 
-// 🔄 Marker mit Richtung zeichnen
-function setUserMarker(latlng, bearing) {
-  const icon = L.divIcon({
-    className: '',
-    html: `<div style="
-      width: 30px; height: 30px;
-      transform: rotate(${bearing}deg);
-      transition: transform 0.25s linear;
-    ">
-      <svg viewBox="0 0 24 24" fill="#1e40af" width="30" height="30" style="transform: rotate(-90deg);">
-        <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
-      </svg>
-    </div>`,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
-  });
-
-  if (!userMarker) {
-    userMarker = L.marker(latlng, { icon }).addTo(map);
-  } else {
-    userMarker.setLatLng(latlng);
-    //userMarker.setIcon(icon);
-  }
-
-  if (follow) {
-    map.setView(latlng, map.getZoom(), { animate: true });
-    map.panBy([0, 100], { animate: true });
-  }
-    }
 
 // 🔄 Re-Routing wenn man die Route verlässt
 function recalcRoute(startLatLng) {
