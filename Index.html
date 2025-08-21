@@ -1343,6 +1343,7 @@ function updateUserMarker(gpsLatLng) {
     lastLatLng = snapped;
     setUserMarker(snapped, lastBearing);
   }
+  updateNavigationBanner(smooth);
 }
 
 // 🔄 Marker mit Richtung zeichnen
@@ -1407,7 +1408,9 @@ function checkOffRoute(gpsLatLng) {
 
 
 
-// 🔄 Re-Routing wenn man die Route verlässt
+let navigationSteps = [];  // globale Liste der Anweisungen
+let currentStepIndex = 0;
+
 function recalcRoute(startLatLng) {
   const coords = [
     [startLatLng.lng, startLatLng.lat],
@@ -1420,7 +1423,7 @@ function recalcRoute(startLatLng) {
       "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ coordinates: coords })
+    body: JSON.stringify({ coordinates: coords, instructions: true })
   })
   .then(r => r.json())
   .then(data => {
@@ -1430,22 +1433,20 @@ function recalcRoute(startLatLng) {
       return;
     }
 
-    // Alte Linien entfernen
-    clearRouteLines();
+    // Steps speichern
+    navigationSteps = data.features?.[0]?.properties?.segments?.[0]?.steps || [];
+    currentStepIndex = 0;
 
-    // Neue Route einzeichnen
+    clearRouteLines();
     routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
     progressLine = L.polyline([], { color: "#00f", weight: 4 }).addTo(map);
 
-    // Pfad ersetzen
     currentRoutePath = [...points];
 
-    // Karte auf neue Route anpassen
     if (userMarker && follow) {
       map.flyTo(userMarker.getLatLng(), 17, { animate: true });
     }
 
-    // 🔊 Feedback
     showToast("✅ Neue Route berechnet");
     speak("Neue Route berechnet. Bitte folge den Anweisungen.");
   })
@@ -1454,7 +1455,36 @@ function recalcRoute(startLatLng) {
     showToast("⚠️ Routen-Neuberechnung fehlgeschlagen");
   });
 }
+    
+function updateNavigationBanner(latlng) {
+  if (!navigationSteps || navigationSteps.length === 0) return;
+  if (currentStepIndex >= navigationSteps.length) {
+    document.getElementById("navInstruction").innerText = "🏁 Ziel erreicht!";
+    return;
+  }
 
+  const step = navigationSteps[currentStepIndex];
+  const stepPoint = L.latLng(step.way_points ? currentRoutePath[step.way_points[0]] : currentRoutePath[0]);
+
+  const dist = map.distance(latlng, stepPoint);
+
+  if (dist < 30) {
+    // Nächster Schritt erreicht → weiter
+    currentStepIndex++;
+    if (currentStepIndex < navigationSteps.length) {
+      const nextStep = navigationSteps[currentStepIndex];
+      const text = step.instruction || "weiter";
+      document.getElementById("navInstruction").innerText = "➡️ " + text;
+      speak(text);
+    } else {
+      document.getElementById("navInstruction").innerText = "🏁 Ziel erreicht!";
+      speak("Du hast dein Ziel erreicht.");
+    }
+  } else {
+    // Standard Anzeige
+    document.getElementById("navInstruction").innerText = "➡️ " + (step.instruction || "weiter");
+  }
+}
     let gpsWatchId = null;
 function startTrackingUser(map) {
   if (!navigator.geolocation) {
