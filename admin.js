@@ -37,20 +37,36 @@ const Admin = {
     document.getElementById('login-btn').onclick = () =>
       auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
 
-    auth.onAuthStateChanged(user => {
-      if (!user) {
-        document.getElementById('login-section').classList.remove('hidden');
-        document.getElementById('dashboard').classList.add('hidden');
-        return;
-      }
-      document.getElementById('login-section').classList.add('hidden');
-      document.getElementById('dashboard').classList.remove('hidden');
-      document.getElementById('user-name').textContent = user.displayName || user.email || 'Angemeldet';
+    auth.onAuthStateChanged(async user => {
+  if (!user) {
+    document.getElementById('login-section').classList.remove('hidden');
+    document.getElementById('dashboard').classList.add('hidden');
+    return;
+  }
 
-      Huts.load();
-      Playgrounds.load();
-      Support.load();
-    });
+  try {
+    // Admin-Check: Email in Firestore?
+    const doc = await db.collection("admins").doc(user.email).get();
+    if (!doc.exists) {
+      alert("Kein Zugriff! Deine Email ist nicht als Admin eingetragen.");
+      await auth.signOut();
+      return;
+    }
+
+    // ✅ Zugriff erlaubt
+    document.getElementById('login-section').classList.add('hidden');
+    document.getElementById('dashboard').classList.remove('hidden');
+    document.getElementById('user-name').textContent = user.displayName || user.email || 'Angemeldet';
+
+    Huts.load();
+    Playgrounds.load();
+    Support.load();
+  } catch (err) {
+    console.error("Admin-Check Fehler:", err);
+    alert("Fehler beim Admin-Check.");
+    await auth.signOut();
+  }
+});
   },
   logout() { auth.signOut().then(() => location.reload()); },
   reloadAll() {
