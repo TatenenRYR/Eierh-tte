@@ -1307,54 +1307,46 @@ function getRouteBearingAt(latlng, routePoints) {
 let lastLatLng = null;
 let lastBearing = 0;
 function updateUserMarker(gpsLatLng) {
-  let displayPos = gpsLatLng; // Standard: immer aktuelle GPS-Position
-
-  // 👉 Wenn Route aktiv: snappen
-  if (currentRoutePath && currentRoutePath.length >= 2) {
-    const snapped = snapToRoute(gpsLatLng, currentRoutePath);
-
-    // Nur snappen, wenn nah genug dran (z. B. < 50m von Route)
-    if (map.distance(gpsLatLng, snapped) < 50) {
-      displayPos = snapped;
+  if (!currentRoutePath || currentRoutePath.length < 2) {
+    // Kein Routing aktiv → normalen GPS-Marker setzen
+    if (!userMarker) {
+      userMarker = L.marker(gpsLatLng, { icon: getUserIcon() }).addTo(map);
+    } else {
+      userMarker.setLatLng(gpsLatLng);
     }
+    if (follow) map.setView(gpsLatLng, 17, { animate: true });
+    lastLatLng = gpsLatLng;
+    return;
   }
 
-  // 👉 Sanfte Bewegung zum neuen Punkt
-  if (lastLatLng) {
-    displayPos = L.latLng(
-      lastLatLng.lat + (displayPos.lat - lastLatLng.lat) * 0.4, // 40% statt 20% für flüssigere Bewegung
-      lastLatLng.lng + (displayPos.lng - lastLatLng.lng) * 0.4
-    );
-  }
+  // 👉 Schritt 1: nächsten Punkt auf Route finden
+  const snapped = snapToRoute(gpsLatLng, currentRoutePath);
 
-  // 👉 Richtung berechnen (nur wenn sich bewegt)
-  if (lastLatLng && (displayPos.lat !== lastLatLng.lat || displayPos.lng !== lastLatLng.lng)) {
-    const userBearing = getBearing(lastLatLng, displayPos);
-    lastBearing = lastBearing + (userBearing - lastBearing) * 0.25;
-  }
-
-  // 👉 Marker aktualisieren
+  // 👉 Schritt 2: Marker auf Route setzen
   if (!userMarker) {
-    userMarker = L.marker(displayPos, { icon: getUserIcon() }).addTo(map);
+    userMarker = L.marker(snapped, { icon: getUserIcon() }).addTo(map);
   } else {
-    userMarker.setLatLng(displayPos);
-    userMarker.setIcon(getUserIcon());
+    userMarker.setLatLng(snapped);
   }
 
+  // 👉 Schritt 3: Karte folgen lassen
   if (follow) {
-    map.setView(displayPos, map.getZoom(), { animate: true });
-    map.panBy([0, 100], { animate: true });
+    map.setView(snapped, 18, { animate: true }); // extra nah ran
   }
 
-  lastLatLng = displayPos;
-
-  // 👉 Navigation nur aktualisieren, wenn Route da ist
-  if (currentRoutePath && currentRoutePath.length >= 2) {
-    updateNavigationBanner(displayPos);
-    checkOffRoute(gpsLatLng);
+  // 👉 Schritt 4: Richtung bestimmen
+  if (lastLatLng) {
+    const bearing = getBearing(lastLatLng, snapped);
+    lastBearing = lastBearing + (bearing - lastBearing) * 0.25;
+    setUserMarker(snapped, lastBearing);
   }
+
+  lastLatLng = snapped;
+
+  // 👉 Schritt 5: Navigation aktualisieren
+  updateNavigationBanner(snapped);
+  checkOffRoute(gpsLatLng);
 }
-
 
 // 🔄 Marker mit Richtung zeichnen
 function setUserMarker(latlng, bearing) {
