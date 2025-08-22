@@ -1307,56 +1307,52 @@ function getRouteBearingAt(latlng, routePoints) {
 let lastLatLng = null;
 let lastBearing = 0;
 function updateUserMarker(gpsLatLng) {
-  // ✅ Fallback: Wenn keine Route gesetzt ist
-  if (!currentRoutePath || currentRoutePath.length < 2) {
-    if (!userMarker) {
-      userMarker = L.marker(gpsLatLng, { icon: getUserIcon() }).addTo(map);
-    } else {
-      userMarker.setLatLng(gpsLatLng);
-      userMarker.setIcon(getUserIcon());
-    }
+  let displayPos = gpsLatLng; // Standard: immer aktuelle GPS-Position
 
-    if (follow) {
-      map.setView(gpsLatLng, map.getZoom(), { animate: true });
-      map.panBy([0, 100], { animate: true });
+  // 👉 Wenn Route aktiv: snappen
+  if (currentRoutePath && currentRoutePath.length >= 2) {
+    const snapped = snapToRoute(gpsLatLng, currentRoutePath);
+
+    // Nur snappen, wenn nah genug dran (z. B. < 50m von Route)
+    if (map.distance(gpsLatLng, snapped) < 50) {
+      displayPos = snapped;
     }
-    return;
   }
 
-  // 👉 Normale Logik, wenn Route aktiv ist
-  const snapped = snapToRoute(gpsLatLng, currentRoutePath);
-
+  // 👉 Sanfte Bewegung zum neuen Punkt
   if (lastLatLng) {
-    const smooth = L.latLng(
-      lastLatLng.lat + (snapped.lat - lastLatLng.lat) * 0.2,
-      lastLatLng.lng + (snapped.lng - lastLatLng.lng) * 0.2
+    displayPos = L.latLng(
+      lastLatLng.lat + (displayPos.lat - lastLatLng.lat) * 0.4, // 40% statt 20% für flüssigere Bewegung
+      lastLatLng.lng + (displayPos.lng - lastLatLng.lng) * 0.4
     );
-
-    const routeBearing = getRouteBearingAt(smooth, currentRoutePath);
-    const userBearing = getBearing(lastLatLng, smooth);
-
-    let displayBearing = routeBearing;
-    const diff = Math.abs(routeBearing - userBearing);
-
-    if (diff > 150 && diff < 210) {
-      displayBearing = (routeBearing + 180) % 360;
-      document.getElementById("navInstruction").innerText = "⚠️ Bitte wenden!";
-      speak("Bitte wenden, du fährst falsch.");
-    } else {
-      document.getElementById("navInstruction").innerText = "🚴 Weiter der Route folgen";
-    }
-
-    lastBearing = lastBearing + (displayBearing - lastBearing) * 0.25;
-    setUserMarker(smooth, lastBearing);
-
-    checkOffRoute(gpsLatLng);
-    lastLatLng = smooth;
-  } else {
-    lastLatLng = snapped;
-    setUserMarker(snapped, lastBearing);
   }
 
-  updateNavigationBanner(snapped);
+  // 👉 Richtung berechnen (nur wenn sich bewegt)
+  if (lastLatLng && (displayPos.lat !== lastLatLng.lat || displayPos.lng !== lastLatLng.lng)) {
+    const userBearing = getBearing(lastLatLng, displayPos);
+    lastBearing = lastBearing + (userBearing - lastBearing) * 0.25;
+  }
+
+  // 👉 Marker aktualisieren
+  if (!userMarker) {
+    userMarker = L.marker(displayPos, { icon: getUserIcon() }).addTo(map);
+  } else {
+    userMarker.setLatLng(displayPos);
+    userMarker.setIcon(getUserIcon());
+  }
+
+  if (follow) {
+    map.setView(displayPos, map.getZoom(), { animate: true });
+    map.panBy([0, 100], { animate: true });
+  }
+
+  lastLatLng = displayPos;
+
+  // 👉 Navigation nur aktualisieren, wenn Route da ist
+  if (currentRoutePath && currentRoutePath.length >= 2) {
+    updateNavigationBanner(displayPos);
+    checkOffRoute(gpsLatLng);
+  }
 }
 
 
