@@ -1306,58 +1306,59 @@ function getRouteBearingAt(latlng, routePoints) {
 
 let lastLatLng = null;
 let lastBearing = 0;
-
-// 🧭 Marker-Update mit Soll-Richtung der Route
 function updateUserMarker(gpsLatLng) {
-  if (!currentRoutePath || currentRoutePath.length < 2) return;
+  // ✅ Fallback: Wenn keine Route gesetzt ist
+  if (!currentRoutePath || currentRoutePath.length < 2) {
+    if (!userMarker) {
+      userMarker = L.marker(gpsLatLng, { icon: getUserIcon() }).addTo(map);
+    } else {
+      userMarker.setLatLng(gpsLatLng);
+      userMarker.setIcon(getUserIcon());
+    }
 
+    if (follow) {
+      map.setView(gpsLatLng, map.getZoom(), { animate: true });
+      map.panBy([0, 100], { animate: true });
+    }
+    return;
+  }
+
+  // 👉 Normale Logik, wenn Route aktiv ist
   const snapped = snapToRoute(gpsLatLng, currentRoutePath);
 
   if (lastLatLng) {
-    // Sanfte Bewegung (20% Interpolation)
     const smooth = L.latLng(
       lastLatLng.lat + (snapped.lat - lastLatLng.lat) * 0.2,
       lastLatLng.lng + (snapped.lng - lastLatLng.lng) * 0.2
     );
 
-    // Sollrichtung aus Route
     const routeBearing = getRouteBearingAt(smooth, currentRoutePath);
-
-    // Tatsächliche Bewegungsrichtung
     const userBearing = getBearing(lastLatLng, smooth);
 
-    // Standard: Route-Bearing
     let displayBearing = routeBearing;
-
-    // Prüfen ob Nutzer gegenläufig fährt
     const diff = Math.abs(routeBearing - userBearing);
+
     if (diff > 150 && diff < 210) {
       displayBearing = (routeBearing + 180) % 360;
-
-      // ❗ Banner + Sprachwarnung
       document.getElementById("navInstruction").innerText = "⚠️ Bitte wenden!";
       speak("Bitte wenden, du fährst falsch.");
     } else {
-      // Normal weiter
       document.getElementById("navInstruction").innerText = "🚴 Weiter der Route folgen";
     }
 
-    // Weiche Rotation
     lastBearing = lastBearing + (displayBearing - lastBearing) * 0.25;
-
-    // Marker setzen
     setUserMarker(smooth, lastBearing);
 
-    // Off-Route Check
     checkOffRoute(gpsLatLng);
-
     lastLatLng = smooth;
   } else {
     lastLatLng = snapped;
     setUserMarker(snapped, lastBearing);
   }
-  updateNavigationBanner(smooth);
+
+  updateNavigationBanner(snapped);
 }
+
 
 // 🔄 Marker mit Richtung zeichnen
 function setUserMarker(latlng, bearing) {
