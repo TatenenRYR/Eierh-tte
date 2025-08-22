@@ -1260,9 +1260,22 @@ function setUserMarker(latlng) {
     /////////////////////////////////////////////////////////
 // 🚴 Erweiterte Navigation – Fahrtrichtung + Re-Routing
 /////////////////////////////////////////////////////////
-
-// 🔄 Bearing zwischen zwei Punkten berechnen
-// 🔄 Bearing berechnen
+// Mapping von OpenRouteService step.type auf Icons
+function getStepIcon(type) {
+  switch (type) {
+    case 0: return "⬆️";  // continue straight
+    case 1: return "↖️";  // slight left
+    case 2: return "⬅️";  // turn left
+    case 3: return "↙️";  // sharp left
+    case 4: return "↗️";  // slight right
+    case 5: return "➡️";  // turn right
+    case 6: return "↘️";  // sharp right
+    case 7: return "🔄";  // U-turn
+    case 8: return "🚦";  // roundabout
+    case 10: return "🏁"; // arrive at destination
+    default: return "➡️"; // fallback
+  }
+}
 // 🔄 Bearing zwischen zwei Punkten berechnen
 function getBearing(from, to) {
   const y = Math.sin(to.lng - from.lng) * Math.cos(to.lat);
@@ -1455,7 +1468,12 @@ function recalcRoute(startLatLng) {
     showToast("⚠️ Routen-Neuberechnung fehlgeschlagen");
   });
 }
-    
+  // Distanz in schöne Anzeige umwandeln
+function formatDistance(meters) {
+  if (meters < 50) return "gleich";
+  if (meters < 1000) return `${Math.round(meters)} m`;
+  return `${(meters/1000).toFixed(1)} km`;
+}  
 function updateNavigationBanner(latlng) {
   if (!navigationSteps || navigationSteps.length === 0) return;
   if (currentStepIndex >= navigationSteps.length) {
@@ -1465,24 +1483,32 @@ function updateNavigationBanner(latlng) {
 
   const step = navigationSteps[currentStepIndex];
   const stepPoint = L.latLng(step.way_points ? currentRoutePath[step.way_points[0]] : currentRoutePath[0]);
-
   const dist = map.distance(latlng, stepPoint);
 
+  const icon = getStepIcon(step.type);
+  const text = step.instruction || "weiter";
+  const distText = formatDistance(dist);
+
   if (dist < 30) {
-    // Nächster Schritt erreicht → weiter
+    // 👉 Nächsten Schritt aktivieren
     currentStepIndex++;
     if (currentStepIndex < navigationSteps.length) {
       const nextStep = navigationSteps[currentStepIndex];
-      const text = step.instruction || "weiter";
-      document.getElementById("navInstruction").innerText = "➡️ " + text;
-      speak(text);
+      const nextIcon = getStepIcon(nextStep.type);
+      const nextText = nextStep.instruction || "weiter";
+      const nextPoint = L.latLng(nextStep.way_points ? currentRoutePath[nextStep.way_points[0]] : currentRoutePath[0]);
+      const nextDist = map.distance(latlng, nextPoint);
+      const nextDistText = formatDistance(nextDist);
+
+      document.getElementById("navInstruction").innerText = `${nextIcon} ${nextText} in ${nextDistText}`;
+      speak(`${nextText} in ${nextDistText}`);
     } else {
       document.getElementById("navInstruction").innerText = "🏁 Ziel erreicht!";
       speak("Du hast dein Ziel erreicht.");
     }
   } else {
-    // Standard Anzeige
-    document.getElementById("navInstruction").innerText = "➡️ " + (step.instruction || "weiter");
+    // 👉 Normale Anzeige
+    document.getElementById("navInstruction").innerText = `${icon} ${text} in ${distText}`;
   }
 }
     let gpsWatchId = null;
