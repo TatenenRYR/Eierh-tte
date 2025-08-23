@@ -1311,9 +1311,10 @@ let isOffRoute = false; // merkt ob aktuell abweichend
 function updateUserMarker(gpsLatLng) {
   if (!currentRoutePath || currentRoutePath.length < 2) {
     if (!userMarker) {
-      userMarker = L.marker(gpsLatLng, { icon: getUserIcon() }).addTo(map);
+      userMarker = L.marker(gpsLatLng, { icon: getUserIcon(0, false, "arrow") }).addTo(map);
     } else {
       userMarker.setLatLng(gpsLatLng);
+      userMarker.setIcon(getUserIcon(0, false, "arrow"));
     }
     lastLatLng = gpsLatLng;
     return;
@@ -1331,60 +1332,47 @@ function updateUserMarker(gpsLatLng) {
     userBearing = getBearing(lastLatLng, snapped);
   }
 
-  // 👉 Unterschied berechnen (immer positiv zwischen 0-180°)
+  // 👉 Unterschied (0–180°)
   let diff = Math.abs(routeBearing - userBearing);
   if (diff > 180) diff = 360 - diff;
 
-  let displayBearing = routeBearing;
-  let wrongDir = false;
+  let displayBearing, wrongDir, iconMode;
 
   // --- Abweichung erkannt ---
   if (!isOffRoute && diff > 50) {
     isOffRoute = true;
     wrongDir = true;
-    displayBearing = userBearing; // Marker frei drehen
+    displayBearing = userBearing;   // frei → eigene Richtung
+    iconMode = "arrow";             // z.B. Pfeil-Symbol im freien Modus
     showToast("⚠️ Du fährst in die falsche Richtung!");
     speak("Bitte umdrehen, du fährst falsch.");
   }
-  // --- zurück zur Route (wieder einrasten) ---
+  // --- zurück zur Route ---
   else if (isOffRoute && diff < 20) {
     isOffRoute = false;
     wrongDir = false;
-    displayBearing = routeBearing; // wieder einrasten
+    displayBearing = routeBearing;  // wieder eingerastet
+    iconMode = "bike";              // z.B. Fahrrad-Symbol im Routenmodus
     showToast("✅ Zurück auf der Route");
     speak("Du bist wieder auf der Route.");
   }
   // --- Zustand halten ---
   else if (isOffRoute) {
     wrongDir = true;
-    displayBearing = userBearing; // solange abweichend → frei
+    displayBearing = userBearing;   // bleibt frei
+    iconMode = "arrow";
   } else {
     wrongDir = false;
-    displayBearing = routeBearing; // normal → Route
+    displayBearing = routeBearing;  // bleibt eingerastet
+    iconMode = "bike";
   }
 
-  // 👉 Marker initialisieren oder nur verschieben
+  // 👉 Marker initialisieren oder updaten
   if (!userMarker) {
-    const icon = L.divIcon({
-      className: '',
-      html: `<div id="user-arrow" style="width:30px;height:30px;transition:transform 0.3s linear;">
-        <svg viewBox="0 0 24 24" fill="#1e40af" width="30" height="30" style="transform: rotate(-90deg);">
-          <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
-        </svg>
-      </div>`,
-      iconSize: [30,30],
-      iconAnchor: [15,15],
-    });
-    userMarker = L.marker(snapped, { icon }).addTo(map);
+    userMarker = L.marker(snapped, { icon: getUserIcon(displayBearing, wrongDir, iconMode) }).addTo(map);
   } else {
     userMarker.setLatLng(snapped);
-  }
-
-  // 👉 Nur innere Rotation/Farbe ändern → kein Flackern
-  const arrow = document.getElementById("user-arrow");
-  if (arrow) {
-    arrow.style.transform = `rotate(${displayBearing}deg)`;
-    arrow.querySelector("svg").setAttribute("fill", wrongDir ? "red" : "#1e40af");
+    userMarker.setIcon(getUserIcon(displayBearing, wrongDir, iconMode));
   }
 
   if (follow) {
@@ -1396,7 +1384,6 @@ function updateUserMarker(gpsLatLng) {
   updateNavigationBanner(snapped);
   checkOffRoute(gpsLatLng);
 }
-
 
 // 🔄 Marker mit Richtung zeichnen
 function setUserMarker(latlng, bearing) {
