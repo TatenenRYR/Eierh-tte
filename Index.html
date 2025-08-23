@@ -1326,8 +1326,12 @@ navigator.geolocation.watchPosition(onLocationFound, onLocationError, {
   timeout: 5000
 });
 
+
 function updateUserMarker(gpsLatLng) {
+  console.log("updateUserMarker:", gpsLatLng.lat, gpsLatLng.lng);
+
   if (!currentRoutePath || currentRoutePath.length < 2) {
+    // kein Routing aktiv → Standardmarker
     if (!userMarker) {
       userMarker = L.marker(gpsLatLng, { icon: getUserIcon(0, false, "arrow") }).addTo(map);
     } else {
@@ -1338,54 +1342,50 @@ function updateUserMarker(gpsLatLng) {
     return;
   }
 
-  // 👉 GPS auf Route snappen
+  // --- GPS auf Route snappen ---
   const snapped = snapToRoute(gpsLatLng, currentRoutePath);
-
-  // 👉 Richtung der Route
   const routeBearing = getRouteBearingAt(snapped, currentRoutePath);
 
-  // 👉 Eigene Richtung
+  // --- eigene Bewegungsrichtung ---
   let userBearing = routeBearing;
   if (lastLatLng) {
     userBearing = getBearing(lastLatLng, snapped);
   }
 
-  // 👉 Unterschied (0–180°)
+  // --- Unterschied berechnen ---
   let diff = Math.abs(routeBearing - userBearing);
   if (diff > 180) diff = 360 - diff;
 
-  let displayBearing, wrongDir, iconMode;
+  let displayBearing = routeBearing;
+  let wrongDir = false;
+  let iconMode = "bike"; // Standard: Fahrrad auf Route
 
-  // --- Abweichung erkannt ---
+  // Abweichung > 50° → freier Modus
   if (!isOffRoute && diff > 50) {
     isOffRoute = true;
     wrongDir = true;
-    displayBearing = userBearing;   // frei → eigene Richtung
-    iconMode = "arrow";             // z.B. Pfeil-Symbol im freien Modus
+    displayBearing = userBearing;
+    iconMode = "arrow";
     showToast("⚠️ Du fährst in die falsche Richtung!");
     speak("Bitte umdrehen, du fährst falsch.");
   }
-  // --- zurück zur Route ---
+  // zurück auf Route (<20°) → wieder einrasten
   else if (isOffRoute && diff < 20) {
     isOffRoute = false;
     wrongDir = false;
-    displayBearing = routeBearing;  // wieder eingerastet
-    iconMode = "bike";              // z.B. Fahrrad-Symbol im Routenmodus
+    displayBearing = routeBearing;
+    iconMode = "bike";
     showToast("✅ Zurück auf der Route");
     speak("Du bist wieder auf der Route.");
   }
-  // --- Zustand halten ---
+  // Zustand halten
   else if (isOffRoute) {
     wrongDir = true;
-    displayBearing = userBearing;   // bleibt frei
+    displayBearing = userBearing;
     iconMode = "arrow";
-  } else {
-    wrongDir = false;
-    displayBearing = routeBearing;  // bleibt eingerastet
-    iconMode = "bike";
   }
 
-  // 👉 Marker initialisieren oder updaten
+  // --- Marker anlegen oder updaten ---
   if (!userMarker) {
     userMarker = L.marker(snapped, { icon: getUserIcon(displayBearing, wrongDir, iconMode) }).addTo(map);
   } else {
@@ -1404,34 +1404,32 @@ function updateUserMarker(gpsLatLng) {
 }
 
 // 🔄 Marker mit Richtung zeichnen
-function setUserMarker(latlng, bearing) {
-  const icon = L.divIcon({
+
+function getUserIcon(bearing = 0, isWrongDirection = false, mode = "bike") {
+  const color = isWrongDirection ? "red" : "#1e40af";
+
+  if (mode === "bike") {
+    return L.divIcon({
+      className: '',
+      html: `<div style="width:40px;height:40px;transform:rotate(${bearing}deg);transition:transform 0.3s linear;">🚴</div>`,
+      iconSize: [40,40],
+      iconAnchor: [20,20],
+    });
+  }
+
+  // Pfeil
+  return L.divIcon({
     className: '',
-    html: `<div style="
-      width: 30px; height: 30px;
-      transform: rotate(${bearing}deg);
-      transition: transform 0.3s linear;
-    ">
-      <svg viewBox="0 0 24 24" fill="#1e40af" width="30" height="30" style="transform: rotate(-90deg);">
+    html: `<div style="width:30px;height:30px;transform:rotate(${bearing}deg);transition:transform 0.3s linear;">
+      <svg viewBox="0 0 24 24" fill="${color}" width="30" height="30" style="transform: rotate(-90deg);">
         <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
       </svg>
     </div>`,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
+    iconSize: [30,30],
+    iconAnchor: [15,15],
   });
-
-  if (!userMarker) {
-    userMarker = L.marker(latlng, { icon }).addTo(map);
-  } else {
-    userMarker.setLatLng(latlng);
-    userMarker.setIcon(icon);
-  }
-
-  if (follow) {
-    map.setView(latlng, map.getZoom(), { animate: true });
-    map.panBy([0, 100], { animate: true });
-  }
 }
+
 
 
 // ⚠️ Prüfen ob Nutzer falsch fährt
