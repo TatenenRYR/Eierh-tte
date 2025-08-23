@@ -1305,39 +1305,45 @@ function getRouteBearingAt(latlng, routePoints) {
 }
 
 
+
+    
+let userMarker = null;
 let lastLatLng = null;
-let isOffRoute = false; // merkt ob aktuell abweichend
+let isOffRoute = false; // merkt, ob aktuell abweichend
 
+// -----------------------------
+// Marker initial anlegen
+// -----------------------------
+function initUserMarker(latlng) {
+  const icon = L.divIcon({
+    className: '',
+    html: `<div id="user-marker" 
+              style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;
+                     transition:transform 0.3s linear;transform:rotate(0deg);">
+             🚴
+           </div>`,
+    iconSize: [40,40],
+    iconAnchor: [20,20],
+  });
 
-// --- GPS Events ---
-function onLocationFound(e) {
-  const latlng = L.latLng(e.coords.latitude, e.coords.longitude);
-  updateUserMarker(latlng);
+  userMarker = L.marker(latlng, { icon }).addTo(map);
 }
 
-function onLocationError(e) {
-  console.error("GPS Error:", e.message);
-}
-
-// --- Start GPS ---
-navigator.geolocation.watchPosition(onLocationFound, onLocationError, {
-  enableHighAccuracy: true,
-  maximumAge: 1000,
-  timeout: 30000
-});
-
-
+// -----------------------------
+// Zentrale Update-Funktion
+// -----------------------------
 function updateUserMarker(gpsLatLng) {
   console.log("updateUserMarker:", gpsLatLng.lat, gpsLatLng.lng);
 
+  if (!userMarker) {
+    initUserMarker(gpsLatLng);
+    lastLatLng = gpsLatLng;
+    return;
+  }
+
+  // Kein Routing → nur Position updaten
   if (!currentRoutePath || currentRoutePath.length < 2) {
-    // kein Routing aktiv → Standardmarker
-    if (!userMarker) {
-      userMarker = L.marker(gpsLatLng, { icon: getUserIcon(0, false, "arrow") }).addTo(map);
-    } else {
-      userMarker.setLatLng(gpsLatLng);
-      userMarker.setIcon(getUserIcon(0, false, "arrow"));
-    }
+    userMarker.setLatLng(gpsLatLng);
     lastLatLng = gpsLatLng;
     return;
   }
@@ -1358,14 +1364,12 @@ function updateUserMarker(gpsLatLng) {
 
   let displayBearing = routeBearing;
   let wrongDir = false;
-  let iconMode = "bike"; // Standard: Fahrrad auf Route
 
   // Abweichung > 50° → freier Modus
   if (!isOffRoute && diff > 50) {
     isOffRoute = true;
     wrongDir = true;
     displayBearing = userBearing;
-    iconMode = "arrow";
     showToast("⚠️ Du fährst in die falsche Richtung!");
     speak("Bitte umdrehen, du fährst falsch.");
   }
@@ -1374,7 +1378,6 @@ function updateUserMarker(gpsLatLng) {
     isOffRoute = false;
     wrongDir = false;
     displayBearing = routeBearing;
-    iconMode = "bike";
     showToast("✅ Zurück auf der Route");
     speak("Du bist wieder auf der Route.");
   }
@@ -1382,15 +1385,23 @@ function updateUserMarker(gpsLatLng) {
   else if (isOffRoute) {
     wrongDir = true;
     displayBearing = userBearing;
-    iconMode = "arrow";
   }
 
-  // --- Marker anlegen oder updaten ---
-  if (!userMarker) {
-    userMarker = L.marker(snapped, { icon: getUserIcon(displayBearing, wrongDir, iconMode) }).addTo(map);
-  } else {
-    userMarker.setLatLng(snapped);
-    userMarker.setIcon(getUserIcon(displayBearing, wrongDir, iconMode));
+  // --- Marker verschieben ---
+  userMarker.setLatLng(snapped);
+
+  // --- DOM-Element updaten ---
+  const el = document.getElementById("user-marker");
+  if (el) {
+    el.style.transform = `rotate(${displayBearing}deg)`;
+
+    if (wrongDir) {
+      el.innerHTML = `<svg viewBox="0 0 24 24" fill="red" width="24" height="24">
+        <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
+      </svg>`;
+    } else {
+      el.innerHTML = "🚴";
+    }
   }
 
   if (follow) {
@@ -1403,50 +1414,29 @@ function updateUserMarker(gpsLatLng) {
   checkOffRoute(gpsLatLng);
 }
 
-// 🔄 Marker mit Richtung zeichnen
-
-function getUserIcon(bearing = 0, isWrongDirection = false, mode = "bike") {
-  const color = isWrongDirection ? "red" : "#1e40af";
-
-  if (mode === "bike") {
-    return L.divIcon({
-      className: '',
-      html: `<div style="
-        width:40px;
-        height:40px;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        transition:transform 0.3s linear;
-        transform:rotate(${bearing}deg);
-      ">
-        🚴
-      </div>`,
-      iconSize: [40,40],
-      iconAnchor: [20,20],
-    });
-  }
-
-  // Pfeil
-  return L.divIcon({
-    className: '',
-    html: `<div style="
-      width:30px;
-      height:30px;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      transition:transform 0.3s linear;
-      transform:rotate(${bearing}deg);
-    ">
-      <svg viewBox="0 0 24 24" fill="${color}" width="24" height="24">
-        <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
-      </svg>
-    </div>`,
-    iconSize: [30,30],
-    iconAnchor: [15,15],
-  });
+// -----------------------------
+// GPS Events
+// -----------------------------
+function onLocationFound(e) {
+  const latlng = L.latLng(e.coords.latitude, e.coords.longitude);
+  updateUserMarker(latlng);
 }
+
+function onLocationError(e) {
+  console.error("GPS Error:", e.message);
+}
+
+// -----------------------------
+// Start GPS
+// -----------------------------
+navigator.geolocation.watchPosition(onLocationFound, onLocationError, {
+  enableHighAccuracy: true,
+  maximumAge: 1000,
+  timeout: 60000 // 60 Sekunden, kein Dauer-Timeout mehr
+});
+
+
+
 
 // ⚠️ Prüfen ob Nutzer falsch fährt
 function checkDirection(latlng) {
