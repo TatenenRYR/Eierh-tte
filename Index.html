@@ -1306,11 +1306,10 @@ function getRouteBearingAt(latlng, routePoints) {
 
 
 let lastLatLng = null;
-let isOffRoute = false; // Status merken
+let isOffRoute = false; // merkt ob aktuell abweichend
 
 function updateUserMarker(gpsLatLng) {
   if (!currentRoutePath || currentRoutePath.length < 2) {
-    // Fallback: nur GPS Marker
     if (!userMarker) {
       userMarker = L.marker(gpsLatLng, { icon: getUserIcon() }).addTo(map);
     } else {
@@ -1323,40 +1322,48 @@ function updateUserMarker(gpsLatLng) {
   // 👉 GPS auf Route snappen
   const snapped = snapToRoute(gpsLatLng, currentRoutePath);
 
-  // 👉 Richtung der Route an dieser Stelle
+  // 👉 Richtung der Route
   const routeBearing = getRouteBearingAt(snapped, currentRoutePath);
 
-  // 👉 Eigene Bewegungsrichtung
+  // 👉 Eigene Richtung
   let userBearing = routeBearing;
   if (lastLatLng) {
     userBearing = getBearing(lastLatLng, snapped);
   }
 
-  // 👉 Unterschied berechnen
-  const diff = Math.abs(routeBearing - userBearing);
+  // 👉 Unterschied berechnen (immer positiv zwischen 0-180°)
+  let diff = Math.abs(routeBearing - userBearing);
+  if (diff > 180) diff = 360 - diff;
 
   let displayBearing = routeBearing;
   let wrongDir = false;
 
-  // Abweichung erkannt
-  if (diff > 90 && diff < 270) {
+  // --- Abweichung erkannt ---
+  if (!isOffRoute && diff > 50) {
+    isOffRoute = true;
     wrongDir = true;
-    displayBearing = userBearing; // Marker zeigt in Blickrichtung
-    if (!isOffRoute) {
-      isOffRoute = true;
-      showToast("⚠️ Du weichst von der Route ab!");
-      speak("Bitte zurück auf die Route!");
-    }
-  } 
-  // Wieder auf Route (Differenz klein)
-  else if (isOffRoute && diff < 30) {
+    displayBearing = userBearing; // Marker frei drehen
+    showToast("⚠️ Du fährst in die falsche Richtung!");
+    speak("Bitte umdrehen, du fährst falsch.");
+  }
+  // --- zurück zur Route (wieder einrasten) ---
+  else if (isOffRoute && diff < 20) {
     isOffRoute = false;
+    wrongDir = false;
+    displayBearing = routeBearing; // wieder einrasten
     showToast("✅ Zurück auf der Route");
     speak("Du bist wieder auf der Route.");
-    displayBearing = routeBearing;
+  }
+  // --- Zustand halten ---
+  else if (isOffRoute) {
+    wrongDir = true;
+    displayBearing = userBearing; // solange abweichend → frei
+  } else {
+    wrongDir = false;
+    displayBearing = routeBearing; // normal → Route
   }
 
-  // 👉 Marker initialisieren oder aktualisieren
+  // 👉 Marker initialisieren oder nur verschieben
   if (!userMarker) {
     const icon = L.divIcon({
       className: '',
@@ -1365,15 +1372,15 @@ function updateUserMarker(gpsLatLng) {
           <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
         </svg>
       </div>`,
-      iconSize: [30, 30],
-      iconAnchor: [15, 15],
+      iconSize: [30,30],
+      iconAnchor: [15,15],
     });
     userMarker = L.marker(snapped, { icon }).addTo(map);
   } else {
     userMarker.setLatLng(snapped);
   }
 
-  // 👉 Rotation & Farbe anpassen
+  // 👉 Nur innere Rotation/Farbe ändern → kein Flackern
   const arrow = document.getElementById("user-arrow");
   if (arrow) {
     arrow.style.transform = `rotate(${displayBearing}deg)`;
@@ -1389,6 +1396,8 @@ function updateUserMarker(gpsLatLng) {
   updateNavigationBanner(snapped);
   checkOffRoute(gpsLatLng);
 }
+
+
 // 🔄 Marker mit Richtung zeichnen
 function setUserMarker(latlng, bearing) {
   const icon = L.divIcon({
