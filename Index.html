@@ -1327,16 +1327,25 @@ function onLocationError(e) {
 });*/
 
 
+// 🔄 Glatte Drehung für Marker
+let lastBearing = 0;
+function smoothRotate(oldAngle, newAngle, factor = 0.2) {
+  let diff = (newAngle - oldAngle + 540) % 360 - 180;
+  return (oldAngle + diff * factor + 360) % 360;
+}
+
 function updateUserMarker(gpsLatLng) {
   console.log("updateUserMarker:", gpsLatLng.lat, gpsLatLng.lng);
 
+  // 🚫 Kein Routing aktiv → normaler Pfeil in Blickrichtung
   if (!currentRoutePath || currentRoutePath.length < 2) {
-    // kein Routing aktiv → Standardmarker
+    const bearing = compassRotation || lastBearing || 0;
     if (!userMarker) {
-      userMarker = L.marker(gpsLatLng, { icon: getUserIcon(0, false, "arrow") }).addTo(map);
+      userMarker = L.marker(gpsLatLng, { icon: getUserIcon(bearing, false, "arrow") }).addTo(map);
     } else {
       userMarker.setLatLng(gpsLatLng);
-      userMarker.setIcon(getUserIcon(0, false, "arrow"));
+      lastBearing = smoothRotate(lastBearing, bearing);
+      userMarker.setIcon(getUserIcon(lastBearing, false, "arrow"));
     }
     lastLatLng = gpsLatLng;
     return;
@@ -1360,8 +1369,8 @@ function updateUserMarker(gpsLatLng) {
   let wrongDir = false;
   let iconMode = "bike"; // Standard: Fahrrad auf Route
 
-  // Abweichung > 50° → freier Modus
-  if (!isOffRoute && diff > 50) {
+  // Abweichung > 100° → freier Modus
+  if (!isOffRoute && diff > 100) {
     isOffRoute = true;
     wrongDir = true;
     displayBearing = userBearing;
@@ -1369,8 +1378,8 @@ function updateUserMarker(gpsLatLng) {
     showToast("⚠️ Du fährst in die falsche Richtung!");
     speak("Bitte umdrehen, du fährst falsch.");
   }
-  // zurück auf Route (<20°) → wieder einrasten
-  else if (isOffRoute && diff < 20) {
+  // zurück auf Route (<40°) → wieder einrasten
+  else if (isOffRoute && diff < 40) {
     isOffRoute = false;
     wrongDir = false;
     displayBearing = routeBearing;
@@ -1385,12 +1394,13 @@ function updateUserMarker(gpsLatLng) {
     iconMode = "arrow";
   }
 
-  // --- Marker anlegen oder updaten ---
+  // --- Marker anlegen oder updaten mit weicher Rotation ---
+  lastBearing = smoothRotate(lastBearing, displayBearing);
   if (!userMarker) {
-    userMarker = L.marker(snapped, { icon: getUserIcon(displayBearing, wrongDir, iconMode) }).addTo(map);
+    userMarker = L.marker(snapped, { icon: getUserIcon(lastBearing, wrongDir, iconMode) }).addTo(map);
   } else {
     userMarker.setLatLng(snapped);
-    userMarker.setIcon(getUserIcon(displayBearing, wrongDir, iconMode));
+    userMarker.setIcon(getUserIcon(lastBearing, wrongDir, iconMode));
   }
 
   if (follow) {
@@ -1402,6 +1412,8 @@ function updateUserMarker(gpsLatLng) {
   updateNavigationBanner(snapped);
   checkOffRoute(gpsLatLng);
 }
+
+
 
 // 🔄 Marker mit Richtung zeichnen
 
@@ -2394,8 +2406,6 @@ window.addEventListener('deviceorientationabsolute', (event) => {
 }, true);
 
 
-
-
 function stopNavigation() {
   clearInterval(navInterval);
   navInterval = null;
@@ -2411,25 +2421,21 @@ function stopNavigation() {
   orientationListenerActive = false;
   disableCompassRotation();
   clearRouteLines();
-setInstagramButtonActive(true);
+  setInstagramButtonActive(true);
   toggleSidebar(true);
-  //firebase  Raum
+
+  // Firebase Raumstatus zurücksetzen
   db.collection("rooms").doc(roomId).set({
-  navActive: false
-}, { merge: true });
+    navActive: false
+  }, { merge: true });
 
   // UI-Elemente zurücksetzen
   const followBtn = document.querySelector("button[onclick='toggleFollow()']");
   if (followBtn) followBtn.style.display = "inline-block";
-  //document.getElementById("navBanner").style.display = "none";
- document.getElementById("navBanner").style.display = "none";
- hideNavBanner();
-  document.getElementById("routeInfo").style.display = "none";
 
-  // Karte zurücksetzen
-  if (map && userMarker) {
-    map.setView(userMarker.getLatLng(), 13);
-  }
+  document.getElementById("navBanner").style.display = "none";
+  hideNavBanner();
+  document.getElementById("routeInfo").style.display = "none";
 
   // Linien entfernen
   if (routingLine) {
@@ -2447,12 +2453,23 @@ setInstagramButtonActive(true);
 
   updateSelectedList();
   showDashboardAlert();
+
   // Karte visuell nach oben schieben wieder zurücknehmen
   if (map._navOffsetApplied) {
     map.panBy([0, -100], { animate: true });
     map._navOffsetApplied = false;
   }
-}
+
+  // 🚴 WICHTIG: Marker wieder in freien Modus versetzen
+  if (map && userMarker) {
+    const pos = userMarker.getLatLng();
+    lastBearing = compassRotation || lastBearing || 0;
+    userMarker.setIcon(getUserIcon(lastBearing, false, "arrow")); // Pfeilmodus
+    map.setView(pos, 16, { animate: true });
+  }
+    }
+
+
 /*    function stopNavigation() {
   clearInterval(navInterval);
   navInterval = null;
