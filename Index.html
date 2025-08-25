@@ -1336,7 +1336,7 @@ function smoothRotate(oldAngle, newAngle, factor = 0.2) {
 
 let lastWarnTime = 0; // Zeitstempel der letzten Meldung
 
-function updateUserMarker(gpsLatLng) {
+function updateUserMarker(gpsLatLng, speed = null) {
   if (!currentRoutePath || currentRoutePath.length < 2) {
     // Freier Modus
     const bearing = compassRotation || lastBearing || 0;
@@ -1354,9 +1354,20 @@ function updateUserMarker(gpsLatLng) {
   const snapped = snapToRoute(gpsLatLng, currentRoutePath);
   const routeBearing = getRouteBearingAt(snapped, currentRoutePath);
 
-  // nur berechnen, wenn wir uns genug bewegt haben
+  // 🚴 Benutzer-Bearing bestimmen
   let userBearing = routeBearing;
-  if (lastLatLng && map.distance(lastLatLng, snapped) > 5) {
+
+  // Geschwindigkeit prüfen (aus Geolocation API, m/s)
+  let kmh = null;
+  if (speed != null) {
+    kmh = speed * 3.6; // m/s → km/h
+  }
+
+  if (kmh !== null && kmh < 2) {
+    // Unter 2 km/h → nur Kompass nutzen
+    userBearing = compassRotation || routeBearing;
+  } else if (lastLatLng && map.distance(lastLatLng, snapped) > 5) {
+    // normale Fahrtrichtung berechnen
     userBearing = getBearing(lastLatLng, snapped);
   }
 
@@ -1370,31 +1381,34 @@ function updateUserMarker(gpsLatLng) {
 
   const now = Date.now();
 
-  // falsche Richtung erst ab 120°
-  if (!isOffRoute && diff > 120 && now - lastWarnTime > 10000) {
-    isOffRoute = true;
-    wrongDir = true;
+  if (kmh !== null && kmh < 2) {
+    // Unter 2 km/h → keine Falschfahr-Meldungen
     displayBearing = userBearing;
-    iconMode = "arrow";
-    showToast("⚠️ Du fährst in die falsche Richtung!");
-    speak("Bitte umdrehen, du fährst falsch.");
-    lastWarnTime = now;
-  }
-  // zurück auf Route erst unter 30°
-  else if (isOffRoute && diff < 30 && now - lastWarnTime > 10000) {
-    isOffRoute = false;
     wrongDir = false;
-    displayBearing = routeBearing;
-    iconMode = "bike";
-    showToast("✅ Zurück auf der Route");
-    speak("Du bist wieder auf der Route.");
-    lastWarnTime = now;
-  }
-  // Zustand halten
-  else if (isOffRoute) {
-    wrongDir = true;
-    displayBearing = userBearing;
     iconMode = "arrow";
+  } else {
+    // 🚨 Normale Logik mit Hysterese
+    if (!isOffRoute && diff > 120 && now - lastWarnTime > 10000) {
+      isOffRoute = true;
+      wrongDir = true;
+      displayBearing = userBearing;
+      iconMode = "arrow";
+      showToast("⚠️ Du fährst in die falsche Richtung!");
+      speak("Bitte umdrehen, du fährst falsch.");
+      lastWarnTime = now;
+    } else if (isOffRoute && diff < 30 && now - lastWarnTime > 10000) {
+      isOffRoute = false;
+      wrongDir = false;
+      displayBearing = routeBearing;
+      iconMode = "bike";
+      showToast("✅ Zurück auf der Route");
+      speak("Du bist wieder auf der Route.");
+      lastWarnTime = now;
+    } else if (isOffRoute) {
+      wrongDir = true;
+      displayBearing = userBearing;
+      iconMode = "arrow";
+    }
   }
 
   // Marker updaten mit weicher Rotation
@@ -1415,6 +1429,7 @@ function updateUserMarker(gpsLatLng) {
   updateNavigationBanner(snapped);
   checkOffRoute(gpsLatLng);
 }
+
 
 
 
