@@ -1334,11 +1334,11 @@ function smoothRotate(oldAngle, newAngle, factor = 0.2) {
   return (oldAngle + diff * factor + 360) % 360;
 }
 
-function updateUserMarker(gpsLatLng) {
-  console.log("updateUserMarker:", gpsLatLng.lat, gpsLatLng.lng);
+let lastWarnTime = 0; // Zeitstempel der letzten Meldung
 
-  // 🚫 Kein Routing aktiv → normaler Pfeil in Blickrichtung
+function updateUserMarker(gpsLatLng) {
   if (!currentRoutePath || currentRoutePath.length < 2) {
+    // Freier Modus
     const bearing = compassRotation || lastBearing || 0;
     if (!userMarker) {
       userMarker = L.marker(gpsLatLng, { icon: getUserIcon(bearing, false, "arrow") }).addTo(map);
@@ -1351,41 +1351,44 @@ function updateUserMarker(gpsLatLng) {
     return;
   }
 
-  // --- GPS auf Route snappen ---
   const snapped = snapToRoute(gpsLatLng, currentRoutePath);
   const routeBearing = getRouteBearingAt(snapped, currentRoutePath);
 
-  // --- eigene Bewegungsrichtung ---
+  // nur berechnen, wenn wir uns genug bewegt haben
   let userBearing = routeBearing;
-  if (lastLatLng) {
+  if (lastLatLng && map.distance(lastLatLng, snapped) > 5) {
     userBearing = getBearing(lastLatLng, snapped);
   }
 
-  // --- Unterschied berechnen ---
+  // Abweichung berechnen
   let diff = Math.abs(routeBearing - userBearing);
   if (diff > 180) diff = 360 - diff;
 
   let displayBearing = routeBearing;
   let wrongDir = false;
-  let iconMode = "bike"; // Standard: Fahrrad auf Route
+  let iconMode = "bike";
 
-  // Abweichung > 100° → freier Modus
-  if (!isOffRoute && diff > 100) {
+  const now = Date.now();
+
+  // falsche Richtung erst ab 120°
+  if (!isOffRoute && diff > 120 && now - lastWarnTime > 10000) {
     isOffRoute = true;
     wrongDir = true;
     displayBearing = userBearing;
     iconMode = "arrow";
     showToast("⚠️ Du fährst in die falsche Richtung!");
     speak("Bitte umdrehen, du fährst falsch.");
+    lastWarnTime = now;
   }
-  // zurück auf Route (<40°) → wieder einrasten
-  else if (isOffRoute && diff < 40) {
+  // zurück auf Route erst unter 30°
+  else if (isOffRoute && diff < 30 && now - lastWarnTime > 10000) {
     isOffRoute = false;
     wrongDir = false;
     displayBearing = routeBearing;
     iconMode = "bike";
     showToast("✅ Zurück auf der Route");
     speak("Du bist wieder auf der Route.");
+    lastWarnTime = now;
   }
   // Zustand halten
   else if (isOffRoute) {
@@ -1394,7 +1397,7 @@ function updateUserMarker(gpsLatLng) {
     iconMode = "arrow";
   }
 
-  // --- Marker anlegen oder updaten mit weicher Rotation ---
+  // Marker updaten mit weicher Rotation
   lastBearing = smoothRotate(lastBearing, displayBearing);
   if (!userMarker) {
     userMarker = L.marker(snapped, { icon: getUserIcon(lastBearing, wrongDir, iconMode) }).addTo(map);
