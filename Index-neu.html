@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Navigation – Hütten & Spielplätze</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+  <style>
+    html, body { margin:0; padding:0; height:100%; }
+    #map { width:100%; height:100%; }
+
+    #toast {
+      position: fixed;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+      z-index: 9999;
+    }
+
+    #debug {
+      position: fixed;
+      bottom: 12px;
+      left: 12px;
+      background: rgba(255,255,255,0.9);
+      color: #111;
+      font: 12px monospace;
+      padding: 8px 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      z-index: 9998;
+      min-width: 220px;
+    }
+    #debug span { display:inline-block; min-width: 90px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="toast"></div>
+  <div id="debug"></div>
+
+  <!-- Leaflet -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <!-- Firebase (nimm hier deine echten Keys!) -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+
+  <script>
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.firebasestorage.app",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+  measurementId: "G-16V6K5GXDT"
+};
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+  
+let map, routePolyline;
+let currentRoutePath = null;
+
+// -----------------------------
+// Map initialisieren
+// -----------------------------
+function initMap() {
+  map = L.map("map").setView([52.52, 13.405], 13);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 20,
+    attribution: "&copy; OpenStreetMap contributors"
+  }).addTo(map);
+}
+initMap();
+
+// -----------------------------
+// Route einzeichnen
+// -----------------------------
+function setRoute(latlngArray) {
+  if (routePolyline) map.removeLayer(routePolyline);
+  routePolyline = L.polyline(latlngArray, { color: "#2563eb", weight: 5 }).addTo(map);
+  map.fitBounds(routePolyline.getBounds(), { padding: [30, 30] });
+}
+
+// -----------------------------
+// Routen aus Firestore laden
+// -----------------------------
+async function ladeRoute(collection, id) {
+  try {
+    const snap = await db.collection(collection).doc(id).get();
+    if (!snap.exists) {
+      showToast("⚠️ Route nicht gefunden: " + id);
+      return;
+    }
+    const daten = snap.data();
+    if (!daten.geometry || !daten.geometry.coordinates) {
+      showToast("⚠️ Ungültige Route in DB: " + id);
+      return;
+    }
+    currentRoutePath = daten.geometry.coordinates.map(c => L.latLng(c[1], c[0]));
+    setRoute(currentRoutePath);
+  } catch (err) {
+    console.error("Fehler beim Laden:", err);
+    showToast("⚠️ Fehler beim Laden der Route");
+  }
+}
+
+// -----------------------------
+// UI: Buttons zum Laden von Hütten & Spielplätzen
+// -----------------------------
+function buildUI() {
+  const control = L.control({ position: "topright" });
+  control.onAdd = function() {
+    const div = L.DomUtil.create("div", "leaflet-bar");
+    div.style.background = "white";
+    div.style.padding = "8px";
+
+    div.innerHTML = `
+      <strong>Routen</strong><br>
+      <button id="btn-huette1">Hütte 1</button>
+      <button id="btn-huette2">Hütte 2</button><br>
+      <button id="btn-spiel1">Spielplatz 1</button>
+      <button id="btn-spiel2">Spielplatz 2</button>
+    `;
+    return div;
+  };
+  control.addTo(map);
+
+  // Klick-Events binden
+  document.getElementById("btn-huette1").addEventListener("click", () => ladeRoute("huetten", "huette_1"));
+  document.getElementById("btn-huette2").addEventListener("click", () => ladeRoute("huetten", "huette_2"));
+  document.getElementById("btn-spiel1").addEventListener("click", () => ladeRoute("spielplaetze", "spielplatz_1"));
+  document.getElementById("btn-spiel2").addEventListener("click", () => ladeRoute("spielplaetze", "spielplatz_2"));
+}
+buildUI();
+
+// -----------------------------
+// Geo-Helfer
+// -----------------------------
+function normalize(a){return (a%360+360)%360;}
+function diffDeg(a,b){const d=Math.abs(normalize(a)-normalize(b));return d>180?360-d:d;}
+function getBearing(from,to){
+  const φ1=from.lat*Math.PI/180, φ2=to.lat*Math.PI/180, Δλ=(to.lng-from.lng)*Math.PI/180;
+  const y=Math.sin(Δλ)*Math.cos(φ2);
+  const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+  return (Math.atan2(y,x)*180/Math.PI+360)%360;
+}
+function snapToRoute(gps,path){
+  if(!map||!path||path.length<2) return {latlng:gps,segIdx:0,t:0,dist:0};
+  const p=map.latLngToLayerPoint(gps); let best={dist:Infinity,q:null,segIdx:0,t:0};
+  for(let i=0;i<path.length-1;i++){
+    const a=map.latLngToLayerPoint(path[i]), b=map.latLngToLayerPoint(path[i+1]);
+    const ab=b.subtract(a), ap=p.subtract(a), ab2=ab.x*ab.x+ab.y*ab.y; if(!ab2) continue;
+    let t=(ap.x*ab.x+ap.y*ab.y)/ab2; t=Math.max(0,Math.min(1,t));
+    const q=L.point(a.x+t*ab.x,a.y+t*ab.y); const d=p.distanceTo(q);
+    if(d<best.dist) best={dist:d,q,segIdx:i,t};
+  }
+  return {latlng:map.layerPointToLatLng(best.q),segIdx:best.segIdx,t:best.t,dist:best.dist};
+}
+function getRouteBearingAt(snap,path){
+  const a=path[snap.segIdx], b=path[snap.segIdx+1]||a;
+  return getBearing(a,b);
+}
+
+// -----------------------------
+// Marker
+// -----------------------------
+let userMarker=null, lastLatLng=null, isOffRoute=false;
+const DEVIATE_OUT_DEG=50, DEVIATE_IN_DEG=20;
+let follow=true;
+
+function initUserMarker(latlng){
+  const icon=L.divIcon({
+    className:'',
+    html:`<div id="user-marker" style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;transition:transform .25s linear;transform:rotate(0deg);">🚴</div>`,
+    iconSize:[40,40], iconAnchor:[20,20]
+  });
+  userMarker=L.marker(latlng,{icon}).addTo(map);
+}
+
+function updateUserMarker(gps){
+  if(!userMarker){initUserMarker(gps); lastLatLng=gps; return;}
+  if(!currentRoutePath){userMarker.setLatLng(gps); lastLatLng=gps; return;}
+
+  const snap=snapToRoute(gps,currentRoutePath);
+  const routeBearing=getRouteBearingAt(snap,currentRoutePath);
+  let userBearing=routeBearing;
+  if(lastLatLng) userBearing=getBearing(lastLatLng,snap.latlng);
+
+  const d=diffDeg(routeBearing,userBearing);
+  let displayBearing=routeBearing, wrong=false;
+
+  if(!isOffRoute && d>DEVIATE_OUT_DEG){
+    isOffRoute=true; wrong=true; displayBearing=userBearing;
+    showToast("⚠️ Du fährst in die falsche Richtung!");
+    speak("Bitte umdrehen, du fährst falsch.");
+  } else if(isOffRoute && d<DEVIATE_IN_DEG){
+    isOffRoute=false; wrong=false; displayBearing=routeBearing;
+    showToast("✅ Zurück auf der Route");
+    speak("Du bist wieder auf der Route.");
+  } else if(isOffRoute){
+    wrong=true; displayBearing=userBearing;
+  }
+
+  userMarker.setLatLng(snap.latlng);
+  const el=document.getElementById("user-marker");
+  if(el){
+    el.style.transform=`rotate(${displayBearing}deg)`;
+    el.innerHTML= wrong
+      ? `<svg viewBox="0 0 24 24" width="26" height="26" fill="red"><path d="M12 2L15 22L12 18L9 22L12 2Z"/></svg>`
+      : "🚴";
+  }
+
+  if(follow) map.setView(snap.latlng,Math.max(map.getZoom(),16),{animate:true});
+  lastLatLng=snap.latlng;
+
+  // Navigation-Callbacks
+  updateNavigationBanner(snap.latlng);
+  checkOffRoute(gps);
+
+  debugPrint({mode:isOffRoute?"frei":"Route",routeBrg:routeBearing.toFixed(1),userBrg:userBearing.toFixed(1),diff:d.toFixed(1)});
+}
+
+// -----------------------------
+// Toast & Sprache
+// -----------------------------
+function showToast(msg){
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.style.display="block";
+  clearTimeout(showToast._t);
+  showToast._t=setTimeout(()=>t.style.display="none",3000);
+}
+function speak(txt){
+  if(!("speechSynthesis"in window)) return;
+  const m=new SpeechSynthesisUtterance(txt);
+  m.lang="de-DE";
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(m);
+}
+
+// -----------------------------
+// Debug Overlay
+// -----------------------------
+function debugPrint(d){
+  const box=document.getElementById("debug");
+  if(!d){box.textContent=""; return;}
+  box.innerHTML=`<span>Mode</span>: ${d.mode}<br>
+                 <span>Route</span>: ${d.routeBrg}°<br>
+                 <span>User</span>: ${d.userBrg}°<br>
+                 <span>Diff</span>: ${d.diff}°`;
+}
+
+// -----------------------------
+// Navigation-Hooks (Platzhalter, falls du eigene Logik hast)
+// -----------------------------
+function updateNavigationBanner(latlng){
+  console.log("Navigation-Banner Update:", latlng.toString());
+}
+function checkOffRoute(latlng){
+  console.log("Off-Route-Check:", latlng.toString());
+}
+
+// -----------------------------
+// GPS
+// -----------------------------
+function onLocationFound(e){
+  updateUserMarker(L.latLng(e.coords.latitude, e.coords.longitude));
+}
+function onLocationError(e){
+  showToast("GPS-Fehler: " + e.message);
+}
+function startGPS(){
+  if(!("geolocation" in navigator)){
+    showToast("Kein GPS verfügbar"); return;
+  }
+  navigator.geolocation.watchPosition(onLocationFound,onLocationError,{
+    enableHighAccuracy:true, maximumAge:1000, timeout:60000
+  });
+}
+startGPS();
+</script>
+</body>
+</html>
