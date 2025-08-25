@@ -1333,41 +1333,78 @@ function smoothRotate(oldAngle, newAngle, factor = 0.2) {
   let diff = (newAngle - oldAngle + 540) % 360 - 180;
   return (oldAngle + diff * factor + 360) % 360;
 }
+// ---- Kompass-Animator für freien Modus ----
+let compassRAF = null;
 
+// Dreht den Pfeil im freien Modus mit dem Kompass
+function rotateFreeMode() {
+  if (!userMarker) return;
+  const noRoute = !currentRoutePath || currentRoutePath.length < 2;
+  if (!noRoute) return; // nur ohne Navigation
+
+  const bearing = (typeof compassRotation === "number" ? compassRotation : lastBearing || 0);
+  lastBearing = smoothRotate(lastBearing || 0, bearing, 0.25);
+  userMarker.setIcon(getUserIcon(lastBearing, false, "arrow"));
+}
+
+function startCompassAnimator() {
+  if (compassRAF) return;
+  const tick = () => {
+    rotateFreeMode();
+    compassRAF = requestAnimationFrame(tick);
+  };
+  compassRAF = requestAnimationFrame(tick);
+}
+
+function stopCompassAnimator() {
+  if (compassRAF) {
+    cancelAnimationFrame(compassRAF);
+    compassRAF = null;
+  }
+}
+
+// Rufe das in deinem Kompass-Listener auf, damit auch ohne GPS Events die Rotation reagiert:
+function onCompassChange(angleDeg) {
+  compassRotation = angleDeg;
+  // Sofort ein kleines Update und Animator sicherstellen
+  rotateFreeMode();
+  startCompassAnimator();
+}
 let lastWarnTime = 0; // Zeitstempel der letzten Meldung
-
 function updateUserMarker(gpsLatLng, speed = null) {
-  if (!currentRoutePath || currentRoutePath.length < 2) {
-    // Freier Modus
-    const bearing = compassRotation || lastBearing || 0;
+  const noRoute = !currentRoutePath || currentRoutePath.length < 2;
+
+  // 🔹 Freier Modus (keine Navigation)
+  if (noRoute) {
+    const bearing = (typeof compassRotation === "number" ? compassRotation : lastBearing || 0);
     if (!userMarker) {
       userMarker = L.marker(gpsLatLng, { icon: getUserIcon(bearing, false, "arrow") }).addTo(map);
     } else {
       userMarker.setLatLng(gpsLatLng);
-      lastBearing = smoothRotate(lastBearing, bearing);
+      lastBearing = smoothRotate(lastBearing || 0, bearing, 0.25);
       userMarker.setIcon(getUserIcon(lastBearing, false, "arrow"));
     }
     lastLatLng = gpsLatLng;
+    startCompassAnimator(); // damit er sich auch ohne GPS-Events weiter dreht
     return;
   }
+
+  // Navigation aktiv
+  stopCompassAnimator(); // im Navigationsmodus kein doppeltes Drehen
 
   const snapped = snapToRoute(gpsLatLng, currentRoutePath);
   const routeBearing = getRouteBearingAt(snapped, currentRoutePath);
 
-  // 🚴 Benutzer-Bearing bestimmen
+  // Benutzer-Bearing bestimmen
   let userBearing = routeBearing;
-
-  // Geschwindigkeit prüfen (aus Geolocation API, m/s)
   let kmh = null;
-  if (speed != null) {
-    kmh = speed * 3.6; // m/s → km/h
-  }
+  if (speed != null) kmh = speed * 3.6;
 
   if (kmh !== null && kmh < 2) {
-    // Unter 2 km/h → nur Kompass nutzen
+    // Unter 2 km/h → nur Kompass
     userBearing = compassRotation || routeBearing;
   } else if (lastLatLng && map.distance(lastLatLng, snapped) > 5) {
-    // normale Fahrtrichtung berechnen
+    // Normale Fahrtrichtung
     userBearing = getBearing(lastLatLng, snapped);
   }
 
@@ -1378,16 +1415,15 @@ function updateUserMarker(gpsLatLng, speed = null) {
   let displayBearing = routeBearing;
   let wrongDir = false;
   let iconMode = "bike";
-
   const now = Date.now();
 
   if (kmh !== null && kmh < 2) {
-    // Unter 2 km/h → keine Falschfahr-Meldungen
+    // Unter 2 km/h → kein Falschfahr-Check
     displayBearing = userBearing;
     wrongDir = false;
     iconMode = "arrow";
   } else {
-    // 🚨 Normale Logik mit Hysterese
+    // Normale Logik mit Hysterese + Cooldown
     if (!isOffRoute && diff > 120 && now - lastWarnTime > 10000) {
       isOffRoute = true;
       wrongDir = true;
@@ -1425,12 +1461,9 @@ function updateUserMarker(gpsLatLng, speed = null) {
   }
 
   lastLatLng = snapped;
-
   updateNavigationBanner(snapped);
   checkOffRoute(gpsLatLng);
 }
-
-
 
 
 // 🔄 Marker mit Richtung zeichnen
@@ -1477,7 +1510,57 @@ function getUserIcon(bearing = 0, isWrongDirection = false, mode = "bike") {
     iconAnchor: [15,15],
   });
 }
+let gpsWatchId = null;
+let gpsRetry = 0;
 
+function handlePosition(pos) {
+  gpsRetry = 0; // Reset bei Erfolg
+  const gpsLatLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+  updateUserMarker(gpsLatLng, pos.coords.speed); // speed in m/s (deine Logik rechnet auf km/h)
+}
+
+function startGPS() {
+  const optsHigh = { enableHighAccuracy: true,  timeout: 20000, maximumAge: 1000  };
+  const optsLow  = { enableHighAccuracy: false, timeout: 20000, maximumAge: 10000 };
+
+  function onError(err) {
+    if (err && (err.code === err.TIMEOUT || err.code === err.POSITION_UNAVAILABLE)) {
+      gpsRetry++;
+      if (gpsRetry === 1) {
+        showToast("📡 GPS dauert… versuche geringere Genauigkeit.");
+        if (gpsWatchId) navigator.geolocation.clearWatch(gpsWatchId);
+        gpsWatchId = navigator.geolocation.watchPosition(handlePosition, onError, optsLow);
+      } else if (gpsRetry < 4) {
+        const backoff = 4000 * gpsRetry;
+        showToast(`📡 Versuche erneut High-Accuracy in ${Math.round(backoff/1000)}s…`);
+        setTimeout(() => {
+          if (gpsWatchId) navigator.geolocation.clearWatch(gpsWatchId);
+          gpsWatchId = navigator.geolocation.watchPosition(handlePosition, onError, optsHigh);
+        }, backoff);
+      } else {
+        showToast("❌ Keine GPS-Position. Bitte Standortdienste prüfen.");
+      }
+    } else if (err && err.code === err.PERMISSION_DENIED) {
+      showToast("❌ Standortfreigabe erforderlich.");
+    } else {
+      showToast("❌ Standortfehler.");
+    }
+  }
+
+  // Einmaliger schneller Fix (verhindert initialen Timeout)
+  navigator.geolocation.getCurrentPosition(pos => {
+    handlePosition(pos);
+    if (gpsWatchId) navigator.geolocation.clearWatch(gpsWatchId);
+    gpsWatchId = navigator.geolocation.watchPosition(handlePosition, onError, optsHigh);
+  }, onError, optsHigh);
+}
+
+function stopGPS() {
+  if (gpsWatchId) {
+    navigator.geolocation.clearWatch(gpsWatchId);
+    gpsWatchId = null;
+  }
+}
 // ⚠️ Prüfen ob Nutzer falsch fährt
 function checkDirection(latlng) {
   if (!currentRoutePath || currentRoutePath.length < 2 || !lastLatLng) return;
@@ -2423,7 +2506,7 @@ window.addEventListener('deviceorientationabsolute', (event) => {
   }
 }, true);
 
-
+/*
 function stopNavigation() {
   clearInterval(navInterval);
   navInterval = null;
@@ -2486,7 +2569,61 @@ function stopNavigation() {
     map.setView(pos, 16, { animate: true });
   }
     }
+*/
+    function stopNavigation() {
+  clearInterval(navInterval);
+  navInterval = null;
 
+  document.getElementById("stopBtn").style.display = "none";
+  document.getElementById("startBtn").style.display = "inline-block";
+
+  document.querySelector("footer").classList.remove("hidden");
+  speak("Navigation gestoppt");
+  showToast("🛑 Navigation gestoppt");
+
+  follow = false;
+  orientationListenerActive = true;   // Kompass weiter aktiv
+  enableCompassRotation();
+  startCompassAnimator();
+
+  clearRouteLines();
+  setInstagramButtonActive(true);
+  toggleSidebar(true);
+
+  // Firebase Raumstatus zurücksetzen
+  db.collection("rooms").doc(roomId).set({ navActive: false }, { merge: true });
+
+  // UI zurücksetzen
+  const followBtn = document.querySelector("button[onclick='toggleFollow()']");
+  if (followBtn) followBtn.style.display = "inline-block";
+  document.getElementById("navBanner").style.display = "none";
+  hideNavBanner();
+  document.getElementById("routeInfo").style.display = "none";
+
+  // Linien entfernen
+  if (routingLine) { map.removeLayer(routingLine); routingLine = null; }
+  if (progressLine) { map.removeLayer(progressLine); progressLine = null; }
+
+  // Route-Daten zurücksetzen
+  currentRoutePath = [];
+  currentHutIndex = 0;
+
+  updateSelectedList();
+  showDashboardAlert();
+
+  if (map._navOffsetApplied) {
+    map.panBy([0, -100], { animate: true });
+    map._navOffsetApplied = false;
+  }
+
+  // Marker zurück in Pfeilmodus
+  if (map && userMarker) {
+    const pos = userMarker.getLatLng();
+    lastBearing = (typeof compassRotation === "number" ? compassRotation : lastBearing || 0);
+    userMarker.setIcon(getUserIcon(lastBearing, false, "arrow"));
+    map.setView(pos, 16, { animate: true });
+  }
+    }
 
 /*    function stopNavigation() {
   clearInterval(navInterval);
