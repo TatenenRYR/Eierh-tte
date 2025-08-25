@@ -1335,10 +1335,8 @@ navigator.geolocation.watchPosition(onLocationFound, onLocationError, {
 let lastWarningTime = 0; // ⏱️ globale Variable ganz oben im Code definieren
 
 function updateUserMarker(gpsLatLng) {
-  console.log("updateUserMarker:", gpsLatLng.lat, gpsLatLng.lng);
-
-  // 🟢 Keine Route aktiv → immer Kompassmodus
   if (!currentRoutePath || currentRoutePath.length < 2) {
+    // 🟢 Freier Modus (kein Routing)
     const bearing = compassRotation || 0;
     if (!userMarker) {
       userMarker = L.marker(gpsLatLng, { icon: getUserIcon(bearing, false, "arrow") }).addTo(map);
@@ -1350,17 +1348,15 @@ function updateUserMarker(gpsLatLng) {
     return;
   }
 
-  // 🟠 Route aktiv → Richtung prüfen
+  // 🟠 Navigation aktiv
   const snapped = snapToRoute(gpsLatLng, currentRoutePath);
   const routeBearing = getRouteBearingAt(snapped, currentRoutePath);
 
-  // eigene Bewegungsrichtung
   let userBearing = compassRotation || routeBearing;
   if (lastLatLng) {
     userBearing = getBearing(lastLatLng, gpsLatLng);
   }
 
-  // Abweichung berechnen
   let diff = Math.abs(routeBearing - userBearing);
   if (diff > 180) diff = 360 - diff;
 
@@ -1369,19 +1365,18 @@ function updateUserMarker(gpsLatLng) {
   let wrongDir = false;
 
   if (diff <= 30) {
-    // ✅ in Routenrichtung → an Route fixieren
-    displayBearing = routeBearing;
-    iconMode = "bike";
+    // ✅ in Routenrichtung → fixiert, aber Pfeil rotiert mit Kompass
+    displayBearing = compassRotation || routeBearing;
+    iconMode = "bike";   // 🚴 Symbol
     wrongDir = false;
     isOffRoute = false;
   } else {
     // 🚨 Abweichung → frei bewegen & rot
-    displayBearing = userBearing;
-    iconMode = "arrow";
+    displayBearing = compassRotation || userBearing;
+    iconMode = "arrow";  // roter Pfeil
     wrongDir = true;
     isOffRoute = true;
 
-    // 🔊 Warnung nur alle 10s
     const now = Date.now();
     if (now - lastWarningTime > 10000) {
       lastWarningTime = now;
@@ -1390,7 +1385,6 @@ function updateUserMarker(gpsLatLng) {
     }
   }
 
-  // Marker aktualisieren
   if (!userMarker) {
     userMarker = L.marker(snapped, { icon: getUserIcon(displayBearing, wrongDir, iconMode) }).addTo(map);
   } else {
