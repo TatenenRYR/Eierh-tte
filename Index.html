@@ -1333,7 +1333,6 @@ navigator.geolocation.watchPosition(onLocationFound, onLocationError, {
 
 
 let lastWarningTime = 0; // ⏱️ globale Variable ganz oben im Code definieren
-
 function updateUserMarker(gpsLatLng) {
   if (!currentRoutePath || currentRoutePath.length < 2) {
     // 🟢 Freier Modus
@@ -1348,33 +1347,41 @@ function updateUserMarker(gpsLatLng) {
     return;
   }
 
-  // 🟠 Navigation aktiv
+  // 🟠 Navigation aktiv → immer auf Route fixieren
   const snapped = snapToRoute(gpsLatLng, currentRoutePath);
   const routeBearing = getRouteBearingAt(snapped, currentRoutePath);
 
-  let userBearing = compassRotation || routeBearing;
+  let userBearing;
   if (lastLatLng) {
     userBearing = getBearing(lastLatLng, gpsLatLng);
+  } else {
+    userBearing = compassRotation || routeBearing;
   }
 
+  // Abweichung prüfen
   let diff = Math.abs(routeBearing - userBearing);
   if (diff > 180) diff = 360 - diff;
 
-  let displayBearing, iconMode, wrongDir;
+  const wrongDir = diff > 45; // toleranter Bereich
+  const iconMode = wrongDir ? "arrow" : "bike";
+  const displayBearing = wrongDir ? userBearing : routeBearing;
 
-  if (diff <= 30) {
-    // ✅ auf Route → am Polyline fixiert, Rotation vom Kompass
-    displayBearing = compassRotation || routeBearing;
-    iconMode = "bike";
-    wrongDir = false;
-    isOffRoute = false;
+  if (!userMarker) {
+    userMarker = L.marker(snapped, { icon: getUserIcon(displayBearing, wrongDir, iconMode) }).addTo(map);
   } else {
-    // 🚨 abweichend → frei, roter Pfeil
-    displayBearing = compassRotation || userBearing;
-    iconMode = "arrow";
-    wrongDir = true;
-    isOffRoute = true;
+    userMarker.setLatLng(snapped); // 🚀 immer gesnappt
+    userMarker.setIcon(getUserIcon(displayBearing, wrongDir, iconMode));
+  }
 
+  if (follow) {
+    map.setView(snapped, 18, { animate: true }); // 🚀 auch Karte nur am Route-Punkt
+  }
+
+  lastLatLng = gpsLatLng;
+
+  if (!wrongDir) {
+    updateNavigationBanner(snapped);
+  } else {
     const now = Date.now();
     if (now - lastWarningTime > 10000) {
       lastWarningTime = now;
@@ -1382,67 +1389,6 @@ function updateUserMarker(gpsLatLng) {
       speak("Bitte umdrehen, du fährst falsch.");
     }
   }
-
-  if (!userMarker) {
-    userMarker = L.marker(snapped, { icon: getUserIcon(displayBearing, wrongDir, iconMode) }).addTo(map);
-  } else {
-    userMarker.setLatLng(isOffRoute ? gpsLatLng : snapped);
-    userMarker.setIcon(getUserIcon(displayBearing, wrongDir, iconMode));
-  }
-
-  if (follow) {
-    map.setView(isOffRoute ? gpsLatLng : snapped, 18, { animate: true });
-  }
-
-  lastLatLng = gpsLatLng;
-
-  if (!isOffRoute) {
-    updateNavigationBanner(snapped);
-  }
-}
-// 🔄 Marker mit Richtung zeichnen
-
-function getUserIcon(bearing = 0, isWrongDirection = false, mode = "bike") {
-  const color = isWrongDirection ? "red" : "#1e40af";
-
-  if (mode === "bike") {
-    return L.divIcon({
-      className: '',
-      html: `<div style="
-        width:40px;
-        height:40px;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        transition:transform 0.3s linear;
-        transform:rotate(${bearing}deg);
-      ">
-        🚴
-      </div>`,
-      iconSize: [40,40],
-      iconAnchor: [20,20],
-    });
-  }
-
-  // Pfeil
-  return L.divIcon({
-    className: '',
-    html: `<div style="
-      width:30px;
-      height:30px;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      transition:transform 0.3s linear;
-      transform:rotate(${bearing}deg);
-    ">
-      <svg viewBox="0 0 24 24" fill="${color}" width="24" height="24">
-        <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
-      </svg>
-    </div>`,
-    iconSize: [30,30],
-    iconAnchor: [15,15],
-  });
 }
 
 // ⚠️ Prüfen ob Nutzer falsch fährt
@@ -2208,26 +2154,6 @@ let currentHutIndex = 0;       // Aktuelle Zielhütte in selected[]
 
 function startRoute() {
   try {
-    if (!Array.isArray(selected) || selected.length === 0) {
-      showToast("❗ Bitte mindestens eine Hütte auswählen");
-      return;
-    }
-
-    // Gefilterte Wegpunkte mit gültigen Koordinaten
-    const validSelected = selected.filter(h =>
-      Number.isFinite(h.lat) && Number.isFinite(h.lng)
-    );
-
-    // Hinweis, falls Ziele rausgefiltert wurden
-    if (validSelected.length < selected.length) {
-      showToast(`⚠️ ${selected.length - validSelected.length} Ziele ohne Koordinaten wurden ignoriert`);
-    }
-
-    if (validSelected.length === 0) {
-      showToast("❗ Keine gültigen Koordinaten bei den ausgewählten Zielen gefunden");
-      return;
-    }
-
     clearRouteLines();
     if (navInterval) {
       clearInterval(navInterval);
@@ -2242,7 +2168,8 @@ function startRoute() {
     enableCompassRotation();
     saveRouteToLocal();
     showDashboardAlert();
-setInstagramButtonActive(false);
+    setInstagramButtonActive(false);
+
     tourStartTime = Date.now();
     tourDistance = 0;
     challengeProgress = 0;
@@ -2253,7 +2180,8 @@ setInstagramButtonActive(false);
       showToast("❌ Keine Startposition gefunden");
       return;
     }
-focusOnUserMarker();
+    focusOnUserMarker();
+
     // Nur gültige Koordinaten verwenden
     const coords = [
       [start.lng, start.lat],
@@ -2269,47 +2197,52 @@ focusOnUserMarker();
       body: JSON.stringify({ coordinates: coords })
     })
       .then(r => {
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
-})
-.then(data => {
-  const points = data.features?.[0]?.geometry?.coordinates?.map(p => [p[1], p[0]]);
-  if (!points || points.length < 2) {
-    throw new Error("Route unvollständig oder leer");
-  }
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(data => {
+        const points = data.features?.[0]?.geometry?.coordinates?.map(p => [p[1], p[0]]);
+        if (!points || points.length < 2) {
+          throw new Error("Route unvollständig oder leer");
+        }
 
-  routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
-  progressLine = L.polyline([], { color: "#00f", weight: 4 }).addTo(map);
+        routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
+        progressLine = L.polyline([], { color: "#00f", weight: 4 }).addTo(map);
 
-  currentRoutePath = [...points];
-  navInterval = setInterval(navLoop, 10000);
-  updateSelectedList();
+        currentRoutePath = [...points];
+        navInterval = setInterval(navLoop, 10000);
+        updateSelectedList();
 
-  document.getElementById("startBtn").style.display = "none";
-  document.getElementById("stopBtn").style.display = "inline-block";
-  follow = true;
+        document.getElementById("startBtn").style.display = "none";
+        document.getElementById("stopBtn").style.display = "inline-block";
 
-  if (userMarker && map && follow) {
-    map.flyTo(userMarker.getLatLng(), 17, { animate: true });
-  }
+        // 🚀 Fix: Immer folgen
+        follow = true;
 
-  db.collection("rooms").doc(roomId).set({
-    navActive: true,
-    navStartedAt: Date.now()
-  }, { merge: true });
+        // 🚀 Marker auf ersten gesnappten Punkt setzen
+        if (userMarker && currentRoutePath.length > 0) {
+          const snapped = snapToRoute(userMarker.getLatLng(), currentRoutePath);
+          userMarker.setLatLng(snapped);
+          map.flyTo(snapped, 18, { animate: true });
+        }
 
-  document.querySelector("button[onclick='toggleFollow()']").style.display = "none";
-})
-.catch(err => {
-  console.error("❌ Routing-Fehler:", err.message || err);
-  showToast("❗ Routenberechnung fehlgeschlagen");
-   });
+        db.collection("rooms").doc(roomId).set({
+          navActive: true,
+          navStartedAt: Date.now()
+        }, { merge: true });
+
+        // Follow-Button ausblenden
+        document.querySelector("button[onclick='toggleFollow()']").style.display = "none";
+      })
+      .catch(err => {
+        console.error("❌ Routing-Fehler:", err.message || err);
+        showToast("❗ Routenberechnung fehlgeschlagen");
+      });
 
   } catch (err) {
     console.warn("❌ Fehler in startRoute():" + err.message, err);
   }
 }
-
 
     
     
@@ -2439,71 +2372,65 @@ window.addEventListener('deviceorientationabsolute', (event) => {
 }, true);
 
 
-
-
 function stopNavigation() {
+  // ⏹️ Navigationstimer stoppen
   clearInterval(navInterval);
   navInterval = null;
 
+  // UI-Buttons zurücksetzen
   document.getElementById("stopBtn").style.display = "none";
   document.getElementById("startBtn").style.display = "inline-block";
+  const followBtn = document.querySelector("button[onclick='toggleFollow()']");
+  if (followBtn) followBtn.style.display = "inline-block";
 
+  // UI-Elemente zurück
   document.querySelector("footer").classList.remove("hidden");
+  document.getElementById("navBanner").style.display = "none";
+  document.getElementById("routeInfo").style.display = "none";
+  hideNavBanner();
+
+  // Audio/Visuelles Feedback
   speak("Navigation gestoppt");
   showToast("🛑 Navigation gestoppt");
 
-  follow = false;
+  // Marker zurück in freien Modus
+  follow = false; // 🚫 Auto-Fokus beenden
   orientationListenerActive = false;
   disableCompassRotation();
-  clearRouteLines();
   setInstagramButtonActive(true);
   toggleSidebar(true);
 
-  // Firebase Raum-Status aktualisieren
+  // Route-Elemente entfernen
+  clearRouteLines();
+  if (routingLine) { map.removeLayer(routingLine); routingLine = null; }
+  if (progressLine) { map.removeLayer(progressLine); progressLine = null; }
+
+  // Route-Status zurücksetzen
+  currentRoutePath = null;   // ❌ sorgt dafür, dass updateUserMarker wieder „frei“ arbeitet
+  currentHutIndex = 0;
+  updateSelectedList();
+  showDashboardAlert();
+
+  // Marker in blauen Pfeil zurücksetzen
+  if (map && userMarker) {
+    map.setView(userMarker.getLatLng(), 13, { animate: true });
+    const bearing = compassRotation || 0;
+    userMarker.setIcon(getUserIcon(bearing, false, "arrow"));
+  }
+
+  // Firebase Raumstatus aktualisieren
   db.collection("rooms").doc(roomId).set({
     navActive: false
   }, { merge: true });
 
-  // UI zurücksetzen
-  const followBtn = document.querySelector("button[onclick='toggleFollow()']");
-  if (followBtn) followBtn.style.display = "inline-block";
-
-  document.getElementById("navBanner").style.display = "none";
-  hideNavBanner();
-  document.getElementById("routeInfo").style.display = "none";
-
-  // Karte & Marker zurücksetzen
-  if (map && userMarker) {
-    map.setView(userMarker.getLatLng(), 13);
-
-    // 👉 Marker sofort in freien Kompassmodus (blauer Pfeil)
-    const bearing = compassRotation || 0;
-    userMarker.setIcon(getUserIcon(bearing, false, "arrow")); 
-  }
-
-  // Linien entfernen
-  if (routingLine) {
-    map.removeLayer(routingLine);
-    routingLine = null;
-  }
-  if (progressLine) {
-    map.removeLayer(progressLine);
-    progressLine = null;
-  }
-
-  // Route-Daten zurücksetzen
-  currentRoutePath = null;   // ❗ Navigation komplett deaktivieren
-  currentHutIndex = 0;
-
-  updateSelectedList();
-  showDashboardAlert();
-
-  // Falls Karte beim Start verschoben wurde → zurückschieben
+  // Falls Karte verschoben wurde (wegen NavOffset) → zurückschieben
   if (map._navOffsetApplied) {
     map.panBy([0, -100], { animate: true });
     map._navOffsetApplied = false;
   }
-       }
+}
+
+
 /*    function stopNavigation() {
   clearInterval(navInterval);
   navInterval = null;
