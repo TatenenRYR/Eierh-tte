@@ -1333,9 +1333,10 @@ navigator.geolocation.watchPosition(onLocationFound, onLocationError, {
 
 
 let lastWarningTime = 0; // ⏱️ globale Variable ganz oben im Code definieren
-function updateUserMarker(gpsLatLng) {
+
+  function updateUserMarker(gpsLatLng) {
   if (!currentRoutePath || currentRoutePath.length < 2) {
-    // 🟢 Freier Modus
+    // 🟢 Freier Modus (keine Route)
     const bearing = compassRotation || 0;
     if (!userMarker) {
       userMarker = L.marker(gpsLatLng, { icon: getUserIcon(bearing, false, "arrow") }).addTo(map);
@@ -1358,23 +1359,28 @@ function updateUserMarker(gpsLatLng) {
     userBearing = compassRotation || routeBearing;
   }
 
-  // Abweichung prüfen
+  // Abweichung berechnen
   let diff = Math.abs(routeBearing - userBearing);
   if (diff > 180) diff = 360 - diff;
 
-  const wrongDir = diff > 45; // toleranter Bereich
+  // Nur prüfen, wenn Nutzer sich merklich bewegt hat (>3m)
+  const movedEnough = lastLatLng && map.distance(lastLatLng, gpsLatLng) > 3;
+
+  // Erst ab 90° Abweichung als falsche Richtung werten
+  const wrongDir = movedEnough && diff > 90;
+
   const iconMode = wrongDir ? "arrow" : "bike";
   const displayBearing = wrongDir ? userBearing : routeBearing;
 
   if (!userMarker) {
     userMarker = L.marker(snapped, { icon: getUserIcon(displayBearing, wrongDir, iconMode) }).addTo(map);
   } else {
-    userMarker.setLatLng(snapped); // 🚀 immer gesnappt
+    userMarker.setLatLng(snapped);
     userMarker.setIcon(getUserIcon(displayBearing, wrongDir, iconMode));
   }
 
   if (follow) {
-    map.setView(snapped, 18, { animate: true }); // 🚀 auch Karte nur am Route-Punkt
+    safeSetView(snapped, 18); // Follow mit sicherem Pan
   }
 
   lastLatLng = gpsLatLng;
@@ -1388,20 +1394,6 @@ function updateUserMarker(gpsLatLng) {
       showToast("⚠️ Du fährst in die falsche Richtung!");
       speak("Bitte umdrehen, du fährst falsch.");
     }
-  }
-}
-// ⚠️ Prüfen ob Nutzer falsch fährt
-function checkDirection(latlng) {
-  if (!currentRoutePath || currentRoutePath.length < 2 || !lastLatLng) return;
-
-  const nextPoint = L.latLng(currentRoutePath[1]);
-  const routeBearing = getBearing(latlng, nextPoint);
-  const userBearing = getBearing(lastLatLng, latlng);
-
-  const diff = Math.abs(routeBearing - userBearing);
-  if (diff > 150 && diff < 210) {
-    showToast("⚠️ Du fährst in die falsche Richtung!");
-    speak("Bitte umdrehen, du fährst falsch.");
   }
 }
 
