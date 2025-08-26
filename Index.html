@@ -2152,112 +2152,55 @@ let currentRoutePath = [];     // Aktuelle Routing-Punkte (alle)
 let currentHutIndex = 0;       // Aktuelle Zielhütte in selected[]
 
 function startRoute() {
-  try {
-    clearRouteLines();
-    if (navInterval) {
-      clearInterval(navInterval);
-      navInterval = null;
-    }
+  if (!selected || selected.length === 0) {
+    showToast("❌ Bitte wähle zuerst eine Hütte aus!");
+    return;
+  }
 
-    document.querySelector("footer")?.classList.add("hidden");
-    speak("Navigation gestartet. Viel Spaß!");
-    showNavBanner("Navigation gestartet. Viel Spaß!");
-    toggleSidebar(false);
-    orientationListenerActive = true;
-    enableCompassRotation();
-    saveRouteToLocal();
-    showDashboardAlert();
-    setInstagramButtonActive(false);
+  logDebug("💾 Route gestartet mit " + selected.length + " Punkten");
 
-    tourStartTime = Date.now();
-    tourDistance = 0;
-    challengeProgress = 0;
-    currentHutIndex = 0;
+  // Route berechnen
+  const coords = [
+    [userMarker.getLatLng().lng, userMarker.getLatLng().lat],
+    ...selected.map(h => [h.lng, h.lat])
+  ];
 
-    const start = userMarker ? userMarker.getLatLng() : null;
-    if (!start) {
-      showToast("❌ Keine Startposition gefunden");
+  fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
+    method: "POST",
+    headers: {
+      "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ coordinates: coords, instructions: true })
+  })
+  .then(r => r.json())
+  .then(data => {
+    const points = data.features?.[0]?.geometry?.coordinates?.map(p => [p[1], p[0]]);
+    if (!points || points.length < 2) {
+      showToast("❌ Route konnte nicht berechnet werden");
       return;
     }
-    focusOnUserMarker();
 
-    // ✅ Koordinaten für ORS
-    const coords = [
-      [start.lng, start.lat],
-      ...validSelected.map(h => [h.lng, h.lat])
-    ];
-    console.log("📤 Anfrage an ORS mit Koordinaten:", coords);
+    navigationSteps = data.features?.[0]?.properties?.segments?.[0]?.steps || [];
+    currentStepIndex = 0;
 
-    fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
-      method: "POST",
-      headers: {
-        "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ coordinates: coords })
-    })
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then(data => {
-        console.log("📦 ORS-Antwort:", data);
+    clearRouteLines();
+    routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
+    progressLine = L.polyline([], { color: "#00f", weight: 4 }).addTo(map);
 
-        const points = data.features?.[0]?.geometry?.coordinates?.map(p => [p[1], p[0]]);
-        console.log("📍 Punkte der Route:", points);
+    currentRoutePath = [...points];
 
-        if (!points || points.length < 2) {
-          throw new Error("Route unvollständig oder leer");
-        }
+    if (userMarker && follow) {
+      safeSetView(userMarker.getLatLng(), 17);
+    }
 
-        routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
-        console.log("✅ RoutingLine erzeugt:", routingLine);
-
-        progressLine = L.polyline([], { color: "#00f", weight: 4 }).addTo(map);
-
-        currentRoutePath = [...points];
-        console.log("🚲 currentRoutePath gesetzt:", currentRoutePath);
-
-        navInterval = setInterval(navLoop, 10000);
-        updateSelectedList();
-
-        // UI Buttons
-        const startBtn = document.getElementById("startBtn");
-        const stopBtn = document.getElementById("stopBtn");
-        if (startBtn) startBtn.style.display = "none";
-        if (stopBtn) stopBtn.style.display = "inline-block";
-
-        // ✅ Route sichtbar machen
-        map.fitBounds(routingLine.getBounds(), { padding: [50, 50] });
-
-        // 🚀 Navigation folgt automatisch
-        follow = true;
-        if (userMarker && currentRoutePath.length > 0) {
-          const snapped = snapToRoute(userMarker.getLatLng(), currentRoutePath);
-          userMarker.setLatLng(snapped);
-          map.flyTo(snapped, 18, { animate: true });
-        }
-
-        // Firebase Status
-        db.collection("rooms").doc(roomId).set({
-          navActive: true,
-          navStartedAt: Date.now()
-        }, { merge: true });
-
-        const followBtn = document.querySelector("button[onclick='toggleFollow()']");
-        if (followBtn) followBtn.style.display = "none";
-
-      })
-      .catch(err => {
-        console.error("❌ Routing-Fehler:", err.message || err);
-        showToast("❗ Routenberechnung fehlgeschlagen");
-      });
-
-  } catch (err) {
-    console.warn("❌ Fehler in startRoute():", err.message, err);
-  }
+    showToast("✅ Route gestartet");
+  })
+  .catch(err => {
+    console.warn("❌ Routing Fehler:", err);
+    showToast("⚠️ Fehler beim Start der Route");
+  });
 }
-    
     
     /*function startRoute() {
   try {
@@ -3591,39 +3534,6 @@ const m = L.marker([h.lat, h.lng],{ icon: huettenIcon }).bindPopup(`
     </div>
 `);
           // Automatisches Deaktivieren von Follow beim manuellen Bewegen
-map.on("dragstart zoomstart", () => {
-  if (follow) {
-    follow = false;
-    console.log("📍 Follow deaktiviert (manuelle Kartenbewegung)");
-    showToast("Kartenfolge deaktiviert – du bewegst dich frei");
-    document.getElementById("followBtn").style.display = "inline-block";
-  }
-});
-
-m.on("popupopen", () => {
-  if (follow) {
-    follow = false;
-    map._wasAutoFollow = true; // Merken, dass es vorher aktiv war
-    showToast("📍 Auto-Follow pausiert");
-  }
-});
-
-m.on("popupclose", () => {
-  if (map._wasAutoFollow) {
-    follow = true;
-    map._wasAutoFollow = false;
-    showToast("📍 Auto-Follow wieder aktiv");
-
-    // Jetzt Karte wirklich zentrieren
-    if (userMarker && map) {
-      const ll = userMarker.getLatLng();
-      map.setView(ll, map.getZoom(), {
-       animate: true,
-       paddingTopLeft: [0, 100]
-      });
-    }
-  }
-});
           
           cluster.addLayer(m);
         });
@@ -3636,7 +3546,59 @@ m.on("popupclose", () => {
 
    // document.addEventListener("DOMContentLoaded", requestCompassPermissionAndStart);
   //  startTrackingUser(map);
-    
+// =========================
+// 📍 FOLLOW-LOGIK
+// =========================
+
+// Flag für automatische Pan/Zoom-Events
+let isAutoPanning = false;
+
+// Hilfsfunktion: zentriert Karte, ohne Follow zu deaktivieren
+function safeSetView(latlng, zoom) {
+  isAutoPanning = true;
+  map.setView(latlng, zoom, { animate: true });
+  setTimeout(() => (isAutoPanning = false), 500); // nach 0,5s zurücksetzen
+}
+
+// Wenn User die Karte bewegt → Follow ausschalten
+map.on("movestart", () => {
+  if (!isAutoPanning) {
+    follow = false;
+    showToast("📍 Follow AUS (manuelle Bewegung)");
+  }
+});
+
+// Popup geöffnet → Follow pausieren
+map.on("popupopen", () => {
+  if (follow) {
+    map._wasAutoFollow = true; // merken, dass Follow an war
+    follow = false;
+    showToast("📍 Auto-Follow pausiert");
+  }
+});
+map.on("dragstart zoomstart", () => {
+  if (!isAutoPanning && follow) {
+    follow = false;
+    console.log("📍 Follow deaktiviert (manuelle Kartenbewegung)");
+    showToast("Kartenfolge deaktiviert – du bewegst dich frei");
+
+    const btn = document.getElementById("followBtn");
+    if (btn) btn.style.display = "inline-block";
+  }
+});
+// Popup geschlossen → Follow wieder aktivieren
+map.on("popupclose", () => {
+  if (map._wasAutoFollow) {
+    map._wasAutoFollow = false;
+    follow = true;
+    showToast("📍 Auto-Follow wieder aktiv");
+
+    if (userMarker && map) {
+      const ll = userMarker.getLatLng();
+      safeSetView(ll, map.getZoom()); // wichtig: safeSetView statt setView
+    }
+  }
+});
 
 let watchId;
 let gpsRetryPending = false;
