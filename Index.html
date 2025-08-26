@@ -2268,40 +2268,42 @@ focusOnUserMarker();
       },
       body: JSON.stringify({ coordinates: coords })
     })
-      .then(r => r.json())
-      .then(data => {
-        const points = data.features?.[0]?.geometry?.coordinates?.map(p => [p[1], p[0]]);
-        if (!points || points.length < 2) {
-          showToast("⚠️ Route unvollständig");
-          return;
-        }
+      .then(r => {
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+})
+.then(data => {
+  const points = data.features?.[0]?.geometry?.coordinates?.map(p => [p[1], p[0]]);
+  if (!points || points.length < 2) {
+    throw new Error("Route unvollständig oder leer");
+  }
 
-        routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
-        progressLine = L.polyline([], { color: "#00f", weight: 4 }).addTo(map);
+  routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
+  progressLine = L.polyline([], { color: "#00f", weight: 4 }).addTo(map);
 
-        currentRoutePath = [...points];
-        navInterval = setInterval(navLoop, 10000);
-        updateSelectedList(); // -> zeigt ❗ bei fehlerhaften Zielen
+  currentRoutePath = [...points];
+  navInterval = setInterval(navLoop, 10000);
+  updateSelectedList();
 
-        document.getElementById("startBtn").style.display = "none";
-        document.getElementById("stopBtn").style.display = "inline-block";
-        follow = true;
+  document.getElementById("startBtn").style.display = "none";
+  document.getElementById("stopBtn").style.display = "inline-block";
+  follow = true;
 
-        if (userMarker && map && follow) {
-          map.flyTo(userMarker.getLatLng(), 17, { animate: true });
-        }
+  if (userMarker && map && follow) {
+    map.flyTo(userMarker.getLatLng(), 17, { animate: true });
+  }
 
-        db.collection("rooms").doc(roomId).set({
-          navActive: true,
-          navStartedAt: Date.now()
-        }, { merge: true });
+  db.collection("rooms").doc(roomId).set({
+    navActive: true,
+    navStartedAt: Date.now()
+  }, { merge: true });
 
-        document.querySelector("button[onclick='toggleFollow()']").style.display = "none";
-      })
-      .catch(err => {
-        console.warn("❌ Routing-Fehler:", err);
-       // showToast("❗ Routenberechnung fehlgeschlagen");
-      });
+  document.querySelector("button[onclick='toggleFollow()']").style.display = "none";
+})
+.catch(err => {
+  console.error("❌ Routing-Fehler:", err.message || err);
+  showToast("❗ Routenberechnung fehlgeschlagen");
+   });
 
   } catch (err) {
     console.warn("❌ Fehler in startRoute():", err);
@@ -2656,8 +2658,8 @@ function checkIfOffRoute() {
     updateRouteInfo();
 
     // Banner Distanz
-    document.getElementById("navDistance").innerText = `${Math.round(dist)} m`;
-
+    const remaining = getRemainingDistance?.() || tourDistance || 0;
+document.getElementById("navDistance").innerText = `${Math.round(remaining)} m`;
     updateGroup();
     checkIfOffRoute();
 
