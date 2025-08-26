@@ -2181,10 +2181,12 @@ function startRoute() {
     }
     focusOnUserMarker();
 
+    // ✅ Koordinaten für ORS
     const coords = [
       [start.lng, start.lat],
       ...validSelected.map(h => [h.lng, h.lat])
     ];
+    console.log("📤 Anfrage an ORS mit Koordinaten:", coords);
 
     fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
       method: "POST",
@@ -2199,23 +2201,34 @@ function startRoute() {
         return r.json();
       })
       .then(data => {
+        console.log("📦 ORS-Antwort:", data);
+
         const points = data.features?.[0]?.geometry?.coordinates?.map(p => [p[1], p[0]]);
+        console.log("📍 Punkte der Route:", points);
+
         if (!points || points.length < 2) {
           throw new Error("Route unvollständig oder leer");
         }
 
         routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
+        console.log("✅ RoutingLine erzeugt:", routingLine);
+
         progressLine = L.polyline([], { color: "#00f", weight: 4 }).addTo(map);
 
         currentRoutePath = [...points];
+        console.log("🚲 currentRoutePath gesetzt:", currentRoutePath);
+
         navInterval = setInterval(navLoop, 10000);
         updateSelectedList();
 
-        // 🔧 Button-Handling nur, wenn vorhanden
+        // UI Buttons
         const startBtn = document.getElementById("startBtn");
         const stopBtn = document.getElementById("stopBtn");
         if (startBtn) startBtn.style.display = "none";
         if (stopBtn) stopBtn.style.display = "inline-block";
+
+        // ✅ Route sichtbar machen
+        map.fitBounds(routingLine.getBounds(), { padding: [50, 50] });
 
         // 🚀 Navigation folgt automatisch
         follow = true;
@@ -2225,14 +2238,15 @@ function startRoute() {
           map.flyTo(snapped, 18, { animate: true });
         }
 
+        // Firebase Status
         db.collection("rooms").doc(roomId).set({
           navActive: true,
           navStartedAt: Date.now()
         }, { merge: true });
 
-        // Follow-Button ausblenden, falls vorhanden
         const followBtn = document.querySelector("button[onclick='toggleFollow()']");
         if (followBtn) followBtn.style.display = "none";
+
       })
       .catch(err => {
         console.error("❌ Routing-Fehler:", err.message || err);
@@ -2240,10 +2254,9 @@ function startRoute() {
       });
 
   } catch (err) {
-    console.warn("❌ Fehler in startRoute():" + err.message, err);
+    console.warn("❌ Fehler in startRoute():", err.message, err);
   }
 }
-
     
     
     /*function startRoute() {
