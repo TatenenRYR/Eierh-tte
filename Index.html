@@ -2650,7 +2650,10 @@ function checkIfOffRoute() {
     console.warn("⚠️ Fehler in navLoop():", err);
   }
 }*/
-    function navLoop() {
+let lastUserPos = null;
+let lastUserTime = null;
+
+function navLoop() {
   try {
     // 🔧 Sicherstellen, dass routeInfo existiert
     let routeInfoEl = document.getElementById("routeInfo");
@@ -2664,31 +2667,30 @@ function checkIfOffRoute() {
         transform: translateX(-50%);
         background: rgba(0,0,0,0.7);
         color: white;
-        padding: 6px 12px;
-        border-radius: 8px;
+        padding: 8px 14px;
+        border-radius: 10px;
         font-family: sans-serif;
         font-size: 14px;
         z-index: 9999;
         display: none;
+        text-align: center;
       `;
-
-      // Kind-Element navDistance einfügen
-      const navDistanceEl = document.createElement("div");
-      navDistanceEl.id = "navDistance";
-      navDistanceEl.textContent = "0 m";
-      routeInfoEl.appendChild(navDistanceEl);
-
       document.body.appendChild(routeInfoEl);
       console.log("ℹ️ routeInfo automatisch erstellt");
     }
 
-    routeInfoEl.style.display = "block";
-
     // 🧭 Route-Info aktualisieren
-    updateRouteInfo?.();
+    updateRouteInfo();
 
-    // Banner Distanz aktualisieren
-    const remaining = getRemainingDistance?.() || tourDistance || 0;
+    // Restdistanz (Fallback, falls updateRouteInfo nichts setzt)
+    let remaining = 0;
+    if (typeof getRemainingDistance === "function") {
+      remaining = getRemainingDistance();
+    } else if (typeof tourDistance !== "undefined") {
+      remaining = tourDistance;
+    }
+
+    // 🔧 Sicherstellen, dass navDistance existiert
     let navDistanceEl = document.getElementById("navDistance");
     if (!navDistanceEl) {
       navDistanceEl = document.createElement("div");
@@ -2702,7 +2704,7 @@ function checkIfOffRoute() {
     updateGroup?.();
     checkIfOffRoute?.();
 
-    // Sanft der Karte folgen
+    // Karte sanft folgen
     if (follow && userMarker && map) {
       const ll = userMarker.getLatLng();
       if (!map.getBounds().pad(-0.3).contains(ll)) {
@@ -2710,47 +2712,43 @@ function checkIfOffRoute() {
       }
     }
   } catch (err) {
-    console.warn("⚠️ Fehler in navLoop(): " + err.message, err);
+    console.warn("⚠️ Fehler in navLoop():", err);
   }
 }
-    // 👉 Neue Funktion für dynamische Routeninfos
-// globale Variablen (einmal definieren)
-let lastUserPos = null;
-let lastUserTime = null;
 
 function updateRouteInfo() {
   try {
     if (!userMarker || !currentRoutePath || currentRoutePath.length === 0) return;
 
     const userPos = userMarker.getLatLng();
-    const target = selected[currentHutIndex];
+    const target = selected?.[currentHutIndex];
     if (!target || !Number.isFinite(target.lat) || !Number.isFinite(target.lng)) return;
 
-    // Typ dynamisch bestimmen
+    // Typ bestimmen
     let targetType = "🏡 Hütte";
-    if (spielplaetze.find(s => s.id === target.id)) targetType = "🛝 Spielplatz";
+    if (spielplaetze?.find(s => s.id === target.id)) targetType = "🛝 Spielplatz";
 
-    // Distanz zum Zielpunkt
+    // Distanz direkt zum Ziel
     const targetPos = L.latLng(target.lat, target.lng);
     const directDist = userPos.distanceTo(targetPos);
 
-    // Wenn nah genug dran (50 m Toleranz) -> nächste Station
+    // ✅ Ziel erreicht?
     if (directDist < 50) {
       if (currentHutIndex < selected.length - 1) {
         currentHutIndex++;
         const nextTarget = selected[currentHutIndex];
-        const nextType = spielplaetze.find(s => s.id === nextTarget.id) ? "🛝 Spielplatz" : "🏡 Hütte";
+        const nextType = spielplaetze?.find(s => s.id === nextTarget.id) ? "🛝 Spielplatz" : "🏡 Hütte";
         speak(`✅ ${targetType} ${target.name || ""} erreicht. Weiter zur nächsten Station.`);
         showToast(`✅ ${targetType} ${target.name || ""} erreicht`);
       } else {
         speak("🎉 Tour abgeschlossen!");
         showToast("🎉 Alle Ziele erreicht!");
-        stopRoute(); // deine Stop-Logik
+        stopRoute?.();
         return;
       }
     }
 
-    // Restdistanz entlang der Route berechnen
+    // Restdistanz entlang der Route
     let remainingDistance = 0;
     let foundUser = false;
 
@@ -2770,12 +2768,12 @@ function updateRouteInfo() {
 
     if (!foundUser) remainingDistance = directDist;
 
-    // Dynamische Geschwindigkeit berechnen
+    // Geschwindigkeit & ETA berechnen
     let speedMps = 15 / 3.6; // Fallback 15 km/h
     const now = Date.now();
     if (lastUserPos && lastUserTime) {
-      const distMoved = userPos.distanceTo(lastUserPos); // Meter
-      const dt = (now - lastUserTime) / 1000; // Sekunden
+      const distMoved = userPos.distanceTo(lastUserPos);
+      const dt = (now - lastUserTime) / 1000;
       if (dt > 0) speedMps = distMoved / dt;
     }
     lastUserPos = userPos;
@@ -2784,7 +2782,7 @@ function updateRouteInfo() {
     const etaMinutes = Math.round(remainingDistance / speedMps / 60);
     const kmLeft = (remainingDistance / 1000).toFixed(2);
 
-    // Anzeige in #routeInfo aktualisieren
+    // 🔧 routeInfo aktualisieren
     const infoEl = document.getElementById("routeInfo");
     if (infoEl) {
       infoEl.style.display = "block";
@@ -2799,7 +2797,6 @@ function updateRouteInfo() {
     console.warn("⚠️ Fehler in updateRouteInfo():", err);
   }
 }
-    
     /*function navLoop() {
   try {
     if (!Array.isArray(currentRoutePath) || currentRoutePath.length < 2 || !userMarker) return;
