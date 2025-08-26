@@ -3386,31 +3386,35 @@ function showTutorial(){
 if (select) select.value = localStorage.lang || "de-DE";
 //document.addEventListener("deviceready", () => {
   
+let gpsFix = false; // merken ob GPS erfolgreich
+
 const position = await startLocationTracking();
-      window.navigator.geolocation.watchPosition(
+window.navigator.geolocation.watchPosition(
   p => {
+    gpsFix = true; // ✅ GPS verfügbar
     const ll = [p.coords.latitude, p.coords.longitude];
 
     if (!p.coords.latitude || !p.coords.longitude) {
-       showToast("⚠️ GPS-Position leer");
+      showToast("⚠️ GPS-Position leer");
     }
     if (!userMarker) {
       userMarker = L.marker(ll).addTo(map);
       map.setView(ll, 15);
       document.getElementById("loader").style.display = "none";
-    } else {
-      //userMarker.setLatLng(ll);
 
-      // ✅ Nur folgen, wenn Follow aktiv ist UND kein Kompass stört
+      // ✅ erst jetzt Route aus LocalStorage laden
+      loadRouteFromLocal();
+    } else {
       if (follow && map) {
-  map.setView(ll, map.getZoom(), {
-    animate: true,
-    paddingTopLeft: [0, 100]
-  });
+        map.setView(ll, map.getZoom(), {
+          animate: true,
+          paddingTopLeft: [0, 100]
+        });
       }
     }
-   const heading = position.coords.heading ?? 0;
-userMarker.setRotationAngle(heading);
+
+    const heading = p.coords.heading ?? 0;
+    userMarker.setRotationAngle(heading);
     updateGroup();
   },
   () => {
@@ -3419,6 +3423,17 @@ userMarker.setRotationAngle(heading);
   },
   { enableHighAccuracy: true }
 );
+
+// Timeout nur anzeigen, wenn kein GPS kam
+setTimeout(() => {
+  if (!gpsFix) {
+    const l = document.getElementById("loader");
+    if (l && l.style.display != "none") {
+      l.style.display = "none";
+      showToast("⏳ Timeout – keine GPS-Daten erhalten");
+    }
+  }
+}, 10000);
 //  });
 
       const lastRoom = localStorage.lastRoom;
@@ -3640,17 +3655,7 @@ m.on("popupclose", () => {
      
       });
 
-      // Falls GPS nicht lädt
-      setTimeout(() => {
-        const l = document.getElementById("loader");
-        if (l && l.style.display != "none") {
-          l.style.display = "none";
-          showToast("⏳ Timeout");
-        }
-      }, 10000);
-      setTimeout(() => {
-         loadRouteFromLocal();
-      }, 2000);
+      
     }
 
    // document.addEventListener("DOMContentLoaded", requestCompassPermissionAndStart);
