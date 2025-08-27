@@ -274,7 +274,8 @@ function startDialog() {
      /* '🛝 Neuen Spielplatz eintragen',*/
       '📋 Meine Hütten anzeigen',
      /* '🛝 Meine Spielplätze anzeigen',*/
-      '🎫 Support Anfragen'
+      '🎫 Support Anfragen',
+      '💬 Hütten-Nachrichten'
     ],
     handleIntent
   );
@@ -541,6 +542,11 @@ function deleteSpielplatz(id) {
     ladeMeineSupportTickets();
     return;
   }
+    
+  if (txt.includes('nachrichten')) {
+    ladeNachrichtenFuerMeineHuetten();
+    return;
+  }
 
   if (txt.includes('meine hütten')) {
       showMyHuts();
@@ -606,7 +612,8 @@ if (txt.includes('meine spielplätze') || txt.includes('spielplätze anzeigen'))
       '🥚 Neue Hütte erstellen',
      /* '🛝 Neuen Spielplatz eintragen',*/
       '📋 Meine Hütten anzeigen',
-      '🎫 Support Anfragen'
+      '🎫 Support Anfragen',
+      '💬 Hütten-Nachrichten'
     ],
     handleIntent
   );
@@ -649,6 +656,12 @@ if (txt.includes('meine spielplätze') || txt.includes('spielplätze anzeigen'))
   if (txt.includes('support')) {
     ladeMeineSupportTickets();
   }
+  
+  if (txt.includes('nachrichten')) {
+    ladeNachrichtenFuerMeineHuetten();
+  }
+  
+
 }*/
   
 
@@ -1049,7 +1062,7 @@ async function deleteHut(id) {
 
   } catch (err) {
     console.error('❌ Fehler bei Kündigung:', err);
-    addMessage('❌ Eintragung konnte nicht gelöscht werden. Support kontaktieren.', 'bot');
+    addMessage('❌ Eintragung konnte nicht gelöscht werden.  kontaktieren.', 'bot');
     frageSupportBeiAboProblem(user, hut);
   }
 }
@@ -1137,6 +1150,63 @@ function zeigeSupportFormularMitVorschlag(vorlage) {
     console.error("❌ Fehler beim Senden:", err);
     addMessage("⚠️ Es gab ein Problem beim Senden deiner Anfrage. Bitte versuche es später erneut.", "bot");
   });
+}
+async function ladeNachrichtenFuerMeineHuetten() {
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    addMessage('⚠️ Du musst angemeldet sein, um deine Hütten-Nachrichten zu sehen.', 'bot');
+    return;
+  }
+
+  try {
+    // Zuerst: alle Hütten des Besitzers abrufen
+    const hutsSnapshot = await db.collection('huts')
+      .where('ownerId', '==', user.uid)
+      .get();
+
+    if (hutsSnapshot.empty) {
+      addMessage('📭 Du hast noch keine Hütten angelegt.', 'bot');
+      return;
+    }
+
+    const hutIds = hutsSnapshot.docs.map(doc => doc.id);
+
+    // Dann: Nachrichten für diese Hütten abrufen
+    const msgSnapshot = await db.collection('hutMessages')
+      .where('hutId', 'in', hutIds)
+      .orderBy('createdAt', 'desc')
+      .limit(20)
+      .get();
+
+    if (msgSnapshot.empty) {
+      addMessage('📭 Keine Nachrichten für deine Hütten vorhanden.', 'bot');
+      return;
+    }
+
+    addMessage('📨 Hier sind die letzten Nachrichten für deine Hütten:', 'bot');
+
+    msgSnapshot.forEach(doc => {
+      const t = doc.data();
+      const datum = t.createdAt?.toDate().toLocaleString('de-DE') || '-';
+      const hutName = t.hutName || '(unbekannte Hütte)';
+      const message = t.message || '(leer)';
+      const sender = t.senderName || 'Unbekannt';
+      const answered = t.answered ? '✅ beantwortet' : '❌ offen';
+
+      addMessage(`
+        <div style="background:#f0f0f0; padding:10px; border-left:4px solid #10b981; margin-bottom:10px; font-size:0.9rem;">
+          <div><strong>🏡 ${hutName}</strong></div>
+          <div class="mt-1">📅 ${datum}</div>
+          <div class="mt-1">👤 Von: ${sender}</div>
+          <div class="mt-2">💬 ${message}</div>
+          <div class="mt-1 text-sm text-gray-600">Status: ${answered}</div>
+        </div>
+      `, 'bot', true);
+    });
+  } catch (err) {
+    console.error('❌ Fehler beim Laden der Hütten-Nachrichten:', err);
+    addMessage('❌ Fehler beim Abrufen der Nachrichten. Bitte später erneut versuchen.', 'bot');
+  }
 }
 
 
