@@ -63,13 +63,10 @@
   <div id="stats" class="mb-6 text-gray-700"></div>
 
   <!-- Suchfeld -->
-  <input
-    id="search-input"
-    type="text"
-    placeholder="🔍 Suche nach Name, Status, Strom, Sitzplätzen..."
-    class="mb-4 w-full p-3 rounded border border-gray-300"
-  />
-
+<select id="sortSelect" class="mb-4 p-2 border rounded">
+  <option value="name">🔤 Nach Name</option>
+  <option value="createdAt">🕒 Neueste zuerst</option>
+</select>
   <!-- Hüttenliste -->
   <div id="hut-list" class="space-y-4"></div>
 <!-- Support-Tickets -->
@@ -620,36 +617,23 @@ async function rejectFoto(hutId, index) {
           </ul>
         </details>
 
-        <!-- Abo-Info -->
-        ${hut.aboStart && hut.paypalSubscriptionId ? `
-          <details class="bg-blue-50 border border-blue-200 rounded p-2 my-2 text-sm">
-            <summary class="cursor-pointer">💳 Abo-Informationen</summary>
-            <div><strong>Start:</strong> ${hut.aboStart?.toDate?.().toLocaleDateString("de-DE") || '-'}</div>
-            <div><strong>PayPal-ID:</strong> ${hut.paypalSubscriptionId}</div>
-            <div><strong>Status:</strong> aktiv</div>
-            ${
-              aboHistory.length ? `
-                <div class="mt-2"><strong>Zahlungsverlauf:</strong>
-                  <ul class="list-disc ml-5 text-xs">
-                    ${aboHistory.map(e => `
-                      <li>${new Date(e.zeitpunkt?.seconds * 1000 || Date.now()).toLocaleDateString("de-DE")} – ${e.betrag} € via ${e.methode}</li>
-                    `).join('')}
-                  </ul>
-                </div>
-              ` : '<div class="text-xs text-gray-500 mt-2 italic">Kein Verlauf vorhanden.</div>'
-            }
-          </details>
-        ` : `
-          <div class="my-2 text-sm text-gray-600 italic">
-            💳 Kein aktives Abo vorhanden.
-          </div>
-        `}
+        <!-- Nachrichtenbereich -->
+${hut.allowMessages ? `
+  <div class="mt-4 p-2 bg-gray-50 border rounded">
+    <strong>💬 Nachrichten</strong>
+    <div id="chat-messages-${hut.id}" class="mt-2 space-y-2 max-h-60 overflow-y-auto">⏳ Lädt...</div>
+  </div>
+` : `
+  <div class="mt-4 text-sm text-gray-500 italic">
+    💬 Nachrichten sind für diese Hütte deaktiviert.
+  </div>
+`}
 
         <button onclick="deleteHut('${hut.id}')" class="bg-red-600 text-white px-2 py-1 rounded mt-3 w-full">Hütte löschen</button>
       `;
 
       hutList.appendChild(el);
-
+if (hut.allowMessages) ladeNachrichten(hut.id);
       // Minimap
       if (hut.location?.latitude && hut.location?.longitude) {
         const map = L.map(`map-${hut.id}`, {
@@ -735,7 +719,23 @@ function renderPagination(totalItems) {
     paginationContainer.appendChild(createPageBtn(i, i));
   }
 }
-  
+  document.getElementById("sortSelect").addEventListener("change", applySearchAndSort);
+  function applySearchAndSort() {
+  const search = document.getElementById("searchInput")?.value.toLowerCase() || "";
+  const sortBy = document.getElementById("sortSelect")?.value || "name";
+
+  filteredHuts = allHuts.filter(h => h.name?.toLowerCase().includes(search));
+
+  filteredHuts.sort((a, b) => {
+    if (sortBy === "name") return a.name.localeCompare(b.name);
+    if (sortBy === "createdAt") return (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0);
+    return 0;
+  });
+
+  currentPage = 1;
+  renderPage(currentPage);
+  renderStats(filteredHuts.length ? filteredHuts : allHuts);
+  }
 // Upload-Funktion:
 async function initImageUpload(input, hutId) {
   const files = Array.from(input.files);
@@ -1040,7 +1040,28 @@ function uploadFoto(input, hutId) {
       alert('Fehler beim Löschen der Hütte: ' + e.message);
     }
   }*/
+function renderNewEntries(list) {
+  const neueListe = document.getElementById("neueListe");
+  const neue = list.filter(h => h.status === "offen");
+  if (neue.length === 0) {
+    neueListe.innerHTML = "<p class='italic text-gray-500'>Keine neuen Eintragungen.</p>";
+    return;
+  }
 
+  neueListe.innerHTML = "";
+  neue.forEach(hut => {
+    const row = document.createElement("div");
+    row.className = "flex justify-between items-center bg-white shadow rounded px-3 py-2";
+    row.innerHTML = `
+      <a href="#hut-${hut.id}" class="text-blue-600 hover:underline font-medium">${hut.name}</a>
+      <div class="space-x-2">
+        <button onclick="updateField('${hut.id}', 'status', 'angenommen')" class="px-2 py-1 bg-green-500 text-white rounded">Annehmen</button>
+        <button onclick="updateField('${hut.id}', 'status', 'abgelehnt')" class="px-2 py-1 bg-red-500 text-white rounded">Ablehnen</button>
+      </div>
+    `;
+    neueListe.appendChild(row);
+  });
+}
    // Warten bis DOM geladen ist
   document.addEventListener('DOMContentLoaded', () => {
     firebase.auth().onAuthStateChanged(user => {
@@ -1052,6 +1073,7 @@ function uploadFoto(input, hutId) {
         nameEl.textContent = user.displayName || user.email || 'Unbekannt';
         topbar.style.display = 'flex';
         ladeSupportTickets(); // ⬅️ Support-Anfragen laden
+        renderNewEntries(allHuts);
       } else {
         // Nicht eingeloggt → Weiterleiten
         //window.location.href = 'login.html'; // oder deine Login-Seite
