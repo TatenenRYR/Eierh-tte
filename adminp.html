@@ -1,0 +1,151 @@
+<!DOCTYPE html><html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Dashboard</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-900">
+  <header class="bg-green-600 text-white p-4 flex justify-between items-center">
+    <h1 class="text-xl font-bold">🌲 Admin-Dashboard</h1>
+    <button onclick="ladeHütten()" class="bg-white text-green-700 px-3 py-1 rounded shadow hover:bg-gray-100">🔄 Aktualisieren</button>
+  </header>  <main id="main" class="p-4 space-y-4">
+    <!-- Hier werden die Hütten geladen -->
+  </main>  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+    import { getFirestore, collection, query, where, orderBy, getDocs, updateDoc, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+    const firebaseConfig = { /* deine Config */ };
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    async function ladeHütten() {
+      const main = document.getElementById("main");
+      main.innerHTML = "⏳ Lade Hütten...";
+
+      const snapshot = await getDocs(collection(db, "eierhuetten"));
+      if (snapshot.empty) {
+        main.innerHTML = "<p>Keine Hütten gefunden.</p>";
+        return;
+      }
+
+      main.innerHTML = "";
+      snapshot.forEach(docSnap => {
+        const hut = docSnap.data();
+        const id = docSnap.id;
+
+        const div = document.createElement("div");
+        div.className = "bg-white shadow rounded p-4 space-y-2";
+        div.innerHTML = `
+          <h2 class="font-bold text-lg">${hut.name}</h2>
+          <p>📌 Status: ${hut.status || "-"}</p>
+
+          <label class="inline-flex items-center">
+            <input type="checkbox" id="allowMessages-${id}" ${hut.allowMessages ? 'checked' : ''} class="mr-2">
+            Nachrichten aktivieren
+          </label>
+          <button onclick="toggleMessages('${id}')" class="ml-2 px-2 py-1 bg-blue-500 text-white rounded">Speichern</button>
+
+          <div id="chat-${id}" class="mt-3 p-2 bg-gray-50 border rounded ${hut.allowMessages ? '' : 'hidden'}">
+            <strong>💬 Nachrichten für ${hut.name}</strong>
+            <div id="chat-messages-${id}" class="mt-2 space-y-2 max-h-60 overflow-y-auto">⏳ Lädt...</div>
+          </div>
+        `;
+        main.appendChild(div);
+
+        if (hut.allowMessages) {
+          ladeNachrichten(id);
+        }
+      });
+    }
+
+    async function ladeNachrichten(hutId) {
+      const container = document.getElementById(`chat-messages-${hutId}`);
+      if (!container) return;
+      container.innerHTML = "⏳ Lade Nachrichten...";
+
+      try {
+        const q = query(
+          collection(db, "hutMessages"),
+          where("hutId", "==", hutId),
+          orderBy("createdAt", "desc")
+        );
+        const snapshot = await getDocs(q);
+
+        if (snapshot.empty) {
+          container.innerHTML = "<em>Keine Nachrichten vorhanden.</em>";
+          return;
+        }
+
+        container.innerHTML = "";
+        snapshot.forEach(msgSnap => {
+          const msg = msgSnap.data();
+          const datum = msg.createdAt?.toDate().toLocaleString("de-DE") || "-";
+          const sender = msg.senderName || "Unbekannt";
+          const message = msg.message || "(leer)";
+
+          const msgDiv = document.createElement("div");
+          msgDiv.className = "bg-white border-l-4 border-green-500 p-2 text-sm shadow-sm";
+          msgDiv.innerHTML = `
+            <div class="flex justify-between items-center">
+              <span><strong>${sender}</strong> – ${datum}</span>
+              <div class="space-x-2">
+                <button onclick="archiviereNachricht('${msgSnap.id}', '${hutId}')" class="px-2 py-1 bg-yellow-500 text-white text-xs rounded">Archivieren</button>
+                <button onclick="loescheNachricht('${msgSnap.id}', '${hutId}')" class="px-2 py-1 bg-red-600 text-white text-xs rounded">Löschen</button>
+              </div>
+            </div>
+            <div class="mt-1">💬 ${message}</div>
+          `;
+          container.appendChild(msgDiv);
+        });
+      } catch (err) {
+        console.error("Fehler beim Laden der Nachrichten:", err);
+        container.innerHTML = `<em>Fehler: ${err.message}</em>`;
+      }
+    }
+
+    async function toggleMessages(hutId) {
+      const checkbox = document.getElementById(`allowMessages-${hutId}`);
+      const allow = checkbox.checked;
+      const chatDiv = document.getElementById(`chat-${hutId}`);
+
+      try {
+        await updateDoc(doc(db, "eierhuetten", hutId), { allowMessages: allow });
+        chatDiv.classList.toggle("hidden", !allow);
+        if (allow) ladeNachrichten(hutId);
+      } catch (err) {
+        alert("Fehler beim Speichern der Einstellung.");
+        console.error(err);
+      }
+    }
+
+    async function loescheNachricht(msgId, hutId) {
+      if (!confirm("Soll diese Nachricht gelöscht werden?")) return;
+      try {
+        await deleteDoc(doc(db, "hutMessages", msgId));
+        ladeNachrichten(hutId);
+      } catch (err) {
+        alert("Fehler beim Löschen.");
+        console.error(err);
+      }
+    }
+
+    async function archiviereNachricht(msgId, hutId) {
+      try {
+        await updateDoc(doc(db, "hutMessages", msgId), { archived: true });
+        ladeNachrichten(hutId);
+      } catch (err) {
+        alert("Fehler beim Archivieren.");
+        console.error(err);
+      }
+    }
+
+    window.toggleMessages = toggleMessages;
+    window.loescheNachricht = loescheNachricht;
+    window.archiviereNachricht = archiviereNachricht;
+
+    ladeHütten();
+  </script></body>
+</html>
