@@ -973,12 +973,18 @@ const docs = snapshot.docs.filter(doc => {
           <div class="h-2 bg-green-500 rounded" style="width: 0%"></div>
         </div>
 
+        <!-- Checkbox für Nachrichtenaktivierung -->
+        <label class="inline-flex items-center mt-2">
+          <input type="checkbox" id="allowMessages-${id}" ${d.allowMessages ? 'checked' : ''} class="mr-2">
+          Nachrichten aktivieren
+        </label>
+        <button onclick="toggleMessages('${id}')" class="ml-2 px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">Speichern</button>
 
        <!-- Nachrichtenbereich -->
-       ${d.status === 'angenommen' ? `
+      ${d.status === 'angenommen' && d.allowMessages === true ? `
         <div id="chat-${id}" class="mt-2 p-2 bg-gray-100 rounded">
           <strong>💬 Nachrichten für ${d.name}</strong>
-          <div id="chat-messages-${id}" class="mt-1 space-y-1 max-h-48 overflow-y-auto"></div>
+          <div id="chat-messages-${id}" class="mt-1 space-y-1 max-h-48 overflow-y-auto">Lade Nachrichten...</div>
         </div>
       ` : ''}
 
@@ -1012,7 +1018,7 @@ const docs = snapshot.docs.filter(doc => {
       }, 300);
     }
      // Nachrichten nur laden, wenn angenommen
-  if (d.status === 'angenommen') {
+  if (d.status === 'angenommen' && d.allowMessages === true) {
       // Lade Nachrichten in separatem try/catch, damit Fehler andere Hütten nicht blockieren
       (async () => {
         try {
@@ -1213,7 +1219,28 @@ async function ladeHutNachrichtenListe(hutId) {
     container.innerHTML = `<em>Fehler beim Laden der Nachrichten: ${err.message}</em>`;
   }
 }
+async function toggleMessages(hutId) {
+  const checkbox = document.getElementById(`allowMessages-${hutId}`);
+  const allow = checkbox.checked;
+  const chatDiv = document.getElementById(`chat-${hutId}`);
 
+  try {
+    await db.collection('eierhuetten').doc(hutId).update({ allowMessages: allow });
+    alert(`Nachrichtensystem ${allow ? 'aktiviert' : 'deaktiviert'}!`);
+    // Chatbereich ein-/ausblenden
+    if (chatDiv) chatDiv.style.display = allow ? 'block' : 'none';
+    
+    // Nachrichten laden, falls aktiviert
+    if (allow) {
+      ladeHutNachrichtenListe(hutId);
+    }
+  } catch (err) {
+    console.error('Fehler beim Aktualisieren von allowMessages:', err);
+    alert('Fehler beim Speichern der Einstellung.');
+    // Checkbox zurücksetzen
+    checkbox.checked = !allow;
+  }
+}
 // Nachricht löschen
 async function loescheHutNachricht(msgId, hutId) {
   if (!confirm('Willst du diese Nachricht wirklich löschen?')) return;
