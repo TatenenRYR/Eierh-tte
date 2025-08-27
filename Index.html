@@ -3910,39 +3910,57 @@ function toggleDetails(id) {
   }
 
     //Mail an Besitzer Funktionen:
-    function openMessagePopup(hutId, hutName) {
+let popupOpenTime = null;
+
+function openMessagePopup(hutId, hutName) {
   currentMsgHut = { hutId, hutName };
   document.getElementById("msgPopupTitle").innerText = `Nachricht an ${hutName}`;
   document.getElementById("msgInput").value = "";
+  document.getElementById("popupOverlay").style.display = "block";
   document.getElementById("msgPopup").style.display = "block";
+  popupOpenTime = new Date().getTime(); // Zeit merken
 }
 
 function closeMessagePopup() {
   document.getElementById("msgPopup").style.display = "none";
-}
+  document.getElementById("popupOverlay").style.display = "none";
+
 async function sendMessage() {
   const text = document.getElementById("msgInput").value.trim();
-  if (!text) {
-    showToast("❗ Nachricht darf nicht leer sein");
+  const now = new Date().getTime();
+  const hp = document.getElementById("hpField")?.value?.trim(); // Honeypot Feld
+
+  // Bot-Schutz prüfen
+  if (hp !== "") { 
+    alert("❌ Bot erkannt");
+    return;
+  }
+  if (now - popupOpenTime < 3000) { // mindestens 3 Sekunden warten
+    alert("❗ Bitte etwas länger warten, bevor du sendest.");
     return;
   }
 
+  if (!text) {
+    alert("❗ Nachricht darf nicht leer sein");
+    return;
+  }
+
+  // Firestore Nachricht speichern
   try {
     await db.collection("hutMessages").add({
       hutId: currentMsgHut.hutId,
       hutName: currentMsgHut.hutName,
-      senderName: username || "Unbekannt", // ✅ Username direkt verwenden
+      senderName: alias, // Alias wird jetzt korrekt verwendet
       message: text,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       answered: false,
       ownerReply: null
     });
-
+    alert("✅ Nachricht erfolgreich gesendet!");
     closeMessagePopup();
-    showToast("✅ Nachricht gesendet!");
   } catch (err) {
-    console.error("❌ Fehler beim Senden der Nachricht: " + err.message, err);
-    showToast("⚠️ Nachricht konnte nicht gesendet werden");
+    console.error("Fehler beim Senden:", err);
+    alert("❌ Nachricht konnte nicht gesendet werden.");
   }
 }
 
@@ -4157,6 +4175,7 @@ window.addEventListener("unhandledrejection", function (event) {
               width:300px; box-shadow:0 4px 10px rgba(0,0,0,0.3); border-radius:8px;">
     <h3 id="msgPopupTitle">Nachricht an ...</h3>
     <textarea id="msgInput" style="width:100%; height:100px; margin-bottom:10px; padding:5px;"></textarea>
+    <input type="text" id="hpField" style="display:none;">
     <br>
     <button onclick="sendMessage()" style="padding:5px 10px; cursor:pointer;">Senden</button>
     <button onclick="closeMessagePopup()" style="padding:5px 10px; cursor:pointer;">Abbrechen</button>
