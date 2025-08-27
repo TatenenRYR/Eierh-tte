@@ -627,6 +627,7 @@ async function rejectFoto(hutId, index) {
             ${['Ja','Nein'].map(o => `<option ${o===hut.sitzplaetze?'selected':''}>${o}</option>`).join('')}
           </select>
         </label>
+<div class="minimap" id="map-${hut.id}"></div>
 
         <!-- Nachrichtenbereich -->
         ${messagesHTML}
@@ -648,6 +649,44 @@ async function rejectFoto(hutId, index) {
       `;
 
       hutList.appendChild(el);
+
+      if (hut.location?.latitude && hut.location?.longitude) {
+        const map = L.map(`map-${hut.id}`, {
+          zoomControl: false,
+          dragging: true,
+          scrollWheelZoom: true,
+          doubleClickZoom: true,
+          boxZoom: true,
+          keyboard: true
+        }).setView([hut.location.latitude, hut.location.longitude], 13);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        const marker = L.marker([hut.location.latitude, hut.location.longitude], { draggable: true }).addTo(map);
+
+        marker.on('dragend', async (e) => {
+          const newPos = e.target.getLatLng();
+          const kommentar = prompt('Bitte Kommentar zur Standortänderung eingeben:');
+          if (kommentar === null) {
+            marker.setLatLng([hut.location.latitude, hut.location.longitude]);
+            return;
+          }
+          await db.collection('eierhuetten').doc(hut.id).update({
+            location: {
+              latitude: newPos.lat,
+              longitude: newPos.lng
+            }
+          });
+          await db.collection('eierhuetten').doc(hut.id).collection('log').add({
+            admin: currentUser.displayName || currentUser.email,
+            feld: 'location',
+            wert: `Lat: ${newPos.lat.toFixed(6)}, Lng: ${newPos.lng.toFixed(6)}`,
+            kommentar: kommentar,
+            zeitpunkt: new Date()
+          });
+          showNotification(`📍 Standort von "${hut.name}" wurde aktualisiert.`);
+        });
+      }
 
     } catch (err) {
       console.warn(`❌ Hütte konnte nicht gerendert werden: ${hut?.id || 'unbekannt'}`, err);
