@@ -974,15 +974,13 @@ const docs = snapshot.docs.filter(doc => {
         </div>
 
 
-        <!-- Nachrichtenbereich -->
-        ${d.status === 'angenommen' ? `
-          <div id="chat-${id}" class="mt-2 p-2 bg-gray-100 rounded">
-            <strong>💬 Nachrichten für ${d.name}</strong>
-            <div id="chat-messages-${id}" class="mt-1 space-y-1 max-h-48 overflow-y-auto"></div>
-            <textarea id="chat-input-${id}" class="w-full border p-1 mt-1 rounded" rows="2" placeholder="Antwort schreiben..."></textarea>
-            <button onclick="sendHutMessage('${id}')" class="mt-1 px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600">Senden</button>
-          </div>
-        ` : ''}
+       <!-- Nachrichtenbereich -->
+      ${d.status === 'angenommen' ? `
+        <div id="chat-${id}" class="mt-2 p-2 bg-gray-100 rounded">
+          <strong>💬 Nachrichten für ${d.name}</strong>
+          <div id="chat-messages-${id}" class="mt-1 space-y-1 max-h-48 overflow-y-auto"></div>
+        </div>
+      ` : ''}
 
 
         <!-- Mini-Map -->
@@ -1157,7 +1155,8 @@ function zeigeSupportFormularMitVorschlag(vorlage) {
   });
 }
 // Funktion zum Laden der Nachrichten für eine Hütte
-async function ladeHutNachrichten(hutId) {
+// Nachrichten laden und mit Löschfunktion anzeigen
+async function ladeHutNachrichtenListe(hutId) {
   const container = document.getElementById(`chat-messages-${hutId}`);
   if (!container) return;
   container.innerHTML = 'Lade Nachrichten...';
@@ -1165,7 +1164,7 @@ async function ladeHutNachrichten(hutId) {
   try {
     const snapshot = await db.collection('hutMessages')
       .where('hutId', '==', hutId)
-      .limit(20)
+      .orderBy('createdAt', 'desc')
       .get();
 
     if (snapshot.empty) {
@@ -1188,7 +1187,11 @@ async function ladeHutNachrichten(hutId) {
       msgDiv.style.fontSize = '0.85rem';
       msgDiv.style.marginBottom = '4px';
       msgDiv.innerHTML = `
-        <div><strong>📅 ${datum}</strong> | 👤 ${sender} | Status: ${answered}</div>
+        <div>
+          <strong>📅 ${datum}</strong> | 👤 ${sender} | Status: ${answered}
+          <button onclick="loescheHutNachricht('${doc.id}', '${hutId}')" 
+                  style="float:right; background:red; color:white; border:none; border-radius:3px; padding:0 5px; cursor:pointer;">Löschen</button>
+        </div>
         <div>💬 ${message}</div>
       `;
       container.appendChild(msgDiv);
@@ -1198,8 +1201,22 @@ async function ladeHutNachrichten(hutId) {
     container.innerHTML = '<em>Fehler beim Laden der Nachrichten.</em>';
   }
 }
+
+// Nachricht löschen
+async function loescheHutNachricht(msgId, hutId) {
+  if (!confirm('Willst du diese Nachricht wirklich löschen?')) return;
+
+  try {
+    await db.collection('hutMessages').doc(msgId).delete();
+    ladeHutNachrichtenListe(hutId); // Liste neu laden
+  } catch (err) {
+    console.error('Fehler beim Löschen der Nachricht:', err);
+    alert('Fehler beim Löschen der Nachricht.');
+  }
+}
+
 // Funktion zum Senden einer Nachricht
-async function sendHutMessage(hutId) {
+/*async function sendHutMessage(hutId) {
   const input = document.getElementById(`chat-input-${hutId}`);
   const text = input.value.trim();
   if (!text) return alert('Bitte zuerst eine Nachricht eingeben.');
@@ -1224,7 +1241,7 @@ async function sendHutMessage(hutId) {
     console.error('Fehler beim Senden der Nachricht:', err);
     alert('Fehler beim Senden der Nachricht.');
   }
-}
+}*/
 
 
 
