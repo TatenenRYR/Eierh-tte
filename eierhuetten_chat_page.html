@@ -984,6 +984,18 @@ const docs = snapshot.docs.filter(doc => {
           <div class="h-2 bg-green-500 rounded" style="width: 0%"></div>
         </div>
 
+
+        <!-- Nachrichtenbereich -->
+        ${d.status === 'angenommen' ? `
+          <div id="chat-${id}" class="mt-2 p-2 bg-gray-100 rounded">
+            <strong>💬 Nachrichten für ${d.name}</strong>
+            <div id="chat-messages-${id}" class="mt-1 space-y-1 max-h-48 overflow-y-auto"></div>
+            <textarea id="chat-input-${id}" class="w-full border p-1 mt-1 rounded" rows="2" placeholder="Antwort schreiben..."></textarea>
+            <button onclick="sendHutMessage('${id}')" class="mt-1 px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600">Senden</button>
+          </div>
+        ` : ''}
+
+
         <!-- Mini-Map -->
         <div id="${minimapId}" class="minimap h-40 mt-2 rounded border"></div>
       </div>
@@ -1011,6 +1023,10 @@ const docs = snapshot.docs.filter(doc => {
           });
         }
       }, 300);
+    }
+       // Nachrichten laden
+    if (d.status === 'angenommen') {
+      ladeHutNachrichten(id);
     }
   });
 }
@@ -1151,62 +1167,74 @@ function zeigeSupportFormularMitVorschlag(vorlage) {
     addMessage("⚠️ Es gab ein Problem beim Senden deiner Anfrage. Bitte versuche es später erneut.", "bot");
   });
 }
-async function ladeNachrichtenFuerMeineHuetten() {
-  const user = firebase.auth().currentUser;
-  if (!user) {
-    addMessage('⚠️ Du musst angemeldet sein, um deine Hütten-Nachrichten zu sehen.', 'bot');
-    return;
-  }
+// Funktion zum Laden der Nachrichten für eine Hütte
+async function ladeHutNachrichten(hutId) {
+  const container = document.getElementById(`chat-messages-${hutId}`);
+  if (!container) return;
+  container.innerHTML = 'Lade Nachrichten...';
 
   try {
-    // Zuerst: alle Hütten des Besitzers abrufen
-    const hutsSnapshot = await db.collection('eierhuetten')
-    .where('userId', '==', currentUser.uid)
-    .get();
-
-
-    if (hutsSnapshot.empty) {
-      addMessage('📭 Du hast noch keine Hütten angelegt.', 'bot');
-      return;
-    }
-
-    const hutIds = hutsSnapshot.docs.map(doc => doc.id);
-
-    // Dann: Nachrichten für diese Hütten abrufen
-    const msgSnapshot = await db.collection('hutMessages')
-      .where('hutId', 'in', hutIds)
+    const snapshot = await db.collection('hutMessages')
+      .where('hutId', '==', hutId)
       .orderBy('createdAt', 'desc')
       .limit(20)
       .get();
 
-    if (msgSnapshot.empty) {
-      addMessage('📭 Keine Nachrichten für deine Hütten vorhanden.', 'bot');
+    if (snapshot.empty) {
+      container.innerHTML = '<em>Keine Nachrichten vorhanden.</em>';
       return;
     }
 
-    addMessage('📨 Hier sind die letzten Nachrichten für deine Hütten:', 'bot');
-
-    msgSnapshot.forEach(doc => {
+    container.innerHTML = '';
+    snapshot.forEach(doc => {
       const t = doc.data();
       const datum = t.createdAt?.toDate().toLocaleString('de-DE') || '-';
-      const hutName = t.hutName || '(unbekannte Hütte)';
-      const message = t.message || '(leer)';
       const sender = t.senderName || 'Unbekannt';
+      const message = t.message || '(leer)';
       const answered = t.answered ? '✅ beantwortet' : '❌ offen';
 
-      addMessage(`
-        <div style="background:#f0f0f0; padding:10px; border-left:4px solid #10b981; margin-bottom:10px; font-size:0.9rem;">
-          <div><strong>🏡 ${hutName}</strong></div>
-          <div class="mt-1">📅 ${datum}</div>
-          <div class="mt-1">👤 Von: ${sender}</div>
-          <div class="mt-2">💬 ${message}</div>
-          <div class="mt-1 text-sm text-gray-600">Status: ${answered}</div>
-        </div>
-      `, 'bot', true);
+      const msgDiv = document.createElement('div');
+      msgDiv.style.background = '#fff';
+      msgDiv.style.borderLeft = '3px solid #10b981';
+      msgDiv.style.padding = '4px 8px';
+      msgDiv.style.fontSize = '0.85rem';
+      msgDiv.style.marginBottom = '4px';
+      msgDiv.innerHTML = `
+        <div><strong>📅 ${datum}</strong> | 👤 ${sender} | Status: ${answered}</div>
+        <div>💬 ${message}</div>
+      `;
+      container.appendChild(msgDiv);
     });
   } catch (err) {
-    console.error('❌ Fehler beim Laden der Hütten-Nachrichten:', err);
-    addMessage('❌ Fehler beim Abrufen der Nachrichten. Bitte später erneut versuchen.', 'bot');
+    console.error('Fehler beim Laden der Nachrichten für Hütte', hutId, err);
+    container.innerHTML = '<em>Fehler beim Laden der Nachrichten.</em>';
+  }
+}
+// Funktion zum Senden einer Nachricht
+async function sendHutMessage(hutId) {
+  const input = document.getElementById(`chat-input-${hutId}`);
+  const text = input.value.trim();
+  if (!text) return alert('Bitte zuerst eine Nachricht eingeben.');
+
+  const currentUser = firebase.auth().currentUser;
+  const senderName = currentUser?.displayName || currentUser?.email || 'Unbekannt';
+
+  try {
+    await db.collection('hutMessages').add({
+      hutId,
+      hutName: document.querySelector(`#chat-${hutId} strong`).innerText.replace('💬 Nachrichten für ', ''),
+      senderName,
+      message: text,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      answered: false,
+      ownerReply: null
+    });
+
+    input.value = '';
+    ladeHutNachrichten(hutId); // Chat neu laden
+  } catch (err) {
+    console.error('Fehler beim Senden der Nachricht:', err);
+    alert('Fehler beim Senden der Nachricht.');
   }
 }
 
