@@ -512,7 +512,165 @@ async function rejectFoto(hutId, index) {
       }
     });
   }*/
-  function renderHuts(list) {
+  async function renderHuts(list) {
+  hutList.innerHTML = '';
+
+  for (const hut of list) {
+    try {
+      const el = document.createElement('div');
+      el.className = 'bg-white p-4 rounded shadow space-y-2';
+
+      const fotos = Array.isArray(hut.fotos) ? hut.fotos : [];
+
+      // Logs laden mit try/catch
+      let logs = [];
+      try {
+        const logSnap = await db.collection('eierhuetten')
+          .doc(hut.id)
+          .collection('log')
+          .orderBy('zeitpunkt', 'desc')
+          .limit(20)
+          .get();
+        logs = logSnap.docs.map(doc => doc.data());
+      } catch (err) {
+        console.error(`❌ Fehler beim Laden der Logs für Hütte ${hut.id}:`, err);
+      }
+
+      // Nachrichten laden mit try/catch
+      let messagesHTML = '<p class="text-sm text-gray-500 italic">💬 Nachrichten deaktiviert.</p>';
+      if (hut.allowMessages) {
+        try {
+          const msgSnap = await db.collection('hutMessages')
+            .where('hutId', '==', hut.id)
+            .orderBy('createdAt', 'desc')
+            .limit(50)
+            .get();
+
+          const normale = [];
+          const archivierte = [];
+
+          msgSnap.forEach(doc => {
+            const m = doc.data();
+            const datum = m.createdAt?.toDate().toLocaleString('de-DE') || '-';
+            const msgHTML = `
+              <div class="p-2 bg-white border rounded text-sm flex justify-between items-center">
+                <div>
+                  <div><strong>${m.senderName || 'Unbekannt'}</strong> – ${datum}</div>
+                  <div class="mt-1">${m.message || ''}</div>
+                </div>
+                <div class="space-x-2">
+                  <button onclick="deleteMessage('${doc.id}')" 
+                    class="px-2 py-1 bg-red-500 text-white rounded text-xs">🗑️</button>
+                  ${!m.archived ? `
+                    <button onclick="archiveMessage('${doc.id}')" 
+                      class="px-2 py-1 bg-yellow-500 text-white rounded text-xs">📦</button>
+                  ` : ''}
+                </div>
+              </div>
+            `;
+            if (m.archived) archivierte.push(msgHTML);
+            else normale.push(msgHTML);
+          });
+
+          messagesHTML = `
+            <div class="mt-4 p-2 bg-gray-50 border rounded">
+              <strong>💬 Nachrichten</strong>
+              <div class="mt-2 space-y-2 max-h-60 overflow-y-auto">
+                ${normale.length ? normale.join('') : '<p class="text-gray-500">📭 Keine Nachrichten.</p>'}
+              </div>
+            </div>
+            <div class="mt-4 p-2 bg-gray-100 border rounded">
+              <strong>📦 Archivierte Nachrichten</strong>
+              <div class="mt-2 space-y-2 max-h-40 overflow-y-auto">
+                ${archivierte.length ? archivierte.join('') : '<p class="text-gray-500">📭 Keine archivierten Nachrichten.</p>'}
+              </div>
+            </div>
+          `;
+        } catch (err) {
+          console.error(`❌ Fehler beim Laden der Nachrichten für Hütte ${hut.id}:`, err);
+          messagesHTML = '<p class="text-sm text-red-500">❌ Fehler beim Laden der Nachrichten.</p>';
+        }
+      }
+
+      // Haupt-HTML für Hütte
+      el.innerHTML = `
+        <input class="text-xl font-bold w-full mb-2" 
+          value="${hut.name || ''}" 
+          onchange="updateField('${hut.id}', 'name', this.value)">
+
+        <!-- Status -->
+        <label>Status:
+          <select onchange="updateField('${hut.id}', 'status', this.value)" class="w-full mb-2">
+            ${['offen','angenommen','abgelehnt'].map(s => `<option ${s===hut.status?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </label>
+
+        <!-- Strom -->
+        <label>Strom:
+          <select onchange="updateField('${hut.id}', 'strom', this.value)" class="w-full mb-2">
+            ${['Ja','Nein'].map(o => `<option ${o===hut.strom?'selected':''}>${o}</option>`).join('')}
+          </select>
+        </label>
+
+        <!-- Sitzplätze -->
+        <label>Sitzplätze:
+          <select onchange="updateField('${hut.id}', 'sitzplaetze', this.value)" class="w-full mb-2">
+            ${['Ja','Nein'].map(o => `<option ${o===hut.sitzplaetze?'selected':''}>${o}</option>`).join('')}
+          </select>
+        </label>
+
+        <!-- Nachrichtenbereich -->
+        ${messagesHTML}
+
+        <!-- Logs -->
+        <details class="mt-3">
+          <summary>Bearbeitungs-Log (${logs.length})</summary>
+          <ul class="text-xs max-h-48 overflow-auto">
+            ${logs.map(log => `
+              <li><strong>${log.admin}</strong> änderte <em>${log.feld}</em> 
+              auf <code>${log.wert}</code> 
+              am ${new Date(log.zeitpunkt?.seconds * 1000 || Date.now()).toLocaleString()}</li>
+            `).join('')}
+          </ul>
+        </details>
+
+        <button onclick="deleteHut('${hut.id}')" 
+          class="bg-red-600 text-white px-2 py-1 rounded mt-3 w-full">Hütte löschen</button>
+      `;
+
+      hutList.appendChild(el);
+
+    } catch (err) {
+      console.warn(`❌ Hütte konnte nicht gerendert werden: ${hut?.id || 'unbekannt'}`, err);
+      const fallback = document.createElement('div');
+      fallback.className = 'bg-red-100 text-red-800 p-2 rounded mb-2';
+      fallback.textContent = `⚠️ Hütte konnte nicht geladen werden (ID: ${hut?.id || 'unbekannt'})`;
+      hutList.appendChild(fallback);
+    }
+  }
+}
+
+// Hilfsfunktionen
+async function deleteMessage(id) {
+  try {
+    await db.collection("hutMessages").doc(id).delete();
+    alert("🗑️ Nachricht gelöscht");
+    location.reload();
+  } catch (err) {
+    console.error("❌ Fehler beim Löschen:", err);
+  }
+}
+
+async function archiveMessage(id) {
+  try {
+    await db.collection("hutMessages").doc(id).update({ archived: true });
+    alert("📦 Nachricht archiviert");
+    location.reload();
+  } catch (err) {
+    console.error("❌ Fehler beim Archivieren:", err);
+  }
+}
+ /* function renderHuts(list) {
   hutList.innerHTML = '';
   list.forEach(hut => {
     try {
@@ -680,7 +838,7 @@ if (hut.allowMessages) ladeNachrichten(hut.id);
       hutList.appendChild(fallback);
     }
   });
-  }
+  }*/
   let allHuts = [];
 let filteredHuts = [];
 let currentPage = 1;
