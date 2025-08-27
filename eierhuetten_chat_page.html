@@ -1163,23 +1163,26 @@ function zeigeSupportFormularMitVorschlag(vorlage) {
     addMessage("⚠️ Es gab ein Problem beim Senden deiner Anfrage. Bitte versuche es später erneut.", "bot");
   });
 }
-// Nachrichten laden und mit Löschfunktion anzeigen
+// Nachrichten für eine Hütte laden und als Liste anzeigen
 async function ladeHutNachrichtenListe(hutId) {
   const container = document.getElementById(`chat-messages-${hutId}`);
   if (!container) return;
+
   container.innerHTML = 'Lade Nachrichten...';
 
   try {
+    // Firestore-Abfrage: alle Nachrichten für diese Hütte, sortiert nach Datum absteigend
     const snapshot = await db.collection('hutMessages')
       .where('hutId', '==', hutId)
-      .orderBy('createdAt', 'desc') // ✅ Firestore-Index erforderlich
+      .orderBy('createdAt', 'desc') // 🔹 Firestore Index erforderlich!
       .get();
 
-    container.innerHTML = '';
     if (snapshot.empty) {
       container.innerHTML = '<em>Keine Nachrichten vorhanden.</em>';
       return;
     }
+
+    container.innerHTML = ''; // vorherige Meldung entfernen
 
     snapshot.forEach(doc => {
       const t = doc.data();
@@ -1197,13 +1200,14 @@ async function ladeHutNachrichtenListe(hutId) {
       msgDiv.innerHTML = `
         <div>
           <strong>📅 ${datum}</strong> | 👤 ${sender} | Status: ${answered}
-          <button onclick="loescheHutNachricht('${doc.id}', '${hutId}')" 
+          <button onclick="loescheHutNachricht('${doc.id}', '${hutId}')"
                   style="float:right; background:red; color:white; border:none; border-radius:3px; padding:0 5px; cursor:pointer;">Löschen</button>
         </div>
         <div>💬 ${message}</div>
       `;
       container.appendChild(msgDiv);
     });
+
   } catch (err) {
     console.error('Fehler beim Laden der Nachrichten für Hütte', hutId, err);
     container.innerHTML = `<em>Fehler beim Laden der Nachrichten: ${err.message}</em>`;
@@ -1216,7 +1220,8 @@ async function loescheHutNachricht(msgId, hutId) {
 
   try {
     await db.collection('hutMessages').doc(msgId).delete();
-    ladeHutNachrichtenListe(hutId); // Liste neu laden
+    // Nachrichtenliste neu laden
+    ladeHutNachrichtenListe(hutId);
   } catch (err) {
     console.error('Fehler beim Löschen der Nachricht:', err);
     alert('Fehler beim Löschen der Nachricht.');
