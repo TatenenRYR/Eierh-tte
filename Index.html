@@ -726,7 +726,7 @@ footer a:hover {
     let cluster = L.markerClusterGroup();
     let huts = [], spielplaetze = [], selected = [];    let routingLine, progressLine, navInterval;
     let groupMarkers = {};
-    let roomId = "default";
+    let roomId = null;
    //let alias = "User" + Math.floor(Math.random() * 1000);
     let tourStartTime, tourDistance = 0, challengeProgress = 0;
     let compassRotation = 0;
@@ -1383,14 +1383,23 @@ function getRouteBearingAt(latlng, routePoints) {
 
 let lastLatLng = null;
 let lastBearing = 0;
+let hasCenteredOnUser = false; // globale Variable
+
 function updateUserMarker(gpsLatLng) {
   if (!currentRoutePath || currentRoutePath.length < 2) {
     // Kein Routing aktiv → normalen GPS-Marker setzen
     if (!userMarker) {
       userMarker = L.marker(gpsLatLng, { icon: getUserIcon() }).addTo(map);
+
+      // 👉 nur beim ersten Setzen zentrieren
+      if (!hasCenteredOnUser) {
+        map.setView(gpsLatLng, 17);
+        hasCenteredOnUser = true;
+      }
     } else {
       userMarker.setLatLng(gpsLatLng);
     }
+
     if (follow) map.setView(gpsLatLng, 17, { animate: true });
     lastLatLng = gpsLatLng;
     return;
@@ -1402,13 +1411,19 @@ function updateUserMarker(gpsLatLng) {
   // 👉 Schritt 2: Marker auf Route setzen
   if (!userMarker) {
     userMarker = L.marker(snapped, { icon: getUserIcon() }).addTo(map);
+
+    // 👉 auch hier nur einmal zentrieren
+    if (!hasCenteredOnUser) {
+      map.setView(snapped, 18);
+      hasCenteredOnUser = true;
+    }
   } else {
     userMarker.setLatLng(snapped);
   }
 
   // 👉 Schritt 3: Karte folgen lassen
   if (follow) {
-    map.setView(snapped, 18, { animate: true }); // extra nah ran
+    map.setView(snapped, 18, { animate: true });
   }
 
   // 👉 Schritt 4: Richtung bestimmen
@@ -1424,6 +1439,7 @@ function updateUserMarker(gpsLatLng) {
   updateNavigationBanner(snapped);
   checkOffRoute(gpsLatLng);
 }
+
 
 // 🔄 Marker mit Richtung zeichnen
 function setUserMarker(latlng, bearing) {
@@ -1734,7 +1750,7 @@ function joinRoom() {
 }
 
 function leaveRoom() {
-  roomId = "default";
+  roomId = null;
   localStorage.removeItem("lastRoom");
   showToast("🚪 Raum verlassen");
 
@@ -1777,6 +1793,7 @@ function leaveRoom() {
 }*/
     // Aktualisiert die eigene Position in Firebase
     function updateGroup() {
+      if(!roomId) return;
   const now = Date.now();
 
   // 1. Eigene Position speichern
@@ -1840,6 +1857,7 @@ function leaveRoom() {
 
     // Hört auf andere Gruppenmitglieder
     function listenGroup() {
+      if(!roomId) return;
   try {
     db.collection("live").where("room", "==", roomId).onSnapshot(snap => {
       const now = Date.now();
