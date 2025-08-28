@@ -1696,7 +1696,7 @@ function getUserIcon() {
 
   if (!toggleDiv || !roomBox || !roomBtn) return;
 
-  if (roomId && roomId !== "default") {
+  if (roomId && roomId !== null) {
     roomBox.style.display = "none";
     roomBtn.textContent = "🚪 Raum verlassen";
     roomBtn.onclick = leaveRoom;
@@ -1713,7 +1713,7 @@ function updateRoomUI() {
 
   if (!roomBox || !roomBtn || !status) return;
 
-  if (roomId && roomId !== "default") {
+  if (roomId) {
     // Nutzer ist in einem Raum
     roomBox.style.display = "none";
     roomBtn.textContent = "🚪 Raum verlassen";
@@ -1761,36 +1761,7 @@ function leaveRoom() {
   groupMarkers = {};
   updateRoomUI();
 }
-/*function toggleRoom() {
-  const box = document.getElementById("roomBox");
-  box.style.display = box.style.display === "none" ? "block" : "none";
-}
 
-function joinRoom() {
-  const id = document.getElementById("roomId").value.trim();
-  if (id) {
-    roomId = id;
-    localStorage.lastRoom = id;
-    document.getElementById("roomStatus").style.display = "block";
-    document.getElementById("roomStatus").innerText = "👥 Raum: " + roomId;
-    showToast("👥 Betrete Raum " + id);
-    listenGroup();
-    updateRoomUI();
-  }
-}
-
-function leaveRoom() {
-  roomId = "default";
-  localStorage.removeItem("lastRoom");
-  document.getElementById("roomStatus").style.display = "none";
-  showToast("🚪 Raum verlassen");
-
-  for (const id in groupMarkers) {
-    map.removeLayer(groupMarkers[id]);
-  }
-  groupMarkers = {};
-  updateRoomUI();
-}*/
     // Aktualisiert die eigene Position in Firebase
     function updateGroup() {
       if(!roomId) return;
@@ -2293,12 +2264,12 @@ focusOnUserMarker();
         if (userMarker && map && follow) {
           map.flyTo(userMarker.getLatLng(), 17, { animate: true });
         }
-
+        if(roomId){
         db.collection("rooms").doc(roomId).set({
           navActive: true,
           navStartedAt: Date.now()
         }, { merge: true });
-
+        }
         document.querySelector("button[onclick='toggleFollow()']").style.display = "none";
       })
       .catch(err => {
@@ -2311,112 +2282,6 @@ focusOnUserMarker();
   }
 }
 
-
-    
-    
-    /*function startRoute() {
-  try {
-    if (!userMarker || !Array.isArray(selected) || selected.length === 0) {
-      showToast("❗ Bitte mindestens eine Hütte auswählen");
-      return;
-    }
-
-    const userPos = userMarker?.getLatLng();
-// 🧹 Vorherige Linien entfernen, wenn vorhanden
-    clearRouteLines();
-if (routingLine) {
-  map.removeLayer(routingLine);
-  routingLine = null;
-}
-if (progressLine) {
-  map.removeLayer(progressLine);
-  progressLine = null;
-}
-    
-    if (navInterval) {
-  clearInterval(navInterval);
-  navInterval = null;
-    }
-    
-
-    if (routingLine) map.removeLayer(routingLine);
-    if (progressLine) map.removeLayer(progressLine);
-
-    speak("Navigation gestartet. Viel Spaß!");
-    showNavBanner("Navigation gestartet. Viel Spaß!");
-    tourStartTime = Date.now();
-    tourDistance = 0;
-    challengeProgress = 0;
-    currentHutIndex = 0;
-
-    const coords = [
-      [userMarker.getLatLng().lng, userMarker.getLatLng().lat],
-      ...selected.map(h => [h.lng, h.lat])
-    ];
-
-    fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
-      method: "POST",
-      headers: {
-        "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ coordinates: coords })
-    })
-      .then(r => r.json())
-      .then(data => {
-        const points = data.features?.[0]?.geometry?.coordinates?.map(p => [p[1], p[0]]);
-        if (!points || points.length < 2) {
-          showToast("⚠️ Route unvollständig");
-          return;
-        }
-
-        routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
-        progressLine = L.polyline([], { color: "#ccc", weight: 4 }).addTo(map);
-        //map.fitBounds(routingLine.getBounds(), { padding: [30, 30] });
-
-        routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
-progressLine = L.polyline([], { color: "#ccc", weight: 4 }).addTo(map);
-progressLine.setStyle({ color: "#00f" }); // Fortgeschrittener Teil blau statt grau
-        if (userPos) {
-  map.setView(userPos, 17); // Zoom-Level anpassen nach Wunsch
-        }
-        
-        currentRoutePath = [...points];
-        navInterval = setInterval(navLoop, 10000);
-        updateSelectedList();
-        document.getElementById("startBtn").style.display = "none";
-document.getElementById("stopBtn").style.display = "inline-block";
-        follow = true;
-
-        if (userMarker && follow) {
-  const ll = userMarker.getLatLng();
-  map.setView(ll, 17); // oder dein Wunsch-Zoom
-  map.panBy([0, 100], { animate: true }); // nach unten verschieben für Kompass/RouteInfo
-        }
-        
-orientationListenerActive = true;
-enableCompassRotation();
-        saveRouteToLocal(); // 💾 speichert Route
-        showDashboardAlert();
-starteNavigationPfeil();
-
-        //speichere status in firebase für Raumsyncro
-        db.collection("rooms").doc(roomId).set({
-  navActive: true,
-  navStartedAt: Date.now()
-}, { merge: true });
-
-        
-        document.querySelector("button[onclick='toggleFollow()']").style.display = "none";
-      })
-      .catch(err => {
-        console.warn("❌ Routing-Fehler:", err);
-        showToast("❗ Routenberechnung fehlgeschlagen");
-      });
-  } catch (err) {
-    console.warn("❌ Fehler in startRoute():", err);
-  }
-}*/
 
     // Überspringt aktuelle Hütte
     function skipHut() {
@@ -2460,10 +2325,11 @@ function stopNavigation() {
 setInstagramButtonActive(true);
   toggleSidebar(true);
   //firebase  Raum
-  db.collection("rooms").doc(roomId).set({
-  navActive: false
-}, { merge: true });
-
+  if(roomID){
+    db.collection("rooms").doc(roomId).set({
+    navActive: false
+  }, { merge: true });
+  }
   // UI-Elemente zurücksetzen
   const followBtn = document.querySelector("button[onclick='toggleFollow()']");
   if (followBtn) followBtn.style.display = "inline-block";
@@ -2958,6 +2824,7 @@ function getVisualNavigationHint(angle, dist, name = "") {
     /////////////////////////////////////////
 
 function saveRouteToLocal() {
+  if(!roomId) return;
   if (!Array.isArray(selected) || selected.length === 0) return;
   const key = `savedRoute_${roomId}`;
   localStorage.setItem(key, JSON.stringify(selected));
@@ -2965,6 +2832,7 @@ function saveRouteToLocal() {
 }
 
 function loadRouteFromLocal() {
+  if(!roomId) return;
   const key = `savedRoute_${roomId}`;
   const data = localStorage.getItem(key);
   if (!data) return;
@@ -3443,7 +3311,7 @@ try {
 
 
       const lastRoom = localStorage.lastRoom;
-if (lastRoom && lastRoom !== "default") {
+if (lastRoom && lastRoom !== null) {
   setTimeout(() => {
     if (confirm(`👥 Du warst zuletzt im Raum "${lastRoom}". Wieder beitreten?`)) {
       roomId = lastRoom;
@@ -3452,7 +3320,7 @@ if (lastRoom && lastRoom !== "default") {
       listenGroup();
       showToast(`👥 Raum "${lastRoom}" wieder beigetreten`);
     } else {
-      roomId = "default";
+      roomId = null;
     }
     updateRoomUI(); // ✅ Immer nach Entscheidung aufrufen!
   }, 500); // kleine Verzögerung für bessere User-Experience
@@ -3460,31 +3328,32 @@ if (lastRoom && lastRoom !== "default") {
   updateRoomUI(); // Falls kein gespeicherter Raum
 }
 
-      
-db.collection("rooms").doc(roomId).onSnapshot(doc => {
-  const data = doc.data();
-  if (!data) return;
-
-  const navState = !!data.navActive;
-
-  // ⛔ Keine Änderung → nichts tun
-  if (navState === lastNavActiveState){}else{
-
-  // ✅ Änderung erkannt → aktualisieren
-  lastNavActiveState = navState;
-
-  if (navState) {
-   // speak("⏱️ Gruppentour gestartet");
-    if (!navInterval) startRoute();
-  } else {
-   // speak("⛔ Gruppentour gestoppt");
-    if (navInterval) stopNavigation();
-  }
-  }
-});
+if(roomID){
+  db.collection("rooms").doc(roomId).onSnapshot(doc => {
+    const data = doc.data();
+    if (!data) return;
+  
+    const navState = !!data.navActive;
+  
+    // ⛔ Keine Änderung → nichts tun
+    if (navState === lastNavActiveState){}else{
+  
+    // ✅ Änderung erkannt → aktualisieren
+    lastNavActiveState = navState;
+  
+    if (navState) {
+     // speak("⏱️ Gruppentour gestartet");
+      if (!navInterval) startRoute();
+    } else {
+     // speak("⛔ Gruppentour gestoppt");
+      if (navInterval) stopNavigation();
+    }
+    }
+  });
+}
 const roomToggle = document.getElementById("roomToggle");
 if (roomToggle) {
-  roomToggle.style.display = roomId === "default" ? "block" : "none";
+  roomToggle.style.display = roomId === null ? "block" : "none";
 }
       
       //Sprache abrufen
