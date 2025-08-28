@@ -259,6 +259,8 @@ async function submitNewHutAdmin() {
         showNotification('🔄 Live-Update: Hüttendaten wurden aktualisiert.');
         loadHuts();
       });
+      
+        initLiveNewHuts();
     }
   });
 
@@ -300,11 +302,10 @@ async function submitNewHutAdmin() {
     renderStats(huts);
   }*/
   async function loadHuts() {
-  const snapshot = await db.collection('eierhuetten').orderBy('name').get();
-  allHuts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  currentPage = 1;
-  renderPage(currentPage);
-    renderNewEntries(allHuts);
+    const snapshot = await db.collection('eierhuetten').orderBy('name').get();
+    allHuts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    currentPage = 1;
+    renderPage(currentPage);
   }
 
   function renderStats(list) {
@@ -1366,102 +1367,22 @@ function uploadFoto(input, hutId) {
     showNotification('❌ Fehler beim Löschen der Hütte.', 'bot');
   });
 }
-/*async function deleteHut(id) {
-  if (!confirm('Möchtest du diese Hütte wirklich löschen?')) return;
-
-  db.collection('eierhuetten').doc(id).get().then(doc => {
-    if (!doc.exists) {
-      showNotification('❌ Hütte nicht gefunden.', 'bot');
-      return;
-    }
-
-    const hut = doc.data();
-
-    // Prüfen, ob Abo existiert
-    if (hut.paypalSubscriptionId) {
-      showNotification('🔄 Kündige PayPal-Abo...', 'bot');
-      console.log('➡️ Sende Abo-Kündigung für:', hut.paypalSubscriptionId);
-
-      // Anfrage an HTTP-Cloud-Function (onRequest)
-      fetch('https://us-central1-eierhuettentour.cloudfunctions.net/cancelPaypalSubscription', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({ subscriptionId: hut.paypalSubscriptionId })
-})
-.then(async response => {
-  if (!response.ok) {
-    // Versuche Fehlerinhalt zu lesen
-    let errorText = await response.text();
-    try {
-      const errorJson = JSON.parse(errorText);
-      throw new Error(errorJson.error || 'Unbekannter Fehler bei Kündigung');
-    } catch {
-      throw new Error(errorText);
-    }
-  }
-
-  // JSON auslesen, wenn Status OK
-  const result = await response.json();
-  if (result.success) {
-    showNotification('✅ Abo erfolgreich gekündigt.', 'bot');
-    console.log('✅ Kündigung erfolgreich');
-
-    // Danach Hütte löschen
-    db.collection('eierhuetten').doc(id).delete().then(() => {
-      showNotification('🗑️ Hütte gelöscht.', 'bot');
-      korrigiereFehlendeAbos().then(() => showMyHuts());
-    });
-  } else {
-    console.error('❌ Fehler bei Kündigung:', result.error || result);
-    showNotification('❌ Fehler bei Kündigung: ' + (result.error || 'Unbekannt'), 'bot');
-  }
-})
-.catch(err => {
-  console.error('❌ Fehler bei Kündigung:', err.message || err);
-  showNotification('❌ Fehler bei Kündigung: ' + (err.message || 'Unbekannt'), 'bot');
-});
-
-
-    } else {
-      // Kein Abo → direkt löschen
-      db.collection('eierhuetten').doc(id).delete().then(() => {
-        showNotification('🗑️ Hütte gelöscht.', 'bot');
-        loadHuts();
+// Live-Update für neue Hütten
+function initLiveNewHuts() {
+  db.collection('eierhuetten')
+    .where('status', '==', 'offen')
+    .onSnapshot(snapshot => {
+      const neue = [];
+      snapshot.forEach(doc => {
+        neue.push({ id: doc.id, ...doc.data() });
       });
-    }
-  }).catch(err => {
-    console.error('❌ Fehler beim Abrufen der Hütte:', err.message || err);
-    showNotification('❌ Fehler beim Löschen der Hütte.', 'bot');
-  });
+      renderNewEntries(neue);
+      showNotification('🔄 Live-Update: Neue Eintragungen wurden aktuallisiert.');
+    }, err => {
+      console.error("❌ Fehler beim Live-Update der neuen Hütten:", err);
+    });
 }
-*/
 
-
-  /*async function deleteHut(id, name) {
-    // Mathe-Aufgabe generieren
-    const a = Math.floor(Math.random() * 10) + 1;
-    const b = Math.floor(Math.random() * 10) + 1;
-    const answer = a + b;
-
-    const userAnswer = prompt(`Bitte rechne zur Bestätigung: ${a} + ${b} = ?`);
-    if (userAnswer === null) return;
-    if (parseInt(userAnswer) !== answer) {
-      alert('Falsche Antwort. Die Hütte wird nicht gelöscht.');
-      return;
-    }
-
-    if (!confirm(`Soll die Hütte "${name}" wirklich gelöscht werden?`)) return;
-
-    try {
-      await db.collection('eierhuetten').doc(id).delete();
-      showNotification(`Hütte "${name}" wurde gelöscht.`);
-      loadHuts();
-    } catch (e) {
-      alert('Fehler beim Löschen der Hütte: ' + e.message);
-    }
-  }*/
 function renderNewEntries(list) {
   const neueListe = document.getElementById("neueListe");
   const neue = list.filter(h => h.status === "offen");
