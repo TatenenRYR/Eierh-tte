@@ -1706,6 +1706,113 @@ function getUserIcon() {
     roomBtn.onclick = toggleRoom;
   }
 }*/
+    // Hütten Room Managment
+function addRoomHut(lat, lng, name = "Hütte") {
+  if (!roomId) {
+    showToast("❌ Kein Raum gewählt");
+    return;
+  }
+
+  const hutId = "hut_" + Date.now();
+
+  const hut = {
+    id: hutId,
+    lat,
+    lng,
+    name
+  };
+
+  db.collection("rooms").doc(roomId).update({
+    huts: firebase.firestore.FieldValue.arrayUnion(hut)
+  }).then(() => {
+    showToast("✅ Hütte hinzugefügt");
+  }).catch(err => {
+    console.error("❌ Fehler beim Hinzufügen:", err);
+  });
+}
+function removeRoomHut(hut) {
+  if (!roomId) return;
+
+  db.collection("rooms").doc(roomId).update({
+    huts: firebase.firestore.FieldValue.arrayRemove(hut)
+  }).then(() => {
+    showToast("🗑️ Hütte entfernt");
+  }).catch(err => {
+    console.error("❌ Fehler beim Entfernen:", err);
+  });
+}
+async function removeRoomHutById(hutId) {
+  if (!roomId) return;
+
+  const roomRef = db.collection("rooms").doc(roomId);
+  const snap = await roomRef.get();
+  if (!snap.exists) return;
+
+  const data = snap.data();
+  const updated = (data.huts || []).filter(h => h.id !== hutId);
+
+  roomRef.update({ huts: updated });
+}
+function updateRoomHuts() {
+  if (!roomId) return;
+
+  db.collection("rooms").doc(roomId).get().then(doc => {
+    if (!doc.exists) return;
+    const huts = doc.data().huts || [];
+
+    // alte Hüttenmarker entfernen
+    Object.keys(groupMarkers).forEach(uid => {
+      if (groupMarkers[uid]?.hut) {
+        map.removeLayer(groupMarkers[uid]);
+        delete groupMarkers[uid];
+      }
+    });
+
+    // neue Hüttenmarker setzen
+    huts.forEach(hut => {
+      if (!groupMarkers[hut.id]) {
+        const marker = L.marker([hut.lat, hut.lng], { icon: huettenIcon })
+          .addTo(map)
+          .bindPopup(`🏠 ${hut.name}`);
+        marker.hut = true; // Flag damit wir unterscheiden können
+        groupMarkers[hut.id] = marker;
+      } else {
+        groupMarkers[hut.id].setLatLng([hut.lat, hut.lng]);
+      }
+    });
+  });
+}
+function listenRoomHuts() {
+  if (!roomId) return;
+
+  return db.collection("rooms").doc(roomId).onSnapshot(doc => {
+    const huts = doc.data()?.huts || [];
+
+    // alte Hüttenmarker entfernen
+    Object.keys(groupMarkers).forEach(uid => {
+      if (groupMarkers[uid]?.hut) {
+        map.removeLayer(groupMarkers[uid]);
+        delete groupMarkers[uid];
+      }
+    });
+
+    // neue Hüttenmarker setzen
+    huts.forEach(hut => {
+      if (!groupMarkers[hut.id]) {
+        const marker = L.marker([hut.lat, hut.lng], { icon: huettenIcon })
+          .addTo(map)
+          .bindPopup(`🏠 ${hut.name}`);
+        marker.hut = true;
+        groupMarkers[hut.id] = marker;
+      } else {
+        groupMarkers[hut.id].setLatLng([hut.lat, hut.lng]);
+      }
+    });
+  });
+}
+
+
+
 function updateRoomUI() {
   const roomBox = document.getElementById("roomBox");
   const roomBtn = document.getElementById("roomMainBtn");
@@ -1738,13 +1845,17 @@ function toggleRoomBox() {
   }
 }
 
+let hutsUnsub = null; // Speicher für Listener-Stopfunktion
+
 function joinRoom() {
   const id = document.getElementById("roomId").value.trim();
   if (id) {
     roomId = id;
     localStorage.lastRoom = id;
     showToast("👥 Betrete Raum " + id);
-    listenGroup();
+
+    listenGroup();      // 👤 User-Positionen im Raum
+    listenRoomHuts();   // 🏠 Hütten im Raum
     updateRoomUI();
   }
 }
@@ -1754,13 +1865,21 @@ function leaveRoom() {
   localStorage.removeItem("lastRoom");
   showToast("🚪 Raum verlassen");
 
-  // Alle Marker entfernen
+  // Alle Marker entfernen (User + Hütten)
   for (const id in groupMarkers) {
     map.removeLayer(groupMarkers[id]);
   }
   groupMarkers = {};
+
+  // Hütten-Listener beenden
+  if (hutsUnsub) {
+    hutsUnsub();
+    hutsUnsub = null;
+  }
+
   updateRoomUI();
 }
+
 
     // Aktualisiert die eigene Position in Firebase
     function updateGroup() {
@@ -3134,6 +3253,7 @@ function toggleSelect(type, id) {
       selected.splice(idx, 1);
       showToast(`${place.name || type} entfernt`);
       newLabel = "✅ Hinzufügen";
+      removeRoomHutById(id);
     } else {
       // Neu hinzufügen
       selected.push({
@@ -3145,6 +3265,7 @@ function toggleSelect(type, id) {
       });
       showToast(`${place.name || type} hinzugefügt`);
       newLabel = "❌ Entfernen";
+      addRoomHut(place.lat, place.lng, place.name);
     }
 
     updateSelectedList();
