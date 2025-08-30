@@ -1727,16 +1727,19 @@ function addRoomHut(lat, lng, name = "Hütte") {
 }
 
 async function removeRoomHutById(hutId) {
-  if (!roomId) return;
+  if (!roomId) {
+    showToast("❌ Kein Raum gewählt");
+    return;
+  }
 
   const ref = db.collection("rooms").doc(roomId);
   const snap = await ref.get();
   if (!snap.exists) return;
 
   const data = snap.data();
-  const updated = (data.huts || []).filter(h => h.id !== hutId);
+  const updatedHuts = (data.huts || []).filter(h => h.id !== hutId);
 
-  ref.update({ huts: updated })
+  ref.update({ huts: updatedHuts })
     .then(() => showToast("🗑️ Hütte entfernt"))
     .catch(err => console.error("❌ Fehler beim Entfernen der Hütte:", err));
 }
@@ -3097,15 +3100,27 @@ function updateSelectedList() {
   });
 }
 function removeSelected(idx) {
-  selected.splice(idx, 1);
-  updateSelectedList();
-  if (selected.length === 0) {
-    stopNavigation();
-    showToast("🛑 Navigation gestoppt – keine Hütte mehr ausgewählt");
-  }
-  // Falls Navigation aktiv ist -> Route neu berechnen
-  if (navInterval) {
-    startRoute();
+  const item = selected[idx];
+
+  // Prüfen ob es eine Hütte aus Firebase ist
+  if (item.id && roomId) {
+    // 👉 Hütte per Firestore-Update entfernen
+    removeRoomHutById(item.id);
+  } else {
+    // 👉 Lokales Entfernen (z. B. Spielplatz)
+    selected.splice(idx, 1);
+    updateSelectedList();
+
+    // 🚦 Navigation nur beenden, wenn wirklich Navigation aktiv ist
+    if (selected.length === 0 && navInterval) {
+      stopNavigation();
+      showToast("🛑 Navigation gestoppt – keine Hütte mehr ausgewählt");
+    }
+
+    // Falls Navigation aktiv ist -> Route neu berechnen
+    if (navInterval) {
+      startRoute();
+    }
   }
 }
   /*  function updateSelectedList() {
