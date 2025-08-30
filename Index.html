@@ -1786,19 +1786,30 @@ function updateRoomHuts() {
 function listenRoomHuts() {
   if (!roomId) return;
 
-  // Falls schon ein alter Listener läuft → stoppen
   if (hutsUnsub) hutsUnsub();
 
   hutsUnsub = db.collection("rooms").doc(roomId)
     .onSnapshot(doc => {
-      if (!doc.exists) {
-        console.warn("⚠️ Kein Room-Dokument gefunden:", roomId);
-        return;
-      }
+      if (!doc.exists) return;
 
       const huts = doc.data().huts || [];
 
-      // 🔄 alle alten Hüttenmarker entfernen
+      // 🔄 Dashboard & Daten aktualisieren
+      selected = huts;
+      updateSelectedList();
+
+      // 🛑 Wenn keine Hütten mehr -> Navigation stoppen
+      if (selected.length === 0 && navInterval) {
+        stopNavigation();
+        showToast("🛑 Navigation gestoppt – keine Hütte mehr im Raum");
+      }
+
+      // 🔄 Wenn Navigation läuft -> Route neu berechnen
+      if (selected.length > 0 && navInterval) {
+        startRoute();
+      }
+
+      // 🔄 Karte: alte Hüttenmarker entfernen
       Object.keys(groupMarkers).forEach(uid => {
         if (groupMarkers[uid]?.hut) {
           map.removeLayer(groupMarkers[uid]);
@@ -1806,23 +1817,19 @@ function listenRoomHuts() {
         }
       });
 
-      // 🆕 neue Hüttenmarker setzen
+      // 🆕 Karte: neue Hüttenmarker setzen
       huts.forEach(hut => {
         const marker = L.marker([hut.lat, hut.lng], { icon: huettenIcon })
           .addTo(map)
           .bindPopup(`🏠 ${hut.name}`);
-        marker.hut = true; // Flag → damit wir Hütten von Usern unterscheiden
+        marker.hut = true;
         groupMarkers[hut.id] = marker;
       });
-
-      console.log("✅ Hütten geladen:", huts.length);
-      selected = huts;
-      updateSelectedList();
     }, err => {
       console.error("❌ Fehler in listenRoomHuts:", err);
       showToast("⚠️ Konnte Hütten nicht laden");
     });
-}
+           }
 
 
 
