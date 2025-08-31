@@ -1584,12 +1584,13 @@ function startTrackingUser(map) {
   }
 
   gpsWatchId = navigator.geolocation.watchPosition(
-    async pos => {
+    pos => {
       const gpsLatLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
       const accuracy = pos.coords.accuracy || 20;
 
-      // jetzt mit Snap-to-Road und Glow-Kreis
-      await updateUserMarker(gpsLatLng, accuracy);
+      // updateUserMarker selbst ist async → wir rufen sie "fire & forget" auf
+      updateUserMarker(gpsLatLng, accuracy)
+        .catch(err => console.error("updateUserMarker Fehler:", err));
     },
     err => {
       console.error("GPS-Fehler", err);
@@ -1602,7 +1603,7 @@ function startTrackingUser(map) {
       timeout: 5000
     }
   );
-}
+    }
 function getUserIcon() {
   return L.divIcon({
     className: '',
@@ -3708,31 +3709,44 @@ async function initUserMarker() {
 }
 initUserMarker();
 // watchPosition
+
 navigator.geolocation.watchPosition(
-  p => {
-    const ll = L.latLng(p.coords.latitude, p.coords.longitude);
-    const accuracy = p.coords.accuracy || 20;
+  pos => {
+    const ll = L.latLng(pos.coords.latitude, pos.coords.longitude);
+    const accuracy = pos.coords.accuracy || 20;
 
-    updateUserMarker(ll, accuracy);
+    // GPS-Log für Debug
+    console.log("GPS-Position:", ll.lat, ll.lng, "Accuracy:", accuracy);
 
+    // User-Marker aktualisieren (Snap-to-Road + Fahrtrichtung)
+    updateUserMarker(ll, accuracy)
+      .catch(err => console.error("updateUserMarker Fehler:", err));
+
+    // Karte automatisch folgen lassen
     if (follow && map) {
       map.setView(ll, map.getZoom(), { animate: true, paddingTopLeft: [0, 100] });
     }
 
-    const heading = p.coords.heading ?? 0;
+    // Nur falls du setRotationAngle wirklich brauchst (eigentlich nicht mehr nötig)
+    const heading = pos.coords.heading ?? 0;
     if (typeof userMarker?.setRotationAngle === 'function') {
       userMarker.setRotationAngle(heading);
     }
 
+    // Deine Gruppensache
     updateGroup();
   },
-  () => {
+  err => {
+    console.error("GPS-Fehler:", err);
     document.getElementById("loader").style.display = "none";
     showToast("⚠️ GPS nicht verfügbar");
   },
-  { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+  {
+    enableHighAccuracy: true,
+    maximumAge: 0,
+    timeout: 5000
+  }
 );
-
 function scheduleGPSRetry() {
   if (!gpsRetryPending) return;
 
@@ -3857,7 +3871,7 @@ function getCurrentPosition(callback) {
   );
 }*/
    
-    function getBearing(from, to) {
+  /*  function getBearing(from, to) {
   const lat1 = from[0] * Math.PI / 180;
   const lat2 = to[0] * Math.PI / 180;
   const dLon = (to[1] - from[1]) * Math.PI / 180;
@@ -3868,7 +3882,7 @@ function getCurrentPosition(callback) {
   const brng = Math.atan2(y, x);
   return (brng * 180 / Math.PI + 360) % 360;
     }
-
+*/
     let isArrowAnchored = false;
 //const heading = position.coords.heading ?? 0;
 
