@@ -1385,45 +1385,54 @@ function getRouteBearingAt(latlng, routePoints) {
 let lastLatLng = null;
 let lastBearing = 0;
 let userCircle = null;
-let userMarker = null;
 
 async function updateUserMarker(gpsLatLng, accuracy = 20) {
-  let newPos = gpsLatLng;
-  let bearing = lastBearing;
+  try {
+    let newPos = gpsLatLng;
+    let bearing = lastBearing;
 
-  if (currentRoutePath && currentRoutePath.length > 1) {
-    newPos = snapToRoute(gpsLatLng, currentRoutePath);
-    bearing = getRouteBearingAt(newPos, currentRoutePath);
-  } else {
-    const snapped = await snapToRoad(gpsLatLng);
-    newPos = snapped.latlng;
-    bearing = snapped.bearing || (lastLatLng ? getBearing(lastLatLng, newPos) : 0);
-  }
-
-  lastBearing = lastBearing + (bearing - lastBearing) * 0.25;
-
-  setUserMarker(newPos, lastBearing);
-
-  let radius = Math.max(20, Math.min(accuracy, 80));
-  if (!userCircle) {
-    userCircle = L.circleMarker(newPos, { radius, stroke: false, fillOpacity: 0 }).addTo(map);
-    const el = userCircle.getElement();
-    if (el) {
-      el.style.background = "radial-gradient(circle, rgba(30,144,255,0.25) 0%, rgba(30,144,255,0.05) 70%, transparent 100%)";
-      el.style.borderRadius = "50%";
+    if (currentRoutePath && currentRoutePath.length > 1) {
+      // Mit Route -> Snap + Bearing
+      newPos = snapToRoute(gpsLatLng, currentRoutePath);
+      bearing = getRouteBearingAt(newPos, currentRoutePath);
+    } else {
+      // Ohne Route -> Snap-to-Road mit Cache
+      const snapped = await snapToRoad(gpsLatLng);
+      newPos = snapped.latlng;
+      bearing = snapped.bearing || (lastLatLng ? getBearing(lastLatLng, newPos) : 0);
     }
-  } else {
-    userCircle.setLatLng(newPos);
-    userCircle.setRadius(radius);
-  }
 
-  if (follow) {
-    map.setView(newPos, map.getZoom(), { animate: true });
-    map.panBy([0, 100], { animate: true });
-  }
+    // Bearing weich glätten
+    lastBearing = lastBearing + (bearing - lastBearing) * 0.25;
 
-  lastLatLng = newPos;
-}
+    // Marker zeichnen
+    setUserMarker(newPos, lastBearing);
+
+    // Glow-Kreis (GPS-Genauigkeit)
+    const radius = Math.max(20, Math.min(accuracy, 80));
+    if (!userCircle) {
+      userCircle = L.circleMarker(newPos, { radius, stroke: false, fillOpacity: 0 }).addTo(map);
+      const el = userCircle.getElement?.();
+      if (el) {
+        el.style.background = "radial-gradient(circle, rgba(30,144,255,0.25) 0%, rgba(30,144,255,0.05) 70%, transparent 100%)";
+        el.style.borderRadius = "50%";
+      }
+    } else {
+      userCircle.setLatLng(newPos);
+      userCircle.setRadius(radius);
+    }
+
+    // Karte folgen
+    if (follow) {
+      map.setView(newPos, map.getZoom(), { animate: true });
+      map.panBy([0, 100], { animate: true });
+    }
+
+    lastLatLng = newPos;
+  } catch (err) {
+    console.error("❌ Fehler in updateUserMarker:", err);
+  }
+        }
 
 function setUserMarker(latlng, bearing) {
   const icon = L.divIcon({
@@ -3715,25 +3724,14 @@ navigator.geolocation.watchPosition(
     const ll = L.latLng(pos.coords.latitude, pos.coords.longitude);
     const accuracy = pos.coords.accuracy || 20;
 
-    // GPS-Log für Debug
-    console.log("GPS-Position:", ll.lat, ll.lng, "Accuracy:", accuracy);
-
-    // User-Marker aktualisieren (Snap-to-Road + Fahrtrichtung)
+    // Kein async/await hier → wir rufen updateUserMarker „fire & forget“ auf
     updateUserMarker(ll, accuracy)
       .catch(err => console.error("updateUserMarker Fehler:", err));
 
-    // Karte automatisch folgen lassen
     if (follow && map) {
       map.setView(ll, map.getZoom(), { animate: true, paddingTopLeft: [0, 100] });
     }
 
-    // Nur falls du setRotationAngle wirklich brauchst (eigentlich nicht mehr nötig)
-    const heading = pos.coords.heading ?? 0;
-    if (typeof userMarker?.setRotationAngle === 'function') {
-      userMarker.setRotationAngle(heading);
-    }
-
-    // Deine Gruppensache
     updateGroup();
   },
   err => {
@@ -3741,11 +3739,7 @@ navigator.geolocation.watchPosition(
     document.getElementById("loader").style.display = "none";
     showToast("⚠️ GPS nicht verfügbar");
   },
-  {
-    enableHighAccuracy: true,
-    maximumAge: 0,
-    timeout: 5000
-  }
+  { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
 );
 function scheduleGPSRetry() {
   if (!gpsRetryPending) return;
