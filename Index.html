@@ -1353,13 +1353,7 @@ function getStepIcon(type) {
     default: return "➡️"; // fallback
   }
 }
-// 🔄 Bearing zwischen zwei Punkten berechnen
-function getBearing(from, to) {
-  const y = Math.sin(to.lng - from.lng) * Math.cos(to.lat);
-  const x = Math.cos(from.lat) * Math.sin(to.lat) -
-            Math.sin(from.lat) * Math.cos(to.lat) * Math.cos(to.lng - from.lng);
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-}
+
 
 // 👉 Richtung der Route an der aktuellen Position bestimmen
 function getRouteBearingAt(latlng, routePoints) {
@@ -1374,74 +1368,69 @@ function getRouteBearingAt(latlng, routePoints) {
 
     if (dist < closestDist) {
       closestDist = dist;
-      closestBearing = getBearing(p1, p2); // Richtung des Segments
+      closestBearing = getBearing(p1, p2); // Richtung des Straßensegments
     }
   }
-
   return closestBearing;
 }
-
 let lastLatLng = null;
 let lastBearing = 0;
 let hasCenteredOnUser = false; // globale Variable
 
-function updateUserMarker(gpsLatLng) {
-  if (!currentRoutePath || currentRoutePath.length < 2) {
-    // Kein Routing aktiv → normalen GPS-Marker setzen
-    if (!userMarker) {
-      userMarker = L.marker(gpsLatLng, { icon: getUserIcon() }).addTo(map);
+// ===== USER MARKER MIT FAHRTRICHTUNG & WEICHEM GENAUIGKEITS-GLÜHEN =====
+let userCircle = null;
 
-      // 👉 nur beim ersten Setzen zentrieren
-      if (!hasCenteredOnUser) {
-        map.setView(gpsLatLng, 17);
-        hasCenteredOnUser = true;
-      }
-    } else {
-      userMarker.setLatLng(gpsLatLng);
-    }
-
-    if (follow) map.setView(gpsLatLng, 17, { animate: true });
-    lastLatLng = gpsLatLng;
-    return;
-  }
-
-  // 👉 Schritt 1: nächsten Punkt auf Route finden
-  const snapped = snapToRoute(gpsLatLng, currentRoutePath);
-
-  // 👉 Schritt 2: Marker auf Route setzen
-  if (!userMarker) {
-    userMarker = L.marker(snapped, { icon: getUserIcon() }).addTo(map);
-
-    // 👉 auch hier nur einmal zentrieren
-    if (!hasCenteredOnUser) {
-      map.setView(snapped, 18);
-      hasCenteredOnUser = true;
-    }
-  } else {
-    userMarker.setLatLng(snapped);
-  }
-
-  // 👉 Schritt 3: Karte folgen lassen
-  if (follow) {
-    map.setView(snapped, 18, { animate: true });
-  }
-
-  // 👉 Schritt 4: Richtung bestimmen
-  if (lastLatLng) {
-    const bearing = getBearing(lastLatLng, snapped);
-    lastBearing = lastBearing + (bearing - lastBearing) * 0.25;
-    setUserMarker(snapped, lastBearing);
-  }
-
-  lastLatLng = snapped;
-
-  // 👉 Schritt 5: Navigation aktualisieren
-  updateNavigationBanner(snapped);
-  checkOffRoute(gpsLatLng);
+// Bearing zwischen zwei Punkten berechnen
+function getBearing(from, to) {
+  const y = Math.sin(to.lng - from.lng) * Math.cos(to.lat);
+  const x = Math.cos(from.lat) * Math.sin(to.lat) -
+            Math.sin(from.lat) * Math.cos(to.lat) * Math.cos(to.lng - from.lng);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
+// User-Marker und Kreis aktualisieren
+async function updateUserMarker(gpsLatLng, accuracy = 20) {
+  let newPos = gpsLatLng;
+  let bearing = lastBearing;
 
-// 🔄 Marker mit Richtung zeichnen
+  if (currentRoutePath && currentRoutePath.length > 1) {
+    // Mit Route → Snap + Bearing vom Segment
+    newPos = snapToRoute(gpsLatLng, currentRoutePath);
+    bearing = getRouteBearingAt(newPos, currentRoutePath);
+  } else {
+    // Ohne Route → gecachter Snap-to-Road
+    const snapped = await snapToRoad(gpsLatLng);
+    newPos = snapped.latlng;
+    bearing = snapped.bearing || (lastLatLng ? getBearing(lastLatLng, newPos) : 0);
+  }
+
+  // Smooth Bewegung
+  lastBearing = lastBearing + (bearing - lastBearing) * 0.25;
+
+  // Marker & Glow aktualisieren
+  setUserMarker(newPos, lastBearing);
+
+  let radius = Math.max(20, Math.min(accuracy, 80));
+  if (!userCircle) {
+    userCircle = L.circleMarker(newPos, { radius, stroke: false, fillOpacity: 0 }).addTo(map);
+    const el = userCircle.getElement();
+    if (el) {
+      el.style.background = "radial-gradient(circle, rgba(30,144,255,0.25) 0%, rgba(30,144,255,0.05) 70%, transparent 100%)";
+      el.style.borderRadius = "50%";
+    }
+  } else {
+    userCircle.setLatLng(newPos);
+    userCircle.setRadius(radius);
+  }
+
+  if (follow) {
+    map.setView(newPos, map.getZoom(), { animate: true });
+    map.panBy([0, 100], { animate: true });
+  }
+
+  lastLatLng = newPos;
+}
+// Marker zeichnen mit Pfeil in Fahrtrichtung
 function setUserMarker(latlng, bearing) {
   const icon = L.divIcon({
     className: '',
@@ -1463,11 +1452,6 @@ function setUserMarker(latlng, bearing) {
   } else {
     userMarker.setLatLng(latlng);
     userMarker.setIcon(icon);
-  }
-
-  if (follow) {
-    map.setView(latlng, map.getZoom(), { animate: true });
-    map.panBy([0, 100], { animate: true });
   }
 }
 
@@ -1659,33 +1643,50 @@ function getUserIcon() {
   return minDistance < 50 ? closestPoint : gpsLatLng;
     }
     */
-    function snapToRoute(gpsLatLng, routePoints) {
-  if (!Array.isArray(routePoints) || routePoints.length < 2) {
-    return gpsLatLng; // Fallback: wenn keine Route vorhanden
-  }
+    // ===== SNAP-TO-ROAD CACHING =====
+let lastSnap = null;        // letzter Snap (LatLng + Bearing)
+let lastSnapTime = 0;       // Zeitstempel des letzten Snap-Requests
+const SNAP_DISTANCE = 20;   // erst ab 20m Distanz neu snappen
+const SNAP_INTERVAL = 10000; // mindestens 10 Sekunden zwischen Requests
 
-  let closestPoint = null;
-  let minDistance = Infinity;
+async function snapToRoad(latlng) {
+  const now = Date.now();
 
-  // 🔎 Suche den nächsten Punkt auf der Route
-  for (let i = 0; i < routePoints.length - 1; i++) {
-    const p1 = L.latLng(routePoints[i]);
-    const p2 = L.latLng(routePoints[i + 1]);
-
-    // Nutzt Leaflet GeometryUtil → Punkt auf Linie zwischen p1 und p2
-    const snapped = L.GeometryUtil.closest(map, [p1, p2], gpsLatLng);
-    const dist = map.distance(gpsLatLng, snapped);
-
-    if (dist < minDistance) {
-      minDistance = dist;
-      closestPoint = snapped;
+  // 1. Wenn wir schon einen Snap haben → prüfen ob wir ihn noch verwenden können
+  if (lastSnap) {
+    const dist = map.distance(latlng, lastSnap.latlng);
+    if (dist < SNAP_DISTANCE && (now - lastSnapTime) < SNAP_INTERVAL) {
+      return lastSnap; // 👉 nutze gecachten Snap
     }
   }
 
-  // ✅ IMMER den nächsten Routenpunkt zurückgeben
-  return closestPoint || gpsLatLng;
-}
+  // 2. Neuer Snap-Request an ORS
+  try {
+    const res = await fetch(
+      `https://api.openrouteservice.org/v2/snap/nearest?api_key=5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87&point=${latlng.lng},${latlng.lat}`
+    );
+    const data = await res.json();
 
+    if (data && data.features && data.features.length > 0) {
+      const snapped = data.features[0].geometry.coordinates; // [lng, lat]
+      const snappedLatLng = L.latLng(snapped[1], snapped[0]);
+
+      let bearing = 0;
+      if (data.features[0].properties?.bearing) {
+        bearing = data.features[0].properties.bearing;
+      }
+
+      lastSnap = { latlng: snappedLatLng, bearing };
+      lastSnapTime = now;
+      return lastSnap;
+    }
+  } catch (err) {
+    console.warn("❌ Snap to road error", err);
+  }
+
+  // 3. Fallback: direkt GPS verwenden
+  return { latlng, bearing: lastBearing };
+}
     /////////////////////////////////////////
     // 👥 Gruppenfunktionen
     /////////////////////////////////////////
@@ -3709,13 +3710,17 @@ initUserMarker();
 // watchPosition
 navigator.geolocation.watchPosition(
   p => {
-    const ll = [p.coords.latitude, p.coords.longitude];
-    updateUserMarker(ll);
+    const ll = L.latLng(p.coords.latitude, p.coords.longitude);
+    const accuracy = p.coords.accuracy || 20;
 
-    if (follow && map) map.setView(ll, map.getZoom(), { animate: true, paddingTopLeft: [0, 100] });
+    updateUserMarker(ll, accuracy);
+
+    if (follow && map) {
+      map.setView(ll, map.getZoom(), { animate: true, paddingTopLeft: [0, 100] });
+    }
 
     const heading = p.coords.heading ?? 0;
-    if (typeof userMarker.setRotationAngle === 'function') {
+    if (typeof userMarker?.setRotationAngle === 'function') {
       userMarker.setRotationAngle(heading);
     }
 
@@ -3727,28 +3732,6 @@ navigator.geolocation.watchPosition(
   },
   { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
 );
-function startLocationTracking(timeoutMs = 10000) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error("⏳ GPS Timeout"));
-    }, timeoutMs);
-
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        clearTimeout(timer);
-        resolve(pos);
-      },
-      err => {
-        clearTimeout(timer);
-        reject(err);
-      },
-      { enableHighAccuracy: true, // ✅ Genauestes GPS
-    timeout: 10000,            // max. Wartezeit in ms
-    maximumAge: 0              // keine zwischengespeicherten Positionen verwenden
-      }
-    );
-  });
-}
 
 function scheduleGPSRetry() {
   if (!gpsRetryPending) return;
