@@ -1630,8 +1630,46 @@ let lastSnap = null;
 let lastSnapTime = 0;
 const SNAP_DISTANCE = 20;     // mindestens 20m bewegen vor neuem Snap
 const SNAP_INTERVAL = 10000;  // oder alle 10 Sekunden
-
 async function snapToRoad(latlng) {
+  const now = Date.now();
+
+  // Cache prüfen
+  if (lastSnap) {
+    const dist = map.distance(latlng, lastSnap.latlng);
+    if (dist < SNAP_DISTANCE && (now - lastSnapTime) < SNAP_INTERVAL) {
+      return lastSnap;
+    }
+  }
+
+  try {
+    const url = `https://api.openrouteservice.org/v2/snap/nearest?api_key=5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87&point=${latlng.lng},${latlng.lat}`;
+    const res = await fetch(url, { mode: "cors" });  // wichtig bei Serverbetrieb
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+
+    if (data && Array.isArray(data.features) && data.features.length > 0) {
+      const snapped = data.features[0].geometry.coordinates;
+      const snappedLatLng = L.latLng(snapped[1], snapped[0]);
+      const bearing = data.features[0].properties?.bearing || lastBearing;
+
+      lastSnap = { latlng: snappedLatLng, bearing };
+      lastSnapTime = now;
+      return lastSnap;
+    } else {
+      console.warn("⚠️ ORS lieferte keine Features zurück", data);
+    }
+  } catch (err) {
+    console.warn("❌ Snap-to-road Fehler:", err.message);
+  }
+
+  // 👉 Fallback: GPS zurückgeben
+  return { latlng, bearing: lastBearing };
+}
+/*async function snapToRoad(latlng) {
   const now = Date.now();
 
   // Cache prüfen
@@ -1669,7 +1707,7 @@ async function snapToRoad(latlng) {
 
   // 👉 Fallback: gibt immer was zurück
   return { latlng, bearing: lastBearing };
-}
+}*/
 /*
     function snapToRoute(gpsLatLng, routePoints) {
   if (!Array.isArray(routePoints) || routePoints.length < 2) return gpsLatLng;
