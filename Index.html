@@ -1384,7 +1384,7 @@ function getRouteBearingAt(latlng, routePoints) {
 // ===== User-Marker mit Fahrtrichtung & Glow-Kreis =====
 let lastLatLng = null;
 let lastBearing = 0;
-let accuracyCircle = null;  // Neuer Kreis für GPS-Genauigkeit
+let userCircle = null;
 
 const useORS = true;   // true = Snap & Routing über ORS, false = nur GPS
 const ORS_API_KEY = "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87"; // eigenen ORS-Key hier einsetzen
@@ -1394,43 +1394,31 @@ async function updateUserMarker(gpsLatLng, accuracy = 20) {
     let newPos = gpsLatLng;
     let bearing = lastBearing;
 
-    // Richtung aus Bewegung berechnen
-    if (lastLatLng) {
-      bearing = calcBearing(lastLatLng, newPos);
+    if (useORS) {
+      // nur wenn ORS aktiviert
+      const snapped = await snapToRoad(gpsLatLng);
+      if (snapped && snapped.latlng) {
+        newPos = snapped.latlng;
+        bearing = snapped.bearing;
+      } else {
+        console.warn("⚠️ Snap-Fallback auf GPS");
+        newPos = gpsLatLng;
+      }
     }
 
-    // speichern
-    lastBearing = bearing;
-    lastLatLng = newPos;
+    // Smooth bearing
+    lastBearing = lastBearing + (bearing - lastBearing) * 0.25;
 
-    // Marker setzen
+    // Marker zeichnen
     setUserMarker(newPos, lastBearing);
 
-    // Genauigkeits-Kreis setzen/aktualisieren
-    if (!accuracyCircle) {
-      accuracyCircle = L.circle(newPos, {
-        radius: accuracy,
-        color: "#136AEC",
-        weight: 2,
-        opacity: 0.4,
-        fillColor: "#136AEC",
-        fillOpacity: 0.15
-      }).addTo(map);
-    } else {
-      accuracyCircle.setLatLng(newPos);
-      accuracyCircle.setRadius(accuracy);
-    }
-
+    lastLatLng = newPos;
   } catch (err) {
-    console.error("❌ Fehler in updateUserMarker:", err);
+    console.error("❌ Fehler in updateUserMarker:" + err.message, err);
   }
-    }
-    function calcBearing(from, to) {
-  const dy = to.lat - from.lat;
-  const dx = Math.cos((Math.PI / 180) * from.lat) * (to.lng - from.lng);
-  const angle = Math.atan2(dx, dy);
-  return (angle * 180 / Math.PI + 360) % 360;
-    }
+}
+
+
 function setUserMarker(latlng, bearing) {
   const icon = L.divIcon({
     className: '',
@@ -2682,28 +2670,31 @@ disableCompassRotation();
 const rerouteCooldown = 30000; // 30 Sekunden Wartezeit zwischen Routen-Neuberechnungen
 const offRouteThreshold = 30; // Meter Abstand zur Route, ab dem Neuberechnung erfolgt
 function checkIfOffRoute() {
-  if (!currentRoutePath || currentRoutePath.length === 0) return;
+  if (!userMarker || !currentRoutePath || currentRoutePath.length < 2) return;
 
-  getCurrentPosition(userPos => {
-    let minDist = Infinity;
+  const pos = userMarker.getLatLng(); // aktuelle Marker-Position
+  let onRoute = false;
 
-    for (let i = 0; i < currentRoutePath.length; i++) {
-      const point = L.latLng(currentRoutePath[i]);
-      const dist = map.distance([userPos.lat, userPos.lng], point);
-      if (dist < minDist) minDist = dist;
+  // Prüfen, ob Nutzer innerhalb von 40m zur Route ist
+  for (let i = 0; i < currentRoutePath.length - 1; i++) {
+    const p1 = L.latLng(currentRoutePath[i]);
+    const p2 = L.latLng(currentRoutePath[i + 1]);
+    const dist = L.GeometryUtil.distanceSegment(map, pos, p1, p2);
+    if (dist < 40) {
+      onRoute = true;
+      break;
     }
+  }
 
-    if (minDist > offRouteThreshold) {
-      const now = Date.now();
-      if (now - lastRerouteTime > rerouteCooldown) {
-        lastRerouteTime = now;
-        speak("⚠️ Du hast die Route verlassen. Neuberechnung…");
-        console.warn("🔁 Route verlassen – wird neu berechnet");
-        startRoute();
-      }
-    }
-  });
+  if (!onRoute) {
+    console.warn("⚠️ Off-Route erkannt");
+    showToast("⚠️ Du bist von der Route abgewichen");
+    // 👉 optional: automatische Neuberechnung starten
+    // recalcRoute(pos);
+  }
 }
+
+
 /*function checkIfOffRoute() {
   if (!userMarker || !currentRoutePath || currentRoutePath.length === 0) return;
 
@@ -2804,20 +2795,16 @@ function checkIfOffRoute() {
     console.warn("⚠️ Fehler in navLoop():", err);
   }
 }*/
+
     function navLoop() {
   try {
     document.getElementById("routeInfo").style.display = "block";
 
-    // 🧭 Route-Info + automatische Weiterleitung zur nächsten Station + dynamische Geschwindigkeit
-    updateRouteInfo();
+    updateRouteInfo();   // Ziel, ETA, Distanz
+    updateGroup();       // deine Gruppensachen
+    checkIfOffRoute();   // nutzt jetzt userMarker.getLatLng()
 
-    // Banner Distanz
-    //document.getElementById("navDistance").innerText = `${Math.round(dist)} m`;
-
-    updateGroup();
-    checkIfOffRoute();
-
-    // Sanft der Karte folgen
+    // Karte sanft folgen
     if (follow && userMarker && map) {
       const ll = userMarker.getLatLng();
       if (!map.getBounds().pad(-0.3).contains(ll)) {
@@ -2827,7 +2814,8 @@ function checkIfOffRoute() {
   } catch (err) {
     console.warn("⚠️ Fehler in navLoop():", err);
   }
-        }
+}
+
     // 👉 Neue Funktion für dynamische Routeninfos
 // globale Variablen (einmal definieren)
 let lastUserPos = null;
