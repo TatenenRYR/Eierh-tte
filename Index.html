@@ -1639,45 +1639,29 @@ let lastSnapTime = 0;
 const SNAP_DISTANCE = 20;     // mindestens 20m bewegen vor neuem Snap
 const SNAP_INTERVAL = 10000;  // oder alle 10 Sekunden
 async function snapToRoad(latlng) {
-  const now = Date.now();
-
-  if (lastSnap) {
-    const dist = map.distance(latlng, lastSnap.latlng);
-    if (dist < SNAP_DISTANCE && (now - lastSnapTime) < SNAP_INTERVAL) {
-      return lastSnap;
-    }
-  }
-
   try {
     const url = `https://api.openrouteservice.org/v2/snap/driving-car?point=${latlng.lng},${latlng.lat}`;
     const res = await fetch(url, {
-      headers: {
-        "Authorization": ORS_API_KEY,
-        "Content-Type": "application/json"
-      }
+      headers: { "Authorization": ORS_API_KEY }
     });
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
     const data = await res.json();
-    if (data && Array.isArray(data.features) && data.features.length > 0) {
+
+    if (data.features?.length > 0) {
       const snapped = data.features[0].geometry.coordinates;
       const snappedLatLng = L.latLng(snapped[1], snapped[0]);
       const bearing = data.features[0].properties?.bearing || lastBearing;
-
-      lastSnap = { latlng: snappedLatLng, bearing };
-      lastSnapTime = now;
-      return lastSnap;
-    } else {
-      console.warn("⚠️ ORS lieferte keine Features zurück", data);
+      return { latlng: snappedLatLng, bearing };
     }
   } catch (err) {
-    console.warn("❌ Snap-to-road Fehler:", err.message);
+    console.warn("❌ Snap-to-road Fehler:", err.message, "→ Fallback auf GPS");
   }
 
-  // Fallback: GPS nutzen
+  // 👉 Fallback: nutze direkt die GPS-Position
   return { latlng, bearing: lastBearing };
 }
+
 
 /*async function snapToRoad(latlng) {
   const now = Date.now();
