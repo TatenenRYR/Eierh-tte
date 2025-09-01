@@ -1384,7 +1384,7 @@ function getRouteBearingAt(latlng, routePoints) {
 // ===== User-Marker mit Fahrtrichtung & Glow-Kreis =====
 let lastLatLng = null;
 let lastBearing = 0;
-let userCircle = null;
+let accuracyCircle = null;  // Neuer Kreis für GPS-Genauigkeit
 
 const useORS = true;   // true = Snap & Routing über ORS, false = nur GPS
 const ORS_API_KEY = "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87"; // eigenen ORS-Key hier einsetzen
@@ -1394,31 +1394,43 @@ async function updateUserMarker(gpsLatLng, accuracy = 20) {
     let newPos = gpsLatLng;
     let bearing = lastBearing;
 
-    if (useORS) {
-      // nur wenn ORS aktiviert
-      const snapped = await snapToRoad(gpsLatLng);
-      if (snapped && snapped.latlng) {
-        newPos = snapped.latlng;
-        bearing = snapped.bearing;
-      } else {
-        console.warn("⚠️ Snap-Fallback auf GPS");
-        newPos = gpsLatLng;
-      }
+    // Richtung aus Bewegung berechnen
+    if (lastLatLng) {
+      bearing = calcBearing(lastLatLng, newPos);
     }
 
-    // Smooth bearing
-    lastBearing = lastBearing + (bearing - lastBearing) * 0.25;
+    // speichern
+    lastBearing = bearing;
+    lastLatLng = newPos;
 
-    // Marker zeichnen
+    // Marker setzen
     setUserMarker(newPos, lastBearing);
 
-    lastLatLng = newPos;
+    // Genauigkeits-Kreis setzen/aktualisieren
+    if (!accuracyCircle) {
+      accuracyCircle = L.circle(newPos, {
+        radius: accuracy,
+        color: "#136AEC",
+        weight: 2,
+        opacity: 0.4,
+        fillColor: "#136AEC",
+        fillOpacity: 0.15
+      }).addTo(map);
+    } else {
+      accuracyCircle.setLatLng(newPos);
+      accuracyCircle.setRadius(accuracy);
+    }
+
   } catch (err) {
-    console.error("❌ Fehler in updateUserMarker:" + err.message, err);
+    console.error("❌ Fehler in updateUserMarker:", err);
   }
-}
-
-
+    }
+    function calcBearing(from, to) {
+  const dy = to.lat - from.lat;
+  const dx = Math.cos((Math.PI / 180) * from.lat) * (to.lng - from.lng);
+  const angle = Math.atan2(dx, dy);
+  return (angle * 180 / Math.PI + 360) % 360;
+    }
 function setUserMarker(latlng, bearing) {
   const icon = L.divIcon({
     className: '',
