@@ -2432,51 +2432,59 @@ focusOnUserMarker();
       ...validSelected.map(h => [h.lng, h.lat])
     ];
 
-    fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
-      method: "POST",
-      headers: {
-        "Authorization": "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ coordinates: coords })
-    })
-      .then(r => r.json())
-      .then(data => {
-        const points = data.features?.[0]?.geometry?.coordinates?.map(p => [p[1], p[0]]);
-        if (!points || points.length < 2) {
-          showToast("⚠️ Route unvollständig");
-          return;
-        }
+fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
+  method: "POST",
+  headers: {
+    "Authorization": 5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87,   // eigenen Key hier einsetzen
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({ coordinates: coords })
+})
+  .then(async r => {
+    if (!r.ok) {
+      const msg = await r.text();
+      throw new Error(`HTTP ${r.status}: ${msg}`);
+    }
+    return r.json();
+  })
+  .then(data => {
+    const points = data.features?.[0]?.geometry?.coordinates?.map(p => [p[1], p[0]]);
+    if (!points || points.length < 2) {
+      showToast("⚠️ Route unvollständig");
+      return;
+    }
 
-        routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
-        progressLine = L.polyline([], { color: "#00f", weight: 4 }).addTo(map);
+    routingLine = L.polyline(points, { color: "#f80", weight: 5 }).addTo(map);
+    progressLine = L.polyline([], { color: "#00f", weight: 4 }).addTo(map);
 
-        currentRoutePath = [...points];
-        navInterval = setInterval(navLoop, 10000);
-        updateSelectedList(); // -> zeigt ❗ bei fehlerhaften Zielen
+    currentRoutePath = [...points];
+    navInterval = setInterval(navLoop, 10000);
+    updateSelectedList();
 
-        document.getElementById("startBtn").style.display = "none";
-        document.getElementById("stopBtn").style.display = "inline-block";
-        follow = true;
+    document.getElementById("startBtn").style.display = "none";
+    document.getElementById("stopBtn").style.display = "inline-block";
+    follow = true;
 
-        if (userMarker && map && follow) {
-          map.flyTo(userMarker.getLatLng(), 17, { animate: true });
-        }
-        if(roomId){
-        db.collection("rooms").doc(roomId).set({
-          navActive: true,
-          navStartedAt: Date.now()
-        }, { merge: true });
-        }
-        document.querySelector("button[onclick='toggleFollow()']").style.display = "none";
-      })
-      .catch(err => {
-        console.warn("❌ Routing-Fehler:" + err.message, err);
-       // showToast("❗ Routenberechnung fehlgeschlagen");
-      });
+    if (userMarker && map && follow) {
+      map.flyTo(userMarker.getLatLng(), 17, { animate: true });
+    }
+
+    if (roomId) {
+      db.collection("rooms").doc(roomId).set({
+        navActive: true,
+        navStartedAt: Date.now()
+      }, { merge: true });
+    }
+
+    document.querySelector("button[onclick='toggleFollow()']").style.display = "none";
+  })
+  .catch(err => {
+    console.warn("❌ Routing-Fehler: " + err.message, err);
+    showToast("❗ Routenberechnung fehlgeschlagen");
+  });
 
   } catch (err) {
-    console.warn("❌ Fehler in startRoute():", err);
+    console.warn("❌ Fehler in startRoute(): " + err.message, err);
   }
 }
 
