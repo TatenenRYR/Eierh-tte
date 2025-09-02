@@ -636,8 +636,8 @@ footer a:hover {
   <div id="toolbar">
     <button id="followBtn" onclick="toggleFollow()" style="display:none;">📍</button>
     <button onclick="toggleVoice()">🔊</button>
-    <button id="startBtn" onclick="">▶️ Start</button>
-    <button id="stopBtn" onclick=""" style="display:none;">🛑 Stop</button>
+    <button id="startBtn" onclick="startRouteToNextHut()">▶️ Start</button>
+    <button id="stopBtn" onclick="stopNavigation()" style="display:none;">🛑 Stop</button>
     <button onclick="resetRoute()">🗑️ Reset</button>
     <button id="toggleThemeBtn" onclick="toggleMapTheme()">🌙</button>
   </div>
@@ -960,42 +960,6 @@ function saveUsername() {
 
 
 
-
- 
-function snapToRouteSmooth(gpsLatLng, routePoints, lastLatLng) {
-  if (!Array.isArray(routePoints) || routePoints.length < 2) {
-    return gpsLatLng; // Fallback
-  }
-
-  let closestPoint = null;
-  let minDistance = Infinity;
-
-  // Nächstgelegenen Punkt auf der Route suchen
-  for (let i = 0; i < routePoints.length - 1; i++) {
-    const p1 = L.latLng(routePoints[i]);
-    const p2 = L.latLng(routePoints[i + 1]);
-    const snapped = L.GeometryUtil.closest(map, [p1, p2], gpsLatLng);
-    const dist = map.distance(gpsLatLng, snapped);
-
-    if (dist < minDistance) {
-      minDistance = dist;
-      closestPoint = snapped;
-    }
-  }
-
-  if (!closestPoint) return gpsLatLng;
-
-  // 🚀 Smooth: weiche Bewegung statt hartem Sprung
-  if (lastLatLng) {
-    return L.latLng(
-      lastLatLng.lat + (closestPoint.lat - lastLatLng.lat) * 0.3,
-      lastLatLng.lng + (closestPoint.lng - lastLatLng.lng) * 0.3
-    );
-  }
-
-  return closestPoint;
-}
-
     /////////////////////////////////////////////////////////
 // 🚴 Erweiterte Navigation – Fahrtrichtung + Re-Routing
 /////////////////////////////////////////////////////////
@@ -1044,46 +1008,181 @@ function getRouteBearingAt(latlng, routePoints) {
   return closestBearing;
 }
 // ===== User-Marker mit Fahrtrichtung & Glow-Kreis =====
-let lastLatLng = null;
-let lastBearing = 0;
-let userCircle = null;
 
-const useORS = true;   // true = Snap & Routing über ORS, false = nur GPS
 const ORS_API_KEY = "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87"; // eigenen ORS-Key hier einsetzen
 
-async function updateUserMarker(gpsLatLng, accuracy = 20) {
-  try {
-    let newPos = gpsLatLng;
-    let bearing = lastBearing;
+let routeLine = null;
+let routeCoords = [];
 
-   
-    // Smooth bearing
-    lastBearing = lastBearing + (bearing - lastBearing) * 0.25;
+async function fetchRoute(start, ziel) {
+  const url = "https://api.openrouteservice.org/v2/directions/cycling-regular/geojson";
+  
+  const body = {
+    coordinates: [
+      [start.lng, start.lat],
+      [ziel.lng, ziel.lat]
+    ]
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": ORS_API_KEY,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+
+  const data = await res.json();
+
+  // GeoJSON-Koordinaten → Leaflet LatLng
+  routeCoords = data.features[0].geometry.coordinates.map(c => L.latLng(c[1], c[0]));
+
+  // alte Linie entfernen
+  if (routeLine) map.removeLayer(routeLine);
+
+  // neue Linie zeichnen
+  routeLine = L.polyline(routeCoords, { color: "blue", weight: 5 }).addTo(map);
+
+  map.fitBounds(routeLine.getBounds());
+
+  return routeCoords;
+}
+
+/////////////////////////////////////////////
+// 🌍 Neue Navigations-Logik
+/////////////////////////////////////////////
+
+let navWatchId = null;
+let userMarker = null;
+let lastPos = null;
+let follow = true;   // Follow-Modus anfangs aktiv
+
+// Bearing berechnen (Fahrtrichtung)
+function getBearing(from, to) {
+  const y = Math.sin(to.lng - from.lng) * Math.cos(to.lat);
+  const x = Math.cos(from.lat) * Math.sin(to.lat) -
+            Math.sin(from.lat) * Math.cos(to.lat) * Math.cos(to.lng - from.lng);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+let lastLatLng = null;
+let lastBearing = 0;
+
+function getBearing(from, to) {
+  const y = Math.sin(to.lng - from.lng) * Math.cos(to.lat);
+  const x = Math.cos(from.lat) * Math.sin(to.lat) -
+            Math.sin(from.lat) * Math.cos(to.lat) * Math.cos(to.lng - from.lng);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+// nächstgelegenen Punkt auf Route finden
+function snapToRoute(latlng) {
+  if (!routeCoords || routeCoords.length < 2) return latlng;
+
+  let closest = null;
+  let minDist = Infinity;
+
+  for (let i = 0; i < routeCoords.length - 1; i++) {
+    const p1 = routeCoords[i];
+    const p2 = routeCoords[i + 1];
+    const dist = L.GeometryUtil.distanceSegment(map, latlng, p1, p2);
+    if (dist < minDist) {
+      minDist = dist;
+      closest = L.GeometryUtil.closest(map, [p1, p2], latlng);
+    }
+  }
+  return closest || latlng;
+}
+
+let lastLatLng = null;
+let lastBearing = 0;
+
+async function updateUserMarker(gpsLatLng) {
+  try {
+    // Snap-to-route
+    const snappedPos = snapToRoute(gpsLatLng);
+
+    // Bearing berechnen
+    let bearing = lastBearing;
+    if (lastLatLng) {
+      bearing = getBearing(lastLatLng, snappedPos);
+      const diff = ((bearing - lastBearing + 540) % 360) - 180;
+      lastBearing = (lastBearing + diff * 0.25 + 360) % 360;
+    } else {
+      lastBearing = bearing;
+    }
 
     // Marker zeichnen
-    setUserMarker(newPos, lastBearing);
+    setUserMarker(snappedPos, lastBearing);
 
-    lastLatLng = newPos;
+    // Karte folgen lassen
+    if (follow) {
+      map.setView(snappedPos, 18, { animate: true });
+    }
+
+    lastLatLng = snappedPos;
+// check turn by turn
+checkTurnByTurn(snappedPos);
+
+// check Ziel erreicht
+checkIfHutReached(snappedPos);
+
   } catch (err) {
-    console.error("❌ Fehler in updateUserMarker:" + err.message, err);
+    console.error("❌ Fehler in updateUserMarker:", err);
   }
 }
 
+function checkTurnByTurn(userPos) {
+  if (!routeSteps.length) return;
 
-function setUserMarker(latlng, bearing) {
+  for (let i = 0; i < routeSteps.length; i++) {
+    const step = routeSteps[i];
+    const stepPos = L.latLng(step.way_points[1][1], step.way_points[1][0]);
+    const dist = map.distance(userPos, stepPos);
+
+    if (dist < 30 && i > lastStepIndex) {
+      lastStepIndex = i;
+      const msg = `➡️ ${step.instruction}`;
+      showToast(msg);
+      if (voice) speak(msg);
+      break;
+    }
+  }
+}
+
+function checkIfHutReached(userPos) {
+  if (!selected.length) return;
+
+  const ziel = selected[0];
+  const zielPos = L.latLng(ziel.lat, ziel.lng);
+  const dist = map.distance(userPos, zielPos);
+
+  if (dist < 30) { // Zielradius
+    showToast(`🏁 ${ziel.name} erreicht!`);
+    if (voice) speak(`${ziel.name} erreicht`);
+
+    // Hütte aus Liste entfernen
+    selected.shift();
+    updateSelectedList();
+
+    // nächste Route starten
+    startRouteToNextHut();
+  }
+}
+
+// Marker setzen/aktualisieren
+function setUserMarker(latlng, bearing = 0) {
   const icon = L.divIcon({
-    className: '',
-    html: `<div style="
-      width: 30px; height: 30px;
-      transform: rotate(${bearing}deg);
-      transition: transform 0.3s linear;
-    ">
-      <svg viewBox="0 0 24 24" fill="#1e40af" width="30" height="30" style="transform: rotate(-90deg);">
-        <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
-      </svg>
-    </div>`,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
+    className: "",
+    html: `
+      <div style="width:32px;height:32px;transform:rotate(${bearing}deg);transition:transform 0.2s linear;">
+        <svg viewBox="0 0 24 24" fill="#1e40af" width="32" height="32" style="transform:rotate(-90deg);">
+          <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
+        </svg>
+      </div>
+    `,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16]
   });
 
   if (!userMarker) {
@@ -1093,6 +1192,106 @@ function setUserMarker(latlng, bearing) {
     userMarker.setIcon(icon);
   }
 }
+
+// GPS-Update verarbeiten
+function handlePosition(pos) {
+  const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+
+  let bearing = 0;
+  if (lastPos) {
+    bearing = getBearing(lastPos, latlng);
+  }
+
+  setUserMarker(latlng, bearing);
+
+  // Karte folgen lassen
+  if (follow) {
+    map.setView(latlng, 18, { animate: true });
+  }
+
+  lastPos = latlng;
+}
+
+let navWatchId = null;
+let routeLine = null;
+let routeCoords = [];
+let routeSteps = [];
+let lastStepIndex = -1;
+
+// nächste Hütte ansteuern
+function startRouteToNextHut() {
+  if (!selected.length) {
+    showToast("✅ Alle Hütten erreicht!");
+    stopNavigation();
+    return;
+  }
+
+  const ziel = selected[0];
+  const zielLatLng = { lat: ziel.lat, lng: ziel.lng };
+
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const start = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    await startNavigation(start, zielLatLng);
+
+    showToast(`🚴 Starte Route zu: ${ziel.name}`);
+  }, err => {
+    console.error("❌ GPS Fehler:", err);
+    showToast("❌ GPS Fehler beim Routenstart");
+  }, { enableHighAccuracy: true });
+}
+
+async function startNavigation(start, ziel) {
+  if (navWatchId) return; // läuft schon
+
+  // 1️⃣ Route von ORS holen
+  await fetchRoute(start, ziel);
+
+  // 2️⃣ GPS-Tracking starten
+  if (navigator.geolocation) {
+    navWatchId = navigator.geolocation.watchPosition(
+      pos => {
+        const gps = L.latLng(pos.coords.latitude, pos.coords.longitude);
+        updateUserMarker(gps);  // hier passiert Snap-to-Route + Marker drehen
+      },
+      err => console.error("❌ GPS Fehler:", err),
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+    );
+
+    showToast("▶️ Navigation gestartet");
+    document.getElementById("startBtn").style.display = "none";
+    document.getElementById("stopBtn").style.display = "inline-block";
+  } else {
+    alert("❌ GPS wird nicht unterstützt");
+  }
+}
+
+function stopNavigation() {
+  // 1️⃣ GPS-Tracking stoppen
+  if (navWatchId) {
+    navigator.geolocation.clearWatch(navWatchId);
+    navWatchId = null;
+  }
+
+  // 2️⃣ Marker entfernen
+  if (userMarker) {
+    map.removeLayer(userMarker);
+    userMarker = null;
+  }
+  lastLatLng = null;
+
+  // 3️⃣ Route entfernen
+  if (routeLine) {
+    map.removeLayer(routeLine);
+    routeLine = null;
+    routeCoords = [];
+  }
+
+  showToast("🛑 Navigation gestoppt");
+  document.getElementById("startBtn").style.display = "inline-block";
+  document.getElementById("stopBtn").style.display = "none";
+}
+
+
 
 function updateDebug(info) {
   const el = document.getElementById("debugOverlay");
