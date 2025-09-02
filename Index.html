@@ -1054,7 +1054,6 @@ async function fetchRoute(start, ziel) {
 /////////////////////////////////////////////
 
 let navWatchId = null;
-let userMarker = null;
 let lastPos = null;
 let follow = true;   // Follow-Modus anfangs aktiv
 
@@ -1132,23 +1131,39 @@ checkIfHutReached(snappedPos);
   }
 }
 
+let routeSteps = [];
+let alreadySpokenTurnIndex = {};
+
 function checkTurnByTurn(userPos) {
   if (!routeSteps.length) return;
 
   for (let i = 0; i < routeSteps.length; i++) {
     const step = routeSteps[i];
-    const stepPos = L.latLng(step.way_points[1][1], step.way_points[1][0]);
+    if (!step.way_points || !step.way_points.length) continue;
+
+    // Schritt-Endpunkt (letzte Koordinate dieses Schritts)
+    const [lng, lat] = step.way_points[1]; 
+    const stepPos = L.latLng(lat, lng);
     const dist = map.distance(userPos, stepPos);
 
-    if (dist < 30 && i > lastStepIndex) {
-      lastStepIndex = i;
-      const msg = `➡️ ${step.instruction}`;
-      showToast(msg);
+    // Vorab-Ansage (100m vorher)
+    if (dist < 100 && !alreadySpokenTurnIndex[i + "_pre"]) {
+      alreadySpokenTurnIndex[i + "_pre"] = true;
+      const msg = `In ${Math.round(dist)} m ${step.instruction}`;
+      showToast("🔊 " + msg);
       if (voice) speak(msg);
-      break;
+    }
+
+    // Jetzt-Ansage (direkt am Punkt)
+    if (dist < 25 && !alreadySpokenTurnIndex[i + "_now"]) {
+      alreadySpokenTurnIndex[i + "_now"] = true;
+      const msg = `Jetzt ${step.instruction}`;
+      showToast("➡️ " + msg);
+      if (voice) speak(msg);
     }
   }
 }
+
 
 function checkIfHutReached(userPos) {
   if (!selected.length) return;
