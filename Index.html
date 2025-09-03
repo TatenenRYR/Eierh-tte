@@ -1109,13 +1109,19 @@ function getBearing(from, to) {
 }
 let lastLatLng = null;
 let lastBearing = 0;
-
 function getBearing(from, to) {
-  const y = Math.sin(to.lng - from.lng) * Math.cos(to.lat);
-  const x = Math.cos(from.lat) * Math.sin(to.lat) -
-            Math.sin(from.lat) * Math.cos(to.lat) * Math.cos(to.lng - from.lng);
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  const lat1 = from.lat * Math.PI / 180;
+  const lat2 = to.lat * Math.PI / 180;
+  const dLon = (to.lng - from.lng) * Math.PI / 180;
+
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) -
+            Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+
+  let brng = Math.atan2(y, x) * 180 / Math.PI;
+  return (brng + 360) % 360; // 0–360°
 }
+
 
 // nächstgelegenen Punkt auf Route finden
 function snapToRoute(latlng) {
@@ -1153,21 +1159,18 @@ function updateEta(userPos) {
 
 async function updateUserMarker(gpsLatLng) {
   try {
-    // Snap-to-route
+    // ✅ Snap-to-route mit deiner Funktion
     const snappedPos = snapToRoute(gpsLatLng);
 
-    // Bearing berechnen
+    // Bearing berechnen (damit Marker in Fahrtrichtung zeigt)
     let bearing = lastBearing;
     if (lastLatLng) {
       bearing = getBearing(lastLatLng, snappedPos);
-      const diff = ((bearing - lastBearing + 540) % 360) - 180;
-      lastBearing = (lastBearing + diff * 0.25 + 360) % 360;
-    } else {
       lastBearing = bearing;
     }
 
-    // Marker zeichnen
-    setUserMarker(snappedPos, lastBearing);
+    // Marker + Kreis setzen
+    setUserMarker(snappedPos, bearing);
 
     // Karte folgen lassen
     if (follow) {
@@ -1175,12 +1178,15 @@ async function updateUserMarker(gpsLatLng) {
     }
 
     lastLatLng = snappedPos;
-// check turn by turn
-checkTurnByTurn(snappedPos);
 
-// check Ziel erreicht
-checkIfHutReached(snappedPos);
-updateEta(snappedPos);
+    // Turn-by-turn prüfen
+    checkTurnByTurn(snappedPos);
+
+    // Ziel erreicht prüfen
+    checkIfHutReached(snappedPos);
+
+    // ETA aktualisieren
+    updateEta(snappedPos);
   } catch (err) {
     console.error("❌ Fehler in updateUserMarker:", err);
   }
