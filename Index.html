@@ -1193,18 +1193,16 @@ function updateEta(userPos) {
   el.innerHTML = `🛣️ ${(dist / 1000).toFixed(1)} km · ⏱️ ${etaMins} min`;
 }
 
-async function updateUserMarker(gpsLatLng) {
+async function updateUserMarker(gpsLatLng, accuracy = 20) {
   try {
-
-    const gpsLatLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+    // Snap-to-route
     const snappedPos = snapToRoute(gpsLatLng);
+
+    // Bearing entlang der Route
     const bearing = getRouteBearing(snappedPos);
     lastBearing = bearing;
-    
-    // Genauigkeit (in Metern)
-    const accuracy = pos.coords.accuracy || 20;
-    
-    // Marker + Kreise setzen
+
+    // Marker + Kreise setzen (nutzt accuracy)
     setUserMarker(snappedPos, bearing, accuracy);
 
     // Karte folgen lassen
@@ -1212,20 +1210,23 @@ async function updateUserMarker(gpsLatLng) {
       map.setView(snappedPos, 18, { animate: true });
     }
 
+    // (optional) abgefahrene Strecke sammeln
+    if (typeof pastRouteLine !== "undefined" && lastLatLng) {
+      pastRouteLine.addLatLng(snappedPos);
+    }
+
     lastLatLng = snappedPos;
 
-    // Turn-by-turn prüfen
+    // Turn-by-turn & Co.
     checkTurnByTurn(snappedPos);
-
-    // Ziel erreicht prüfen
     checkIfHutReached(snappedPos);
-
-    // ETA aktualisieren
     updateEta(snappedPos);
+
   } catch (err) {
     console.error("❌ Fehler in updateUserMarker:", err);
   }
 }
+
 
 function getTurnIcon(type) {
   switch (type) {
@@ -1311,14 +1312,12 @@ let userMarkerCircle = null;
 
 function setUserMarker(pos, bearing, accuracy = 20) {
   if (!userMarker) {
-    // Pfeil-Marker
     userMarker = L.marker(pos, {
       icon: userIcon,
       rotationAngle: bearing,
       rotationOrigin: "center center"
     }).addTo(map);
 
-    // Kleiner blauer Kreis direkt unter Marker
     userMarkerCircle = L.circleMarker(pos, {
       radius: 12,
       color: "#4285F4",
@@ -1326,7 +1325,6 @@ function setUserMarker(pos, bearing, accuracy = 20) {
       fillOpacity: 0.3
     }).addTo(map);
 
-    // Accuracy-Kreis (großer blauer Kreis)
     accuracyCircle = L.circle(pos, {
       radius: accuracy,
       color: "#4285F4",
@@ -1343,6 +1341,7 @@ function setUserMarker(pos, bearing, accuracy = 20) {
     accuracyCircle.setRadius(accuracy);
   }
 }
+
 
 
 
@@ -2538,18 +2537,19 @@ function showTutorial(){
       map = L.map("map", { center: [47.3, 11.4], zoom: 13 });
 
 
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(pos => {
-          const gpsLatLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
-      
-          // Marker erzeugen + zoomen
-          updateUserMarker(gpsLatLng);
-          map.setView(gpsLatLng, 18);
-        }, err => {
-          console.warn("❌ GPS Fehler:", err);
-          showToast("GPS nicht verfügbar");
-        }, { enableHighAccuracy: true });
-      }
+     if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(pos => {
+        const gpsLatLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+        const accuracy  = pos.coords.accuracy || 20;
+    
+        updateUserMarker(gpsLatLng, accuracy);  // ✅ Accuracy mitgeben
+        map.setView(gpsLatLng, 18);
+      }, err => {
+        console.warn("❌ GPS Fehler:", err);
+        showToast("GPS nicht verfügbar");
+      }, { enableHighAccuracy: true });
+    }
+
 
       
     //  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
