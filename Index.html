@@ -510,7 +510,59 @@ footer a:hover {
   box-shadow: 0 1px 3px rgba(0,0,0,0.4);
   white-space: nowrap;
 }
+ #deckblatt {
+    position: fixed;
+    inset: 0;
+    background: linear-gradient(135deg, #4caf50, #81c784);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 3000;
+    color: white;
+    font-family: sans-serif;
+  }
 
+  .deckblatt-content {
+    text-align: center;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 30px;
+    border-radius: 16px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+
+  .deckblatt-content h1 {
+    font-size: 24px;
+    margin-bottom: 20px;
+  }
+
+  .deckblatt-content .options {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .deckblatt-content button {
+    background: #fff;
+    color: #333;
+    border: none;
+    padding: 14px 18px;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+  }
+
+  .deckblatt-content button:hover {
+    background: #eee;
+    transform: scale(1.03);
+  }
+
+  /* Map erst unsichtbar */
+  #map {
+    display: none;
+  }
 
   </style>
 </head>
@@ -524,7 +576,22 @@ footer a:hover {
        data-ad-format="auto"
        data-full-width-responsive="true"></ins>
 </div>
-  <!-- 🔝 Navigationsbanner -->
+  <!-- 🌟 Deckblatt Overlay -->
+<div id="deckblatt">
+  <div class="deckblatt-content">
+    <h1>Was möchtest du tun?</h1>
+    <div class="options">
+      <!-- ➕ Chat-Seite öffnen -->
+      <button onclick="window.location.href='eierhuetten_chat_page.html'">
+        ➕ Eierhütte / Hofladen / Fahrradstopp hinzufügen
+      </button>
+      <!-- 🗺️ Map starten -->
+      <button onclick="startRadlMap()">
+        🗺️ RadlMap benutzen
+      </button>
+    </div>
+  </div>
+</div>
 
   <!-- Loader & Kartencontainer -->
   <div id="loader">⏳ Lade Karte…</div>
@@ -1420,30 +1487,24 @@ async function startNavigation(start, ziel) {
 }
 
 function stopNavigation() {
-  //GPS-Tracking stoppen
+  // GPS-Tracking für Route stoppen
   if (navWatchId) {
     navigator.geolocation.clearWatch(navWatchId);
     navWatchId = null;
   }
-  //Marker entfernen
-  if (userMarker) {
-    map.removeLayer(userMarker);
-    userMarker = null;
-  }
-  lastLatLng = null;
 
-  //Route entfernen
+  // Route entfernen
   if (routeLine) {
     map.removeLayer(routeLine);
     routeLine = null;
   }
 
-  //Graue Line entfernen
+  // Graue Linie entfernen
   if (pastRouteLine) {
     map.removeLayer(pastRouteLine);
     pastRouteLine = L.polyline([], { color: "gray", weight: 4 }).addTo(map);
   }
-  
+
   routeCoords = [];
   routeSteps = [];
   routeDistance = 0;
@@ -1453,9 +1514,43 @@ function stopNavigation() {
   document.getElementById("etaBox").innerHTML = "";
   document.getElementById("etaBox").style.display = "none";
 
+  // Marker + Kreise NICHT entfernen, sondern GPS-Tracking weiterführen
+  startUserLocationTracking();
+
   showToast("🛑 Navigation gestoppt");
   document.getElementById("startBtn").style.display = "inline-block";
   document.getElementById("stopBtn").style.display = "none";
+}
+let userWatchId = null;
+
+function startUserLocationTracking() {
+  // Falls schon läuft → abbrechen
+  if (userWatchId) navigator.geolocation.clearWatch(userWatchId);
+
+  if (navigator.geolocation) {
+    userWatchId = navigator.geolocation.watchPosition(
+      pos => {
+        const gpsLatLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+
+        // Bearing aus Bewegung berechnen
+        let bearing = 0;
+        if (lastLatLng) {
+          bearing = getBearing(lastLatLng, gpsLatLng);
+        }
+
+        // Marker + Kreise aktualisieren
+        setUserMarker(gpsLatLng, bearing, pos.coords.accuracy);
+
+        if (follow) {
+          map.setView(gpsLatLng, 18, { animate: true });
+        }
+
+        lastLatLng = gpsLatLng;
+      },
+      err => console.error("❌ GPS Fehler:", err),
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+    );
+  }
 }
 
 
@@ -2829,7 +2924,10 @@ m.on("popupclose", () => {
 
     }
 
-
+function startRadlMap() {
+    document.getElementById('deckblatt').style.display = 'none';
+    document.getElementById('map').style.display = 'block';
+  }
 async function initUserMarker() {
 
 }
