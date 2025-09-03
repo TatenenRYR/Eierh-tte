@@ -1001,6 +1001,24 @@ function getBearing(from, to) {
             Math.sin(from.lat) * Math.cos(to.lat) * Math.cos(to.lng - from.lng);
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
+function getRouteBearing(snappedPos) {
+  if (!routeCoords || routeCoords.length < 2) return lastBearing || 0;
+
+  // Nächstgelegenen Index finden
+  let closestIdx = 0;
+  let minDist = Infinity;
+  for (let i = 0; i < routeCoords.length; i++) {
+    const d = map.distance(snappedPos, routeCoords[i]);
+    if (d < minDist) {
+      minDist = d;
+      closestIdx = i;
+    }
+  }
+
+  // Nächsten Punkt wählen (oder letzten, falls am Ende)
+  const nextIdx = Math.min(closestIdx + 1, routeCoords.length - 1);
+  return getBearing(routeCoords[closestIdx], routeCoords[nextIdx]);
+}
 
 function getRouteBearingAt(latlng, routePoints) {
   let closestDist = Infinity;
@@ -1159,15 +1177,12 @@ function updateEta(userPos) {
 
 async function updateUserMarker(gpsLatLng) {
   try {
-    // ✅ Snap-to-route mit deiner Funktion
+    // Snap-to-route
     const snappedPos = snapToRoute(gpsLatLng);
 
-    // Bearing berechnen (damit Marker in Fahrtrichtung zeigt)
-    let bearing = lastBearing;
-    if (lastLatLng) {
-      bearing = getBearing(lastLatLng, snappedPos);
-      lastBearing = bearing;
-    }
+    // ✅ Bearing entlang der Route berechnen
+    const bearing = getRouteBearing(snappedPos);
+    lastBearing = bearing;
 
     // Marker + Kreis setzen
     setUserMarker(snappedPos, bearing);
@@ -1191,6 +1206,7 @@ async function updateUserMarker(gpsLatLng) {
     console.error("❌ Fehler in updateUserMarker:", err);
   }
 }
+
 function getTurnIcon(type) {
   switch (type) {
     case 0: return "⬆️";  // geradeaus
@@ -1271,27 +1287,31 @@ function checkIfHutReached(userPos) {
 }
 
 // Marker setzen/aktualisieren
-function setUserMarker(latlng, bearing = 0) {
-  const icon = L.divIcon({
-    className: "",
-    html: `
-      <div style="width:32px;height:32px;transform:rotate(${bearing}deg);transition:transform 0.2s linear;">
-        <svg viewBox="0 0 24 24" fill="#1e40af" width="32" height="32" style="transform:rotate(-90deg);">
-          <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
-        </svg>
-      </div>
-    `,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16]
-  });
+let userMarkerCircle = null;
 
+function setUserMarker(pos, bearing) {
   if (!userMarker) {
-    userMarker = L.marker(latlng, { icon }).addTo(map);
+    userMarker = L.marker(pos, {
+      icon: userIcon,
+      rotationAngle: bearing,
+      rotationOrigin: "center center"
+    }).addTo(map);
+
+    userMarkerCircle = L.circleMarker(pos, {
+      radius: 15,
+      color: "blue",
+      fillColor: "#3b82f6",
+      fillOpacity: 0.2
+    }).addTo(map);
+
   } else {
-    userMarker.setLatLng(latlng);
-    userMarker.setIcon(icon);
+    userMarker.setLatLng(pos);
+    userMarker.setRotationAngle(bearing);
+    userMarkerCircle.setLatLng(pos);
   }
 }
+
+
 
 // GPS-Update verarbeiten
 function handlePosition(pos) {
@@ -2483,6 +2503,22 @@ function showTutorial(){
          console.warn("Fehler beim Initialen updateSelectedList:", err);
       }
       map = L.map("map", { center: [47.3, 11.4], zoom: 13 });
+
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+          const gpsLatLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+      
+          // Marker erzeugen + zoomen
+          updateUserMarker(gpsLatLng);
+          map.setView(gpsLatLng, 18);
+        }, err => {
+          console.warn("❌ GPS Fehler:", err);
+          showToast("GPS nicht verfügbar");
+        }, { enableHighAccuracy: true });
+      }
+
+      
     //  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
      isDarkTheme = localStorage.getItem("mapTheme") === "dark";
      createTileLayer(isDarkTheme);
@@ -2500,7 +2536,6 @@ function showTutorial(){
 if (select) select.value = localStorage.lang || "de-DE";
 //document.addEventListener("deviceready", () => {
   
-let gpsFix = false;
 
 try {
   // Loader erstmal anzeigen
