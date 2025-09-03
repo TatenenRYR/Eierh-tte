@@ -1380,7 +1380,6 @@ function checkIfHutReached(userPos) {
 
 // Marker setzen/aktualisieren
 let userMarkerCircle = null;
-
 function setUserMarker(pos, bearing, accuracy = 20) {
   if (!userMarker) {
     userMarker = L.marker(pos, {
@@ -1405,7 +1404,7 @@ function setUserMarker(pos, bearing, accuracy = 20) {
     }).addTo(map);
 
   } else {
-    // Aktualisierung
+    // Update bestehender Marker + Kreise
     userMarker.setLatLng(pos);
     userMarker.setRotationAngle(bearing);
 
@@ -1487,6 +1486,9 @@ function startRouteToNextHut() {
 async function startNavigation(start, ziel) {
   if (navWatchId) return; // läuft schon
 
+  // 👉 Einfaches GPS-Tracking stoppen
+  stopUserLocationTracking();
+
   // 1️⃣ Route von ORS holen
   await fetchRoute(start, ziel);
 
@@ -1495,7 +1497,7 @@ async function startNavigation(start, ziel) {
     navWatchId = navigator.geolocation.watchPosition(
       pos => {
         const gps = L.latLng(pos.coords.latitude, pos.coords.longitude);
-        updateUserMarker(gps);  // hier passiert Snap-to-Route + Marker drehen
+        updateUserMarker(gps);  // Snap-to-route + Marker drehen
       },
       err => console.error("❌ GPS Fehler:", err),
       { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
@@ -1542,7 +1544,7 @@ function stopNavigation() {
   document.getElementById("etaBox").innerHTML = "";
   document.getElementById("etaBox").style.display = "none";
 
-  // User-Tracking weiterlaufen lassen
+  // 👉 Einfaches GPS-Tracking starten
   startUserLocationTracking();
 
   showToast("🛑 Navigation gestoppt");
@@ -1550,7 +1552,9 @@ function stopNavigation() {
   document.getElementById("stopBtn").style.display = "none";
 }
 
+
 let userWatchId = null;
+let lastBearing = 0;
 
 let userWatchId = null;
 let lastBearing = 0;
@@ -1570,8 +1574,8 @@ function startUserLocationTracking() {
           bearing = getBearing(lastLatLng, gpsLatLng);
         }
 
-        // Smooth Bearing Übergang (flüssigere Drehung)
-        const diff = ((bearing - lastBearing + 540) % 360) - 180; 
+        // Smooth Bearing Übergang (Interpolation)
+        const diff = ((bearing - lastBearing + 540) % 360) - 180;
         lastBearing = (lastBearing + diff * 0.2 + 360) % 360;
 
         // Marker + Kreise setzen
@@ -1588,6 +1592,14 @@ function startUserLocationTracking() {
     );
   }
 }
+
+function stopUserLocationTracking() {
+  if (userWatchId) {
+    navigator.geolocation.clearWatch(userWatchId);
+    userWatchId = null;
+  }
+}
+
 
 function updateDebug(info) {
   const el = document.getElementById("debugOverlay");
