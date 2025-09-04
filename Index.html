@@ -1597,12 +1597,22 @@ function stopNavigation() {
 
 let userWatchId = null;
 
-
 function startUserLocationTracking() {
   // Falls schon läuft → abbrechen
   if (userWatchId) navigator.geolocation.clearWatch(userWatchId);
 
-  if (navigator.geolocation) {
+  const geoOptions = {
+    enableHighAccuracy: true, // GPS priorisieren
+    maximumAge: 1000,          // nur sehr frische Positionen
+    timeout: 20000             // 20 Sekunden Timeout
+  };
+
+  function trackPosition() {
+    if (!navigator.geolocation) {
+      console.error("❌ Geolocation wird von diesem Browser nicht unterstützt");
+      return;
+    }
+
     userWatchId = navigator.geolocation.watchPosition(
       pos => {
         const gpsLatLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
@@ -1620,17 +1630,38 @@ function startUserLocationTracking() {
         // Marker + Kreise setzen
         setUserMarker(gpsLatLng, lastBearing, pos.coords.accuracy);
 
+        // Karte verfolgen
         if (follow) {
           map.setView(gpsLatLng, 18, { animate: true });
         }
 
         lastLatLng = gpsLatLng;
       },
-      err => console.error("❌ GPS Fehler:", err),
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+      err => {
+        switch (err.code) {
+          case 1:
+            console.error("❌ Zugriff auf Standort verweigert");
+            break;
+          case 2:
+            console.error("❌ Position nicht verfügbar");
+            break;
+          case 3:
+            console.warn("⚠️ Timeout expired, versuche erneut...");
+            // Nach kurzer Verzögerung erneut starten
+            setTimeout(trackPosition, 1000);
+            break;
+          default:
+            console.error("❌ Unbekannter Geolocation-Fehler", err);
+        }
+      },
+      geoOptions
     );
   }
+
+  // Tracking starten
+  trackPosition();
 }
+
 
 function stopUserLocationTracking() {
   if (userWatchId) {
