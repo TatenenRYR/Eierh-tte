@@ -1423,6 +1423,7 @@ function checkIfHutReached(userPos) {
 
     // nächste Route starten
     startRouteToNextHut();
+      updatePreviewRoute();
   }
 }
 
@@ -1801,8 +1802,9 @@ function listenRoomHuts() {
       }
 
       // 🔄 Wenn Navigation läuft -> Route neu berechnen
-      if (selected.length > 0 && navInterval) {
-        startRoute();
+      if (selected.length > 0 && navWatchId) {
+        startRouteToNextHut();
+      updatePreviewRoute();
       }
 
       // 🔄 Karte: alte Hüttenmarker entfernen
@@ -2322,11 +2324,15 @@ let currentHutIndex = 0;       // Aktuelle Zielhütte in selected[]
 
     // Überspringt aktuelle Hütte
     function skipHut() {
-      if (navInterval) {
+      if (navWatchId) {
         clearInterval(navInterval);
         selected.shift();
         showToast("⏭️ Hütte übersprungen");
-        startRoute();
+        // 🔄 Wenn Navigation läuft -> Route neu berechnen
+      if (selected.length > 0 && navWatchId) {
+        startRouteToNextHut();
+      updatePreviewRoute();
+      }
       }
     }
 let navigationActive = false;
@@ -2463,7 +2469,29 @@ function updateSelectedList() {
     `;
     list.appendChild(li);
   });
+  
+
 }
+let previewRouteLayer = null;
+let activeRouteLayer = null;
+
+function updatePreviewRoute() {
+  if (previewRouteLayer) {
+    map.removeLayer(previewRouteLayer);
+    previewRouteLayer = null;
+  }
+  if (selected.length < 2) return; // mind. 2 Punkte für Route
+
+  const latlngs = selected.map(s => [s.lat, s.lng]);
+
+  //hellgrau
+  previewRouteLayer = L.polyline(latlngs, {
+    color: "#D3D3D3",
+    weight: 3,
+    dashArray: "5,10"
+  }).addTo(map);
+}
+
 function removeSelected(idx) {
   const item = selected[idx];
 
@@ -2477,19 +2505,20 @@ function removeSelected(idx) {
     selected.splice(idx, 1);
     updateSelectedList();
 
-    // nächste Route starten
-    startRouteToNextHut();
+  
 
     // 🚦 Navigation nur beenden, wenn wirklich Navigation aktiv ist
-    if (selected.length === 0 && navInterval) {
+    if (selected.length === 0 && navWatchId) {
       stopNavigation();
       showToast("🛑 Navigation gestoppt – keine Hütte mehr ausgewählt");
     }
 
     // Falls Navigation aktiv ist -> Route neu berechnen
-    if (navInterval) {
-      startRoute();
-    }
+    // 🔄 Wenn Navigation läuft -> Route neu berechnen
+      if (selected.length > 0 && navWatchId) {
+        startRouteToNextHut();
+      updatePreviewRoute();
+      }
   }
 }
   /*  function updateSelectedList() {
@@ -2534,7 +2563,11 @@ function removeSelected(idx) {
   
     updateSelectedList();
     // nächste Route starten
-    startRouteToNextHut();
+   // 🔄 Wenn Navigation läuft -> Route neu berechnen
+      if (selected.length > 0 && navWatchId) {
+        startRouteToNextHut();
+      updatePreviewRoute();
+      }
     }
  /*   function updateSelectedList() {
   const ul = document.getElementById("selectedList");
@@ -2579,7 +2612,11 @@ function drop(ev) {
     selected.splice(to, 0, moved);
     updateSelectedList();
     showToast("🔃 Reihenfolge geändert");
-    if (navInterval) startRoute(); // Route neu starten
+    // 🔄 Wenn Navigation läuft -> Route neu berechnen
+      if (selected.length > 0 && navWatchId) {
+        startRouteToNextHut();
+      updatePreviewRoute();
+      }
   }
 }
     function resetRoute() {
@@ -2599,13 +2636,16 @@ function drop(ev) {
     showToast("❌ Hütte entfernt");
 
     // Wenn Navigation läuft, Route neu starten oder abbrechen
-    if (navInterval) {
+    if (navWatchId) {
       clearInterval(navInterval);
       navInterval = null;
       saveRouteToLocal();
 
-      if (selected.length > 0) {
-        startRoute();
+      // 🔄 Wenn Navigation läuft -> Route neu berechnen
+      if (selected.length > 0 && navWatchId) {
+        startRouteToNextHut();
+      updatePreviewRoute();
+      
       } else {
         stopNavigation();
         resetRoute();
@@ -2662,8 +2702,11 @@ function toggleSelect(type, id) {
     updateSelectedList();
 
     // Falls Navigation aktiv ist -> Route neu berechnen
-    if (navInterval) {
+    if (navWatchId) {
       startRouteToNextHut();
+      
+      // Route neu berechnen, immer als Vorschau
+      updatePreviewRoute();
     }
 
     // 👉 Button im aktiven Popup sofort aktualisieren
@@ -2850,7 +2893,12 @@ if(roomId){
   
     if (navState) {
      // speak("⏱️ Gruppentour gestartet");
-      if (!navInterval) startRoute();
+      if (navWatchId) {
+      startRouteToNextHut();
+      
+      // Route neu berechnen, immer als Vorschau
+      updatePreviewRoute();
+    
     } else {
      // speak("⛔ Gruppentour gestoppt");
       if (navInterval) stopNavigation();
