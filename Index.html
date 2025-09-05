@@ -1706,15 +1706,18 @@ async function stopNavigation() {
         return acc + map.distance(arr[i - 1], cur);
       }, 0);
 
-    const log = {
-      date: new Date().toISOString(),
-      duration,            // Sekunden
-      distance,            // Meter
+    const rawLog = {
+      date: new Date(), // wird später automatisch in ISO umgewandelt
+      duration,         // Sekunden
+      distance,         // Meter
       avgSpeed: distance / duration * 3.6, // km/h
-      route: pastRouteLine.getLatLngs().map(p => [p.lat, p.lng]) // Track speichern
+      route: pastRouteLine.getLatLngs()    // wird automatisch zu {lat, lng}
     };
 
-    // 🔹 Lokale Speicherung (optional behalten für Offline)
+    // 🔹 Firestore-kompatibel säubern
+    const log = sanitizeForFirestore(rawLog);
+
+    // 🔹 Lokale Speicherung
     const logs = JSON.parse(localStorage.getItem("fahrtenbuch") || "[]");
     logs.push(log);
     localStorage.setItem("fahrtenbuch", JSON.stringify(logs));
@@ -1747,8 +1750,43 @@ async function stopNavigation() {
     map.removeLayer(pastRouteLine);
     pastRouteLine = null;
   }
+}
+
+/* 🔧 Hilfsfunktion: Firestore-kompatibel machen */
+function sanitizeForFirestore(obj) {
+  if (obj === null) return null;
+
+  if (["string", "number", "boolean"].includes(typeof obj)) {
+    return obj;
   }
 
+  if (obj instanceof Date) {
+    return obj.toISOString();
+  }
+
+  if (typeof obj === "object" && obj !== null && "lat" in obj && "lng" in obj) {
+    return { lat: Number(obj.lat), lng: Number(obj.lng) };
+  }
+
+  if (Array.isArray(obj)) {
+    return obj
+      .map(sanitizeForFirestore)
+      .filter(v => v !== undefined);
+  }
+
+  if (typeof obj === "object") {
+    const clean = {};
+    for (const [k, v] of Object.entries(obj)) {
+      const sanitized = sanitizeForFirestore(v);
+      if (sanitized !== undefined) {
+        clean[k] = sanitized;
+      }
+    }
+    return clean;
+  }
+
+  return undefined; // ungültige Werte entfernen
+}
 
 let userWatchId = null;
 
