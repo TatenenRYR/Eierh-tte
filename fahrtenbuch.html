@@ -3,27 +3,43 @@
 <head>
   <meta charset="UTF-8">
   <title>📖 Fahrtenbuch</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js"></script>
   <style>
     body { font-family: sans-serif; margin:20px; background:#f8f8f8; }
+    h1,h2 { margin-bottom:10px; }
     .profile { display:flex; align-items:center; gap:20px; margin-bottom:20px; }
     .profile img { width:80px; height:80px; border-radius:50%; object-fit:cover; cursor:pointer; }
     .stats { margin:20px 0; padding:15px; background:#fff; border-radius:10px; }
-    table { width:100%; border-collapse:collapse; margin-top:20px; }
-    th, td { padding:10px; border-bottom:1px solid #ddd; }
+    table { width:100%; border-collapse:collapse; margin-top:20px; background:#fff; }
+    th, td { padding:10px; border-bottom:1px solid #ddd; text-align:left; }
+    tr:hover { background:#f0f0f0; cursor:pointer; }
+    #map { height:300px; margin-top:20px; border-radius:10px; }
+    #badgeList { display:flex; gap:15px; flex-wrap:wrap; margin-top:15px; }
+    #badgeList div { padding:10px; border-radius:10px; background:#fff; text-align:center; width:110px; }
+    #badgeList div div { font-size:2em; }
   </style>
 </head>
 <body>
   <h1>📖 Mein Fahrtenbuch</h1>
 
+  <!-- Profil -->
   <div class="profile">
     <img id="profilePic" src="default.jpg" alt="Profilbild">
     <div>
       <input id="profileName" placeholder="Dein Name" />
+      <select id="profileTitle"></select>
       <button onclick="saveProfile()">💾 Speichern</button>
+      <br><br>
+      <button onclick="syncProfileToFirebase()">🌍 Öffentlich machen</button>
+      <input id="shareLink" readonly style="width:100%;margin-top:5px;" />
     </div>
   </div>
 
+  <!-- Statistik -->
   <div class="stats">
     <h2>Statistik</h2>
     <p id="totalKm">0 km gesamt</p>
@@ -33,24 +49,45 @@
 
   <canvas id="chart" height="100"></canvas>
 
+  <h2>🏅 Meine Abzeichen</h2>
+  <div id="badgeList"></div>
+
   <h2>Touren</h2>
   <table>
     <thead>
-      <tr><th>Datum</th><th>Distanz</th><th>Dauer</th><th>Ø Geschwindigkeit</th></tr>
+      <tr><th>Datum</th><th>Dauer</th><th>Distanz</th><th>Ø Geschwindigkeit</th></tr>
     </thead>
     <tbody id="logTable"></tbody>
   </table>
 
+  <div id="map"></div>
+
 <script>
+// ---------- Firebase Setup ----------
+const firebaseConfig = {
+  apiKey: "DEIN_API_KEY",
+  authDomain: "DEINE_APP.firebaseapp.com",
+  projectId: "DEINE_APP",
+  storageBucket: "DEINE_APP.appspot.com",
+  messagingSenderId: "SENDER_ID",
+  appId: "APP_ID"
+};
+const app = firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// ---------- Profil ----------
 function loadProfile() {
   document.getElementById("profileName").value = localStorage.getItem("profileName") || "";
   const pic = localStorage.getItem("profilePic");
   if (pic) document.getElementById("profilePic").src = pic;
 }
+
 function saveProfile() {
   localStorage.setItem("profileName", document.getElementById("profileName").value);
+  localStorage.setItem("profileTitle", document.getElementById("profileTitle").value);
   alert("✔️ Profil gespeichert");
 }
+
 document.getElementById("profilePic").onclick = () => {
   const input = document.createElement("input");
   input.type = "file";
@@ -67,6 +104,83 @@ document.getElementById("profilePic").onclick = () => {
   input.click();
 };
 
+// ---------- Titel aus Badges ----------
+const titleDefs = {
+  "first-ride": "Neuling",
+  "10-rides": "Road Warrior",
+  "100-rides": "Ausdauerprofi",
+  "500km": "Bergziege",
+  "night-ride": "Nachtfahrer",
+  "earth": "Globetrotter",
+  "admin": "👑 Admin"
+};
+
+function renderTitles() {
+  const badges = JSON.parse(localStorage.getItem("badges") || "[]");
+  const sel = document.getElementById("profileTitle");
+  sel.innerHTML = "<option value=''>Kein Titel</option>";
+  badges.forEach(b => {
+    if (titleDefs[b.id]) {
+      const opt = document.createElement("option");
+      opt.value = titleDefs[b.id];
+      opt.textContent = titleDefs[b.id];
+      sel.appendChild(opt);
+    }
+  });
+  // Falls Admin Titel gesetzt wurde (z. B. per Firebase)
+  if (localStorage.getItem("adminTitle")) {
+    const opt = document.createElement("option");
+    opt.value = "👑 Admin";
+    opt.textContent = "👑 Admin";
+    sel.appendChild(opt);
+  }
+  sel.value = localStorage.getItem("profileTitle") || "";
+}
+
+// ---------- Sync mit Firebase ----------
+async function syncProfileToFirebase() {
+  const profile = {
+    name: localStorage.getItem("profileName"),
+    title: localStorage.getItem("profileTitle"),
+    pic: localStorage.getItem("profilePic"),
+    badges: JSON.parse(localStorage.getItem("badges") || "[]"),
+    stats: {
+      totalKm: document.getElementById("totalKm").textContent,
+      totalTime: document.getElementById("totalTime").textContent,
+      avgSpeed: document.getElementById("avgSpeed").textContent
+    }
+  };
+  
+  const userId = localStorage.getItem("userId") || crypto.randomUUID();
+  localStorage.setItem("userId", userId);
+
+  await db.collection("profiles").doc(userId).set(profile);
+  alert("✔️ Profil in Firebase gespeichert!");
+  
+  document.getElementById("shareLink").value = 
+    `https://deine-app.web.app/profile.html?id=${userId}`;
+}
+
+// ---------- Badges ----------
+function renderBadges() {
+  const badges = JSON.parse(localStorage.getItem("badges") || "[]");
+  const list = document.getElementById("badgeList");
+  list.innerHTML = "";
+  if (badges.length === 0) {
+    list.innerHTML = "<p>Noch keine Abzeichen freigeschaltet 🚀</p>";
+    return;
+  }
+  badges.forEach(b => {
+    const div = document.createElement("div");
+    div.innerHTML = `<div>${b.icon}</div><div>${b.title}</div><small>${new Date(b.date).toLocaleDateString()}</small>`;
+    list.appendChild(div);
+  });
+}
+
+// ---------- Fahrtenbuch ----------
+let logs = [];
+let map, routeLayer;
+
 function formatTime(sec) {
   const h = Math.floor(sec/3600);
   const m = Math.floor((sec%3600)/60);
@@ -74,12 +188,12 @@ function formatTime(sec) {
 }
 
 function renderFahrtenbuch() {
-  const logs = JSON.parse(localStorage.getItem("fahrtenbuch") || "[]");
+  logs = JSON.parse(localStorage.getItem("fahrtenbuch") || "[]");
   const tbody = document.getElementById("logTable");
   tbody.innerHTML = "";
 
   let totalKm=0, totalTime=0, speeds=[];
-  logs.forEach(l => {
+  logs.forEach((l, idx) => {
     totalKm += l.distance/1000;
     totalTime += l.duration;
     speeds.push(l.avgSpeed);
@@ -87,9 +201,10 @@ function renderFahrtenbuch() {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${new Date(l.date).toLocaleString()}</td>
-      <td>${(l.distance/1000).toFixed(1)} km</td>
       <td>${formatTime(l.duration)}</td>
+      <td>${(l.distance/1000).toFixed(1)} km</td>
       <td>${l.avgSpeed.toFixed(1)} km/h</td>`;
+    tr.onclick = () => showRoute(idx);
     tbody.appendChild(tr);
   });
 
@@ -97,20 +212,36 @@ function renderFahrtenbuch() {
   document.getElementById("totalTime").innerText = (totalTime/3600).toFixed(1)+" h gesamt";
   document.getElementById("avgSpeed").innerText = (speeds.reduce((a,b)=>a+b,0)/speeds.length || 0).toFixed(1)+" km/h Ø Geschwindigkeit";
 
-  new Chart(document.getElementById("chart"), {
-    type:"line",
-    data:{
-      labels: logs.map(l=>new Date(l.date).toLocaleDateString()),
-      datasets:[{
-        label:"Distanz (km)",
-        data: logs.map(l=>l.distance/1000),
-        borderColor:"blue",
-        fill:false
-      }]
-    }
-  });
+  if (logs.length > 0) {
+    new Chart(document.getElementById("chart"), {
+      type:"bar",
+      data:{
+        labels: logs.map(l=>new Date(l.date).toLocaleDateString()),
+        datasets:[{
+          label:"Distanz (km)",
+          data: logs.map(l=>l.distance/1000),
+          backgroundColor:"rgba(54,162,235,0.6)"
+        }]
+      }
+    });
+  }
+
+  renderBadges();
+  renderTitles();
 }
 
+function showRoute(idx) {
+  const log = logs[idx];
+  if (!map) {
+    map = L.map("map").setView([51,10], 6);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:19 }).addTo(map);
+  }
+  if (routeLayer) map.removeLayer(routeLayer);
+  routeLayer = L.polyline(log.route, { color:"gray", weight:4 }).addTo(map);
+  map.fitBounds(routeLayer.getBounds());
+}
+
+// ---------- Init ----------
 loadProfile();
 renderFahrtenbuch();
 </script>
