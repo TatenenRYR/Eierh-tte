@@ -1305,7 +1305,66 @@ function getBearing(from, to) {
   return (brng + 360) % 360; // 0–360°
 }
 
+async function updateUserMarker(gpsLatLng, accuracy = 20) {
+  try {
+    // Snap-to-route
+    const snappedPos = snapToRoute(gpsLatLng);
 
+    // Bearing entlang der Route
+    const bearing = getRouteBearing(snappedPos);
+    lastBearing = bearing;
+
+    // Marker + Genauigkeit
+    setUserMarker(snappedPos, bearing, accuracy);
+
+    // Karte folgen lassen
+    if (follow) {
+      map.setView(snappedPos, 18, { animate: true });
+    }
+
+    // Abgefahrene Strecke aufzeichnen
+    if (!pastRouteLine) {
+      pastRouteLine = L.polyline([], {
+        color: "gray",
+        weight: 4,
+        pane: "pastRoutePane"
+      }).addTo(map);
+    }
+
+    if (lastLatLng) {
+      const segDist = map.distance(lastLatLng, snappedPos);
+      tourDistance += segDist;
+
+      pastRouteLine.addLatLng(snappedPos);
+      pastRouteLine.bringToFront();
+
+      // 🔹 Position in Firebase speichern (falls Fahrt läuft)
+      if (currentRideId) {
+        try {
+          const userId = localStorage.getItem("userId");
+          await db.collection("users").doc(userId)
+            .collection("rides").doc(currentRideId)
+            .update({
+              coords: firebase.firestore.FieldValue.arrayUnion([snappedPos.lat, snappedPos.lng])
+            });
+        } catch (err) {
+          console.warn("⚠️ Firebase-Update fehlgeschlagen:", err);
+        }
+      }
+    }
+
+    lastLatLng = snappedPos;
+
+    // Checks
+    checkIfHutReached(snappedPos);
+    checkTurnByTurn(snappedPos);
+    updateEta(snappedPos);
+    checkRouteDeviation(gpsLatLng); // echte GPS-Distanz zur Route
+
+  } catch (err) {
+    console.error("❌ Fehler in updateUserMarker:", err);
+  }
+}
 // nächstgelegenen Punkt auf Route finden
 function snapToRoute(latlng) {
   if (!routeCoords || routeCoords.length < 2) return latlng;
@@ -1340,54 +1399,6 @@ function updateEta(userPos) {
   el.innerHTML = `🛣️ ${(dist / 1000).toFixed(1)} km · ⏱️ ${etaMins} min`;
 }
     
-async function updateUserMarker(gpsLatLng, accuracy = 20) {
-  try {
-    // Snap-to-route
-    const snappedPos = snapToRoute(gpsLatLng);
-
-    // Bearing entlang der Route
-    const bearing = getRouteBearing(snappedPos);
-    lastBearing = bearing;
-
-    // Marker + Genauigkeit
-    setUserMarker(snappedPos, bearing, accuracy);
-
-    // Karte folgen lassen
-    if (follow) {
-      map.setView(snappedPos, 18, { animate: true });
-    }
-
-    // Abgefahrene Strecke aufzeichnen
-    if (!pastRouteLine) {
-      pastRouteLine = L.polyline([], {
-        color: "gray",
-        weight: 4,
-        pane: "pastRoutePane"
-      }).addTo(map);
-    }
-    if (lastLatLng) {
-      pastRouteLine.addLatLng(snappedPos);
-      pastRouteLine.bringToFront();
-
-      
-      const segDist = map.distance(lastLatLng, snappedPos);
-      tourDistance += segDist;
-      pastRouteLine.addLatLng(snappedPos);
-
-    }
-
-    lastLatLng = snappedPos;
-
-    // Checks
-    checkIfHutReached(snappedPos);
-    checkTurnByTurn(snappedPos);
-    updateEta(snappedPos);
-    checkRouteDeviation(gpsLatLng); // echte GPS-Distanz zur Route
-
-  } catch (err) {
-    console.error("❌ Fehler in updateUserMarker:", err);
-  }
-}
 
 let lastRecalcTime = 0; // damit nicht dauernd recalculiert wird
 
@@ -1594,11 +1605,14 @@ function startRouteToNextHut() {
   }, { enableHighAccuracy: true });
 }
 
+let currentRideId = null; // Firebase Ride-Dokument-ID
+
 async function startNavigation(start, ziel) {
   if (navWatchId) return; // läuft schon
 
   tourStartTime = Date.now();
   tourDistance = 0;
+  pastRouteLine = L.polyline([], { color: "gray", weight: 3 }).addTo(map);
 
   // 👉 Einfaches GPS-Tracking stoppen
   stopUserLocationTracking();
@@ -1606,12 +1620,46 @@ async function startNavigation(start, ziel) {
   // 1️⃣ Route von ORS holen
   await fetchRoute(start, ziel);
 
-  // 2️⃣ GPS-Tracking starten
+  // 2️⃣ Fahrt in Firebase anlegen
+  try {
+    const userId = localStorage.getItem("userId") || crypto.randomUUID();
+    localStorage.setItem("userId", userId);
+
+    const docRef = await db.collection("users").doc(userId)
+      .collection("rides").add({
+        startTime: new Date(tourStartTime).toISOString(),
+        status: "running",
+        routePlanned: routeCoords.map(p => [p.lat, p.lng]),
+        coords: [] // echte gefahrene Punkte kommen später rein
+      });
+
+    currentRideId = docRef.id;
+    console.log("🚴 Fahrt gestartet (Firebase):", currentRideId);
+  } catch (err) {
+    console.error("❌ Fehler beim Anlegen der Fahrt in Firebase:", err);
+    showToast("⚠️ Fahrt wird nur lokal aufgezeichnet");
+  }
+
+  // 3️⃣ GPS-Tracking starten
   if (navigator.geolocation) {
     navWatchId = navigator.geolocation.watchPosition(
-      pos => {
+      async pos => {
         const gps = L.latLng(pos.coords.latitude, pos.coords.longitude);
         updateUserMarker(gps);  // Snap-to-route + Marker drehen
+
+        // 🔹 Position live in Firebase aktualisieren
+        if (currentRideId) {
+          try {
+            const userId = localStorage.getItem("userId");
+            await db.collection("users").doc(userId)
+              .collection("rides").doc(currentRideId)
+              .update({
+                coords: firebase.firestore.FieldValue.arrayUnion([gps.lat, gps.lng])
+              });
+          } catch (err) {
+            console.warn("⚠️ Konnte Position nicht in Firebase speichern:", err);
+          }
+        }
       },
       err => console.error("❌ GPS Fehler:", err),
       { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
@@ -1625,7 +1673,7 @@ async function startNavigation(start, ziel) {
   }
 }
 
-function stopNavigation() {
+async function stopNavigation() {
   // GPS-Tracking für Navigation stoppen
   if (navWatchId) {
     navigator.geolocation.clearWatch(navWatchId);
@@ -1638,7 +1686,6 @@ function stopNavigation() {
     routeLine = null;
   }
 
-
   // Anzeige leeren
   document.getElementById("etaBox").innerHTML = "";
   document.getElementById("etaBox").style.display = "none";
@@ -1649,7 +1696,6 @@ function stopNavigation() {
   showToast("🛑 Navigation gestoppt");
   document.getElementById("startBtn").style.display = "inline-block";
   document.getElementById("stopBtn").style.display = "none";
-
 
   // Fahrtende speichern (nur wenn Tour existiert)
   if (tourStartTime && pastRouteLine) {
@@ -1662,24 +1708,36 @@ function stopNavigation() {
 
     const log = {
       date: new Date().toISOString(),
-      duration,           // in Sekunden
-      distance,           // in Metern
+      duration,            // Sekunden
+      distance,            // Meter
       avgSpeed: distance / duration * 3.6, // km/h
       route: pastRouteLine.getLatLngs().map(p => [p.lat, p.lng]) // Track speichern
     };
 
-    // ins Fahrtenbuch schreiben
+    // 🔹 Lokale Speicherung (optional behalten für Offline)
     const logs = JSON.parse(localStorage.getItem("fahrtenbuch") || "[]");
     logs.push(log);
     localStorage.setItem("fahrtenbuch", JSON.stringify(logs));
 
-    console.log("✔️ Fahrt gespeichert:", log);
+    // 🔹 Firebase Speicherung
+    try {
+      const userId = localStorage.getItem("userId") || crypto.randomUUID();
+      localStorage.setItem("userId", userId);
+
+      await db.collection("users").doc(userId)
+        .collection("rides").add(log);
+
+      console.log("✔️ Fahrt in Firebase gespeichert:", log);
+      showToast("✔️ Fahrt gespeichert (Cloud)");
+    } catch (err) {
+      console.error("❌ Fehler beim Speichern in Firebase:", err);
+      showToast("⚠️ Fahrt nur lokal gespeichert");
+    }
   }
 
   // Zurücksetzen
   tourStartTime = null;
   tourDistance = 0;
-
   routeCoords = [];
   routeSteps = [];
   routeDistance = 0;
@@ -1689,9 +1747,7 @@ function stopNavigation() {
     map.removeLayer(pastRouteLine);
     pastRouteLine = null;
   }
-
-
-}
+  }
 
 
 let userWatchId = null;
