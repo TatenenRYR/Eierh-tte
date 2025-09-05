@@ -861,6 +861,9 @@ let alreadySpokenTurnIndex = {};
     let lastNavActiveState = null; // Merkt letzten bekannten Firestore-Status
 
 
+    let tourStartTime = 0;
+    let tourDistance  = 0;
+    
     //User ID bestimmen
     if (!localStorage.aliasId) {
        localStorage.aliasId = "user_" + Math.random().toString(36).substr(2, 6);
@@ -1320,7 +1323,7 @@ function updateEta(userPos) {
   el.style.display = "block";
   el.innerHTML = `🛣️ ${(dist / 1000).toFixed(1)} km · ⏱️ ${etaMins} min`;
 }
-
+    
 async function updateUserMarker(gpsLatLng, accuracy = 20) {
   try {
     // Snap-to-route
@@ -1330,7 +1333,7 @@ async function updateUserMarker(gpsLatLng, accuracy = 20) {
     const bearing = getRouteBearing(snappedPos);
     lastBearing = bearing;
 
-    // Marker + Kreise setzen (nutzt accuracy)
+    // Marker + Genauigkeit
     setUserMarker(snappedPos, bearing, accuracy);
 
     // Karte folgen lassen
@@ -1338,22 +1341,38 @@ async function updateUserMarker(gpsLatLng, accuracy = 20) {
       map.setView(snappedPos, 18, { animate: true });
     }
 
-    // (optional) abgefahrene Strecke sammeln
-    if (typeof pastRouteLine !== "undefined" && lastLatLng) {
+    // Abgefahrene Strecke aufzeichnen
+    if (!pastRouteLine) {
+      pastRouteLine = L.polyline([], {
+        color: "gray",
+        weight: 4,
+        pane: "pastRoutePane"
+      }).addTo(map);
+    }
+    if (lastLatLng) {
       pastRouteLine.addLatLng(snappedPos);
-      pastRouteLine.bringToFront();  // ✅ immer oben zeichnen
+      pastRouteLine.bringToFront();
+
+      
+      const segDist = map.distance(lastLatLng, snappedPos);
+      tourDistance += segDist;
+      pastRouteLine.addLatLng(snappedPos);
+
     }
 
     lastLatLng = snappedPos;
-    // Turn-by-turn & Co.
-    checkTurnByTurn(snappedPos);
+
+    // Checks
     checkIfHutReached(snappedPos);
+    checkTurnByTurn(snappedPos);
     updateEta(snappedPos);
+    checkRouteDeviation(gpsLatLng); // echte GPS-Distanz zur Route
 
   } catch (err) {
     console.error("❌ Fehler in updateUserMarker:", err);
   }
 }
+
 
 
 function getTurnIcon(type) {
@@ -1426,15 +1445,19 @@ function checkIfHutReached(userPos) {
     showToast(`🏁 ${ziel.name} erreicht!`);
     if (voice) speak(`${ziel.name} erreicht`);
 
-    // Hütte aus Liste entfernen
+    // Nächstes Ziel laden
     selected.shift();
     updateSelectedList();
 
-    // nächste Route starten
-    startRouteToNextHut();
+    if (selected.length > 0) {
+      startRouteToNextHut();
       updatePreviewRouteWithLoading();
+    } else {
+      stopNavigation();
+    }
   }
 }
+
 
 // Marker setzen/aktualisieren
 let userMarkerCircle = null;
@@ -1538,6 +1561,9 @@ function startRouteToNextHut() {
 async function startNavigation(start, ziel) {
   if (navWatchId) return; // läuft schon
 
+  tourStartTime = Date.now();
+  tourDistance = 0;
+
   // 👉 Einfaches GPS-Tracking stoppen
   stopUserLocationTracking();
 
@@ -1576,21 +1602,6 @@ function stopNavigation() {
     routeLine = null;
   }
 
-  // Graue Linie entfernen + neu erstellen
-  if (pastRouteLine) {
-    map.removeLayer(pastRouteLine);
-    pastRouteLine = L.polyline([], { 
-      color: "gray", 
-      weight: 4, 
-      opacity: 0.7,
-      pane: "pastRoutePane"
-    }).addTo(map);
-  }
-
-  routeCoords = [];
-  routeSteps = [];
-  routeDistance = 0;
-  routeDuration = 0;
 
   // Anzeige leeren
   document.getElementById("etaBox").innerHTML = "";
@@ -1602,6 +1613,48 @@ function stopNavigation() {
   showToast("🛑 Navigation gestoppt");
   document.getElementById("startBtn").style.display = "inline-block";
   document.getElementById("stopBtn").style.display = "none";
+
+
+  // Fahrtende speichern (nur wenn Tour existiert)
+  if (tourStartTime && pastRouteLine) {
+    const duration = (Date.now() - tourStartTime) / 1000; // Sekunden
+    const distance = tourDistance || pastRouteLine.getLatLngs()
+      .reduce((acc, cur, i, arr) => {
+        if (i === 0) return 0;
+        return acc + map.distance(arr[i - 1], cur);
+      }, 0);
+
+    const log = {
+      date: new Date().toISOString(),
+      duration,           // in Sekunden
+      distance,           // in Metern
+      avgSpeed: distance / duration * 3.6, // km/h
+      route: pastRouteLine.getLatLngs().map(p => [p.lat, p.lng]) // Track speichern
+    };
+
+    // ins Fahrtenbuch schreiben
+    const logs = JSON.parse(localStorage.getItem("fahrtenbuch") || "[]");
+    logs.push(log);
+    localStorage.setItem("fahrtenbuch", JSON.stringify(logs));
+
+    console.log("✔️ Fahrt gespeichert:", log);
+  }
+
+  // Zurücksetzen
+  tourStartTime = null;
+  tourDistance = 0;
+
+  routeCoords = [];
+  routeSteps = [];
+  routeDistance = 0;
+  routeDuration = 0;
+
+  if (pastRouteLine) {
+    map.removeLayer(pastRouteLine);
+    pastRouteLine = null;
+  }
+
+
 }
 
 
@@ -2536,8 +2589,9 @@ async function updatePreviewRoute() {
     // Vorschau-Polyline hinzufügen (hellgrau)
     previewRouteLayer = L.polyline(allCoords, {
       color: "#D3D3D3",
-      weight: 3,
-      dashArray: "5,10"
+      weight: 5,
+      dashArray: "5,10",
+      pane: "previewPane"
     }).addTo(map);
 
     map.fitBounds(previewRouteLayer.getBounds());
@@ -3267,21 +3321,19 @@ function unanchorUserArrow() {
 
 
 
+let deviceHeading = 0; // global speichern
+
 window.addEventListener("deviceorientationabsolute", event => {
   if (event.alpha != null) {
-  const heading = (360 - event.alpha) % 360;
-  /*  // 1. 🧭 Drehe die Leaflet-Karte (optisch)
-    const mapPane = document.querySelector(".leaflet-map-pane");
-    if (mapPane) {
-      mapPane.style.transformOrigin = "center center";
-      mapPane.style.transition = "transform 0.2s linear";
-      mapPane.style.transform = `rotate(${360 - heading}deg)`;
-    }*/
+    deviceHeading = (360 - event.alpha) % 360;
 
-    // 2. ➡️ Drehe den User-Marker
-    updateUserArrowRotation();
+    // Nur Marker drehen, wenn KEINE Navigation läuft
+    if (!navWatchId) {
+      updateUserArrowRotation();
+    }
   }
 }, true);
+
 function updateUserArrowRotation() {
   if (!userMarker) return;
 
@@ -3291,10 +3343,10 @@ function updateUserArrowRotation() {
       <div id="user-arrow" style="
         width: 36px;
         height: 36px;
-        transform: rotate(${360 - heading}deg);
+        transform: rotate(${deviceHeading}deg);
         transition: transform 0.2s linear;
       ">
-        <svg viewBox="0 0 24 24" width="36" height="36" fill="#007bff">
+        <svg viewBox="0 0 24 24" width="36" height="36" fill="#007bff" style="transform: rotate(-90deg);">
           <path d="M12 2L15 22L12 18L9 22L12 2Z"/>
         </svg>
       </div>
@@ -3305,6 +3357,7 @@ function updateUserArrowRotation() {
 
   userMarker.setIcon(icon);
 }
+
   /*  window.addEventListener('deviceorientationabsolute', (event) => {
   if (event.alpha != null) {
     const heading = 360 - event.alpha;
