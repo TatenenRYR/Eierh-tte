@@ -1652,48 +1652,45 @@ let lastStepIndex = -1;
 
 // nächste Hütte ansteuern
 // ------------------- Route starten -------------------
-function startRouteToNextHut() {
-  return new Promise((resolve, reject) => {
-    if (!selected.length) {
-      showToast("⚠️ Keine Hütte ausgewählt");
-      reject("Keine Hütte ausgewählt");
-      return;
-    }
+async function startRouteToNextHut() {
+  if (!selected.length) {
+    showToast("⚠️ Keine Hütte ausgewählt");
+    throw new Error("Keine Hütte ausgewählt");
+  }
 
-    const ziel = selected[0];
-    const zielLatLng = { lat: ziel.lat, lng: ziel.lng };
-    routeStartTime = Date.now();
+  const ziel = selected[0];
+  const zielLatLng = { lat: ziel.lat, lng: ziel.lng };
+  routeStartTime = Date.now();
 
-    navigator.geolocation.getCurrentPosition(async pos => {
-      try {
-        const start = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        const ll = L.latLng(start.lat, start.lng);
-        map.setView(ll, 18, { animate: false });
-        setUserMarker(ll, 0);
-
-        // Abgefahrene Strecke
-        pastRouteLine = L.polyline([], {
-          color: "gray",
-          weight: 4,
-          opacity: 0.7,
-          pane: "pastRoutePane"
-        }).addTo(map);
-
-        await startNavigation(start, zielLatLng);
-        showToast(`🚴 Starte Route zu: ${ziel.name}`);
-
-        resolve();
-      } catch (err) {
-        console.error("❌ Fehler beim Starten der Route:", err);
-        reject(err);
-      }
-    }, err => {
-      console.error("❌ GPS Fehler:", err);
-      showToast("❌ GPS Fehler beim Routenstart");
-      reject(err);
-    }, { enableHighAccuracy: true });
+  // GPS als Promise abfragen
+  const start = await new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      err => reject(err),
+      { enableHighAccuracy: true }
+    );
   });
+
+  const ll = L.latLng(start.lat, start.lng);
+  map.setView(ll, 18, { animate: false });
+  setUserMarker(ll, 0);
+
+  // Alte Linie löschen, neue Linie erstellen
+  if (pastRouteLine) {
+    map.removeLayer(pastRouteLine);
+  }
+  pastRouteLine = L.polyline([], {
+    color: "gray",
+    weight: 4,
+    opacity: 0.7,
+    pane: "pastRoutePane"
+  }).addTo(map);
+
+  // Navigation starten / neu berechnen
+  await startNavigation(start, zielLatLng);
+  showToast(`🚴 Starte Route zu: ${ziel.name}`);
 }
+
 function updateSpeedUI(gps, coords) {
   const speed = coords.speed && coords.speed > 0 
     ? (coords.speed * 3.6).toFixed(1) // m/s → km/h
@@ -1709,11 +1706,16 @@ function updateSpeedUI(gps, coords) {
 let currentRideId = null; // Firebase Ride-Dokument-ID
 
 async function startNavigation(start, ziel) {
-  //if (navWatchId) return; // läuft schon
-updateStartBtnUI({ calculating: false, navActive: true });
+  // UI sofort aktualisieren
+  updateStartBtnUI({ calculating: false, navActive: true });
 
   tourStartTime = Date.now();
   tourDistance = 0;
+
+  // Alte Linie entfernen, neue Linie erstellen
+  if (pastRouteLine) {
+    map.removeLayer(pastRouteLine);
+  }
   pastRouteLine = L.polyline([], { color: "gray", weight: 3 }).addTo(map);
 
   // Karte automatisch folgen während Navigation
@@ -1722,7 +1724,7 @@ updateStartBtnUI({ calculating: false, navActive: true });
 
   stopUserLocationTracking();
 
-  // 1) Route holen (mit Fehlerprüfung)
+  // ---------------- Route holen ----------------
   try {
     await fetchRoute(start, ziel);
   } catch (err) {
@@ -1731,7 +1733,7 @@ updateStartBtnUI({ calculating: false, navActive: true });
     return;
   }
 
-  // 2) Firebase Fahrt anlegen
+  // ---------------- Firebase Fahrt anlegen ----------------
   try {
     const userId = localStorage.getItem("userId") || crypto.randomUUID();
     localStorage.setItem("userId", userId);
@@ -1740,7 +1742,7 @@ updateStartBtnUI({ calculating: false, navActive: true });
       .collection("rides").add({
         startTime: new Date(tourStartTime).toISOString(),
         status: "running",
-        routePlanned: routeCoords.map(p => ({ lat: p.lat, lng: p.lng })), // ✅ nur Plain Objects
+        routePlanned: routeCoords.map(p => ({ lat: p.lat, lng: p.lng })),
         coords: []
       });
 
@@ -1752,8 +1754,14 @@ updateStartBtnUI({ calculating: false, navActive: true });
     currentRideId = null;
   }
 
-  // 3) GPS-Tracking starten
+  // ---------------- GPS-Tracking starten / aktualisieren ----------------
   if (navigator.geolocation) {
+    if (navWatchId) {
+      // Falls schon aktiv, zuerst stoppen
+      navigator.geolocation.clearWatch(navWatchId);
+      navWatchId = null;
+    }
+
     navWatchId = navigator.geolocation.watchPosition(
       async pos => {
         const gps = L.latLng(pos.coords.latitude, pos.coords.longitude);
@@ -1773,7 +1781,7 @@ updateStartBtnUI({ calculating: false, navActive: true });
                 coords: firebase.firestore.FieldValue.arrayUnion({
                   lat: gps.lat,
                   lng: gps.lng
-                }) // ✅ Objekt statt Array
+                })
               });
           } catch (err) {
             console.warn("⚠️ Konnte Position nicht in Firebase speichern:", err);
@@ -1785,10 +1793,11 @@ updateStartBtnUI({ calculating: false, navActive: true });
     );
 
     showToast("▶️ Navigation gestartet");
-      } else {
+  } else {
     alert("❌ GPS wird nicht unterstützt");
   }
 }
+
 
 async function stopNavigation() {
   if (navWatchId) {
