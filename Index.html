@@ -1209,69 +1209,52 @@ let routeSteps = [];
 
 async function fetchRoute(start, ziel) {
   const url = "https://api.openrouteservice.org/v2/directions/cycling-regular/json";
-
+  const lang = (localStorage.lang && localStorage.lang.split('-')[0]) || 'de';
   const body = {
     coordinates: [
       [start.lng, start.lat],
       [ziel.lng, ziel.lat]
     ],
-    instructions: true
+    instructions: true,
+    language: lang
   };
 
   try {
+    updateStartBtnUI({ calculating: true, navActive: !!navWatchId });
+
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Authorization": ORS_API_KEY,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Accept-Language": localStorage.lang || navigator.language || "de-DE"
       },
       body: JSON.stringify(body)
     });
 
     const data = await res.json();
-    console.log("Routen-Response:", data);
-
     if (data.error) {
       console.error("❌ ORS Fehler:", data.error);
-      alert("Route konnte nicht berechnet werden: " + data.error.message);
+      alert("Route konnte nicht berechnet werden: " + (data.error.message || JSON.stringify(data.error)));
       return;
     }
 
-    if (
-      data &&
-      data.routes &&
-      data.routes.length > 0 &&
-      data.routes[0].geometry
-    ) {
-      // ✅ Polyline-Dekodierung (liefert [lat, lng])
+    if (data.routes?.length && data.routes[0].geometry) {
       const decoded = polyline.decode(data.routes[0].geometry);
       routeCoords = decoded.map(c => L.latLng(c[0], c[1]));
-    } else {
-      console.error("❌ Keine Route gefunden oder ungültige Daten:", data);
-      return;
     }
 
-    // Alte Route entfernen
     if (routeLine) map.removeLayer(routeLine);
-
-    
-    // Blaue Route
-    routeLine = L.polyline(routeCoords, {
-      color: "blue",
-      weight: 5,
-      pane: "routePane"
-    }).addTo(map);
+    routeLine = L.polyline(routeCoords, { color: "blue", weight: 5 }).addTo(map);
     map.fitBounds(routeLine.getBounds());
 
-    // Schritte für Turn-by-Turn
-    routeSteps = data.routes[0].segments[0].steps;
-
-    // Distanz + Dauer merken
-    routeDistance = data.routes[0].summary.distance;  // Meter
-    routeDuration = data.routes[0].summary.duration;  // Sekunden
-
+    routeSteps = data.routes[0].segments[0].steps || [];
+    routeDistance = data.routes[0].summary.distance || 0;
+    routeDuration = data.routes[0].summary.duration || 0;
   } catch (err) {
     console.error("❌ Fehler beim Abrufen der Route:", err);
+  } finally {
+    updateStartBtnUI({ calculating: false, navActive: !!navWatchId });
   }
 }
 
@@ -1284,12 +1267,6 @@ let navWatchId = null;
 let lastPos = null;
 
 // Bearing berechnen (Fahrtrichtung)
-function getBearing(from, to) {
-  const y = Math.sin(to.lng - from.lng) * Math.cos(to.lat);
-  const x = Math.cos(from.lat) * Math.sin(to.lat) -
-            Math.sin(from.lat) * Math.cos(to.lat) * Math.cos(to.lng - from.lng);
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-}
 let lastLatLng = null;
 let lastBearing = 0;
 function getBearing(from, to) {
@@ -1400,24 +1377,22 @@ function updateEta(userPos) {
 }
     
 
-let lastRecalcTime = 0; // damit nicht dauernd recalculiert wird
-
+let lastRecalcTime = 0;
 function checkRouteDeviation(userPos) {
   if (!routeLine || !selected.length) return;
-
   const routeLatLngs = routeLine.getLatLngs();
   if (!routeLatLngs.length) return;
 
-  // Distanz des Users zur Route berechnen
   const closest = L.GeometryUtil.closest(map, routeLatLngs, userPos);
   const dist = map.distance(userPos, closest);
 
-  if (dist > 10 && Date.now() - lastRecalcTime > 10000) {
+  const threshold = 25;       // vorher 10m → jetzt großzügiger
+  const minInterval = 12000;  // mindestens 12 Sekunden Abstand zwischen Neuberechnungen
+
+  if (dist > threshold && Date.now() - lastRecalcTime > minInterval) {
     console.warn(`⚠️ Abweichung erkannt (${dist.toFixed(1)} m) → Route neu berechnen`);
     lastRecalcTime = Date.now();
-
-    startRouteToNextHut();
-    updatePreviewRouteWithLoading();
+    debouncedRecalc(1400);
   }
 }
 
@@ -1437,38 +1412,53 @@ function getTurnIcon(type) {
   }
 }
 
+const turnAnnounceState = {};
+
 function checkTurnByTurn(userPos) {
-  if (!routeSteps.length) return;
+  if (!routeSteps || !routeSteps.length) return;
 
   for (let i = 0; i < routeSteps.length; i++) {
     const step = routeSteps[i];
     if (!step.way_points || step.way_points.length < 2) continue;
 
-    // Index aus den way_points holen
-    const idx = step.way_points[1];   // Ende des Schritts
-    const stepPos = routeCoords[idx]; // LatLng aus deiner Polyline
+    const idx = step.way_points[1];
+    const stepPos = routeCoords[idx];
+    if (!stepPos) continue;
 
     const dist = map.distance(userPos, stepPos);
     const icon = getTurnIcon(step.type);
 
-    // Vorwarnung (100m vorher)
-    if (dist < 100 && !alreadySpokenTurnIndex[i + "_pre"]) {
-      alreadySpokenTurnIndex[i + "_pre"] = true;
-      const msg = `In ${Math.round(dist)} m ${step.instruction}`;
-      showNavHint(icon, msg);
-      if (voice) speak(msg);
+    // Vorwarnung bei 40–100m, max. alle 8s
+    if (dist < 100 && dist >= 40) {
+      if (!turnAnnounceState[i] || !turnAnnounceState[i].pre || Date.now() - turnAnnounceState[i].pre > 8000) {
+        turnAnnounceState[i] = { ...turnAnnounceState[i], pre: Date.now() };
+        const msg = `In ${Math.round(dist)} m ${step.instruction}`;
+        showNavHint(icon, msg);
+        if (voice) {
+          const utter = new SpeechSynthesisUtterance(msg);
+          utter.lang = localStorage.lang || navigator.language || "de-DE";
+          speechSynthesis.cancel();
+          speechSynthesis.speak(utter);
+        }
+      }
     }
 
-    // Jetzt-Ansage (direkt am Punkt)
-    if (dist < 25 && !alreadySpokenTurnIndex[i + "_now"]) {
-      alreadySpokenTurnIndex[i + "_now"] = true;
-      const msg = `Jetzt ${step.instruction}`;
-      showNavHint(icon, msg);
-      if (voice) speak(msg);
+    // Jetzt-Ansage bei <25m
+    if (dist < 25) {
+      if (!turnAnnounceState[i] || !turnAnnounceState[i].now) {
+        turnAnnounceState[i] = { ...turnAnnounceState[i], now: Date.now() };
+        const msg = `Jetzt ${step.instruction}`;
+        showNavHint(icon, msg);
+        if (voice) {
+          const utter = new SpeechSynthesisUtterance(msg);
+          utter.lang = localStorage.lang || navigator.language || "de-DE";
+          speechSynthesis.cancel();
+          speechSynthesis.speak(utter);
+        }
+      }
     }
   }
 }
-
 function showNavHint(icon, text) {
   const el = document.getElementById("navHint");
   el.innerHTML = `${icon} ${text}`;
@@ -1544,7 +1534,19 @@ function setUserMarker(pos, bearing, accuracy = 20) {
 }
 
 
+// Start/Stop Button sichtbar machen je nach Zustand
+function updateStartBtnUI({ calculating = false, navActive = false } = {}) {
+  const startBtn = document.getElementById("startBtn");
+  const stopBtn = document.getElementById("stopBtn");
 
+  if (calculating || navActive) {
+    if (startBtn) startBtn.style.display = "none";
+    if (stopBtn && navActive) stopBtn.style.display = "inline-block";
+  } else {
+    if (startBtn) startBtn.style.display = "inline-block";
+    if (stopBtn) stopBtn.style.display = "none";
+  }
+}
 
 
 // GPS-Update verarbeiten
@@ -1621,25 +1623,23 @@ async function startNavigation(start, ziel) {
   await fetchRoute(start, ziel);
 
   // 2️⃣ Fahrt in Firebase anlegen
-  try {
-    const userId = localStorage.getItem("userId") || crypto.randomUUID();
-    localStorage.setItem("userId", userId);
+try {
+  const userId = localStorage.getItem("userId") || crypto.randomUUID();
+  localStorage.setItem("userId", userId);
 
-    const docRef = await db.collection("users").doc(userId)
-      .collection("rides").add({
-        startTime: new Date(tourStartTime).toISOString(),
-        status: "running",
-        routePlanned: routeCoords.map(p => [p.lat, p.lng]),
-        coords: [] // echte gefahrene Punkte kommen später rein
-      });
+  const docRef = await db.collection("users").doc(userId)
+    .collection("rides").add({
+      startTime: new Date(tourStartTime).toISOString(),
+      status: "running",
+      routePlanned: routeCoords.map(p => [p.lat, p.lng]),
+      coords: []
+    });
 
-    currentRideId = docRef.id;
-    console.log("🚴 Fahrt gestartet (Firebase):", currentRideId);
-  } catch (err) {
-    console.error("❌ Fehler beim Anlegen der Fahrt in Firebase:", err);
-    showToast("⚠️ Fahrt wird nur lokal aufgezeichnet");
-  }
-
+  currentRideId = docRef.id;
+} catch (err) {
+  console.error("❌ Firebase Fehler:", err);
+  currentRideId = null;
+    }
   // 3️⃣ GPS-Tracking starten
   if (navigator.geolocation) {
     navWatchId = navigator.geolocation.watchPosition(
@@ -1666,8 +1666,8 @@ async function startNavigation(start, ziel) {
     );
 
     showToast("▶️ Navigation gestartet");
-    document.getElementById("startBtn").style.display = "none";
-    document.getElementById("stopBtn").style.display = "inline-block";
+    updateStartBtnUI({ navActive: true });
+  
   } else {
     alert("❌ GPS wird nicht unterstützt");
   }
@@ -1694,9 +1694,7 @@ async function stopNavigation() {
   startUserLocationTracking();
 
   showToast("🛑 Navigation gestoppt");
-  document.getElementById("startBtn").style.display = "inline-block";
-  document.getElementById("stopBtn").style.display = "none";
-
+  updateStartBtnUI({});
   // Fahrtende speichern (nur wenn Tour existiert)
   if (tourStartTime && pastRouteLine) {
     const duration = (Date.now() - tourStartTime) / 1000; // Sekunden
@@ -1723,19 +1721,21 @@ async function stopNavigation() {
     localStorage.setItem("fahrtenbuch", JSON.stringify(logs));
 
     // 🔹 Firebase Speicherung
-    try {
-      const userId = localStorage.getItem("userId") || crypto.randomUUID();
-      localStorage.setItem("userId", userId);
-
-      await db.collection("users").doc(userId)
-        .collection("rides").add(log);
-
-      console.log("✔️ Fahrt in Firebase gespeichert:", log);
-      showToast("✔️ Fahrt gespeichert (Cloud)");
-    } catch (err) {
-      console.error("❌ Fehler beim Speichern in Firebase:", err);
-      showToast("⚠️ Fahrt nur lokal gespeichert");
-    }
+try {
+  const userId = localStorage.getItem("userId");
+  if (currentRideId && userId) {
+    await db.collection("users").doc(userId)
+      .collection("rides").doc(currentRideId).update({
+        status: "finished",
+        endTime: new Date().toISOString(),
+        duration,
+        distance,
+        avgSpeed: distance / duration * 3.6
+      });
+  }
+} catch (err) {
+  console.error("❌ Fehler beim Aktualisieren in Firebase:", err);
+      }
   }
 
   // Zurücksetzen
@@ -2752,36 +2752,40 @@ async function updatePreviewRouteWithLoading() {
     loadingEl.style.display = "none";
   }
 }
-
 function removeSelected(idx) {
   const item = selected[idx];
-
-  // Prüfen ob es eine Hütte aus Firebase ist
   if (item.id && roomId) {
-    // 👉 Hütte per Firestore-Update entfernen
     removeRoomHutById(item.id);
   } else {
-    // 👉 Lokales Entfernen (z. B. Spielplatz)
-    // Hütte aus Liste entfernen
     selected.splice(idx, 1);
     updateSelectedList();
 
-  
-
-    // 🚦 Navigation nur beenden, wenn wirklich Navigation aktiv ist
     if (selected.length === 0 && navWatchId) {
       stopNavigation();
       showToast("🛑 Navigation gestoppt – keine Hütte mehr ausgewählt");
+      return;
     }
 
-    // Falls Navigation aktiv ist -> Route neu berechnen
-    // 🔄 Wenn Navigation läuft -> Route neu berechnen
-      if (selected.length > 0 && navWatchId) {
-        startRouteToNextHut();
-      updatePreviewRouteWithLoading();
-      }
+    // Wenn Navigation aktiv → neue Route berechnen (mit Verzögerung, um Flattern zu vermeiden)
+    if (navWatchId) {
+      debouncedRecalc(800);
+    }
   }
 }
+    let recalcTimer = null;
+function debouncedRecalc(delay = 1200) {
+  if (recalcTimer) clearTimeout(recalcTimer);
+  updateStartBtnUI({ calculating: true, navActive: !!navWatchId });
+  recalcTimer = setTimeout(() => {
+    recalcTimer = null;
+    updateStartBtnUI({ calculating: false, navActive: !!navWatchId });
+    if (navWatchId) {
+      startRouteToNextHut();
+      updatePreviewRouteWithLoading().catch(()=>{});
+    }
+  }, delay);
+}
+
   /*  function updateSelectedList() {
   const container = document.getElementById("selectedList");
   if (!container) return;
