@@ -120,7 +120,32 @@
 </form>
 </div>
 
+<!-- Profile Verwaltung -->
+<h2 class="text-2xl font-bold mt-10 mb-4 text-purple-700">👤 Profile Verwaltung</h2>
+<div class="bg-white p-4 rounded shadow space-y-3">
+  <input id="profile-search" type="text" placeholder="Profil-ID oder Name eingeben..." class="w-full border p-2 rounded" />
+  <button onclick="loadProfileAdmin()" class="bg-blue-600 text-white px-3 py-1 rounded">🔍 Laden</button>
 
+  <div id="profile-admin-area" class="hidden">
+    <img id="profile-pic-admin" class="w-24 h-24 rounded-full" />
+    <input id="profile-name-admin" class="w-full border p-2 rounded" />
+    <input id="profile-title-admin" class="w-full border p-2 rounded" placeholder="Titel" />
+    
+    <button onclick="saveProfileAdmin()" class="bg-green-600 text-white px-3 py-1 rounded">💾 Speichern</button>
+    <button onclick="deleteProfileAdmin()" class="bg-red-600 text-white px-3 py-1 rounded">🗑️ Löschen</button>
+    <button onclick="openProfileLink()" class="bg-purple-600 text-white px-3 py-1 rounded">🔗 Öffnen</button>
+  </div>
+</div>
+
+<!-- Allgemeine Einstellungen -->
+<h2 class="text-2xl font-bold mt-10 mb-4 text-gray-700">⚙️ Allgemeine Einstellungen</h2>
+<div class="bg-white p-4 rounded shadow space-y-3">
+  <input id="global-title" type="text" placeholder="Neuen Titel hinzufügen..." class="w-full border p-2 rounded" />
+  <button onclick="addGlobalTitle()" class="bg-green-600 text-white px-3 py-1 rounded">➕ Titel hinzufügen</button>
+
+  <input id="global-badge" type="text" placeholder="Neues Abzeichen hinzufügen..." class="w-full border p-2 rounded" />
+  <button onclick="addGlobalBadge()" class="bg-green-600 text-white px-3 py-1 rounded">➕ Abzeichen hinzufügen</button>
+</div>
 <script>
   const firebaseConfig = {
     apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
@@ -1726,6 +1751,66 @@ async function loescheSupport(id) {
   showNotification('🗑️ Support-Anfrage gelöscht.');
   ladeSupportAnfragen();
 }*/
+
+//Profil:
+
+let currentProfileId = null;
+
+async function loadProfileAdmin() {
+  const query = document.getElementById("profile-search").value.trim();
+  if (!query) return alert("Bitte ID oder Name eingeben.");
+
+  let snap = await db.collection("profiles").doc(query).get();
+  if (!snap.exists) {
+    // nach Name suchen
+    const q = await db.collection("profiles").where("name","==",query).get();
+    if (q.empty) return alert("Kein Profil gefunden!");
+    snap = q.docs[0];
+  }
+  const data = snap.data();
+  currentProfileId = snap.id;
+  
+  document.getElementById("profile-admin-area").classList.remove("hidden");
+  document.getElementById("profile-pic-admin").src = data.pic || "default.jpg";
+  document.getElementById("profile-name-admin").value = data.name || "";
+  document.getElementById("profile-title-admin").value = data.title || "";
+}
+
+async function saveProfileAdmin() {
+  if (!currentProfileId) return;
+  await db.collection("profiles").doc(currentProfileId).update({
+    name: document.getElementById("profile-name-admin").value,
+    title: document.getElementById("profile-title-admin").value
+  });
+  alert("✔️ Profil gespeichert!");
+}
+
+async function deleteProfileAdmin() {
+  if (!currentProfileId) return;
+  if (!confirm("Soll dieses Profil wirklich gelöscht werden?")) return;
+  await db.collection("profiles").doc(currentProfileId).delete();
+  alert("🗑️ Profil gelöscht!");
+  document.getElementById("profile-admin-area").classList.add("hidden");
+}
+
+function openProfileLink() {
+  if (!currentProfileId) return;
+  window.open(`https://deine-app.web.app/profile.html?id=${currentProfileId}`, "_blank");
+}
+
+async function addGlobalTitle() {
+  const title = document.getElementById("global-title").value.trim();
+  if (!title) return;
+  await db.collection("titles").add({ name: title, createdAt: new Date() });
+  alert("➕ Titel hinzugefügt!");
+}
+
+async function addGlobalBadge() {
+  const badge = document.getElementById("global-badge").value.trim();
+  if (!badge) return;
+  await db.collection("badgesDefs").add({ name: badge, createdAt: new Date() });
+  alert("🏅 Abzeichen hinzugefügt!");
+}
 </script>
 </body>
 </html>
