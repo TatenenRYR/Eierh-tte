@@ -181,10 +181,9 @@
 <form id="badge-form" class="mt-4 space-y-2">
   <input id="badge-name" placeholder="Abzeichen-Name" class="border p-2 rounded w-full">
 
-  <label class="block font-bold">Icon auswählen</label>
+  <label class="block font-bold">Icon hochladen</label>
   <input id="badge-icon-file" type="file" accept="image/*" class="w-full border p-2 rounded">
-  <small class="text-gray-500">Optional: Eigenes Bild hochladen</small>
-
+  <small class="text-gray-500">Oder Emoji eintragen:</small>
   <input id="badge-icon" placeholder="Emoji/Icon (Fallback)" class="border p-2 rounded w-full">
 
   <select id="badge-condition" class="border p-2 rounded w-full">
@@ -197,6 +196,7 @@
 
   <button type="submit" class="bg-green-600 text-white px-3 py-1 rounded">➕ Abzeichen speichern</button>
 </form>
+
 
 <script>
   const firebaseConfig = {
@@ -1988,7 +1988,7 @@ async function addGlobalBadge() {
   const valEl  = document.getElementById("badge-value");
   let badgeEditId = null;
 
- async function loadBadges() {
+async function loadBadges() {
   const snap = await db.collection("badgesDefs").get();
   const list = document.getElementById("badge-list-admin");
   list.innerHTML = "";
@@ -2012,6 +2012,7 @@ async function addGlobalBadge() {
 }
 
 
+
   window.editBadge = async function(id) {
     const doc = await db.collection("badgesDefs").doc(id).get();
     const b = doc.data();
@@ -2030,36 +2031,38 @@ async function addGlobalBadge() {
 
   if (badgeForm) {
     badgeForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const name = document.getElementById("badge-name").value.trim();
-    const emojiFallback = document.getElementById("badge-icon").value.trim();
-    const conditionType = document.getElementById("badge-condition").value;
-    const conditionValue = parseInt(document.getElementById("badge-value").value) || 0;
-  
-    if (!name) return alert("Bitte Abzeichen-Namen eingeben!");
-  
-    let iconUrl = "";
-    const fileInput = document.getElementById("badge-icon-file");
-    if (fileInput.files.length > 0) {
-      const file = fileInput.files[0];
-      const storageRef = firebase.storage().ref();
-      const fileRef = storageRef.child("badges/" + Date.now() + "_" + file.name);
-      await fileRef.put(file);
-      iconUrl = await fileRef.getDownloadURL();
-    }
-  
-    await db.collection("badgesDefs").add({
-      name: name,
-      icon: emojiFallback,
-      iconUrl: iconUrl, // Bild-URL, falls hochgeladen
-      conditionType: conditionType,
-      conditionValue: conditionValue,
-      createdAt: new Date()
+      e.preventDefault();
+      const name = document.getElementById("badge-name").value.trim();
+      const emojiFallback = document.getElementById("badge-icon").value.trim();
+      const conditionType = document.getElementById("badge-condition").value;
+      const conditionValue = parseInt(document.getElementById("badge-value").value) || 0;
+    
+      if (!name) return alert("Bitte Abzeichen-Namen eingeben!");
+    
+      let iconUrl = "";
+      const fileInput = document.getElementById("badge-icon-file");
+      if (fileInput.files.length > 0) {
+        try {
+          iconUrl = await uploadToImgBB(fileInput.files[0]);
+        } catch (err) {
+          console.error(err);
+          alert("❌ Fehler beim ImgBB-Upload");
+        }
+      }
+    
+      await db.collection("badgesDefs").add({
+        name,
+        icon: emojiFallback,
+        iconUrl,
+        conditionType,
+        conditionValue,
+        createdAt: new Date()
+      });
+    
+      alert("✅ Abzeichen gespeichert");
+      e.target.reset();
+      loadBadges();
     });
-  
-    badgeForm.reset();
-    loadBadges(); // Liste aktualisieren
-});
   }
 
   document.addEventListener("DOMContentLoaded", loadBadges);
