@@ -2865,8 +2865,12 @@ async function updatePreviewRouteWithLoading() {
 }
 function removeSelected(idx) {
   const item = selected[idx];
-  if (item.id && roomId) {
-    removeRoomHutById(item.id);
+if (item.id && roomId) {
+    // Wenn die Hütte bereits in der DB ist → entfernen
+      removeRoomHutById(item.id).then(() => {
+      // Nach dem Entfernen aus DB Route neu berechnen
+      debouncedRecalc(800);
+    }).catch(err => console.error("Fehler beim Entfernen der Hütte:", err));
   } else {
     selected.splice(idx, 1);
     updateSelectedList();
@@ -2890,10 +2894,14 @@ function debouncedRecalc(delay = 1200) {
   recalcTimer = setTimeout(() => {
     recalcTimer = null;
     updateStartBtnUI({ calculating: false, navActive: !!navWatchId });
-    if (navWatchId) {
-      startRouteToNextHut();
-      updatePreviewRouteWithLoading().catch(()=>{});
-    }
+    if (navWatchId && selected.length > 0) {
+      try {
+        stopNavigation();
+        await startRouteToNextHut();
+        await updatePreviewRouteWithLoading();
+      } catch (err) {
+        console.error("Fehler beim Neuberechnen der Route:", err);
+      }
   }, delay);
 }
 
