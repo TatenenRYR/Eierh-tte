@@ -1658,40 +1658,50 @@ let lastStepIndex = -1;
 
 // nächste Hütte ansteuern
 function startRouteToNextHut() {
-  if (!selected.length) {
-    showToast("⚠️ Keine Hütte ausgewählt");
-    return;
-  }
+  return new Promise((resolve, reject) => {
+    if (!selected.length) {
+      showToast("⚠️ Keine Hütte ausgewählt");
+      reject("Keine Hütte ausgewählt");
+      return;
+    }
 
-  const ziel = selected[0]; 
-  const zielLatLng = { lat: ziel.lat, lng: ziel.lng };
+    const ziel = selected[0]; 
+    const zielLatLng = { lat: ziel.lat, lng: ziel.lng };
 
-  navigator.geolocation.getCurrentPosition(async pos => {
-    const start = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    navigator.geolocation.getCurrentPosition(async pos => {
+      try {
+        const start = { lat: pos.coords.latitude, lng: pos.coords.longitude };
 
-    // Sofort auf aktuellen Standort zoomen
-    const ll = L.latLng(start.lat, start.lng);
-    map.setView(ll, 18, { animate: false }); // kein Delay, direkt zentriert
+        // Sofort auf aktuellen Standort zoomen
+        const ll = L.latLng(start.lat, start.lng);
+        map.setView(ll, 18, { animate: false }); 
 
-    setUserMarker(ll, 0); // Marker in Mitte setzen
+        setUserMarker(ll, 0); // Marker setzen
 
-    // Graue Linie (abgefahrene Strecke)
-    pastRouteLine = L.polyline([], {
-      color: "gray",
-      weight: 4,
-      opacity: 0.7,
-      pane: "pastRoutePane"
-    }).addTo(map);
-    
+        // Graue Linie für abgefahrene Strecke
+        pastRouteLine = L.polyline([], {
+          color: "gray",
+          weight: 4,
+          opacity: 0.7,
+          pane: "pastRoutePane"
+        }).addTo(map);
 
-    // Route laden
-    await startNavigation(start, zielLatLng);
+        // Route laden
+        await startNavigation(start, zielLatLng);
 
-    showToast(`🚴 Starte Route zu: ${ziel.name}`);
-  }, err => {
-    console.error("❌ GPS Fehler:", err);
-    showToast("❌ GPS Fehler beim Routenstart");
-  }, { enableHighAccuracy: true });
+        showToast(`🚴 Starte Route zu: ${ziel.name}`);
+
+        resolve(); // Promise erfolgreich auflösen
+      } catch (err) {
+        console.error("❌ Fehler beim Starten der Route:", err);
+        reject(err);
+      }
+    }, err => {
+      console.error("❌ GPS Fehler:", err);
+      showToast("❌ GPS Fehler beim Routenstart");
+      reject(err);
+    }, { enableHighAccuracy: true });
+  });
 }
 
 function updateSpeedUI(gps, coords) {
