@@ -1305,24 +1305,17 @@ function getBearing(from, to) {
   return (brng + 360) % 360; // 0–360°
 }
 
+// ------------------- Usermarker aktualisieren -------------------
 async function updateUserMarker(gpsLatLng, accuracy = 20) {
   try {
-    // Snap-to-route
     const snappedPos = snapToRoute(gpsLatLng);
-
-    // Bearing entlang der Route
     const bearing = getRouteBearing(snappedPos);
     lastBearing = bearing;
 
-    // Marker + Genauigkeit
     setUserMarker(snappedPos, bearing, accuracy);
 
-    // Karte folgen lassen
-    if (follow) {
-      map.setView(snappedPos, 18, { animate: true });
-    }
+    if (follow) map.setView(snappedPos, 18, { animate: true });
 
-    // Abgefahrene Strecke aufzeichnen
     if (!pastRouteLine) {
       pastRouteLine = L.polyline([], {
         color: "gray",
@@ -1334,21 +1327,19 @@ async function updateUserMarker(gpsLatLng, accuracy = 20) {
     if (lastLatLng) {
       const segDist = map.distance(lastLatLng, snappedPos);
       tourDistance += segDist;
-
       pastRouteLine.addLatLng(snappedPos);
       pastRouteLine.bringToFront();
 
-      // 🔹 Position in Firebase speichern (falls Fahrt läuft)
       if (currentRideId) {
         try {
           const userId = localStorage.getItem("userId");
-         await db.collection("users").doc(userId)
-        .collection("rides").add({
-          startTime: new Date(tourStartTime).toISOString(),
-          status: "running",
-          routePlanned: routeCoords.map(p => ({ lat: snappedPos.lat, lng: snappedPos.lng })), // ✅ Objekte statt Arrays
-          coords: []
-        });
+          await db.collection("users").doc(userId)
+            .collection("rides").add({
+              startTime: new Date(tourStartTime).toISOString(),
+              status: "running",
+              routePlanned: routeCoords.map(p => ({ lat: snappedPos.lat, lng: snappedPos.lng })),
+              coords: []
+            });
         } catch (err) {
           console.warn("⚠️ Firebase-Update fehlgeschlagen:", err);
         }
@@ -1357,11 +1348,12 @@ async function updateUserMarker(gpsLatLng, accuracy = 20) {
 
     lastLatLng = snappedPos;
 
-    // Checks
     checkIfHutReached(snappedPos);
     checkTurnByTurn(snappedPos);
     updateEta(snappedPos);
-    checkRouteDeviation(gpsLatLng); // echte GPS-Distanz zur Route
+
+    // Route Abweichung prüfen
+    checkRouteDeviation(snappedPos);
 
   } catch (err) {
     console.error("❌ Fehler in updateUserMarker:", err);
@@ -1403,19 +1395,21 @@ function updateEta(userPos) {
     
 
 let lastRecalcTime = 0;
+
+// ------------------- Route-Abweichung prüfen -------------------
 function checkRouteDeviation(userPos) {
   if (!routeLine || !selected.length) return;
   const routeLatLngs = routeLine.getLatLngs();
   if (!routeLatLngs.length) return;
 
-  // Ignoriere Abweichungen in den ersten 5 Sekunden
-  if (tourStartTime && Date.now() - tourStartTime < 5000) return;
+  // Kleine Abweichungen direkt nach Start ignorieren
+  if (routeStartTime && Date.now() - routeStartTime < 5000) return;
 
   const closest = L.GeometryUtil.closest(map, routeLatLngs, userPos);
   const dist = map.distance(userPos, closest);
 
-  const threshold = 25;       
-  const minInterval = 12000;  
+  const threshold = 25;       // 25 m erlaubt
+  const minInterval = 12000;  // 12 Sekunden Abstand zwischen Neuberechnungen
 
   if (dist > threshold && Date.now() - lastRecalcTime > minInterval) {
     console.warn(`⚠️ Abweichung erkannt (${dist.toFixed(1)} m) → Route neu berechnen`);
@@ -1657,6 +1651,7 @@ function handlePosition(pos) {
 let lastStepIndex = -1;
 
 // nächste Hütte ansteuern
+// ------------------- Route starten -------------------
 function startRouteToNextHut() {
   return new Promise((resolve, reject) => {
     if (!selected.length) {
@@ -1665,20 +1660,18 @@ function startRouteToNextHut() {
       return;
     }
 
-    const ziel = selected[0]; 
+    const ziel = selected[0];
     const zielLatLng = { lat: ziel.lat, lng: ziel.lng };
+    routeStartTime = Date.now();
 
     navigator.geolocation.getCurrentPosition(async pos => {
       try {
         const start = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-
-        // Sofort auf aktuellen Standort zoomen
         const ll = L.latLng(start.lat, start.lng);
-        map.setView(ll, 18, { animate: false }); 
+        map.setView(ll, 18, { animate: false });
+        setUserMarker(ll, 0);
 
-        setUserMarker(ll, 0); // Marker setzen
-
-        // Graue Linie für abgefahrene Strecke
+        // Abgefahrene Strecke
         pastRouteLine = L.polyline([], {
           color: "gray",
           weight: 4,
@@ -1686,12 +1679,10 @@ function startRouteToNextHut() {
           pane: "pastRoutePane"
         }).addTo(map);
 
-        // Route laden
         await startNavigation(start, zielLatLng);
-
         showToast(`🚴 Starte Route zu: ${ziel.name}`);
 
-        resolve(); // Promise erfolgreich auflösen
+        resolve();
       } catch (err) {
         console.error("❌ Fehler beim Starten der Route:", err);
         reject(err);
@@ -1703,7 +1694,6 @@ function startRouteToNextHut() {
     }, { enableHighAccuracy: true });
   });
 }
-
 function updateSpeedUI(gps, coords) {
   const speed = coords.speed && coords.speed > 0 
     ? (coords.speed * 3.6).toFixed(1) // m/s → km/h
@@ -2881,19 +2871,21 @@ async function updatePreviewRouteWithLoading() {
     loadingEl.style.display = "none";
   }
 }
+// ------------------- Hütte entfernen -------------------
 function removeSelected(idx) {
   const item = selected[idx];
 
   if (item.id && roomId) {
-    // Wenn die Hütte bereits in der DB ist → entfernen
+    // Hütte aus DB entfernen
     removeRoomHutById(item.id)
       .then(() => {
-        // Nach dem Entfernen aus DB Route neu berechnen
-        showToast("🔄 Auswahl entfern, Route wird neu berechnet!");
-        debouncedRecalc(400);
+        selected.splice(idx, 1);
+        updateSelectedList();
+        if (selected.length > 0 && navWatchId) debouncedRecalc(800);
       })
       .catch(err => console.error("Fehler beim Entfernen der Hütte:", err));
   } else {
+    // Lokal entfernen
     selected.splice(idx, 1);
     updateSelectedList();
 
@@ -2903,17 +2895,14 @@ function removeSelected(idx) {
       return;
     }
 
-    // Wenn Navigation aktiv → neue Route berechnen (mit Verzögerung)
-    if (navWatchId) {
-      showToast("🔄 Auswahl entfern, Route wird neu berechnet!");
-      debouncedRecalc(400);
-    }
+    if (navWatchId) debouncedRecalc(800);
   }
 }
 
 let recalcTimer = null;
 
-async function debouncedRecalc(delay = 1200) {
+// ------------------- Debounce + Route neu berechnen -------------------
+function debouncedRecalc(delay = 1200) {
   if (recalcTimer) clearTimeout(recalcTimer);
 
   updateStartBtnUI({ calculating: true, navActive: !!navWatchId });
@@ -2923,7 +2912,7 @@ async function debouncedRecalc(delay = 1200) {
 
     if (navWatchId && selected.length > 0) {
       try {
-        await startRouteToNextHut();              // ✅ wartet korrekt
+        await startRouteToNextHut();
         await updatePreviewRouteWithLoading();
       } catch (err) {
         console.error("Fehler beim Neuberechnen der Route:", err);
@@ -2933,7 +2922,6 @@ async function debouncedRecalc(delay = 1200) {
     updateStartBtnUI({ calculating: false, navActive: !!navWatchId });
   }, delay);
 }
-
 
   /*  function updateSelectedList() {
   const container = document.getElementById("selectedList");
