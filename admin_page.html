@@ -1830,66 +1830,147 @@ async function addGlobalBadge() {
   await db.collection("badgesDefs").add({ name: badge, createdAt: new Date() });
   alert("🏅 Abzeichen hinzugefügt!");
 }
-  // Titel laden
-async function loadTitles() {
-  const snap = await db.collection("titles").get();
-  const list = document.getElementById("title-list");
-  list.innerHTML = "";
-  snap.forEach(doc => {
+// ---- TITEL Verwaltung ----
+(() => {
+  const titleList = document.getElementById("title-list");
+  const titleForm = document.getElementById("title-form");
+  const nameEl = document.getElementById("title-name");
+  const condEl = document.getElementById("title-condition");
+  const valEl  = document.getElementById("title-value");
+  let titleEditId = null;
+
+  async function loadTitles() {
+    if (!titleList) return;
+    const snap = await db.collection("titles").get();
+    titleList.innerHTML = "";
+    snap.forEach(doc => {
+      const t = doc.data();
+      const row = document.createElement("div");
+      row.className = "p-2 border rounded flex justify-between items-center";
+      row.innerHTML = `
+        <span><strong>${t.name}</strong> — Regel: ${t.conditionType} ≥ ${t.conditionValue}</span>
+        <div class="space-x-2">
+          <button class="px-2 py-1 bg-blue-600 text-white rounded" onclick="editTitle('${doc.id}')">✏️</button>
+          <button class="px-2 py-1 bg-red-600 text-white rounded" onclick="deleteTitle('${doc.id}')">🗑️</button>
+        </div>`;
+      titleList.appendChild(row);
+    });
+  }
+
+  // Für Inline-Handler verfügbar machen:
+  window.editTitle = async function(id) {
+    const doc = await db.collection("titles").doc(id).get();
     const t = doc.data();
-    list.innerHTML += `
-      <div class="p-2 border rounded flex justify-between">
-        <span><strong>${t.name}</strong> – Regel: ${t.conditionType} ≥ ${t.conditionValue}</span>
-        <div>
-          <button onclick="editTitle('${doc.id}')" class="px-2 py-1 bg-blue-500 text-white rounded">✏️</button>
-          <button onclick="deleteTitle('${doc.id}')" class="px-2 py-1 bg-red-500 text-white rounded">🗑️</button>
-        </div>
-      </div>
-    `;
-  });
-}
+    titleEditId = id;
+    if (nameEl) nameEl.value = t.name || "";
+    if (condEl) condEl.value = t.conditionType || "rides";
+    if (valEl)  valEl.value = t.conditionValue ?? 0;
+  };
 
-// Titel hinzufügen
-document.getElementById("title-form").onsubmit = async (e) => {
-  e.preventDefault();
-  await db.collection("titles").add({
-    name: document.getElementById("title-name").value,
-    conditionType: document.getElementById("title-condition").value,
-    conditionValue: parseInt(document.getElementById("title-value").value)
-  });
-  loadTitles();
-};
+  window.deleteTitle = async function(id) {
+    if (!confirm("Diesen Titel wirklich löschen?")) return;
+    await db.collection("titles").doc(id).delete();
+    // Optionales Aufräumen in Profilen (falls du titleId speicherst):
+    // const q = await db.collection("profiles").where("titleId","==",id).get();
+    // const batch = db.batch(); q.forEach(d=>batch.update(d.ref,{title:null, titleId:null})); await batch.commit();
+    await loadTitles();
+  };
 
-// Abzeichen laden
-async function loadBadges() {
-  const snap = await db.collection("badgesDefs").get();
-  const list = document.getElementById("badge-list-admin");
-  list.innerHTML = "";
-  snap.forEach(doc => {
+  if (titleForm) {
+    titleForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const payload = {
+        name: (nameEl?.value || "").trim(),
+        conditionType: condEl?.value || "rides",
+        conditionValue: parseInt(valEl?.value || "0", 10) || 0
+      };
+      if (!payload.name) { alert("Bitte einen Titel-Namen angeben."); return; }
+
+      if (titleEditId) {
+        await db.collection("titles").doc(titleEditId).update(payload);
+        titleEditId = null;
+      } else {
+        await db.collection("titles").add(payload);
+      }
+      if (titleForm) titleForm.reset();
+      await loadTitles();
+    });
+  }
+
+  // Initial laden
+  document.addEventListener("DOMContentLoaded", loadTitles);
+})();
+
+// ---- ABZEICHEN Verwaltung ----
+(() => {
+  const badgeList = document.getElementById("badge-list-admin");
+  const badgeForm = document.getElementById("badge-form");
+  const nameEl = document.getElementById("badge-name");
+  const iconEl = document.getElementById("badge-icon");
+  const condEl = document.getElementById("badge-condition");
+  const valEl  = document.getElementById("badge-value");
+  let badgeEditId = null;
+
+  async function loadBadges() {
+    if (!badgeList) return;
+    const snap = await db.collection("badgesDefs").get();
+    badgeList.innerHTML = "";
+    snap.forEach(doc => {
+      const b = doc.data();
+      const row = document.createElement("div");
+      row.className = "p-2 border rounded flex justify-between items-center";
+      row.innerHTML = `
+        <span>${b.icon || "🏅"} <strong>${b.name}</strong> — Regel: ${b.conditionType} ≥ ${b.conditionValue}</span>
+        <div class="space-x-2">
+          <button class="px-2 py-1 bg-blue-600 text-white rounded" onclick="editBadge('${doc.id}')">✏️</button>
+          <button class="px-2 py-1 bg-red-600 text-white rounded" onclick="deleteBadge('${doc.id}')">🗑️</button>
+        </div>`;
+      badgeList.appendChild(row);
+    });
+  }
+
+  window.editBadge = async function(id) {
+    const doc = await db.collection("badgesDefs").doc(id).get();
     const b = doc.data();
-    list.innerHTML += `
-      <div class="p-2 border rounded flex justify-between">
-        <span>${b.icon || "🏅"} <strong>${b.name}</strong> – Regel: ${b.conditionType} ≥ ${b.conditionValue}</span>
-        <div>
-          <button onclick="editBadge('${doc.id}')" class="px-2 py-1 bg-blue-500 text-white rounded">✏️</button>
-          <button onclick="deleteBadge('${doc.id}')" class="px-2 py-1 bg-red-500 text-white rounded">🗑️</button>
-        </div>
-      </div>
-    `;
-  });
-}
+    badgeEditId = id;
+    if (nameEl) nameEl.value = b.name || "";
+    if (iconEl) iconEl.value = b.icon || "";
+    if (condEl) condEl.value = b.conditionType || "rides";
+    if (valEl)  valEl.value = b.conditionValue ?? 0;
+  };
 
-// Abzeichen hinzufügen
-document.getElementById("badge-form").onsubmit = async (e) => {
-  e.preventDefault();
-  await db.collection("badgesDefs").add({
-    name: document.getElementById("badge-name").value,
-    icon: document.getElementById("badge-icon").value,
-    conditionType: document.getElementById("badge-condition").value,
-    conditionValue: parseInt(document.getElementById("badge-value").value)
-  });
-  loadBadges();
-};
+  window.deleteBadge = async function(id) {
+    if (!confirm("Dieses Abzeichen wirklich löschen?")) return;
+    await db.collection("badgesDefs").doc(id).delete();
+    await loadBadges();
+  };
+
+  if (badgeForm) {
+    badgeForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const payload = {
+        name: (nameEl?.value || "").trim(),
+        icon: (iconEl?.value || "").trim(),
+        conditionType: condEl?.value || "rides",
+        conditionValue: parseInt(valEl?.value || "0", 10) || 0
+      };
+      if (!payload.name) { alert("Bitte einen Abzeichen-Namen angeben."); return; }
+
+      if (badgeEditId) {
+        await db.collection("badgesDefs").doc(badgeEditId).update(payload);
+        badgeEditId = null;
+      } else {
+        await db.collection("badgesDefs").add(payload);
+      }
+      if (badgeForm) badgeForm.reset();
+      await loadBadges();
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", loadBadges);
+})();
+
+
 
 </script>
 </body>
