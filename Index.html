@@ -1616,45 +1616,64 @@ async function startNavigation(start, ziel) {
   tourDistance = 0;
   pastRouteLine = L.polyline([], { color: "gray", weight: 3 }).addTo(map);
 
-  // 👉 Einfaches GPS-Tracking stoppen
+  // Karte automatisch folgen während Navigation
+  follow = true;
+  document.getElementById("followBtn").style.display = "inline-block";
+
   stopUserLocationTracking();
 
-  // 1️⃣ Route von ORS holen
-  await fetchRoute(start, ziel);
+  // 1) Route holen (mit Fehlerprüfung)
+  try {
+    await fetchRoute(start, ziel);
+  } catch (err) {
+    console.error("❌ Fehler beim Abrufen der Route:", err);
+    showToast("❌ Route konnte nicht berechnet werden");
+    return;
+  }
 
-  // 2️⃣ Fahrt in Firebase anlegen
-try {
-  const userId = localStorage.getItem("userId") || crypto.randomUUID();
-  localStorage.setItem("userId", userId);
+  // 2) Firebase Fahrt anlegen
+  try {
+    const userId = localStorage.getItem("userId") || crypto.randomUUID();
+    localStorage.setItem("userId", userId);
 
-  const docRef = await db.collection("users").doc(userId)
-    .collection("rides").add({
-      startTime: new Date(tourStartTime).toISOString(),
-      status: "running",
-      routePlanned: routeCoords.map(p => [p.lat, p.lng]),
-      coords: []
-    });
+    const docRef = await db.collection("users").doc(userId)
+      .collection("rides").add({
+        startTime: new Date(tourStartTime).toISOString(),
+        status: "running",
+        routePlanned: routeCoords.map(p => ({ lat: p.lat, lng: p.lng })), // ✅ nur Plain Objects
+        coords: []
+      });
 
-  currentRideId = docRef.id;
-} catch (err) {
-  console.error("❌ Firebase Fehler:", err);
-  currentRideId = null;
-    }
-  // 3️⃣ GPS-Tracking starten
+    currentRideId = docRef.id;
+    console.log("🚴 Fahrt gestartet (Firebase):", currentRideId);
+  } catch (err) {
+    console.error("❌ Fehler beim Anlegen der Fahrt in Firebase:", err);
+    showToast("⚠️ Fahrt wird nur lokal aufgezeichnet");
+    currentRideId = null;
+  }
+
+  // 3) GPS-Tracking starten
   if (navigator.geolocation) {
     navWatchId = navigator.geolocation.watchPosition(
       async pos => {
         const gps = L.latLng(pos.coords.latitude, pos.coords.longitude);
-        updateUserMarker(gps);  // Snap-to-route + Marker drehen
 
-        // 🔹 Position live in Firebase aktualisieren
+        // User Marker + Karte
+        updateUserMarker(gps, pos.coords.accuracy);
+        updateSpeedUI(gps, pos.coords);
+        reverseGeocode(gps.lat, gps.lng);
+
+        // Firebase live update
         if (currentRideId) {
           try {
             const userId = localStorage.getItem("userId");
             await db.collection("users").doc(userId)
               .collection("rides").doc(currentRideId)
               .update({
-                coords: firebase.firestore.FieldValue.arrayUnion([gps.lat, gps.lng])
+                coords: firebase.firestore.FieldValue.arrayUnion({
+                  lat: gps.lat,
+                  lng: gps.lng
+                }) // ✅ Objekt statt Array
               });
           } catch (err) {
             console.warn("⚠️ Konnte Position nicht in Firebase speichern:", err);
@@ -1666,79 +1685,79 @@ try {
     );
 
     showToast("▶️ Navigation gestartet");
-    updateStartBtnUI({ navActive: true });
-  
+    updateStartBtnUI({ calculating: false, navActive: true });
   } else {
     alert("❌ GPS wird nicht unterstützt");
   }
 }
 
 async function stopNavigation() {
-  // GPS-Tracking für Navigation stoppen
   if (navWatchId) {
     navigator.geolocation.clearWatch(navWatchId);
     navWatchId = null;
   }
-
-  // Route entfernen
   if (routeLine) {
     map.removeLayer(routeLine);
     routeLine = null;
   }
 
-  // Anzeige leeren
   document.getElementById("etaBox").innerHTML = "";
   document.getElementById("etaBox").style.display = "none";
 
-  // 👉 Einfaches GPS-Tracking starten
+  // Einfaches Tracking wieder starten
   startUserLocationTracking();
 
   showToast("🛑 Navigation gestoppt");
-  updateStartBtnUI({});
-  // Fahrtende speichern (nur wenn Tour existiert)
+  updateStartBtnUI({ calculating: false, navActive: false });
+
+  // Fahrtende speichern & Firebase update
   if (tourStartTime && pastRouteLine) {
     const duration = (Date.now() - tourStartTime) / 1000; // Sekunden
     const distance = tourDistance || pastRouteLine.getLatLngs()
-      .reduce((acc, cur, i, arr) => {
-        if (i === 0) return 0;
-        return acc + map.distance(arr[i - 1], cur);
-      }, 0);
+      .reduce((acc, cur, i, arr) => i === 0 ? 0 : acc + map.distance(arr[i - 1], cur), 0);
 
     const rawLog = {
-      date: new Date(), // wird später automatisch in ISO umgewandelt
-      duration,         // Sekunden
-      distance,         // Meter
-      avgSpeed: distance / duration * 3.6, // km/h
-      route: pastRouteLine.getLatLngs()    // wird automatisch zu {lat, lng}
+      date: new Date(),
+      duration,
+      distance,
+      avgSpeed: distance / duration * 3.6,
+      route: pastRouteLine.getLatLngs().map(p => ({ lat: p.lat, lng: p.lng })) // ✅ Plain Objects
     };
 
-    // 🔹 Firestore-kompatibel säubern
     const log = sanitizeForFirestore(rawLog);
 
-    // 🔹 Lokale Speicherung
+    // lokal speichern
     const logs = JSON.parse(localStorage.getItem("fahrtenbuch") || "[]");
     logs.push(log);
     localStorage.setItem("fahrtenbuch", JSON.stringify(logs));
 
-    // 🔹 Firebase Speicherung
-try {
-  const userId = localStorage.getItem("userId");
-  if (currentRideId && userId) {
-    await db.collection("users").doc(userId)
-      .collection("rides").doc(currentRideId).update({
-        status: "finished",
-        endTime: new Date().toISOString(),
-        duration,
-        distance,
-        avgSpeed: distance / duration * 3.6
-      });
-  }
-} catch (err) {
-  console.error("❌ Fehler beim Aktualisieren in Firebase:", err);
+    // Firebase: status update + Abschlussdaten
+    try {
+      const userId = localStorage.getItem("userId");
+      if (currentRideId && userId) {
+        await db.collection("users").doc(userId)
+          .collection("rides").doc(currentRideId).update({
+            status: "finished",
+            endTime: new Date().toISOString(),
+            duration,
+            distance,
+            avgSpeed: distance / duration * 3.6,
+            finishedAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+      } else if (userId) {
+        // fallback: neues doc anlegen
+        await db.collection("users").doc(userId)
+          .collection("rides").add(Object.assign({}, log, { status: "finished" }));
       }
+      console.log("✔️ Fahrt in Firebase gespeichert/abgeschlossen");
+      showToast("✔️ Fahrt gespeichert (Cloud)");
+    } catch (err) {
+      console.error("❌ Fehler beim Speichern in Firebase:", err);
+      showToast("⚠️ Fahrt nur lokal gespeichert");
+    }
   }
 
-  // Zurücksetzen
+  // Reset states
   tourStartTime = null;
   tourDistance = 0;
   routeCoords = [];
@@ -1750,8 +1769,11 @@ try {
     map.removeLayer(pastRouteLine);
     pastRouteLine = null;
   }
-}
 
+  follow = false;
+  document.getElementById("followBtn").style.display = "none";
+  currentRideId = null;
+}
 /* 🔧 Hilfsfunktion: Firestore-kompatibel machen */
 function sanitizeForFirestore(obj) {
   if (obj === null) return null;
