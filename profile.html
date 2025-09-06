@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>🌍 Profil</title>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+  <style>
+    .badge {
+      @apply px-3 py-2 rounded-xl border bg-white hover:shadow transition;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <div class="max-w-4xl mx-auto p-4 sm:p-6">
+    <header class="flex items-center gap-4 mb-6">
+      <img id="profilePic" src="default.jpg" alt="Profilbild"
+           class="w-24 h-24 rounded-full object-cover ring-2 ring-indigo-100" />
+      <div>
+        <h1 id="profileName" class="text-2xl sm:text-3xl font-bold">Profil</h1>
+        <p id="profileTitle" class="text-gray-600"></p>
+      </div>
+    </header>
+
+    <!-- Stats -->
+    <section class="grid md:grid-cols-3 gap-4 mb-6">
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-gray-500">Gesamt Distanz</p>
+        <p id="totalKm" class="text-2xl font-semibold">–</p>
+      </div>
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-gray-500">Gesamt Zeit</p>
+        <p id="totalTime" class="text-2xl font-semibold">–</p>
+      </div>
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-gray-500">Ø Geschwindigkeit</p>
+        <p id="avgSpeed" class="text-2xl font-semibold">–</p>
+      </div>
+    </section>
+
+    <!-- Badges -->
+    <section class="bg-white rounded-2xl shadow p-4 sm:p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-4">🏅 Abzeichen</h2>
+      <div id="badgeList" class="flex flex-wrap gap-3"></div>
+    </section>
+
+    <!-- Charts -->
+    <section class="bg-white rounded-2xl shadow p-4 sm:p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-4">📊 Aktivität</h2>
+      <div class="grid md:grid-cols-2 gap-6">
+        <div><canvas id="distChart" height="110"></canvas></div>
+        <div><canvas id="monthChart" height="110"></canvas></div>
+      </div>
+    </section>
+
+    <!-- Letzte Route -->
+    <section class="bg-white rounded-2xl shadow p-4 sm:p-6">
+      <h2 class="text-xl font-semibold mb-4">🗺 Letzte Route</h2>
+      <div id="map" class="h-[320px] rounded-xl border"></div>
+    </section>
+  </div>
+
+<script>
+/* ─────────────────────────────
+ * Firebase
+ * ───────────────────────────── */
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.firebasestorage.app",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+  measurementId: "G-16V6K5GXDT"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+/* ─────────────────────────────
+ * Utils
+ * ───────────────────────────── */
+function km(m){ return (m/1000).toFixed(1); }
+function fmtHMS(sec) {
+  const h = Math.floor(sec/3600);
+  const m = Math.floor((sec%3600)/60);
+  return h ? `${h}h ${m}min` : `${m}min`;
+}
+function kmh(m, s){ return ( (m/1000) / (s/3600) ).toFixed(1); }
+
+/* ─────────────────────────────
+ * Render Funktionen
+ * ───────────────────────────── */
+function renderProfile(p){
+  document.getElementById("profilePic").src = p.pic || "default.jpg";
+  document.getElementById("profileName").innerText = p.name || "Unbekannt";
+  document.getElementById("profileTitle").innerText = p.title || "";
+
+  if (p.stats){
+    document.getElementById("totalKm").innerText = p.stats.totalKm || "–";
+    document.getElementById("totalTime").innerText = p.stats.totalTime || "–";
+    document.getElementById("avgSpeed").innerText = p.stats.avgSpeed || "–";
+  }
+
+  // Badges
+  const list = document.getElementById("badgeList");
+  list.innerHTML = "";
+  if (p.badges && p.badges.length){
+    for (const b of p.badges){
+      const div = document.createElement("div");
+      div.className = "badge";
+      div.innerHTML = `<div class="text-2xl text-center">${b.icon||"🏅"}</div>
+                       <div class="text-center">${b.title||b.id}</div>`;
+      list.appendChild(div);
+    }
+  } else {
+    list.innerHTML = `<div class="text-gray-500">Keine Abzeichen</div>`;
+  }
+}
+
+function renderCharts(rides){
+  const labels = rides.map(r => new Date(r.startTime).toLocaleDateString());
+  const dists = rides.map(r => (r.distance||0)/1000);
+
+  new Chart(document.getElementById("distChart"), {
+    type: "bar",
+    data: { labels, datasets: [{ label: "Distanz (km)", data: dists }] },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
+
+  const byMonth = {};
+  for (const r of rides){
+    const d = new Date(r.startTime);
+    const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+    byMonth[k] = (byMonth[k]||0) + (r.distance||0)/1000;
+  }
+  const mLabels = Object.keys(byMonth).sort();
+  const mData = mLabels.map(k => byMonth[k]);
+
+  new Chart(document.getElementById("monthChart"), {
+    type: "line",
+    data: { labels: mLabels, datasets: [{ label: "Monatsdistanz (km)", data: mData, tension: .3 }] },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
+}
+
+function renderLastRoute(rides){
+  if (!rides.length) return;
+  const ride = rides[0];
+  const latlngs = (ride.route||ride.coords||[]).map(p => L.latLng(p.lat, p.lng));
+  if (!latlngs.length) return;
+
+  const map = L.map("map").setView(latlngs[0], 13);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
+  const line = L.polyline(latlngs, { color: "#1d4ed8", weight: 4 }).addTo(map);
+  map.fitBounds(line.getBounds(), { padding: [20,20] });
+}
+
+/* ─────────────────────────────
+ * Init
+ * ───────────────────────────── */
+async function init(){
+  const id = new URLSearchParams(location.search).get("id");
+  if (!id){
+    alert("❌ Kein Profil angegeben");
+    return;
+  }
+
+  try {
+    const profileDoc = await db.collection("profiles").doc(id).get();
+    if (profileDoc.exists){
+      renderProfile(profileDoc.data());
+    }
+
+    const ridesSnap = await db.collection("users").doc(id).collection("rides")
+      .orderBy("startTime", "desc").limit(20).get();
+    const rides = [];
+    ridesSnap.forEach(doc => rides.push(doc.data()));
+
+    renderCharts(rides);
+    renderLastRoute(rides);
+  } catch(e){
+    console.error(e);
+    alert("⚠️ Fehler beim Laden des Profils");
+  }
+}
+
+init();
+</script>
+</body>
+</html>
