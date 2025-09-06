@@ -1612,14 +1612,21 @@ async function setUserMarker(pos, bearing, accuracy = 20) {
 
 
 // Start/Stop Button sichtbar machen je nach Zustand
+
 function updateStartBtnUI({ calculating = false, navActive = false } = {}) {
   const startBtn = document.getElementById("startBtn");
   const stopBtn = document.getElementById("stopBtn");
 
-  if (calculating || navActive) {
+  if (calculating) {
+    // Wenn gerade berechnet wird → nur Stop-Button optional anzeigen
     if (startBtn) startBtn.style.display = "none";
-    if (stopBtn && navActive) stopBtn.style.display = "inline-block";
+    if (stopBtn) stopBtn.style.display = navActive ? "inline-block" : "none";
+  } else if (navActive) {
+    // Navigation aktiv → Stop-Button zeigen, Start-Button ausblenden
+    if (startBtn) startBtn.style.display = "none";
+    if (stopBtn) stopBtn.style.display = "inline-block";
   } else {
+    // Keine Navigation, keine Berechnung → Start-Button sichtbar, Stop-Button versteckt
     if (startBtn) startBtn.style.display = "inline-block";
     if (stopBtn) stopBtn.style.display = "none";
   }
@@ -2896,15 +2903,14 @@ let recalcTimer = null;
 function debouncedRecalc(delay = 1200) {
   if (recalcTimer) clearTimeout(recalcTimer);
 
-  //updateStartBtnUI({ calculating: true, navActive: !!navWatchId });
+  // UI sofort auf "berechnen" setzen
+  updateStartBtnUI({ calculating: true, navActive: !!navWatchId });
 
-  // Async-Callback für await verwenden
   recalcTimer = setTimeout(async () => {
     recalcTimer = null;
 
     if (navWatchId && selected.length > 0) {
       try {
-        updateStartBtnUI({ calculating: false, navActive: !!navWatchId });
         stopNavigation(); // optional vorher stoppen
         await startRouteToNextHut();
         await updatePreviewRouteWithLoading();
@@ -2912,6 +2918,9 @@ function debouncedRecalc(delay = 1200) {
         console.error("Fehler beim Neuberechnen der Route:", err);
       }
     }
+
+    // Nach Fertigstellung wieder UI zurücksetzen
+    updateStartBtnUI({ calculating: false, navActive: !!navWatchId });
   }, delay);
 }
 
