@@ -1518,29 +1518,39 @@ function checkIfHutReached(userPos) {
   }
 }
 
+let lastGeocodeTime = 0;
+let lastKnownAddress = "";
+
 async function reverseGeocode(lat, lng) {
+  const now = Date.now();
+
+  // nur alle 15 Sekunden anfragen
+  if (now - lastGeocodeTime < 15000 && lastKnownAddress) {
+    return lastKnownAddress; // cached Ergebnis zurückgeben
+  }
+
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`;
     const res = await fetch(url, { headers: { "User-Agent": "MyApp/1.0" } });
     const data = await res.json();
 
     if (data && data.address) {
-      // Straße (oder Fußweg etc.)
       const road = data.address.road || data.address.pedestrian || data.address.cycleway || "";
-      // Ort / Stadt
       const city = data.address.city || data.address.town || data.address.village || data.address.hamlet || "";
       
-      if (road && city) return `${road}, ${city}`;
-      if (city) return city;
+      if (road && city) lastKnownAddress = `${road}, ${city}`;
+      else if (city) lastKnownAddress = city;
+      else lastKnownAddress = data.display_name || "";
+
+      lastGeocodeTime = now;
+      return lastKnownAddress;
     }
 
-    return data.display_name || null;
   } catch (err) {
     console.error("❌ Reverse Geocoding Fehler:", err);
-    return null;
   }
+  return lastKnownAddress || null;
 }
-
 
 
 // Marker setzen/aktualisieren
