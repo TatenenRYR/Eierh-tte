@@ -126,18 +126,43 @@
   <input id="profile-search" type="text" placeholder="Profil-ID oder Name eingeben..." class="w-full border p-2 rounded" />
   <button onclick="loadProfileAdmin()" class="bg-blue-600 text-white px-3 py-1 rounded">🔍 Laden</button>
 
-  <div id="profile-admin-area" class="hidden">
-    <img id="profile-pic-admin" class="w-24 h-24 rounded-full" />
-    <input id="profile-name-admin" class="w-full border p-2 rounded" />
-    <input id="profile-title-admin" class="w-full border p-2 rounded" placeholder="Titel" />
-    
-    <button onclick="saveProfileAdmin()" class="bg-green-600 text-white px-3 py-1 rounded">💾 Speichern</button>
-    <button onclick="deleteProfileAdmin()" class="bg-red-600 text-white px-3 py-1 rounded">🗑️ Löschen</button>
-    <button onclick="openProfileLink()" class="bg-purple-600 text-white px-3 py-1 rounded">🔗 Öffnen</button>
+  <div id="profile-admin-area" class="hidden space-y-4">
+    <div class="flex items-center space-x-4">
+      <img id="profile-pic-admin" class="w-24 h-24 rounded-full border" />
+      <input id="profile-pic-url" class="flex-1 border p-2 rounded" placeholder="Profilbild-URL ändern..." />
+    </div>
+
+    <input id="profile-name-admin" class="w-full border p-2 rounded" placeholder="Name" />
+    <textarea id="profile-bio-admin" class="w-full border p-2 rounded" placeholder="Kurzbeschreibung / Bio"></textarea>
+
+    <label class="block font-bold">Titel</label>
+    <select id="profile-title-admin" class="w-full border p-2 rounded"></select>
+
+    <label class="block font-bold">Abzeichen</label>
+    <div id="profile-badges-admin" class="flex flex-wrap gap-2"></div>
+
+    <label class="block font-bold">Rolle</label>
+    <select id="profile-role-admin" class="w-full border p-2 rounded">
+      <option value="user">👤 User</option>
+      <option value="admin">👑 Admin</option>
+      <option value="mod">🛡️ Moderator</option>
+    </select>
+
+    <label class="inline-flex items-center space-x-2">
+      <input id="profile-banned-admin" type="checkbox" class="form-checkbox">
+      <span>🚫 Account gesperrt</span>
+    </label>
+
+    <div class="text-sm text-gray-600" id="profile-stats"></div>
+
+    <div class="flex space-x-2">
+      <button onclick="saveProfileAdmin()" class="bg-green-600 text-white px-3 py-1 rounded">💾 Speichern</button>
+      <button onclick="deleteProfileAdmin()" class="bg-red-600 text-white px-3 py-1 rounded">🗑️ Löschen</button>
+      <button onclick="openProfileLink()" class="bg-purple-600 text-white px-3 py-1 rounded">🔗 Öffnen</button>
+    </div>
   </div>
 </div>
 
-<!-- Titel Verwaltung -->
 <h2 class="text-2xl font-bold mt-10 mb-4 text-indigo-700">👑 Titel Verwaltung</h2>
 <div id="title-list" class="space-y-2 bg-white p-4 rounded shadow"></div>
 <form id="title-form" class="mt-4 space-y-2">
@@ -155,13 +180,21 @@
 <div id="badge-list-admin" class="space-y-2 bg-white p-4 rounded shadow"></div>
 <form id="badge-form" class="mt-4 space-y-2">
   <input id="badge-name" placeholder="Abzeichen-Name" class="border p-2 rounded w-full">
-  <input id="badge-icon" placeholder="Emoji/Icon" class="border p-2 rounded w-full">
+
+  <label class="block font-bold">Icon auswählen</label>
+  <input id="badge-icon-file" type="file" accept="image/*" class="w-full border p-2 rounded">
+  <small class="text-gray-500">Optional: Eigenes Bild hochladen</small>
+
+  <input id="badge-icon" placeholder="Emoji/Icon (Fallback)" class="border p-2 rounded w-full">
+
   <select id="badge-condition" class="border p-2 rounded w-full">
     <option value="rides">Anzahl Fahrten</option>
     <option value="distance">Gesamtkilometer</option>
     <option value="night">Nachtfahrt</option>
   </select>
+
   <input id="badge-value" type="number" placeholder="Bedingung Wert" class="border p-2 rounded w-full">
+
   <button type="submit" class="bg-green-600 text-white px-3 py-1 rounded">➕ Abzeichen speichern</button>
 </form>
 
@@ -1781,26 +1814,70 @@ async function loadProfileAdmin() {
 
   let snap = await db.collection("profiles").doc(query).get();
   if (!snap.exists) {
-    // nach Name suchen
     const q = await db.collection("profiles").where("name","==",query).get();
     if (q.empty) return alert("Kein Profil gefunden!");
     snap = q.docs[0];
   }
   const data = snap.data();
   currentProfileId = snap.id;
-  
+
+  // Grunddaten setzen
   document.getElementById("profile-admin-area").classList.remove("hidden");
   document.getElementById("profile-pic-admin").src = data.pic || "default.jpg";
+  document.getElementById("profile-pic-url").value = data.pic || "";
   document.getElementById("profile-name-admin").value = data.name || "";
-  document.getElementById("profile-title-admin").value = data.title || "";
+  document.getElementById("profile-bio-admin").value = data.bio || "";
+  document.getElementById("profile-role-admin").value = data.role || "user";
+  document.getElementById("profile-banned-admin").checked = data.banned || false;
+
+  // Stats
+  document.getElementById("profile-stats").textContent =
+    `Fahrten: ${data.rides || 0} | Km: ${data.km || 0} | Letzter Login: ${data.lastLogin || "–"}`;
+
+  // Titel laden
+  const titleSel = document.getElementById("profile-title-admin");
+  titleSel.innerHTML = "<option value=''>Kein Titel</option>";
+  const titleSnap = await db.collection("titles").get();
+  titleSnap.forEach(doc => {
+    const t = doc.data();
+    const opt = document.createElement("option");
+    opt.value = t.name;
+    opt.textContent = t.name;
+    titleSel.appendChild(opt);
+  });
+  titleSel.value = data.title || "";
+
+  // Abzeichen laden
+  const badgeContainer = document.getElementById("profile-badges-admin");
+  badgeContainer.innerHTML = "";
+  const badgeSnap = await db.collection("badgesDefs").get();
+  badgeSnap.forEach(doc => {
+    const b = doc.data();
+    const chk = document.createElement("input");
+    chk.type = "checkbox";
+    chk.value = doc.id;
+    chk.checked = (data.badges || []).includes(doc.id);
+    badgeContainer.appendChild(chk);
+    const lbl = document.createElement("label");
+    lbl.textContent = `${b.icon || "🏅"} ${b.name}`;
+    badgeContainer.appendChild(lbl);
+  });
 }
 
 async function saveProfileAdmin() {
   if (!currentProfileId) return;
+  const badges = [...document.querySelectorAll("#profile-badges-admin input:checked")].map(i => i.value);
+
   await db.collection("profiles").doc(currentProfileId).update({
     name: document.getElementById("profile-name-admin").value,
-    title: document.getElementById("profile-title-admin").value
+    pic: document.getElementById("profile-pic-url").value,
+    bio: document.getElementById("profile-bio-admin").value,
+    title: document.getElementById("profile-title-admin").value,
+    role: document.getElementById("profile-role-admin").value,
+    banned: document.getElementById("profile-banned-admin").checked,
+    badges: badges
   });
+
   alert("✔️ Profil gespeichert!");
 }
 
@@ -1911,23 +1988,29 @@ async function addGlobalBadge() {
   const valEl  = document.getElementById("badge-value");
   let badgeEditId = null;
 
-  async function loadBadges() {
-    if (!badgeList) return;
-    const snap = await db.collection("badgesDefs").get();
-    badgeList.innerHTML = "";
-    snap.forEach(doc => {
-      const b = doc.data();
-      const row = document.createElement("div");
-      row.className = "p-2 border rounded flex justify-between items-center";
-      row.innerHTML = `
-        <span>${b.icon || "🏅"} <strong>${b.name}</strong> — Regel: ${b.conditionType} ≥ ${b.conditionValue}</span>
+ async function loadBadges() {
+  const snap = await db.collection("badgesDefs").get();
+  const list = document.getElementById("badge-list-admin");
+  list.innerHTML = "";
+
+  snap.forEach(doc => {
+    const b = doc.data();
+    const displayIcon = b.iconUrl
+      ? `<img src="${b.iconUrl}" class="w-6 h-6 inline-block rounded" />`
+      : (b.icon || "🏅");
+
+    list.innerHTML += `
+      <div class="p-2 border rounded flex justify-between items-center">
+        <span>${displayIcon} <strong>${b.name}</strong> — Regel: ${b.conditionType} ≥ ${b.conditionValue}</span>
         <div class="space-x-2">
-          <button class="px-2 py-1 bg-blue-600 text-white rounded" onclick="editBadge('${doc.id}')">✏️</button>
-          <button class="px-2 py-1 bg-red-600 text-white rounded" onclick="deleteBadge('${doc.id}')">🗑️</button>
-        </div>`;
-      badgeList.appendChild(row);
-    });
-  }
+          <button onclick="editBadge('${doc.id}')" class="px-2 py-1 bg-blue-600 text-white rounded">✏️</button>
+          <button onclick="deleteBadge('${doc.id}')" class="px-2 py-1 bg-red-600 text-white rounded">🗑️</button>
+        </div>
+      </div>
+    `;
+  });
+}
+
 
   window.editBadge = async function(id) {
     const doc = await db.collection("badgesDefs").doc(id).get();
@@ -1947,24 +2030,36 @@ async function addGlobalBadge() {
 
   if (badgeForm) {
     badgeForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const payload = {
-        name: (nameEl?.value || "").trim(),
-        icon: (iconEl?.value || "").trim(),
-        conditionType: condEl?.value || "rides",
-        conditionValue: parseInt(valEl?.value || "0", 10) || 0
-      };
-      if (!payload.name) { alert("Bitte einen Abzeichen-Namen angeben."); return; }
-
-      if (badgeEditId) {
-        await db.collection("badgesDefs").doc(badgeEditId).update(payload);
-        badgeEditId = null;
-      } else {
-        await db.collection("badgesDefs").add(payload);
-      }
-      if (badgeForm) badgeForm.reset();
-      await loadBadges();
+    e.preventDefault();
+    const name = document.getElementById("badge-name").value.trim();
+    const emojiFallback = document.getElementById("badge-icon").value.trim();
+    const conditionType = document.getElementById("badge-condition").value;
+    const conditionValue = parseInt(document.getElementById("badge-value").value) || 0;
+  
+    if (!name) return alert("Bitte Abzeichen-Namen eingeben!");
+  
+    let iconUrl = "";
+    const fileInput = document.getElementById("badge-icon-file");
+    if (fileInput.files.length > 0) {
+      const file = fileInput.files[0];
+      const storageRef = firebase.storage().ref();
+      const fileRef = storageRef.child("badges/" + Date.now() + "_" + file.name);
+      await fileRef.put(file);
+      iconUrl = await fileRef.getDownloadURL();
+    }
+  
+    await db.collection("badgesDefs").add({
+      name: name,
+      icon: emojiFallback,
+      iconUrl: iconUrl, // Bild-URL, falls hochgeladen
+      conditionType: conditionType,
+      conditionValue: conditionValue,
+      createdAt: new Date()
     });
+  
+    badgeForm.reset();
+    loadBadges(); // Liste aktualisieren
+});
   }
 
   document.addEventListener("DOMContentLoaded", loadBadges);
