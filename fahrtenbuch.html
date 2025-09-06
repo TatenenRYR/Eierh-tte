@@ -1,70 +1,153 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>📖 Fahrtenbuch</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js"></script>
+
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- Firebase (compat, stabil im Browser) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
   <style>
-    body { font-family: sans-serif; margin:20px; background:#f8f8f8; }
-    h1,h2 { margin-bottom:10px; }
-    .profile { display:flex; align-items:center; gap:20px; margin-bottom:20px; }
-    .profile img { width:80px; height:80px; border-radius:50%; object-fit:cover; cursor:pointer; }
-    .stats { margin:20px 0; padding:15px; background:#fff; border-radius:10px; }
-    table { width:100%; border-collapse:collapse; margin-top:20px; background:#fff; }
-    th, td { padding:10px; border-bottom:1px solid #ddd; text-align:left; }
-    tr:hover { background:#f0f0f0; cursor:pointer; }
-    #map { height:300px; margin-top:20px; border-radius:10px; }
-    #badgeList { display:flex; gap:15px; flex-wrap:wrap; margin-top:15px; }
-    #badgeList div { padding:10px; border-radius:10px; background:#fff; text-align:center; width:110px; }
-    #badgeList div div { font-size:2em; }
+    /* Leaflet Tooltip für User/Marker etc. (wird hier nur für Style-Konsistenz genutzt) */
+    .user-label {
+      background: rgba(255,255,255,0.92);
+      border-radius: 6px;
+      padding: 4px 8px;
+      color: #111827; /* gray-900 */
+      font-size: .8rem;
+      box-shadow: 0 2px 6px rgba(0,0,0,.15);
+      border: 1px solid rgba(0,0,0,.06);
+    }
   </style>
 </head>
-<body>
-  <h1>📖 Mein Fahrtenbuch</h1>
+<body class="bg-gray-50 text-gray-900">
+  <!-- App Wrapper -->
+  <div class="max-w-6xl mx-auto p-4 sm:p-6">
+    <header class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl sm:text-3xl font-bold">📖 Mein Fahrtenbuch</h1>
+      <button id="refreshBtn" class="rounded-xl px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 transition">
+        ↻ Aktualisieren
+      </button>
+    </header>
 
-  <!-- Profil -->
-  <div class="profile">
-    <img id="profilePic" src="default.jpg" alt="Profilbild">
-    <div>
-      <input id="profileName" placeholder="Dein Name" />
-      <select id="profileTitle"></select>
-      <button onclick="saveProfile()">💾 Speichern</button>
-      <br><br>
-      <button onclick="syncProfileToFirebase()">🌍 Öffentlich machen</button>
-      <input id="shareLink" readonly style="width:100%;margin-top:5px;" />
-    </div>
+    <!-- Profil Card -->
+    <section class="bg-white rounded-2xl shadow p-4 sm:p-6 mb-6">
+      <div class="flex items-center gap-4 sm:gap-6">
+        <div class="relative">
+          <img id="profilePic" src="default.jpg" alt="Profilbild"
+               class="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover ring-2 ring-indigo-100 cursor-pointer" />
+          <button id="picBtn" class="absolute -bottom-2 -right-2 bg-white border rounded-full p-2 shadow hover:shadow-md"
+                  title="Profilbild ändern">📷</button>
+        </div>
+        <div class="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <input id="profileName" placeholder="Dein Name"
+                 class="rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"/>
+          <select id="profileTitle" class="rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
+            <option value="">Kein Titel</option>
+          </select>
+
+          <div class="col-span-1 sm:col-span-2 flex items-center gap-3">
+            <button id="saveProfileBtn" class="rounded-xl px-4 py-2 bg-gray-100 hover:bg-gray-200 transition">💾 Speichern</button>
+            <button id="syncProfileBtn" class="rounded-xl px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 transition">🌍 Öffentlich machen</button>
+          </div>
+
+          <input id="shareLink" readonly
+                 class="col-span-1 sm:col-span-2 rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
+                 placeholder="Profil-Share-Link erscheint hier nach dem Sync…"/>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stats -->
+    <section class="grid md:grid-cols-3 gap-4 mb-6">
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-gray-500">Gesamt Distanz</p>
+        <p id="totalKm" class="text-2xl font-semibold">0 km</p>
+      </div>
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-gray-500">Gesamt Zeit</p>
+        <p id="totalTime" class="text-2xl font-semibold">0 h</p>
+      </div>
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-gray-500">Ø Geschwindigkeit</p>
+        <p id="avgSpeed" class="text-2xl font-semibold">0 km/h</p>
+      </div>
+    </section>
+
+    <!-- Charts -->
+    <section class="bg-white rounded-2xl shadow p-4 sm:p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-4">📊 Aktivität</h2>
+      <div class="grid lg:grid-cols-2 gap-6">
+        <div>
+          <canvas id="distChart" height="110"></canvas>
+        </div>
+        <div>
+          <canvas id="monthChart" height="110"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Badges -->
+    <section class="bg-white rounded-2xl shadow p-4 sm:p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-4">🏅 Meine Abzeichen</h2>
+      <div id="badgeList" class="flex flex-wrap gap-3"></div>
+    </section>
+
+    <!-- Fahrten-Tabelle + Map -->
+    <section class="bg-white rounded-2xl shadow p-4 sm:p-6">
+      <div class="flex items-center justify-between mb-4 gap-3">
+        <h2 class="text-xl font-semibold">Touren</h2>
+        <div class="flex items-center gap-2">
+          <input id="searchInput" class="rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
+                 placeholder="Suche (Datum/Strecke)…"/>
+          <select id="sortSelect" class="rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
+            <option value="date_desc">Neueste zuerst</option>
+            <option value="date_asc">Älteste zuerst</option>
+            <option value="dist_desc">Distanz (↓)</option>
+            <option value="dist_asc">Distanz (↑)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto rounded-xl border">
+        <table class="min-w-full text-sm">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="text-left px-4 py-3">Datum</th>
+              <th class="text-left px-4 py-3">Dauer</th>
+              <th class="text-left px-4 py-3">Distanz</th>
+              <th class="text-left px-4 py-3">Ø Speed</th>
+              <th class="text-left px-4 py-3">Aktion</th>
+            </tr>
+          </thead>
+          <tbody id="logTable"></tbody>
+        </table>
+      </div>
+
+      <div id="map" class="mt-4 h-[320px] rounded-xl border"></div>
+    </section>
   </div>
 
-  <!-- Statistik -->
-  <div class="stats">
-    <h2>Statistik</h2>
-    <p id="totalKm">0 km gesamt</p>
-    <p id="totalTime">0 h gesamt</p>
-    <p id="avgSpeed">0 km/h Ø Geschwindigkeit</p>
-  </div>
-
-  <canvas id="chart" height="100"></canvas>
-
-  <h2>🏅 Meine Abzeichen</h2>
-  <div id="badgeList"></div>
-
-  <h2>Touren</h2>
-  <table>
-    <thead>
-      <tr><th>Datum</th><th>Dauer</th><th>Distanz</th><th>Ø Geschwindigkeit</th></tr>
-    </thead>
-    <tbody id="logTable"></tbody>
-  </table>
-
-  <div id="map"></div>
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 hidden
+                         bg-gray-900 text-white px-4 py-2 rounded-xl shadow-lg"></div>
 
 <script>
-// ---------- Firebase Setup ----------
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+/* ─────────────────────────────
+ * Firebase Setup
+ * ───────────────────────────── */
 const firebaseConfig = {
   apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
   authDomain: "eierhuettentour.firebaseapp.com",
@@ -74,39 +157,52 @@ const firebaseConfig = {
   appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
   measurementId: "G-16V6K5GXDT"
 };
-const app = firebase.initializeApp(firebaseConfig);
+firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-// ---------- Profil ----------
-function loadProfile() {
-  document.getElementById("profileName").value = localStorage.getItem("profileName") || "";
-  const pic = localStorage.getItem("profilePic");
-  if (pic) document.getElementById("profilePic").src = pic;
+/* ─────────────────────────────
+ * Globals
+ * ───────────────────────────── */
+let map, routeLayer;
+let rides = []; // zusammengeführt: Firestore + localStorage
+let distChart, monthChart;
+const userId = initUserId();
+
+/* ─────────────────────────────
+ * Utils
+ * ───────────────────────────── */
+function initUserId(){
+  let id = localStorage.getItem("userId");
+  if (!id) {
+    id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
+    localStorage.setItem("userId", id);
+  }
+  return id;
 }
 
-function saveProfile() {
-  localStorage.setItem("profileName", document.getElementById("profileName").value);
-  localStorage.setItem("profileTitle", document.getElementById("profileTitle").value);
-  alert("✔️ Profil gespeichert");
+function toast(msg, type="info") {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.remove("hidden");
+  t.style.background = type === "error" ? "#dc2626" : type === "ok" ? "#065f46" : "#111827";
+  setTimeout(() => t.classList.add("hidden"), 2200);
 }
 
-document.getElementById("profilePic").onclick = () => {
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = "image/*";
-  input.onchange = e => {
-    const file = e.target.files[0];
-    const reader = new FileReader();
-    reader.onload = ev => {
-      localStorage.setItem("profilePic", ev.target.result);
-      document.getElementById("profilePic").src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
-  };
-  input.click();
-};
+function fmtDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString();
+}
+function fmtHMS(sec) {
+  const h = Math.floor(sec/3600);
+  const m = Math.floor((sec%3600)/60);
+  return h ? `${h}h ${m}min` : `${m}min`;
+}
+function km(m){ return (m/1000).toFixed(1); }
+function kmh(m, s){ return ( (m/1000) / (s/3600) ).toFixed(1); }
 
-// ---------- Titel aus Badges ----------
+/* ─────────────────────────────
+ * Profil / Titel / Badges
+ * ───────────────────────────── */
 const titleDefs = {
   "first-ride": "Neuling",
   "10-rides": "Road Warrior",
@@ -117,135 +213,326 @@ const titleDefs = {
   "admin": "👑 Admin"
 };
 
-function renderTitles() {
-  const badges = JSON.parse(localStorage.getItem("badges") || "[]");
-  const sel = document.getElementById("profileTitle");
-  sel.innerHTML = "<option value=''>Kein Titel</option>";
-  badges.forEach(b => {
-    if (titleDefs[b.id]) {
-      const opt = document.createElement("option");
-      opt.value = titleDefs[b.id];
-      opt.textContent = titleDefs[b.id];
-      sel.appendChild(opt);
-    }
-  });
-  // Falls Admin Titel gesetzt wurde (z. B. per Firebase)
-  if (localStorage.getItem("adminTitle")) {
-    const opt = document.createElement("option");
-    opt.value = "👑 Admin";
-    opt.textContent = "👑 Admin";
-    sel.appendChild(opt);
-  }
-  sel.value = localStorage.getItem("profileTitle") || "";
-}
-
-// ---------- Sync mit Firebase ----------
-async function syncProfileToFirebase() {
-  const profile = {
-    name: localStorage.getItem("profileName"),
-    title: localStorage.getItem("profileTitle"),
-    pic: localStorage.getItem("profilePic"),
-    badges: JSON.parse(localStorage.getItem("badges") || "[]"),
-    stats: {
-      totalKm: document.getElementById("totalKm").textContent,
-      totalTime: document.getElementById("totalTime").textContent,
-      avgSpeed: document.getElementById("avgSpeed").textContent
-    }
-  };
-  
-  const userId = localStorage.getItem("userId") || crypto.randomUUID();
-  localStorage.setItem("userId", userId);
-
-  await db.collection("profiles").doc(userId).set(profile);
-  alert("✔️ Profil in Firebase gespeichert!");
-  
-  document.getElementById("shareLink").value = 
-    `https://deine-app.web.app/profile.html?id=${userId}`;
-}
-
-// ---------- Badges ----------
-function renderBadges() {
-  const badges = JSON.parse(localStorage.getItem("badges") || "[]");
-  const list = document.getElementById("badgeList");
-  list.innerHTML = "";
-  if (badges.length === 0) {
-    list.innerHTML = "<p>Noch keine Abzeichen freigeschaltet 🚀</p>";
-    return;
-  }
-  badges.forEach(b => {
-    const div = document.createElement("div");
-    div.innerHTML = `<div>${b.icon}</div><div>${b.title}</div><small>${new Date(b.date).toLocaleDateString()}</small>`;
-    list.appendChild(div);
-  });
-}
-
-// ---------- Fahrtenbuch ----------
-let logs = [];
-let map, routeLayer;
-
-function formatTime(sec) {
-  const h = Math.floor(sec/3600);
-  const m = Math.floor((sec%3600)/60);
-  return h > 0 ? `${h}h ${m}min` : `${m}min`;
-}
-
-function renderFahrtenbuch() {
-  logs = JSON.parse(localStorage.getItem("fahrtenbuch") || "[]");
-  const tbody = document.getElementById("logTable");
-  tbody.innerHTML = "";
-
-  let totalKm=0, totalTime=0, speeds=[];
-  logs.forEach((l, idx) => {
-    totalKm += l.distance/1000;
-    totalTime += l.duration;
-    speeds.push(l.avgSpeed);
-
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${new Date(l.date).toLocaleString()}</td>
-      <td>${formatTime(l.duration)}</td>
-      <td>${(l.distance/1000).toFixed(1)} km</td>
-      <td>${l.avgSpeed.toFixed(1)} km/h</td>`;
-    tr.onclick = () => showRoute(idx);
-    tbody.appendChild(tr);
-  });
-
-  document.getElementById("totalKm").innerText = totalKm.toFixed(1)+" km gesamt";
-  document.getElementById("totalTime").innerText = (totalTime/3600).toFixed(1)+" h gesamt";
-  document.getElementById("avgSpeed").innerText = (speeds.reduce((a,b)=>a+b,0)/speeds.length || 0).toFixed(1)+" km/h Ø Geschwindigkeit";
-
-  if (logs.length > 0) {
-    new Chart(document.getElementById("chart"), {
-      type:"bar",
-      data:{
-        labels: logs.map(l=>new Date(l.date).toLocaleDateString()),
-        datasets:[{
-          label:"Distanz (km)",
-          data: logs.map(l=>l.distance/1000),
-          backgroundColor:"rgba(54,162,235,0.6)"
-        }]
-      }
-    });
-  }
-
-  renderBadges();
+function loadProfileUI(){
+  document.getElementById("profileName").value = localStorage.getItem("profileName") || "";
+  const pic = localStorage.getItem("profilePic");
+  if (pic) document.getElementById("profilePic").src = pic;
   renderTitles();
 }
 
-function showRoute(idx) {
-  const log = logs[idx];
-  if (!map) {
-    map = L.map("map").setView([51,10], 6);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:19 }).addTo(map);
-  }
-  if (routeLayer) map.removeLayer(routeLayer);
-  routeLayer = L.polyline(log.route, { color:"gray", weight:4 }).addTo(map);
-  map.fitBounds(routeLayer.getBounds());
+function renderTitles(){
+  const badges = JSON.parse(localStorage.getItem("badges") || "[]");
+  const sel = document.getElementById("profileTitle");
+  sel.innerHTML = "<option value=''>Kein Titel</option>";
+  const addOpt = (val) => {
+    const opt = document.createElement("option");
+    opt.value = val; opt.textContent = val;
+    sel.appendChild(opt);
+  };
+  badges.forEach(b => { if (titleDefs[b.id]) addOpt(titleDefs[b.id]); });
+  if (localStorage.getItem("adminTitle")) addOpt("👑 Admin");
+  sel.value = localStorage.getItem("profileTitle") || "";
 }
 
-// ---------- Init ----------
-loadProfile();
-renderFahrtenbuch();
+async function syncProfileToFirebase(){
+  try {
+    const profile = {
+      name: localStorage.getItem("profileName") || "",
+      title: localStorage.getItem("profileTitle") || "",
+      pic: localStorage.getItem("profilePic") || "",
+      badges: JSON.parse(localStorage.getItem("badges") || "[]"),
+      stats: {
+        totalKm: document.getElementById("totalKm").textContent,
+        totalTime: document.getElementById("totalTime").textContent,
+        avgSpeed: document.getElementById("avgSpeed").textContent
+      },
+      updatedAt: new Date().toISOString()
+    };
+    await db.collection("profiles").doc(userId).set(profile, { merge: true });
+    const link = `${location.origin}/profile.html?id=${userId}`;
+    document.getElementById("shareLink").value = link;
+    toast("Profil synchronisiert", "ok");
+  } catch(e){
+    console.error(e);
+    toast("Profil Sync fehlgeschlagen", "error");
+  }
+}
+
+function renderBadges(){
+  const list = document.getElementById("badgeList");
+  const badges = JSON.parse(localStorage.getItem("badges") || "[]");
+  list.innerHTML = "";
+  if (!badges.length){
+    list.innerHTML = `<div class="text-gray-500">Noch keine Abzeichen freigeschaltet 🚀</div>`;
+    return;
+  }
+  for (const b of badges){
+    const card = document.createElement("div");
+    card.className = "px-3 py-2 rounded-xl border bg-white hover:shadow transition";
+    card.innerHTML = `<div class="text-2xl text-center">${b.icon || "🏅"}</div>
+                      <div class="text-center">${b.title || b.id}</div>
+                      <div class="text-xs text-gray-500 text-center">${new Date(b.date).toLocaleDateString()}</div>`;
+    list.appendChild(card);
+  }
+}
+
+/* ─────────────────────────────
+ * Fahrten laden (Firestore + localStorage)
+ * ───────────────────────────── */
+async function loadRidesFromFirestore(){
+  try{
+    const snap = await db.collection("users").doc(userId).collection("rides").orderBy("startTime", "desc").get();
+    const arr = [];
+    snap.forEach(doc => arr.push({ id: doc.id, ...doc.data(), source: "cloud" }));
+    return arr;
+  }catch(e){
+    console.warn("Firestore load error:", e);
+    return [];
+  }
+}
+function loadRidesFromLocal(){
+  const local = JSON.parse(localStorage.getItem("fahrtenbuch") || "[]");
+  // map zu kompatiblem Format
+  return local.map((l, idx) => ({
+    id: `local-${idx}-${l.date}`,
+    startTime: l.date,
+    endTime: l.date, // nicht exakt, aber für Anzeige ok
+    duration: l.duration,
+    distance: l.distance,
+    avgSpeed: l.avgSpeed,
+    route: (l.route || []).map(p => Array.isArray(p) ? {lat:p[0], lng:p[1]} : p),
+    source: "local"
+  }));
+}
+
+/* Dubletten-Schutz: wenn es dieselben Zeit-/Distanzwerte sind, nimm Cloud */
+function mergeRides(cloud, local){
+  const key = r => `${new Date(r.startTime).getTime()}_${Math.round(r.distance||0)}_${Math.round(r.duration||0)}`;
+  const map = new Map();
+  for (const r of local){ map.set(key(r), r); }
+  for (const r of cloud){ map.set(key(r), r); } // Cloud überschreibt
+  return Array.from(map.values());
+}
+
+/* Migration alter Koordinaten ([lat,lng] → {lat,lng}) für Cloud */
+async function migrateRideCoords(){
+  try{
+    const snap = await db.collection("users").doc(userId).collection("rides").get();
+    const batch = db.batch();
+    let changed = 0;
+    snap.forEach(doc => {
+      const d = doc.data();
+      const fixArrToObj = (arr) => Array.isArray(arr) ? arr.map(p => Array.isArray(p) ? ({lat:p[0], lng:p[1]}) : p) : [];
+      const newCoords = fixArrToObj(d.coords || []);
+      const newPlanned = fixArrToObj(d.routePlanned || []);
+      const needUpdate = JSON.stringify(newCoords) !== JSON.stringify(d.coords || []) ||
+                         JSON.stringify(newPlanned) !== JSON.stringify(d.routePlanned || []);
+      if (needUpdate){
+        batch.update(doc.ref, { coords: newCoords, routePlanned: newPlanned });
+        changed++;
+      }
+    });
+    if (changed>0){
+      await batch.commit();
+      console.log(`Migration: ${changed} Fahrten korrigiert`);
+    }
+  }catch(e){
+    console.warn("Migration skipped/failed:", e);
+  }
+}
+
+/* ─────────────────────────────
+ * Tabelle & Map Rendering
+ * ───────────────────────────── */
+function renderStats(list){
+  if (!list.length){
+    document.getElementById("totalKm").innerText = "0 km";
+    document.getElementById("totalTime").innerText = "0 h";
+    document.getElementById("avgSpeed").innerText = "0 km/h";
+    return;
+  }
+  const totalDist = list.reduce((a,b)=>a+(b.distance||0),0);
+  const totalTime = list.reduce((a,b)=>a+(b.duration||0),0);
+  const avg = totalDist && totalTime ? ( (totalDist/1000) / (totalTime/3600) ) : 0;
+
+  document.getElementById("totalKm").innerText = `${(totalDist/1000).toFixed(1)} km`;
+  document.getElementById("totalTime").innerText = `${(totalTime/3600).toFixed(1)} h`;
+  document.getElementById("avgSpeed").innerText = `${avg.toFixed(1)} km/h`;
+}
+
+function renderCharts(list){
+  // Distanz-Zeitreihe (pro Fahrt)
+  const labels = list.map(r => new Date(r.startTime).toLocaleDateString());
+  const dists = list.map(r => (r.distance||0)/1000);
+
+  if (distChart) distChart.destroy();
+  distChart = new Chart(document.getElementById("distChart"), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{ label: "Distanz (km)", data: dists }]
+    },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
+
+  // Monats-Summen
+  const byMonth = {};
+  for (const r of list){
+    const d = new Date(r.startTime);
+    const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+    byMonth[k] = (byMonth[k]||0) + (r.distance||0)/1000;
+  }
+  const mLabels = Object.keys(byMonth).sort();
+  const mData = mLabels.map(k => byMonth[k]);
+
+  if (monthChart) monthChart.destroy();
+  monthChart = new Chart(document.getElementById("monthChart"), {
+    type: "line",
+    data: { labels: mLabels, datasets: [{ label: "Monatsdistanz (km)", data: mData, tension: .3 }] },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
+}
+
+function renderTable(list){
+  const tbody = document.getElementById("logTable");
+  tbody.innerHTML = "";
+  if (!list.length){
+    tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">Keine Fahrten gefunden</td></tr>`;
+    return;
+  }
+  for (const r of list){
+    const tr = document.createElement("tr");
+    tr.className = "border-b hover:bg-gray-50";
+    const distKm = km(r.distance||0);
+    const avg = r.duration ? kmh(r.distance||0, r.duration) : "0.0";
+    tr.innerHTML = `
+      <td class="px-4 py-3">${fmtDate(r.startTime)}</td>
+      <td class="px-4 py-3">${fmtHMS(r.duration||0)}</td>
+      <td class="px-4 py-3">${distKm} km</td>
+      <td class="px-4 py-3">${avg} km/h</td>
+      <td class="px-4 py-3">
+        <button class="px-3 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition">Anzeigen</button>
+      </td>`;
+    tr.querySelector("button").onclick = () => showRoute(r);
+    tbody.appendChild(tr);
+  }
+}
+
+function ensureMap(){
+  if (!map){
+    map = L.map("map").setView([51, 10], 6);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+  }
+}
+function showRoute(ride){
+  ensureMap();
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+
+  const route = (ride.route && ride.route.length) ? ride.route
+               : (ride.coords && ride.coords.length) ? ride.coords
+               : (ride.routePlanned || []);
+
+  const latlngs = route.map(p => L.latLng(p.lat, p.lng)).filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+
+  if (!latlngs.length){
+    toast("Keine Route/Koordinaten vorhanden", "error");
+    return;
+  }
+  routeLayer = L.polyline(latlngs, { color: "#1d4ed8", weight: 4 }).addTo(map);
+  map.fitBounds(routeLayer.getBounds(), { padding: [30,30] });
+}
+
+/* Suche/Sortierung */
+function applySearchSort(source){
+  const q = document.getElementById("searchInput").value.trim().toLowerCase();
+  const sort = document.getElementById("sortSelect").value;
+  let arr = [...source];
+
+  if (q){
+    arr = arr.filter(r => {
+      const d = new Date(r.startTime).toLocaleString().toLowerCase();
+      const dist = String(Math.round((r.distance||0)/100)/10);
+      return d.includes(q) || dist.includes(q);
+    });
+  }
+
+  arr.sort((a,b)=>{
+    if (sort==="date_asc") return new Date(a.startTime)-new Date(b.startTime);
+    if (sort==="date_desc") return new Date(b.startTime)-new Date(a.startTime);
+    if (sort==="dist_asc") return (a.distance||0)-(b.distance||0);
+    if (sort==="dist_desc") return (b.distance||0)-(a.distance||0);
+    return 0;
+  });
+
+  return arr;
+}
+
+/* ─────────────────────────────
+ * Initialisierung
+ * ───────────────────────────── */
+async function init(){
+  // Profil UI
+  loadProfileUI();
+  renderBadges();
+
+  // Migration (silent best effort)
+  await migrateRideCoords();
+
+  // Rides sammeln
+  const cloud = await loadRidesFromFirestore();
+  const local = loadRidesFromLocal();
+  rides = mergeRides(cloud, local);
+
+  // Render
+  renderStats(rides);
+  renderCharts(rides);
+  renderTable(applySearchSort(rides));
+}
+
+/* ─────────────────────────────
+ * Events
+ * ───────────────────────────── */
+document.getElementById("refreshBtn").addEventListener("click", async ()=>{
+  toast("Lade Daten…");
+  await init();
+  toast("Aktualisiert", "ok");
+});
+
+document.getElementById("searchInput").addEventListener("input", ()=>{
+  renderTable(applySearchSort(rides));
+});
+document.getElementById("sortSelect").addEventListener("change", ()=>{
+  renderTable(applySearchSort(rides));
+});
+
+document.getElementById("saveProfileBtn").addEventListener("click", ()=>{
+  localStorage.setItem("profileName", document.getElementById("profileName").value);
+  localStorage.setItem("profileTitle", document.getElementById("profileTitle").value);
+  toast("Profil gespeichert", "ok");
+});
+
+document.getElementById("syncProfileBtn").addEventListener("click", syncProfileToFirebase);
+
+document.getElementById("picBtn").addEventListener("click", ()=>{
+  const input = document.createElement("input");
+  input.type = "file"; input.accept = "image/*";
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      localStorage.setItem("profilePic", ev.target.result);
+      document.getElementById("profilePic").src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+});
+
+/* ─────────────────────────────
+ * Start
+ * ───────────────────────────── */
+init();
 </script>
 </body>
 </html>
