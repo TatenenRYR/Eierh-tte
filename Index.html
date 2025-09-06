@@ -1210,6 +1210,7 @@ let routeSteps = [];
 async function fetchRoute(start, ziel) {
   const url = "https://api.openrouteservice.org/v2/directions/cycling-regular/json";
   const lang = (localStorage.lang && localStorage.lang.split('-')[0]) || 'de';
+
   const body = {
     coordinates: [
       [start.lng, start.lat],
@@ -1232,17 +1233,22 @@ async function fetchRoute(start, ziel) {
       body: JSON.stringify(body)
     });
 
-    const data = await res.json();
-    if (data.error) {
-      console.error("❌ ORS Fehler:", data.error);
-      alert("Route konnte nicht berechnet werden: " + (data.error.message || JSON.stringify(data.error)));
-      return;
+    // ❌ Fehler abfangen (HTTP-Level)
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`ORS HTTP ${res.status}: ${errText}`);
     }
 
-    if (data.routes?.length && data.routes[0].geometry) {
-      const decoded = polyline.decode(data.routes[0].geometry);
-      routeCoords = decoded.map(c => L.latLng(c[0], c[1]));
+    const data = await res.json();
+
+    // ❌ Fehler abfangen (ORS-Level)
+    if (data.error || !data.routes || !data.routes.length) {
+      throw new Error(`ORS Antwort ungültig: ${JSON.stringify(data)}`);
     }
+
+    // ✅ Route verarbeiten
+    const decoded = polyline.decode(data.routes[0].geometry);
+    routeCoords = decoded.map(c => L.latLng(c[0], c[1]));
 
     if (routeLine) map.removeLayer(routeLine);
     routeLine = L.polyline(routeCoords, { color: "blue", weight: 5 }).addTo(map);
@@ -1251,13 +1257,16 @@ async function fetchRoute(start, ziel) {
     routeSteps = data.routes[0].segments[0].steps || [];
     routeDistance = data.routes[0].summary.distance || 0;
     routeDuration = data.routes[0].summary.duration || 0;
+
+    console.log("✔️ Route erfolgreich berechnet", { distance: routeDistance, duration: routeDuration });
   } catch (err) {
-    console.error("❌ Fehler beim Abrufen der Route:", err);
+    console.error("❌ Fehler beim Abrufen der Route:", err.message || err);
+    showToast("❌ Route konnte nicht berechnet werden");
+    throw err; // wichtig: damit startNavigation merkt, dass was schiefging
   } finally {
     updateStartBtnUI({ calculating: false, navActive: !!navWatchId });
   }
 }
-
 
 /////////////////////////////////////////////
 // 🌍 Neue Navigations-Logik
