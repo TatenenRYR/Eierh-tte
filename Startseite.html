@@ -73,6 +73,7 @@
       overflow: hidden;
       box-shadow: 0 5px 15px rgba(0,0,0,0.1);
       transition: transform 0.3s ease, box-shadow 0.3s ease;
+      cursor: pointer;
     }
 
     .card:hover {
@@ -163,31 +164,45 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
+    // Hole alle akzeptierten Hütten und nimm die letzten 3 lokal
     db.collection("eierhuetten")
       .where("status", "==", "angenommen")
-      .orderBy("erstelltAm", "desc")
-      .limit(3)
       .get()
       .then(snapshot => {
-        const container = document.getElementById("huetten-cards");
+        let huts = [];
         snapshot.forEach(doc => {
           const data = doc.data();
+          if (data.location) {
+            huts.push({ id: doc.id, ...data });
+          }
+        });
+
+        // Nimm die letzten 3 Einträge
+        huts = huts.slice(-3).reverse();
+
+        const container = document.getElementById("huetten-cards");
+        huts.forEach(h => {
           const card = document.createElement("div");
           card.className = "card";
+
+          // Klick leitet auf map.html mit id param weiter
+          card.onclick = () => {
+            window.location.href = `map.html?hutId=${h.id}`;
+          }
 
           const mapDiv = document.createElement("div");
           mapDiv.className = "mini-map";
           card.appendChild(mapDiv);
 
           const title = document.createElement("h3");
-          title.textContent = data.name || "Unbenannt";
+          title.textContent = h.name || "Unbenannt";
           card.appendChild(title);
 
           container.appendChild(card);
 
           // Leaflet Mini-Map
           const map = L.map(mapDiv, {
-            center: [data.location.latitude, data.location.longitude],
+            center: [h.location.latitude, h.location.longitude],
             zoom: 15,
             dragging: false,
             scrollWheelZoom: false,
@@ -197,10 +212,9 @@
             attributionControl: false
           });
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-          L.marker([data.location.latitude, data.location.longitude])
+          L.marker([h.location.latitude, h.location.longitude])
             .addTo(map)
-            .bindPopup(`<b>${data.name}</b><br>Öffnungszeiten: ${data.oeffnungszeiten || "-"}<br>Strom: ${data.strom}`)
-            .openPopup();
+            .bindPopup(`<b>${h.name}</b><br>Öffnungszeiten: ${h.oeffnungszeiten || "-"}<br>Strom: ${h.strom || "?"}`);
         });
       });
   </script>
