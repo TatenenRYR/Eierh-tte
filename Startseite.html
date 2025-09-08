@@ -1,3 +1,4 @@
+
 <!DOCTYPE html><html lang="de">
 <head>
   <meta charset="UTF-8">
@@ -113,6 +114,51 @@ footer a { color: #0077b6; text-decoration: none; font-weight: bold; }
   to { left: 110%; }
 }
 
+/* Popup */
+#hut-popup {
+  display: none;
+  flex-direction: column;
+  justify-content: flex-end;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 5000;
+}
+#hut-popup-content {
+  background: white;
+  border-radius: 1rem 1rem 0 0;
+  padding: 1rem;
+  max-width: 500px;
+  width: 100%;
+  margin: auto;
+  transform: translateY(100%);
+  transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+  position: relative;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+#hut-popup-close {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  padding: 8px;
+  font-size: 1.5rem;
+  cursor: pointer;
+  z-index: 10;
+  text-align: right;
+  display: block;
+}
+
+/* Mobile Anpassung Popup */
+@media (max-width: 768px) {
+  #hut-popup-content {
+    border-radius: 0;
+    max-width: 100%;
+    height: 100%;
+    transform: translateY(100%);
+  }
+}
+
   </style>
 </head>
 <body><header>
@@ -125,7 +171,19 @@ footer a { color: #0077b6; text-decoration: none; font-weight: bold; }
   <div style="text-align:center">
     <a class="insta-btn" href="https://www.instagram.com/radlmap" target="_blank">📷 Folge uns auf Instagram</a>
   </div>
-</main><footer>
+</main><!-- Popup --><div id="hut-popup">
+  <div id="hut-popup-content">
+    <span id="hut-popup-close">✖</span>
+    <h3 id="popup-name"></h3>
+    <div class="popup-image-container" id="popup-images"></div>
+    <div id="popup-map" style="height:200px; border-radius:1rem; margin-bottom:1rem;"></div>
+    <p><b>Öffnungszeiten:</b> <span id="popup-oeffnungszeiten"></span></p>
+    <p><b>Strom:</b> <span id="popup-strom"></span></p>
+    <p><b>Sitzplätze:</b> <span id="popup-sitzplaetze"></span></p>
+    <p><b>Extras:</b> <span id="popup-extras"></span></p>
+    <p><b>Start:</b> <span id="popup-start"></span></p>
+  </div>
+</div><footer>
   © 2025 RadlMap | Mit dem Fahrrad die Region entdecken <br>
   <a href="mein-profil.html">👤 Mein Profil</a>
 </footer><script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script>
@@ -172,26 +230,81 @@ db.collection("eierhuetten")
           </div>
         </div>
       `;
+      card.onclick = () => openHutPopup(d, bilderUrls);
       container.appendChild(card);
       index++;
     });
   });
 
-// Instagram Platzhalter-Bilder (kann mit echter API ersetzt werden)
-const instaFeed = document.getElementById("instagram-feed");
-const sampleImgs = [
-  "https://via.placeholder.com/200x200.png?text=Post+1",
-  "https://via.placeholder.com/200x200.png?text=Post+2",
-  "https://via.placeholder.com/200x200.png?text=Post+3",
-  "https://via.placeholder.com/200x200.png?text=Post+4"
-];
-sampleImgs.forEach(url => {
-  const a = document.createElement("a");
-  a.href = "https://www.instagram.com/radlmap";
-  a.target = "_blank";
-  a.innerHTML = `<img src="${url}" alt="Instagram Post">`;
-  instaFeed.appendChild(a);
-});
+// Popup Funktionen
+function renderSlideshow(container, bilderUrls) {
+  if (!bilderUrls || bilderUrls.length === 0) {
+    container.innerHTML = `<div style="height:140px; background:#ccc; display:flex; align-items:center; justify-content:center; border-radius:8px;">Kein Bild</div>`;
+    return;
+  }
+  let index = 0;
+  function updateImage() {
+    container.innerHTML = `
+      <img src="${bilderUrls[index]}" style="width:100%; border-radius:1rem; max-height:200px; object-fit:cover;">
+      ${bilderUrls.length > 1 ? `
+        <button class="left">←</button>
+        <button class="right">→</button>
+      ` : ""}
+    `;
+    if (bilderUrls.length > 1) {
+      container.querySelector(".left").onclick = () => { index = (index - 1 + bilderUrls.length) % bilderUrls.length; updateImage(); };
+      container.querySelector(".right").onclick = () => { index = (index + 1) % bilderUrls.length; updateImage(); };
+    }
+  }
+  updateImage();
+}
+
+function openHutPopup(d, bilderUrls) {
+  const popup = document.getElementById("hut-popup");
+  const content = document.getElementById("hut-popup-content");
+  popup.style.display = "flex";
+  setTimeout(() => { content.style.transform = "translateY(0)"; }, 50);
+
+  document.getElementById("popup-name").textContent = d.name || "Unbenannt";
+  document.getElementById("popup-oeffnungszeiten").textContent = d.oeffnungszeiten || "-";
+  document.getElementById("popup-strom").textContent = d.strom === "Ja" ? "✅ Ja" : "❌ Nein";
+  document.getElementById("popup-sitzplaetze").textContent = d.sitzplaetze === "Ja" ? "✅ Ja" : "❌ Nein";
+  document.getElementById("popup-extras").textContent = d.extras || "–";
+  document.getElementById("popup-start").textContent = d.aboStart?.toDate?.().toLocaleDateString("de-DE") || "-";
+
+  renderSlideshow(document.getElementById("popup-images"), bilderUrls);
+}
+
+function closeHutPopup() {
+  const popup = document.getElementById("hut-popup");
+  const content = document.getElementById("hut-popup-content");
+  content.style.transform = "translateY(100%)";
+  setTimeout(() => { popup.style.display = "none"; }, 400);
+}
+
+// Close Events
+ document.getElementById("hut-popup-close").onclick = closeHutPopup;
+ document.getElementById("hut-popup").onclick = e => { if (e.target.id === "hut-popup") closeHutPopup(); };
+
+// Instagram Graph API Einbindung
+// HINWEIS: Du brauchst ein Access Token von Meta (Instagram Graph API)
+// Ersetze YOUR_ACCESS_TOKEN unten mit deinem echten Token
+const INSTAGRAM_TOKEN = "YOUR_ACCESS_TOKEN";
+const INSTAGRAM_ID = "me"; // oder deine Seiten-ID
+fetch(`https://graph.instagram.com/${INSTAGRAM_ID}/media?fields=id,caption,media_url,permalink&access_token=${INSTAGRAM_TOKEN}`)
+  .then(res => res.json())
+  .then(data => {
+    const instaFeed = document.getElementById("instagram-feed");
+    instaFeed.innerHTML = "";
+    data.data.slice(0,4).forEach(post => {
+      const a = document.createElement("a");
+      a.href = post.permalink;
+      a.target = "_blank";
+      a.innerHTML = `<img src="${post.media_url}" alt="Instagram Post">`;
+      instaFeed.appendChild(a);
+    });
+  })
+  .catch(err => console.error("Instagram API Fehler:", err));
 
 // Wolken animieren
 const cloudShapes = ["cloud1.png","cloud2.png","cloud3.png"];
