@@ -37,6 +37,16 @@
   #hut-popup-content { background:white; border-radius:1rem 1rem 0 0; padding:1.5rem; max-width:500px; width:100%; margin:auto; transform: translateY(100%); transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1); position:relative; }
   #hut-popup-close { position:absolute; top:10px; right:15px; font-size:1.5rem; cursor:pointer; }
 
+  .popup-image-container { position:relative; margin-bottom:1rem; }
+  .popup-image-container img { width:100%; border-radius:1rem; max-height:200px; object-fit:cover; }
+  .popup-image-container button {
+    position:absolute; top:50%; transform:translateY(-50%);
+    background:#0008; color:#fff; border:none; padding:6px 10px;
+    cursor:pointer; font-size:1rem;
+  }
+  .popup-image-container .left { left:0; border-radius:0 8px 8px 0; }
+  .popup-image-container .right { right:0; border-radius:8px 0 0 8px; }
+
   /* Instagram */
   #instagram { margin:2rem auto; text-align:center; }
   #instagram iframe { border:none; width:100%; max-width:500px; height:600px; border-radius:1rem; }
@@ -69,6 +79,7 @@
   <div id="hut-popup-content">
     <span id="hut-popup-close">&times;</span>
     <h3 id="popup-name"></h3>
+    <div class="popup-image-container" id="popup-images"></div>
     <div id="popup-map" style="height:200px; border-radius:1rem; margin-bottom:1rem;"></div>
     <p><b>Öffnungszeiten:</b> <span id="popup-oeffnungszeiten"></span></p>
     <p><b>Strom:</b> <span id="popup-strom"></span></p>
@@ -98,26 +109,55 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
+// --- Slideshow ---
+function renderSlideshow(container, bilderUrls) {
+  if (!bilderUrls || bilderUrls.length === 0) {
+    container.innerHTML = `<div style="height:140px; background:#ccc; display:flex; 
+      align-items:center; justify-content:center; border-radius:8px;">Kein Bild</div>`;
+    return;
+  }
+  let index = 0;
+  function updateImage() {
+    container.innerHTML = `
+      <img src="${bilderUrls[index]}" alt="Hüttenbild">
+      ${bilderUrls.length > 1 ? `
+        <button class="left">←</button>
+        <button class="right">→</button>
+      ` : ""}
+    `;
+    if (bilderUrls.length > 1) {
+      container.querySelector(".left").onclick = () => { index = (index - 1 + bilderUrls.length) % bilderUrls.length; updateImage(); };
+      container.querySelector(".right").onclick = () => { index = (index + 1) % bilderUrls.length; updateImage(); };
+    }
+  }
+  updateImage();
+}
+
 // --- Popup-Funktionen ---
-function openHutPopup(h) {
+function openHutPopup(d, bilderUrls) {
   const popup = document.getElementById("hut-popup");
   const content = document.getElementById("hut-popup-content");
   popup.style.pointerEvents = "all";
   popup.style.background = "rgba(0,0,0,0.4)";
   content.style.transform = "translateY(0)";
 
-  document.getElementById("popup-name").textContent = h.name || "Unbenannt";
-  document.getElementById("popup-oeffnungszeiten").textContent = h.oeffnungszeiten || "-";
-  document.getElementById("popup-strom").textContent = h.strom === "Ja" ? "✅ Ja" : "❌ Nein";
-  document.getElementById("popup-sitzplaetze").textContent = h.sitzplaetze === "Ja" ? "✅ Ja" : "❌ Nein";
-  document.getElementById("popup-extras").textContent = h.extras || "–";
-  document.getElementById("popup-start").textContent = h.aboStart?.toDate?.().toLocaleDateString("de-DE") || "-";
+  document.getElementById("popup-name").textContent = d.name || "Unbenannt";
+  document.getElementById("popup-oeffnungszeiten").textContent = d.oeffnungszeiten || "-";
+  document.getElementById("popup-strom").textContent = d.strom === "Ja" ? "✅ Ja" : "❌ Nein";
+  document.getElementById("popup-sitzplaetze").textContent = d.sitzplaetze === "Ja" ? "✅ Ja" : "❌ Nein";
+  document.getElementById("popup-extras").textContent = d.extras || "–";
+  document.getElementById("popup-start").textContent = d.aboStart?.toDate?.().toLocaleDateString("de-DE") || "-";
 
+  // Bilder
+  const imgContainer = document.getElementById("popup-images");
+  renderSlideshow(imgContainer, bilderUrls);
+
+  // Map
   const mapDiv = document.getElementById("popup-map");
   mapDiv.innerHTML = "";
-  if (h.location?.latitude && h.location?.longitude) {
+  if (d.location?.latitude && d.location?.longitude) {
     const popupMap = L.map(mapDiv, {
-      center: [h.location.latitude, h.location.longitude],
+      center: [d.location.latitude, d.location.longitude],
       zoom: 15,
       dragging: false,
       scrollWheelZoom: false,
@@ -127,7 +167,7 @@ function openHutPopup(h) {
       attributionControl: false
     });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(popupMap);
-    L.marker([h.location.latitude, h.location.longitude]).addTo(popupMap);
+    L.marker([d.location.latitude, d.location.longitude]).addTo(popupMap);
   }
 }
 function closeHutPopup() {
@@ -142,19 +182,19 @@ document.getElementById("hut-popup-close").onclick = closeHutPopup;
 // --- Hütten laden ---
 const container = document.getElementById("huts-container");
 db.collection("eierhuetten").onSnapshot(snap => {
-  container.innerHTML = ""; // vorherige löschen
-  let huts = [];
+  container.innerHTML = ""; // reset
   snap.forEach(doc => {
     const d = doc.data();
-    if (!d.location || d.status !== "angenommen") return;
+    if (!d.location || d.status != "angenommen") return;
 
+    // Bilder prüfen
     const freigegebeneBilder = Array.isArray(d.fotos)
       ? d.fotos.filter(f => typeof f === 'string' || f.status === 'freigegeben')
       : [];
-    const bilderUrls = freigegebeneBilder.map(f => typeof f === 'string' ? f : f.url);
+    const bilderUrls = freigegebeneBilder.map(f =>
+      typeof f === 'string' ? f : f.url
+    );
     const erstesBild = bilderUrls[0] || "https://via.placeholder.com/320x180?text=Keine+Fotos";
-
-    const h = { ...d, id: doc.id };
 
     // Karte bauen
     const card = document.createElement("div");
@@ -178,7 +218,7 @@ db.collection("eierhuetten").onSnapshot(snap => {
     `;
     card.appendChild(info);
 
-    card.onclick = () => openHutPopup(h);
+    card.onclick = () => openHutPopup(d, bilderUrls);
     container.appendChild(card);
   });
 });
