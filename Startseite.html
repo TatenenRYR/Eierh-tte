@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RadlMap – Deine Fahrrad App</title>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Roboto, sans-serif;
+      background: #f7fdf9;
+      color: #333;
+    }
+
+    .hero {
+      position: relative;
+      height: 45vh;
+      background: url("https://source.unsplash.com/1200x600/?cycling,bike") center/cover no-repeat;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      text-shadow: 0 3px 6px rgba(0,0,0,0.5);
+    }
+    .hero h1 {
+      font-size: 2.2rem;
+      padding: 0 15px;
+      text-align: center;
+    }
+
+    .main-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 24px;
+    }
+    .main-buttons button {
+      background: #4caf50;
+      color: white;
+      border: none;
+      padding: 16px;
+      font-size: 1.1rem;
+      border-radius: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      transition: transform 0.2s, background 0.2s;
+    }
+    .main-buttons button:hover {
+      background: #45a047;
+      transform: translateY(-2px);
+    }
+
+    .news, .huette {
+      padding: 24px;
+    }
+    .news h2, .huette h2 {
+      font-size: 1.5rem;
+      margin-bottom: 14px;
+    }
+
+    .huette-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 20px;
+    }
+    .huette-card {
+      background: #fff;
+      padding: 18px;
+      border-radius: 12px;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .huette-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+    }
+    .huette-card img {
+      width: 100%;
+      border-radius: 12px;
+      margin-bottom: 10px;
+    }
+    .huette-card h3 {
+      margin: 0 0 8px;
+    }
+
+    /* Popup */
+    .popup {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.6);
+      z-index: 5000;
+    }
+    .popup.show {
+      display: flex;
+    }
+    .popup-content {
+      background: #fff;
+      padding: 20px;
+      border-radius: 12px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+      animation: fadeIn 0.3s ease;
+    }
+    .popup-content h3 {
+      margin-top: 0;
+    }
+    .popup-content button {
+      margin-top: 16px;
+      background: #4caf50;
+      border: none;
+      color: white;
+      padding: 10px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    @keyframes fadeIn {
+      from { transform: scale(0.9); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Hero -->
+  <section class="hero">
+    <h1>RadlMap – Deine Tour mit Eierhütten</h1>
+  </section>
+
+  <!-- Buttons -->
+  <section class="main-buttons">
+    <button onclick="window.location.href='eierhuetten_chat_page.html'">
+      ➕ Hütte / Hofladen / Stopp eintragen
+    </button>
+    <button onclick="startRadlMap()">
+      🗺️ RadlMap starten
+    </button>
+    <button onclick="window.open('https://www.kickstarter.com/projects/radlmap/radlmap-die-fahrrad-app-fur-touren-mit-eierhutten-stopps','_blank')">
+      🚀 Unterstütze uns
+    </button>
+  </section>
+
+  <!-- Neueste Hütten -->
+  <section class="huette">
+    <h2>Neueste Hütten</h2>
+    <div id="huette-grid" class="huette-grid">
+      <p>Wird geladen...</p>
+    </div>
+  </section>
+
+  <!-- Popup -->
+  <div id="hut-popup" class="popup">
+    <div class="popup-content">
+      <h3 id="popup-title"></h3>
+      <p id="popup-desc"></p>
+      <p><strong>Ort:</strong> <span id="popup-ort"></span></p>
+      <p><strong>Eingetragen am:</strong> <span id="popup-date"></span></p>
+      <button onclick="closePopup()">Schließen</button>
+    </div>
+  </div>
+
+  <script>
+    // 🔹 Firestore Setup
+    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.firebasestorage.app",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+  measurementId: "G-16V6K5GXDT"
+};
+    const app = firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    async function loadLatestHuts() {
+      const grid = document.getElementById("huette-grid");
+      grid.innerHTML = "<p>Wird geladen...</p>";
+
+      try {
+        const snapshot = await db.collection("eierhuetten")
+          .orderBy("createdAt", "desc")
+          .limit(3)
+          .get();
+
+        if (snapshot.empty) {
+          grid.innerHTML = "<p>Noch keine Hütten eingetragen.</p>";
+          return;
+        }
+
+        grid.innerHTML = "";
+        snapshot.forEach(doc => {
+          const hut = doc.data();
+          const card = document.createElement("div");
+          card.className = "huette-card";
+          card.innerHTML = `
+            <img src="${hut.bildUrl || 'https://source.unsplash.com/400x250/?farm'}" alt="Hütte">
+            <h3>${hut.name}</h3>
+            <p>${hut.beschreibung || "Keine Beschreibung"}</p>
+          `;
+          card.onclick = () => openPopup(hut);
+          grid.appendChild(card);
+        });
+      } catch (err) {
+        grid.innerHTML = "<p>Fehler beim Laden.</p>";
+        console.error(err);
+      }
+    }
+
+    function openPopup(hut) {
+      document.getElementById("popup-title").innerText = hut.name;
+      document.getElementById("popup-desc").innerText = hut.beschreibung || "Keine Beschreibung";
+      document.getElementById("popup-ort").innerText = hut.ort || "Unbekannt";
+      document.getElementById("popup-date").innerText = hut.createdAt?.toDate().toLocaleDateString("de-DE") || "–";
+      document.getElementById("hut-popup").classList.add("show");
+    }
+    function closePopup() {
+      document.getElementById("hut-popup").classList.remove("show");
+    }
+
+    document.addEventListener("DOMContentLoaded", loadLatestHuts);
+  </script>
+</body>
+</html>
