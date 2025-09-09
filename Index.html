@@ -3583,80 +3583,78 @@ setTimeout(() => {
     document.getElementById("loading-screen")?.classList.add("hidden");
   }
 }, 5000);
-let currentUserForConsent = null;
 
-function loadTrackingScripts(consent) {
-  // Statistik
-  if (consent.cookieStats) {
-    const gaScript = document.createElement('script');
-    gaScript.src = "https://www.googletagmanager.com/gtag/js?id=UA-XXXXXXX-X"; // Deine GA-ID
-    gaScript.async = true;
-    document.head.appendChild(gaScript);
-
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'UA-XXXXXXX-X'); // Deine GA-ID
-  }
-
-  // Marketing
-  if (consent.cookieMarketing) {
-    const fbScript = document.createElement('script');
-    fbScript.innerHTML = `
-      !function(f,b,e,v,n,t,s)
-      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-      n.queue=[];t=b.createElement(e);t.async=!0;
-      t.src=v;s=b.getElementsByTagName(e)[0];
-      s.parentNode.insertBefore(t,s)}(window, document,'script',
-      'https://connect.facebook.net/en_US/fbevents.js');
-      fbq('init', 'YOUR_PIXEL_ID');
-      fbq('track', 'PageView');
-    `;
-    document.head.appendChild(fbScript);
+    async function saveConsentToFirestore(consentData, userId) {
+  try {
+    await firebase.firestore().collection("consents").add({
+      userId: userId || null,       // falls du eine User-ID hast, sonst null
+      consentData: consentData,     // das ganze Consent-Objekt
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    console.log("Consent gespeichert ✅");
+  } catch (error) {
+    console.error("Fehler beim Speichern des Consents:", error);
   }
 }
 
 function showConsentModal() {
-  const modal = document.getElementById('consent-modal');
-  modal.style.display = "flex"; // flex statt display:none entfernen
+  document.getElementById("consent-modal").classList.remove("hidden");
 }
 
-async function acceptConsent() {
-  const privacyAccepted = document.getElementById('consent-privacy').checked;
-  const cookiesAccepted = document.getElementById('consent-cookies').checked;
-
-  if (!cookiesAccepted) {
-    alert('Bitte stimmen Sie den Cookies zu.');
-    return;
-  }
-  if (!privacyAccepted) {
-    alert('Bitte stimmen Sie der Datenschutzerklärung zu.');
-    return;
-  }
-
+function acceptConsent() {
   const consentData = {
-    privacyAccepted: true,
-    cookieStats: cookiesAccepted,   // direkt den Wert nehmen
-    cookieMarketing: false,         // aktuell nicht genutzt
-    consentDate: new Date(),
-    privacyVersion: '1.1'
+    necessary: true,
+    stats: document.getElementById("consent-stats").checked,
+    marketing: document.getElementById("consent-marketing").checked,
+    date: new Date().toISOString()
   };
+  localStorage.setItem("userConsent", JSON.stringify(consentData));
+  localStorage.setItem("consentGiven", "true");
+  document.getElementById("consent-modal").classList.add("hidden");
+  loadTrackingScripts(consentData);
+  saveConsentToFirestore(consentData, currentUserForConsent);
 
-  localStorage.setItem('userConsent', JSON.stringify(consentData));
-  localStorage.setItem('consentGiven', 'true'); // wichtig für DOMContentLoaded
+}
 
-  document.getElementById('consent-modal').style.display = "none";
-  startRadlMap();
+function rejectConsent() {
+  const consentData = {
+    necessary: true,
+    stats: false,
+    marketing: false,
+    date: new Date().toISOString()
+  };
+  localStorage.setItem("userConsent", JSON.stringify(consentData));
+  localStorage.setItem("consentGiven", "true");
+  document.getElementById("consent-modal").classList.add("hidden");
+}
+
+function loadTrackingScripts(consent) {
+  if (consent.stats) {
+    // Google Analytics laden
+    const gaScript = document.createElement('script');
+    gaScript.src = "https://www.googletagmanager.com/gtag/js?id=UA-XXXXXXX-X";
+    gaScript.async = true;
+    document.head.appendChild(gaScript);
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'UA-XXXXXXX-X');
+  }
+
+  if (consent.marketing) {
+    // Google Ads / Facebook Pixel etc.
+    const fbScript = document.createElement('script');
+    fbScript.src = "https://connect.facebook.net/en_US/fbevents.js";
+    fbScript.async = true;
+    document.head.appendChild(fbScript);
+  }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  const consentGiven = localStorage.getItem('consentGiven');
-  if (consentGiven === 'true') {
-    startRadlMap();
-    //init();
-    //loadAdsense();
+  const consentGiven = localStorage.getItem("consentGiven");
+  if (consentGiven === "true") {
+    const data = JSON.parse(localStorage.getItem("userConsent"));
+    loadTrackingScripts(data);
   } else {
     showConsentModal();
   }
@@ -3843,35 +3841,38 @@ window.addEventListener("unhandledrejection", function (event) {
   }
 </script>
 <!-- Consent Modal -->
-<div id="consent-modal" class="hidden" style="position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center;">
-  <div style="background:white; padding:20px; max-width:500px; border-radius:8px;">
-    <h2>Datenschutz & Cookies</h2>
-    <p>Wir verwenden Cookies und ähnliche Technologien, um unsere Dienste bereitzustellen und zu verbessern. 
-       Mehr dazu in unserer <a href="/datenschutz.html" target="_blank">Datenschutzerklärung</a>.</p>
-    
-    <label style="display:block; margin-top:10px;">
-      <input type="checkbox" id="consent-privacy">
-      Ich stimme der Datenschutzerklärung zu
-    </label>
+<div id="consent-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+  <div class="bg-white rounded-xl shadow-xl p-6 max-w-lg w-full text-gray-800">
+    <h2 class="text-xl font-semibold mb-3">Datenschutz & Cookies</h2>
+    <p class="text-sm mb-4">
+      Wir nutzen Cookies, um unsere Dienste bereitzustellen und zu verbessern. 
+      Weitere Informationen findest du in unserer 
+      <a href="/datenschutz.html" target="_blank" class="text-blue-600 underline">Datenschutzerklärung</a>.
+    </p>
 
-    <label style="display:block; margin-top:5px;">
-      <input type="checkbox" id="consent-cookies">
-      Ich stimme der Verwendung von Cookies zu
-    </label>
-    <!-- Zusatz: Details-Button für Cookies -->
-    <button type="button" onclick="toggleDetails('cookies-details')" style="margin:4px 0; font-size:13px; background:none; border:none; color:#007BFF; cursor:pointer;">
-      Details anzeigen
-    </button>
-    <div id="cookies-details" class="hidden" style="margin:5px 0 10px; padding:8px; background:#f9f9f9; border:1px solid #ddd; border-radius:6px;">
-      <p><strong>Notwendige Cookies:</strong> sorgen dafür, dass die App funktioniert (z. B. Session, Sprache).</p>
-      <p><strong>Statistik:</strong> hilft uns zu verstehen, wie die App genutzt wird (z. B. Seitenaufrufe).</p>
-      <p><strong>Standortdaten:</strong> werden genutzt, um deine Route zu berechnen (lokal, nicht dauerhaft gespeichert).</p>
+    <div class="space-y-2">
+      <label class="flex items-center gap-2">
+        <input type="checkbox" checked disabled>
+        <span><strong>Notwendige Cookies</strong> (immer aktiv)</span>
+      </label>
+
+      <label class="flex items-center gap-2">
+        <input type="checkbox" id="consent-stats">
+        <span>Statistik (z. B. Google Analytics)</span>
+      </label>
+
+      <label class="flex items-center gap-2">
+        <input type="checkbox" id="consent-marketing">
+        <span>Marketing (z. B. Google Ads, Facebook Pixel)</span>
+      </label>
     </div>
 
-    <div style="margin-top:15px; text-align:right;">
-      <!-- Button ruft acceptConsent() auf -->
-      <button onclick="acceptConsent()" style="padding:8px 16px; background:#4CAF50; color:white; border:none; border-radius:4px; cursor:pointer;">
-        Zustimmen
+    <div class="flex justify-end gap-2 mt-6">
+      <button onclick="rejectConsent()" class="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100">
+        Nur notwendig
+      </button>
+      <button onclick="acceptConsent()" class="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700">
+        Alle akzeptieren
       </button>
     </div>
   </div>
@@ -3902,6 +3903,8 @@ window.addEventListener("unhandledrejection", function (event) {
   <a href="javascript:void(0)" onclick="openPopup('abo')">Abo</a> ·
   <a href="javascript:void(0)" onclick="openPopup('rechtliches')">Rechtliches</a> ·
   <a href="javascript:void(0)" onclick="openPopup('kontakt')">Kontakt</a>
+  <a href="#" onclick="showConsentModal()">Cookie-Einstellungen ändern</a>
+
   <span style="float:right; color:#666;">v4.1.0</span>
 </footer>
   <div id="navPopup" style="
