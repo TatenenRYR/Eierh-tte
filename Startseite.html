@@ -12,6 +12,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RadlMap</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>
     * { box-sizing: border-box; }
     body, html { margin: 0; padding: 0; font-family: system-ui, sans-serif; height: 100%; display: flex; flex-direction: column; }header {
@@ -308,7 +309,14 @@ footer .rider {
 }
 
 body.popup-open { overflow: hidden; }
-
+    
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fadeIn {
+  animation: fadeIn 0.4s ease-out;
+}
   </style>
 </head>
 <body>
@@ -586,5 +594,167 @@ function closeFooterPopup() {
 // Close Events
  document.getElementById("footer-popup-close").onclick = closeFooterPopup;
  document.getElementById("footer-popup").onclick = e => { if (e.target.id === "footer-popup") closeFooterPopup(); };
-</script></body>
+
+
+//Google Ads
+function loadAdsense(consent) {
+  if (!consent.marketing) return; // nur bei Zustimmung
+
+  // Script einfügen, falls noch nicht geladen
+  if (!window.adsenseLoaded) {
+    const script = document.createElement('script');
+    script.async = true;
+    script.src = "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js";
+    document.head.appendChild(script);
+    window.adsenseLoaded = true;
+  }
+
+  // Anzeigen sichtbar machen
+  const container = document.getElementById('adsense-container');
+  if (container) {
+    container.style.display = "block";
+    (adsbygoogle = window.adsbygoogle || []).push({});
+  }
+}
+
+
+    async function saveConsentToFirestore(consentData, userId) {
+  try {
+    await firebase.firestore().collection("consents").add({
+      userId: userId || null,       // falls du eine User-ID hast, sonst null
+      consentData: consentData,     // das ganze Consent-Objekt
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    console.log("Consent gespeichert ✅");
+  } catch (error) {
+    console.error("Fehler beim Speichern des Consents:", error);
+  }
+}
+function showConsentModal() {
+  document.getElementById("consent-modal").classList.remove("hidden");
+}
+
+function acceptConsent() {
+  const consentData = {
+    necessary: true,
+    stats: document.getElementById("consent-stats").checked,
+    marketing: document.getElementById("consent-marketing").checked,
+    date: new Date().toISOString()
+  };
+  localStorage.setItem("userConsent", JSON.stringify(consentData));
+  localStorage.setItem("consentGiven", "true");
+  document.getElementById("consent-modal").classList.add("hidden");
+  loadTrackingScripts(consentData);
+  
+  if (!localStorage.getItem("browserId")) {
+  localStorage.setItem("browserId", crypto.randomUUID());
+}
+const browserId = localStorage.getItem("browserId");
+
+saveConsentToFirestore(consentData, browserId);
+}
+
+function rejectConsent() {
+  const consentData = {
+    necessary: true,
+    stats: false,
+    marketing: false,
+    date: new Date().toISOString()
+  };
+  localStorage.setItem("userConsent", JSON.stringify(consentData));
+  localStorage.setItem("consentGiven", "true");
+  document.getElementById("consent-modal").classList.add("hidden");
+}
+
+function loadTrackingScripts(consent) {
+  if (consent.stats) {
+    // Google Analytics laden
+    const gaScript = document.createElement('script');
+    gaScript.src = "https://www.googletagmanager.com/gtag/js?id=G-16V6K5GXDT";
+    gaScript.async = true;
+    document.head.appendChild(gaScript);
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-16V6K5GXDT');
+  }
+
+  if (consent.marketing) {
+    // Google Ads / Facebook Pixel etc.
+    const fbScript = document.createElement('script');
+    fbScript.src = "https://connect.facebook.net/en_US/fbevents.js";
+    fbScript.async = true;
+    document.head.appendChild(fbScript);
+  }
+  
+    loadAdsense(consentData);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const consentGiven = localStorage.getItem("consentGiven");
+  if (consentGiven === "true") {
+    const data = JSON.parse(localStorage.getItem("userConsent"));
+    loadTrackingScripts(data);
+  } else {
+    showConsentModal();
+  }
+});
+
+
+
+
+</script>
+
+
+<!-- Consent Modal -->
+<div id="consent-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+  <div class="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full animate-fadeIn">
+    
+    <!-- Header -->
+    <div class="flex items-center gap-3 mb-4">
+      <div class="bg-green-100 text-green-600 p-2 rounded-full">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+        </svg>
+      </div>
+      <h2 class="text-xl font-semibold text-gray-800">Datenschutz & Cookies</h2>
+    </div>
+
+    <!-- Info -->
+    <p class="text-gray-600 text-sm mb-5">
+      Wir verwenden Cookies, um unsere Dienste zu verbessern. 
+      Details findest du in unserer 
+      <a href="/datenschutz.html" target="_blank" class="text-green-600 hover:underline font-medium">Datenschutzerklärung</a>.
+    </p>
+
+    <!-- Optionen -->
+    <div class="space-y-3">
+      <label class="flex items-center gap-2 p-2 border border-gray-200 rounded-lg bg-gray-50">
+        <input type="checkbox" checked disabled>
+        <span class="text-gray-700 font-medium">Notwendige Cookies (immer aktiv)</span>
+      </label>
+      <label class="flex items-center gap-2 p-2 border border-gray-200 rounded-lg hover:bg-gray-50">
+        <input type="checkbox" id="consent-stats">
+        <span class="text-gray-700">Statistik (z. B. Google Analytics)</span>
+      </label>
+      <label class="flex items-center gap-2 p-2 border border-gray-200 rounded-lg hover:bg-gray-50">
+        <input type="checkbox" id="consent-marketing">
+        <span class="text-gray-700">Marketing (z. B. Google Ads, Facebook Pixel)</span>
+      </label>
+    </div>
+
+    <!-- Buttons -->
+    <div class="flex justify-end gap-2 mt-6">
+      <button onclick="rejectConsent()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition">
+        Nur notwendig
+      </button>
+      <button onclick="acceptConsent()" class="px-4 py-2 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 transition">
+        Alle akzeptieren
+      </button>
+    </div>
+  </div>
+</div>
+
+
+</body>
 </html>
