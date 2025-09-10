@@ -1114,7 +1114,7 @@ let routeDuration = 0;
 let routeSteps = [];
 
 
-  async function fetchRoute(start, ziel) {
+/*  async function fetchRoute(start, ziel) {
   const url = "https://api.openrouteservice.org/v2/directions/cycling-regular/json";
   const lang = (localStorage.lang && localStorage.lang.split('-')[0]) || "de";
 
@@ -1201,7 +1201,98 @@ let routeSteps = [];
     updateStartBtnUI({ calculating: false, navActive: !!navWatchId });
   }
 }
+*/
+    async function fetchRoute(start, ziel) {
+  const url = "https://api.openrouteservice.org/v2/directions/cycling-regular/json";
+  const lang = (localStorage.lang && localStorage.lang.split('-')[0]) || "de";
 
+  // 🔄 sicherstellen: Koordinaten in [lng, lat] und Zahlen
+  const coords = [
+    [Number(start.lng), Number(start.lat)],
+    [Number(ziel.lng), Number(ziel.lat)]
+  ];
+
+  const body = {
+    coordinates: coords,
+    instructions: true,
+    language: lang
+  };
+
+  let res; // nur EINMAL deklariert
+  try {
+    updateStartBtnUI({ calculating: true, navActive: !!navWatchId });
+
+    console.log("📤 Sende ORS Request:", JSON.stringify(body));
+
+    // ✅ Request senden
+    try {
+      res = await fetch("/ors-proxy.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+    } catch (networkErr) {
+      console.error("🌐 Netzwerk-/CORS-Fehler:", networkErr);
+      showToast("❌ Netzwerkfehler oder CORS blockiert den Request");
+      throw new Error("Netzwerk/CORS-Problem: " + networkErr.message);
+    }
+
+    // ✅ HTTP-Status prüfen
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`❌ ORS HTTP ${res.status}:`, errText);
+      showToast(`❌ ORS Fehler (Status ${res.status})`);
+      throw new Error(`ORS HTTP ${res.status}: ${errText}`);
+    }
+
+    // ✅ JSON parsen
+    let data;
+    try {
+      data = await res.json();
+    } catch (parseErr) {
+      console.error("❌ JSON konnte nicht geparst werden:", parseErr);
+      throw new Error("Ungültige JSON-Antwort von ORS");
+    }
+
+    // ✅ Validität prüfen
+    if (data.error || !data.routes?.length) {
+      console.error("❌ ORS Antwort ungültig:", data);
+      showToast("❌ Keine Route gefunden");
+      throw new Error(`ORS Antwort ungültig: ${JSON.stringify(data)}`);
+    }
+
+    // ✅ Route verarbeiten
+    const decoded = polyline.decode(data.routes[0].geometry);
+    routeCoords = decoded.map(c => L.latLng(c[0], c[1]));
+
+    if (routeLine) map.removeLayer(routeLine);
+    routeLine = L.polyline(routeCoords, { color: "blue", weight: 5 }).addTo(map);
+    map.fitBounds(routeLine.getBounds());
+
+    routeSteps = data.routes[0].segments[0].steps || [];
+    routeDistance = data.routes[0].summary.distance || 0;
+    routeDuration = data.routes[0].summary.duration || 0;
+
+    console.log("✔️ Route erfolgreich berechnet", {
+      distance: routeDistance,
+      duration: routeDuration,
+      steps: routeSteps.length
+    });
+
+    // 🗂️ Route für Offline-Modus speichern
+    localStorage.setItem("cachedRoute", JSON.stringify({
+      coords: routeCoords.map(p => ({ lat: p.lat, lng: p.lng })),
+      steps: routeSteps
+    }));
+
+  } catch (err) {
+    console.error("❌ Fehler beim Abrufen der Route:", err);
+    showToast("❌ Route konnte nicht berechnet werden");
+    throw err; // weiterwerfen, damit Aufrufer reagiert
+  } finally {
+    updateStartBtnUI({ calculating: false, navActive: !!navWatchId });
+  }
+    }
 /////////////////////////////////////////////
 // 🌍 Neue Navigations-Logik
 /////////////////////////////////////////////
