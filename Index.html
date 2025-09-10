@@ -1113,15 +1113,19 @@ let routeDistance = 0;
 let routeDuration = 0;
 let routeSteps = [];
 
-async function fetchRoute(start, ziel) {
+
+  async function fetchRoute(start, ziel) {
   const url = "https://api.openrouteservice.org/v2/directions/cycling-regular/json";
-  const lang = (localStorage.lang && localStorage.lang.split('-')[0]) || 'de';
+  const lang = (localStorage.lang && localStorage.lang.split('-')[0]) || "de";
+
+  // 🔄 sicherstellen: Koordinaten in [lng, lat] und Zahlen
+  const coords = [
+    [Number(start.lng), Number(start.lat)],
+    [Number(ziel.lng), Number(ziel.lat)]
+  ];
 
   const body = {
-    coordinates: [
-      [start.lng, start.lat],
-      [ziel.lng, ziel.lat]
-    ],
+    coordinates: coords,
     instructions: true,
     language: lang
   };
@@ -1129,31 +1133,43 @@ async function fetchRoute(start, ziel) {
   try {
     updateStartBtnUI({ calculating: true, navActive: !!navWatchId });
 
-    console.log("Sende ORS Request", body);
+    console.log("📤 Sende ORS Request:", JSON.stringify(body));
 
+    let res;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Authorization": ORS_API_KEY,
+          "Content-Type": "application/json",
+          "Accept-Language": lang
+        },
+        body: JSON.stringify(body)
+      });
+    } catch (networkErr) {
+      console.error("🌐 Netzwerk-/CORS-Fehler:", networkErr);
+      showToast("❌ Netzwerkfehler oder CORS blockiert den Request");
+      throw new Error("Netzwerk/CORS-Problem: " + networkErr.message);
+    }
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Authorization": ORS_API_KEY,
-        "Content-Type": "application/json",
-        "Accept-Language": localStorage.lang || navigator.language || "de-DE"
-      },
-      body: JSON.stringify(body)
-    });
-
-    // ❌ Fehler abfangen (HTTP-Level)
     if (!res.ok) {
-      //console.error("Fetch Exception: " + err.message, err);
-  
       const errText = await res.text();
+      console.error(`❌ ORS HTTP ${res.status}:`, errText);
+      showToast(`❌ ORS Fehler (Status ${res.status})`);
       throw new Error(`ORS HTTP ${res.status}: ${errText}`);
     }
 
-    const data = await res.json();
+    let data;
+    try {
+      data = await res.json();
+    } catch (parseErr) {
+      console.error("❌ JSON konnte nicht geparst werden:", parseErr);
+      throw new Error("Ungültige JSON-Antwort von ORS");
+    }
 
-    // ❌ Fehler abfangen (ORS-Level)
-    if (data.error || !data.routes || !data.routes.length) {
+    if (data.error || !data.routes?.length) {
+      console.error("❌ ORS Antwort ungültig:", data);
+      showToast("❌ Keine Route gefunden");
       throw new Error(`ORS Antwort ungültig: ${JSON.stringify(data)}`);
     }
 
@@ -1169,11 +1185,22 @@ async function fetchRoute(start, ziel) {
     routeDistance = data.routes[0].summary.distance || 0;
     routeDuration = data.routes[0].summary.duration || 0;
 
-    console.log("✔️ Route erfolgreich berechnet", { distance: routeDistance, duration: routeDuration });
+    console.log("✔️ Route erfolgreich berechnet", {
+      distance: routeDistance,
+      duration: routeDuration,
+      steps: routeSteps.length
+    });
+
+    // 🗂️ Route für Offline-Modus speichern
+    localStorage.setItem("cachedRoute", JSON.stringify({
+      coords: routeCoords.map(p => ({ lat: p.lat, lng: p.lng })),
+      steps: routeSteps
+    }));
+
   } catch (err) {
-    console.error("❌ Fehler beim Abrufen der Route:" + err.message, err.message || err);
+    console.error("❌ Fehler beim Abrufen der Route:", err);
     showToast("❌ Route konnte nicht berechnet werden");
-    throw err; // wichtig: damit startNavigation merkt, dass was schiefging
+    throw err; // weiterwerfen, damit Aufrufer reagiert
   } finally {
     updateStartBtnUI({ calculating: false, navActive: !!navWatchId });
   }
