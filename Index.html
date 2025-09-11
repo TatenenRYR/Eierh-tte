@@ -1202,8 +1202,74 @@ let routeSteps = [];
 }
 */
     const ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImRkZWI3Y2EzZWU1ZTUzYmRiNTZkZGQzYTQ4MmQ1NzkyZGJiZGM5OGRmMDQ4ZTU3YWMwODYwNzEwIiwiaCI6Im11cm11cjY0In0=";
+async function fetchRoute(start) {
+  // Start + alle ausgewählten Ziele
+  const coords = [
+    [Number(start.lng), Number(start.lat)],
+    ...selected.map(h => [Number(h.lng), Number(h.lat)])
+  ];
 
-    async function fetchRoute(start, ziel) {
+  try {
+    updateStartBtnUI({ calculating: true, navActive: !!navWatchId });
+    console.log("📤 Sende ORS Request:", coords);
+
+    const res = await fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", {
+      method: "POST",
+      headers: {
+        "Authorization": ORS_API_KEY,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ coordinates: coords, instructions: true })
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`❌ ORS HTTP ${res.status}:`, errText);
+      showToast(`❌ ORS Fehler (Status ${res.status})`);
+      return;
+    }
+
+    const data = await res.json();
+
+    const points = data.features?.[0]?.geometry?.coordinates?.map(p => [p[1], p[0]]);
+    if (!points || points.length < 2) {
+      showToast("❌ Keine Route gefunden");
+      return;
+    }
+
+    // Steps, Distanz, Dauer
+    routeSteps = data.features?.[0]?.properties?.segments?.[0]?.steps || [];
+    routeDistance = data.features?.[0]?.properties?.summary?.distance || 0;
+    routeDuration = data.features?.[0]?.properties?.summary?.duration || 0;
+
+    // Alte Route entfernen
+    if (routeLine) map.removeLayer(routeLine);
+
+    // Neue Route zeichnen
+    routeLine = L.polyline(points, { color: "blue", weight: 5 }).addTo(map);
+    map.fitBounds(routeLine.getBounds());
+
+    console.log("✔️ Route erfolgreich berechnet", {
+      distance: routeDistance,
+      duration: routeDuration,
+      steps: routeSteps.length
+    });
+
+    // 🗂️ Offline speichern
+    localStorage.setItem("cachedRoute", JSON.stringify({
+      coords: points.map(p => ({ lat: p[0], lng: p[1] })),
+      steps: routeSteps
+    }));
+
+  } catch (err) {
+    console.error("❌ Fehler beim Abrufen der Route:", err);
+    showToast("❌ Route konnte nicht berechnet werden");
+    throw err;
+  } finally {
+    updateStartBtnUI({ calculating: false, navActive: !!navWatchId });
+  }
+}
+  /*  async function fetchRoute(start, ziel) {
   const url = "https://api.openrouteservice.org/v2/directions/cycling-regular/json";
   const lang = (localStorage.lang && localStorage.lang.split('-')[0]) || "de";
 
@@ -1296,7 +1362,7 @@ let routeSteps = [];
   } finally {
     updateStartBtnUI({ calculating: false, navActive: !!navWatchId });
   }
-    }
+    }*/
 /////////////////////////////////////////////
 // 🌍 Neue Navigations-Logik
 /////////////////////////////////////////////
