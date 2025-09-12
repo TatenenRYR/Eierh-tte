@@ -557,6 +557,20 @@ footer a:hover {
   #map {
     display: none;
   }
+.hut-number {
+  width: 28px;
+  height: 28px;
+  line-height: 28px;
+  border-radius: 50%;
+  background: #ff7f50;
+  color: white;
+  text-align: center;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  border: 2px solid white;
+  font-size: 14px;
+}
+.hut-number-icon { pointer-events: none; } /* nicht klickbar */
 
   </style>
 </head>
@@ -785,6 +799,8 @@ footer a:hover {
     let lastSpokenHutIndex = -1;
 let alreadySpokenTurnIndex = {};
     let lastNavActiveState = null; // Merkt letzten bekannten Firestore-Status
+// -> neue globale Variable
+let navActiveFlag = false;
 
     //User ID bestimmen
     if (!localStorage.aliasId) {
@@ -1061,12 +1077,7 @@ function saveUsername() {
 
 // 👉 Richtung der Route an der aktuellen Position bestimmen
 // ===== Bearing-Berechnungen =====
-function getBearing(from, to) {
-  const y = Math.sin(to.lng - from.lng) * Math.cos(to.lat);
-  const x = Math.cos(from.lat) * Math.sin(to.lat) -
-            Math.sin(from.lat) * Math.cos(to.lat) * Math.cos(to.lng - from.lng);
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-}
+
 function getRouteBearing(snappedPos) {
   if (!routeCoords || routeCoords.length < 2) return lastBearing || 0;
 
@@ -1247,6 +1258,13 @@ async function fetchRoute(start) {
     // Neue Route zeichnen
     routeLine = L.polyline(points, { color: "blue", weight: 5 }).addTo(map);
     map.fitBounds(routeLine.getBounds());
+// normalize routeCoords (wichtig für snapToRoute und Bearing)
+let latlngs = routeLine.getLatLngs();
+// _getLatLngs_ kann bei MultiLine-GeoJSON verschachtelt zurückgeben
+if (Array.isArray(latlngs[0])) {
+  latlngs = latlngs.flat(Infinity);
+}
+routeCoords = latlngs; // jetzt ist routeCoords ein Array von L.LatLng
 
 
   // User-Marker automatisch auf den Startpunkt der Route setzen
@@ -1275,7 +1293,6 @@ if (!userMarker) {
     showToast("❌ Route konnte nicht berechnet werden");
     throw err;
   } finally {
-    updateStartBtnUI();
   }
 }
   /*  async function fetchRoute(start, ziel) {
@@ -1867,8 +1884,8 @@ function updateSpeedUI(gps, coords) {
 let currentRideId = null; // Firebase Ride-Dokument-ID
 
 async function startNavigation(start, ziel) {
-  // UI sofort aktualisiere
-  updateStartBtnUI({ navActive: true });
+  navActiveFlag = true;
+  updateStartBtnUI({ calculating: true, navActive: true });
 
   tourStartTime = Date.now();
   tourDistance = 0;
@@ -1891,9 +1908,13 @@ async function startNavigation(start, ziel) {
   } catch (err) {
     console.error("❌ Fehler beim Abrufen der Route: " + err.message, err);
     showToast("❌ Route konnte nicht berechnet werden");
+    navActiveFlag = false;
+    updateStartBtnUI({ calculating: false, navActive: false });
     return;
   }
 
+  // Route erfolgreich geladen — UI aktualisieren
+  updateStartBtnUI({ calculating: false, navActive: true });
   // ---------------- Firebase Fahrt anlegen ----------------
   try {
     const userId = localStorage.getItem("userId") || crypto.randomUUID();
@@ -2136,9 +2157,7 @@ function startUserLocationTracking() {
 
 
         // Karte verfolgen
-        if (follow) {
-          map.setView(gpsLatLng, 18, { animate: true });
-        }
+        if (follow) map.setView(snapped, 18, { animate: true });
 
         lastLatLng = gpsLatLng;
       },
@@ -2609,14 +2628,18 @@ async function sendSOS() {
     }*/
     // Follow-Modus umschalten
   function toggleFollow() {
-  follow = !follow; // Zustand umschalten
-  showToast("📍 Follow " + (follow ? "AN" : "AUS"));
-
-  const btn = document.getElementById("followBtn");
-  if (!follow) {
-    btn.style.display = "inline-block"; // sichtbar wenn AN
+  follow = !follow;
+  const btn = document.getElementById('followBtn');
+  if (btn) {
+    btn.classList.toggle('active', follow);
+    btn.textContent = follow ? '📍' : '📌';
+  }
+  if (follow && userMarker) {
+    // sofort auf Nutzer zentrieren
+    map.setView(userMarker.getLatLng(), 18, { animate: true });
+    showToast("📍 Folgen wieder aktiviert");
   } else {
-    btn.style.display = "none"; // ausgeblendet wenn AUS
+    showToast("📍 Folgen pausiert");
   }
 }
     // Sprachführung umschalten
@@ -2825,6 +2848,30 @@ let currentHutIndex = 0;       // Aktuelle Zielhütte in selected[]
 
 
 
+let hutNumberMarkers = [];
+
+function clearHutNumberMarkers() {
+  hutNumberMarkers.forEach(m => map.removeLayer(m));
+  hutNumberMarkers = [];
+}
+
+function updateHutNumberMarkers() {
+  clearHutNumberMarkers();
+  if (!selected || !selected.length) return;
+  // optional: nur anzeigen wenn Route/Preview aktiv:
+  if (!routeLine && !previewRouteLayer) return;
+
+  selected.forEach((s, idx) => {
+    const icon = L.divIcon({
+      className: 'hut-number-icon',
+      html: `<div class="hut-number">${idx + 1}</div>`,
+      iconSize: [28, 28],
+      iconAnchor: [14, 14]
+    });
+    const m = L.marker([s.lat, s.lng], { icon, interactive: false }).addTo(map);
+    hutNumberMarkers.push(m);
+  });
+}
 
     // Überspringt aktuelle Hütte
     function skipHut() {
@@ -2974,6 +3021,12 @@ function updateSelectedList() {
     list.appendChild(li);
   });
   
+// am Ende von updateSelectedList()
+if (routeLine || previewRouteLayer) {
+  updateHutNumberMarkers();
+} else {
+  clearHutNumberMarkers();
+}
 
 }
 let previewRouteLayer = null;
@@ -3687,7 +3740,18 @@ m.on("popupclose", () => {
     document.getElementById("followBtn").style.display = "inline-block";
   }
 });
-
+map.on('movestart', (e) => {
+  if (e && e.originalEvent) {
+    follow = false;
+    const btn = document.getElementById('followBtn');
+    if (btn) {
+      btn.classList.remove('active');
+      btn.title = "Follow pausiert (du hast die Karte bewegt)";
+      btn.style.display = "inline-block"; // sichtbar machen, damit man wieder aktivieren kann
+    }
+    showToast("📍 Folgen pausiert — tippe 📍 um wieder zu folgen");
+  }
+});
     }
 
 
