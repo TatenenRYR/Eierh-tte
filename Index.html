@@ -1454,7 +1454,15 @@ async function updateUserMarker(gpsLatLng, accuracy = 20) {
 
 // nächstgelegenen Punkt auf Route finden
 function snapToRoute(latlng) {
-  if (!routeCoords || routeCoords.length < 2) return latlng;
+  // Fallback: Wenn keine Route vorhanden oder nur ein Punkt → originale Position zurückgeben
+  if (!routeCoords || routeCoords.length < 2) {
+    return (latlng instanceof L.LatLng) ? latlng : L.latLng(latlng.lat, latlng.lng);
+  }
+
+  // Eingabe normalisieren (immer L.LatLng erzwingen)
+  if (!(latlng instanceof L.LatLng)) {
+    latlng = L.latLng(latlng.lat, latlng.lng);
+  }
 
   let closest = null;
   let minDist = Infinity;
@@ -1462,14 +1470,27 @@ function snapToRoute(latlng) {
   for (let i = 0; i < routeCoords.length - 1; i++) {
     const p1 = routeCoords[i];
     const p2 = routeCoords[i + 1];
-    const dist = L.GeometryUtil.distanceSegment(map, latlng, p1, p2);
+
+    // Falls routeCoords nur rohe Objekte enthält → normalisieren
+    const ll1 = (p1 instanceof L.LatLng) ? p1 : L.latLng(p1.lat, p1.lng);
+    const ll2 = (p2 instanceof L.LatLng) ? p2 : L.latLng(p2.lat, p2.lng);
+
+    // Distanz zum Segment berechnen
+    const dist = L.GeometryUtil.distanceSegment(map, latlng, ll1, ll2);
     if (dist < minDist) {
       minDist = dist;
-      closest = L.GeometryUtil.closest(map, [p1, p2], latlng);
+      closest = L.GeometryUtil.closest(map, [ll1, ll2], latlng);
     }
   }
-  return closest || latlng;
+
+  // Immer L.LatLng zurückgeben
+  if (closest) {
+    return (closest instanceof L.LatLng) ? closest : L.latLng(closest.lat, closest.lng);
+  }
+
+  return latlng;
 }
+
 function updateEta(userPos) {
   if (!routeCoords || routeCoords.length < 2 || !routeDistance || !routeDuration) return;
 
