@@ -1399,57 +1399,59 @@ function getBearing(from, to) {
 // ------------------- Usermarker aktualisieren -------------------
 async function updateUserMarker(gpsLatLng, accuracy = 20) {
   try {
+    // 🔄 Auf Route snappen
     const snappedPos = snapToRoute(gpsLatLng);
+
+    // Richtung bestimmen
     const bearing = getRouteBearing(snappedPos);
     lastBearing = bearing;
 
-    setUserMarker(snappedPos, bearing, accuracy);
+    // Marker setzen/aktualisieren
+    await setUserMarker(snappedPos, bearing, accuracy);
 
     if (follow) map.setView(snappedPos, 18, { animate: true });
 
+    // Gefahrene Strecke speichern
     if (!pastRouteLine) {
-      pastRouteLine = L.polyline([], {
-        color: "gray",
-        weight: 4,
-        pane: "pastRoutePane"
-      }).addTo(map);
+      pastRouteLine = L.polyline([], { color: "gray", weight: 4 }).addTo(map);
     }
-
     if (lastLatLng) {
       const segDist = map.distance(lastLatLng, snappedPos);
       tourDistance += segDist;
       pastRouteLine.addLatLng(snappedPos);
-      pastRouteLine.bringToFront();
+    }
 
-      if (currentRideId) {
-        try {
-          const userId = localStorage.getItem("userId");
-          await db.collection("users").doc(userId)
-            .collection("rides").add({
-              startTime: new Date(tourStartTime).toISOString(),
-              status: "running",
-              routePlanned: routeCoords.map(p => ({ lat: snappedPos.lat, lng: snappedPos.lng })),
-              coords: []
-            });
-        } catch (err) {
-          console.warn("⚠️ Firebase-Update fehlgeschlagen:", err);
-        }
+    // 👉 Fahrtposition in Firebase UPDATEN, nicht neue Fahrt erstellen
+    if (currentRideId) {
+      try {
+        const userId = localStorage.getItem("userId");
+        await db.collection("users").doc(userId)
+          .collection("rides").doc(currentRideId)
+          .update({
+            coords: firebase.firestore.FieldValue.arrayUnion({
+              lat: snappedPos.lat,
+              lng: snappedPos.lng,
+              ts: Date.now()
+            })
+          });
+      } catch (err) {
+        console.warn("⚠️ Firebase-Update fehlgeschlagen:", err);
       }
     }
 
     lastLatLng = snappedPos;
 
+    // ⏩ Rest: Navigation-Logik
     checkIfHutReached(snappedPos);
     checkTurnByTurn(snappedPos);
     updateEta(snappedPos);
-
-    // Route Abweichung prüfen
     checkRouteDeviation(snappedPos);
 
   } catch (err) {
     console.error("❌ Fehler in updateUserMarker:", err);
   }
 }
+
 // nächstgelegenen Punkt auf Route finden
 function snapToRoute(latlng) {
   if (!routeCoords || routeCoords.length < 2) return latlng;
@@ -1469,20 +1471,46 @@ function snapToRoute(latlng) {
   return closest || latlng;
 }
 function updateEta(userPos) {
-  if (!routeCoords.length) return;
+  if (!routeCoords || routeCoords.length < 2 || !routeDistance || !routeDuration) return;
 
-  // Entfernung zum Ziel (einfach zur letzten Koordinate)
+  // Zielpunkt = letzte Route-Koordinate
   const ziel = routeCoords[routeCoords.length - 1];
-  const dist = map.distance(userPos, ziel); // in Meter
 
-  // Restzeit = Anteil der Distanz * Dauer
-  const etaSecs = (dist / routeDistance) * routeDuration;
+  // Luftlinie zum Ziel
+  const distStraight = map.distance(userPos, ziel);
+
+  // Restdistanz entlang der Route (statt nur Luftlinie)
+  let restDist = 0;
+  let found = false;
+
+  for (let i = 0; i < routeCoords.length - 1; i++) {
+    const p1 = routeCoords[i];
+    const p2 = routeCoords[i + 1];
+
+    // sobald wir in der Nähe des aktuellen Punktes sind → ab hier zählen
+    if (!found && L.GeometryUtil.closest(map, [p1, p2], userPos)) {
+      found = true;
+      restDist += map.distance(userPos, p2);
+    } else if (found) {
+      restDist += map.distance(p1, p2);
+    }
+  }
+
+  // Fallback: wenn keine Route erkannt → Luftlinie nehmen
+  if (restDist === 0) restDist = distStraight;
+
+  // Zeit berechnen proportional zur Restdistanz
+  const etaSecs = (restDist / routeDistance) * routeDuration;
   const etaMins = Math.round(etaSecs / 60);
 
+  // Anzeige
   const el = document.getElementById("etaBox");
-  el.style.display = "block";
-  el.innerHTML = `🛣️ ${(dist / 1000).toFixed(1)} km · ⏱️ ${etaMins} min`;
+  if (el) {
+    el.style.display = "block";
+    el.innerHTML = `🛣️ ${(restDist / 1000).toFixed(1)} km · ⏱️ ${etaMins} min`;
+  }
 }
+
     
 
 let lastRecalcTime = 0;
@@ -1856,12 +1884,22 @@ async function startNavigation(start, ziel) {
     navWatchId = navigator.geolocation.watchPosition(
       async pos => {
         const gps = L.latLng(pos.coords.latitude, pos.coords.longitude);
-
+      const snapped = (routeCoords && routeCoords.length > 1)
+        ? snapToRoute(gps)
+        : gps;
         // User Marker + Karte
-        updateUserMarker(gps, pos.coords.accuracy);
+        updateUserMarker(snapToRoute, pos.coords.accuracy);
         updateSpeedUI(gps, pos.coords);
         reverseGeocode(gps.lat, gps.lng);
 
+
+        
+        // Fortschrittslinie & Restwerte updaten
+        if (routeLine && routeCoords) {
+          updateEta(snapped);
+        }
+
+        
         // Firebase live update
         if (currentRideId) {
           try {
@@ -2019,6 +2057,8 @@ function startUserLocationTracking() {
     timeout: 20000             // 20 Sekunden Timeout
   };
 
+
+
   function trackPosition() {
     if (!navigator.geolocation) {
       console.error("❌ Geolocation wird von diesem Browser nicht unterstützt");
@@ -2039,8 +2079,19 @@ function startUserLocationTracking() {
         const diff = ((bearing - lastBearing + 540) % 360) - 180;
         lastBearing = (lastBearing + diff * 0.2 + 360) % 360;
 
-        // Marker + Kreise setzen
-        setUserMarker(gpsLatLng, lastBearing, pos.coords.accuracy);
+        // Auf Route snappen, falls Route aktiv
+        const snapped = (routeCoords && routeCoords.length > 1)
+          ? snapToRoute(gpsLatLng)
+          : gpsLatLng;
+        
+        // Marker mit Bearing setzen
+        setUserMarker(snapped, lastBearing, pos.coords.accuracy);
+        
+        // Fortschrittslinie & Restwerte updaten
+        if (routeLine && routeCoords) {
+          updateEta(snapped);
+        }
+
 
         // Karte verfolgen
         if (follow) {
