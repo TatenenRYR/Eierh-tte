@@ -1454,41 +1454,56 @@ async function updateUserMarker(gpsLatLng, accuracy = 20) {
 
 // nächstgelegenen Punkt auf Route finden
 function snapToRoute(latlng) {
-  // Fallback: Wenn keine Route vorhanden oder nur ein Punkt → originale Position zurückgeben
-  if (!routeCoords || routeCoords.length < 2) {
-    return (latlng instanceof L.LatLng) ? latlng : L.latLng(latlng.lat, latlng.lng);
-  }
+  // Eingabe normalisieren
+  let point = toLatLng(latlng);
+  if (!point) return null;
 
-  // Eingabe normalisieren (immer L.LatLng erzwingen)
-  if (!(latlng instanceof L.LatLng)) {
-    latlng = L.latLng(latlng.lat, latlng.lng);
+  // Falls keine Route vorhanden → Punkt selbst zurückgeben
+  if (!routeCoords || routeCoords.length < 2) {
+    return point;
   }
 
   let closest = null;
   let minDist = Infinity;
 
   for (let i = 0; i < routeCoords.length - 1; i++) {
-    const p1 = routeCoords[i];
-    const p2 = routeCoords[i + 1];
+    const p1 = toLatLng(routeCoords[i]);
+    const p2 = toLatLng(routeCoords[i + 1]);
 
-    // Falls routeCoords nur rohe Objekte enthält → normalisieren
-    const ll1 = (p1 instanceof L.LatLng) ? p1 : L.latLng(p1.lat, p1.lng);
-    const ll2 = (p2 instanceof L.LatLng) ? p2 : L.latLng(p2.lat, p2.lng);
+    if (!p1 || !p2) continue;
 
-    // Distanz zum Segment berechnen
-    const dist = L.GeometryUtil.distanceSegment(map, latlng, ll1, ll2);
+    const dist = L.GeometryUtil.distanceSegment(map, point, p1, p2);
     if (dist < minDist) {
       minDist = dist;
-      closest = L.GeometryUtil.closest(map, [ll1, ll2], latlng);
+      closest = L.GeometryUtil.closest(map, [p1, p2], point);
     }
   }
 
-  // Immer L.LatLng zurückgeben
-  if (closest) {
-    return (closest instanceof L.LatLng) ? closest : L.latLng(closest.lat, closest.lng);
+  return toLatLng(closest) || point;
+}
+function toLatLng(pos) {
+  if (!pos) {
+    console.warn("⚠️ Ungültige Position:", pos);
+    return null;
   }
 
-  return latlng;
+  // Wenn schon ein Leaflet-LatLng → direkt zurückgeben
+  if (pos instanceof L.LatLng) {
+    return pos;
+  }
+
+  // Falls {lat, lng} Objekt → umwandeln
+  if (typeof pos.lat === "number" && typeof pos.lng === "number") {
+    return L.latLng(pos.lat, pos.lng);
+  }
+
+  // Falls Array [lat, lng] → auch unterstützen
+  if (Array.isArray(pos) && pos.length === 2) {
+    return L.latLng(pos[0], pos[1]);
+  }
+
+  console.error("❌ Kann nicht in LatLng umwandeln:", pos);
+  return null;
 }
 
 function updateEta(userPos) {
