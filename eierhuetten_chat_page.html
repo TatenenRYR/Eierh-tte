@@ -721,11 +721,54 @@ async function processUserInput(txt) {
   }
 
   // Step "address_input": Adresse wurde eingegeben
-  if (step === "address_input") {
-    geocodeAddress(txt.trim());
-    step = null;
-    return;
+  // Step "address_input": Adresse wurde eingegeben
+if (step === "address_input") {
+  const address = txt.trim();
+
+  try {
+    // ✅ Geocoding durchführen (geocodeAddress muss {lat, lng} zurückgeben!)
+    const coords = await geocodeAddress(address);
+
+    if (coords) {
+      // In Firestore speichern
+      await db.collection("eierhuetten").doc(editingData.id).update({
+        address: address,
+        location: new firebase.firestore.GeoPoint(coords.lat, coords.lng)
+      });
+
+      // Ausführliches Feedback an den User
+      addMessage("✅ Vielen Dank für das Einreichen deiner Hütte!", "bot");
+      addMessage("👀 Unser Team prüft deinen Vorschlag nun sorgfältig.", "bot");
+      addMessage("⏳ Sobald die Hütte freigegeben ist, erscheint sie für alle Nutzer sichtbar.", "bot");
+
+      // ➕ Button anbieten, um zu den eigenen Hütten zu springen
+      const btnContainer = document.createElement("div");
+      btnContainer.className = "message bot";
+
+      const btn = document.createElement("button");
+      btn.className = "choice-btn";
+      btn.textContent = "➡️ Meine Hütten anzeigen";
+      btn.onclick = () => {
+        showMyHuts();
+      };
+
+      btnContainer.appendChild(btn);
+      chatWindow.appendChild(btnContainer);
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+    } else {
+      addMessage("⚠️ Adresse konnte nicht gefunden werden. Bitte erneut eingeben.", "bot");
+      return; // bleibt in diesem Step
+    }
+  } catch (err) {
+    console.error("Geocoding-Fehler:", err);
+    addMessage("❌ Fehler beim Geocoding. Bitte versuche es nochmal.", "bot");
+    return; // bleibt in diesem Step
   }
+
+  // Flow endet hier
+  step = null;
+  return;
+}
 
   // ==========================
   // Spielplatz-Flow (bleibt)
@@ -1063,17 +1106,23 @@ async function fetchAddressSuggestions(query, container, hutId) {
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`;
     const res = await fetch(url);
     const data = await res.json();
+
     if (data.length > 0) {
       const lat = parseFloat(data[0].lat);
       const lon = parseFloat(data[0].lon);
+      const displayName = data[0].display_name;
+
+      // Koordinaten auch in editingData merken (optional)
       editingData.location = new firebase.firestore.GeoPoint(lat, lon);
-      addMessage(`✅ Adresse gefunden: ${data[0].display_name}`, "bot");
-      askForImageUpload();
+
+      // Nur Rückgabe → Verarbeitung macht der Aufrufer (z. B. address_input)
+      return { lat, lng: lon, display_name: displayName };
     } else {
-      addMessage("❌ Adresse konnte nicht gefunden werden. Bitte versuche es erneut.", "bot");
+      return null; // nichts gefunden
     }
   } catch (err) {
-    addMessage("❌ Fehler bei der Adresssuche: " + err.message, "bot");
+    console.error("❌ Fehler bei der Adresssuche:", err);
+    return null;
   }
   }
 
