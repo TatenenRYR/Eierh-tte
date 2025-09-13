@@ -1376,7 +1376,7 @@ const filterStatus = true; // oder abhängig von UI-Einstellungen
     addMessage("❌ Fehler beim Laden deiner Hütten: " + err.message, "bot");
   }
 }*/
-async function showMyHuts() {
+/*async function showMyHuts() {
   chatWindow.innerHTML = '';
 
   const snapshot = await db.collection('eierhuetten')
@@ -1583,7 +1583,222 @@ setTimeout(() => {
     }
   });
 }
+*/
+  async function showMyHuts() {
+  chatWindow.innerHTML = '';
 
+  const snapshot = await db.collection('eierhuetten')
+    .where('userId', '==', currentUser.uid)
+    .get();
+
+  const docs = snapshot.docs.filter(doc => {
+    const status = doc.data().status;
+    return status !== "archiviert" || typeof status === "undefined";
+  });
+
+  if (snapshot.empty) return addMessage('Du hast noch keine Hütten.', 'bot');
+
+  let total = 0, angenommen = 0, offen = 0;
+  docs.forEach(doc => {
+    const d = doc.data();
+    total++;
+    if (d.status === 'angenommen') angenommen++;
+    if (d.status === 'offen') offen++;
+  });
+
+  // Statistik-Balken
+  const statsBar = document.createElement('div');
+  statsBar.className = 'flex justify-around items-center text-sm bg-green-100 text-green-900 py-2 px-4 rounded mb-3 shadow-sm border border-green-300';
+  statsBar.innerHTML = `
+    <div title="Eingereichte Hütten">🥚 <strong>${total}</strong>/10</div>
+    <div title="Angenommen">✅ <strong>${angenommen}</strong></div>
+    <div title="Offen">⏳ <strong>${offen}</strong></div>
+  `;
+  chatWindow.appendChild(statsBar);
+
+  // Jede Hütte rendern
+  docs.forEach(doc => {
+    const d = doc.data();
+    const id = doc.id;
+    const div = document.createElement('div');
+    div.className = 'message bot';
+
+    const minimapId = `minimap-${id}`;
+
+    div.innerHTML = `
+      <div class="text-sm space-y-2">
+        <div class='font-bold text-lg'>🏡 ${d.name}</div>
+        <div class='font-bold'>📌 Status: ${d.status}</div>
+
+        ${d.status === 'angenommen' ? `
+          <label>📍 Name:<br>
+            <input type='text' data-id='${id}' class='edit-name w-full border px-2 py-1 rounded' value='${d.name}' />
+          </label><br>
+
+          <label>🪑 Sitzplätze:
+            <select data-id='${id}' class='edit-sitz border rounded px-2 py-1 ml-2'>
+              <option ${d.sitzplaetze === 'Ja' ? 'selected' : ''}>Ja</option>
+              <option ${d.sitzplaetze === 'Nein' ? 'selected' : ''}>Nein</option>
+            </select>
+          </label><br>
+
+          <label>🔌 Strom:
+            <select data-id='${id}' class='edit-strom border rounded px-2 py-1 ml-2'>
+              <option ${d.strom === 'Ja' ? 'selected' : ''}>Ja</option>
+              <option ${d.strom === 'Nein' ? 'selected' : ''}>Nein</option>
+            </select>
+          </label><br>
+
+          <label>✨ Extras:<br>
+            <input type='text' data-id='${id}' class='edit-extras w-full border px-2 py-1 rounded' value='${d.extras || ''}' />
+          </label><br>
+
+          <label>🐾 Tiere:<br>
+            <input type='text' data-id='${id}' class='edit-tiere w-full border px-2 py-1 rounded'
+             value='${(d.tiere || []).join(", ")}' placeholder="z. B. 🐐 Ziege, 🐓 Huhn" />
+          </label>
+
+          <label>📝 Beschreibung:<br>
+            <div id="editor-${id}" class="quill-editor border rounded"></div>
+          </label><br>
+
+          <label>🏷️ Tags:<br>
+            <input type='text' data-id='${id}' class='edit-tags w-full border px-2 py-1 rounded' value='${(d.tags || []).join(", ")}' placeholder="max. 5, Komma getrennt"/>
+          </label><br>
+
+          <label>🕒 Öffnungszeiten:<br>
+            <input type='text' data-id='${id}' class='edit-zeiten w-full border px-2 py-1 rounded' value='${d.oeffnungszeiten || ''}' />
+          </label><br>
+
+          <label>📍 Adresse:<br>
+            <input type='text' id='address-input-${id}' 
+                   class='edit-address w-full border px-2 py-1 rounded' 
+                   value='${d.address || ''}' placeholder="Straße, Ort"/>
+            <div id="address-suggestions-${id}" class="mt-1 space-y-1"></div>
+          </label><br>
+          <button class='edit-btn' onclick='saveEdit("${id}")'>💾 Speichern</button>
+          <button class='delete-btn' onclick='deleteHut("${id}")'>🗑️ Löschen</button>
+        ` : `
+          <div class="text-gray-500 italic">⛔ Nur nach Freigabe bearbeitbar.</div>
+          <button class='delete-btn' onclick='deleteHut("${id}")'>🗑️ Löschen</button>
+        `}
+
+        <!-- Bildergalerie -->
+        ${Array.isArray(d.fotos) && d.fotos.length ? `
+          <div class='flex flex-col gap-2 mt-2'>
+            ${d.fotos.map(img => {
+              const isString = typeof img === 'string';
+              const url = isString ? img : img.url;
+              const del = isString ? '' : (img.delete_url || '');
+              const status = isString ? 'freigegeben' : (img.status || 'freigegeben');
+              const pending = status === 'wartet';
+              return `
+                <div class="flex items-center gap-4 bg-gray-50 p-2 rounded border relative">
+                  <div class="relative group">
+                    <img src="${url}" class="h-20 w-20 object-cover rounded shadow ${pending ? 'opacity-50' : ''}"/>
+                    ${!pending ? `
+                      <button onclick="deleteImage('${id}', '${url}', '${del}')" 
+                        class="absolute top-0 right-0 bg-red-600 text-white text-xs rounded-bl px-1 opacity-0 group-hover:opacity-100 transition">
+                        ✕
+                      </button>
+                    ` : ''}
+                  </div>
+                  <div class="flex-1 text-xs break-all text-gray-600">
+                    <div><strong>Status:</strong> ${pending ? '<span class="text-orange-600">⏳ wartet</span>' : '✅ frei'}</div>
+                    <div><strong>Delete:</strong><br><code>${del || '-'}</code></div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : ''}
+
+        <!-- Upload -->
+        <label class="block mt-2 text-sm">📷 Neues Bild:
+          <input type="file" accept="image/*" data-id="${id}" class="upload-image mt-1" />
+        </label>
+        <div id="progress-${id}" class="h-2 bg-gray-200 rounded hidden mt-2">
+          <div class="h-2 bg-green-500 rounded" style="width: 0%"></div>
+        </div>
+        <div id="progress-label-${id}" class="text-xs text-gray-600 mt-1">0%</div>
+
+        <!-- Nachrichten-Checkbox -->
+        <label class="inline-flex items-center mt-2">
+          <input type="checkbox" id="allowMessages-${id}" ${d.allowMessages ? 'checked' : ''} class="mr-2">
+          Nachrichten aktivieren
+        </label>
+        <button onclick="toggleMessages('${id}')" class="ml-2 px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">Speichern</button>
+
+        <!-- Nachrichtenbereich -->
+        ${d.status === 'angenommen' && d.allowMessages === true ? `
+          <div id="chat-${id}" class="mt-2 p-2 bg-gray-100 rounded">
+            <strong>💬 Nachrichten für ${d.name}</strong>
+            <div id="chat-messages-${id}" class="mt-1 space-y-1 max-h-48 overflow-y-auto">Lade Nachrichten...</div>
+          </div>
+        ` : ''}
+
+        <!-- Mini-Map -->
+        <div id="${minimapId}" class="minimap h-40 mt-2 rounded border"></div>
+      </div>
+    `;
+    chatWindow.appendChild(div);
+
+    // ✅ Quill nur starten, wenn Container existiert
+    setTimeout(() => {
+      const container = document.querySelector(`#editor-${id}`);
+      if (!container) return; // kein Editor für diese Hütte
+
+      const quill = new Quill(container, { theme: 'snow' });
+      quill.root.innerHTML = d.beschreibung || "";
+
+      const saveBtn = document.querySelector(`.edit-btn[onclick='saveEdit("${id}")']`);
+      if (saveBtn) {
+        saveBtn.onclick = () => {
+          const beschreibungHTML = quill.root.innerHTML;
+          saveEdit(id, beschreibungHTML);
+        };
+      }
+    }, 300);
+
+    setTimeout(() => enableAddressAutocomplete(id), 200);
+
+    // Mini-Map
+    if (d.location?.latitude && d.location?.longitude) {
+      setTimeout(() => {
+        const m = L.map(minimapId, { zoomControl: true }).setView([d.location.latitude, d.location.longitude], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
+
+        const marker = L.marker([d.location.latitude, d.location.longitude], {
+          draggable: d.status === 'angenommen'
+        }).addTo(m);
+
+        if (d.status === 'angenommen') {
+          marker.on('dragend', e => {
+            const pos = e.target.getLatLng();
+            db.collection('eierhuetten').doc(id).update({
+              location: new firebase.firestore.GeoPoint(pos.lat, pos.lng)
+            }).then(() => {
+              addMessage(`📍 Neuer Standort für "${d.name}" gespeichert.`, 'bot');
+            });
+          });
+        }
+      }, 300);
+    }
+
+    // Nachrichten laden
+    if (d.status === 'angenommen' && d.allowMessages === true) {
+      (async () => {
+        try {
+          await ladeHutNachrichtenListe(id);
+        } catch (err) {
+          const container = document.getElementById(`chat-messages-${id}`);
+          if (container) container.innerHTML = `<em>Fehler beim Laden der Nachrichten: ${err.message}</em>`;
+          console.error('Fehler beim Laden der Nachrichten für Hütte ' + err.message, id, err);
+        }
+      })();
+    }
+  });
+  }
 async function saveEdit(id, quill = null) {
   try {
     const name = document.querySelector(`.edit-name[data-id='${id}']`)?.value || "";
