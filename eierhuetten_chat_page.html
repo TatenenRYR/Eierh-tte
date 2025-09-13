@@ -544,6 +544,88 @@ function deleteSpielplatz(id) {
   }
 
   if (txt.includes('meine hütten')) {
+    showMyHuts();
+    return;
+  }
+
+  if (txt.includes('vorschlag')) {
+    addMessage('📩 Bitte gib die E-Mail-Adresse des Besitzers ein, den du vorschlagen möchtest:', 'bot');
+    step = 'suggest_email';
+    return;
+  }
+
+  if (txt.includes('meine spielplätze') || txt.includes('spielplätze anzeigen')) {
+    showMySpielplaetze();
+    return;
+  }
+
+  // =====================
+  // Hütte erstellen
+  // =====================
+  if (txt.includes('hütte')) {
+    addMessage(`
+      🛡️ <b>Bevor du deine Hütte einträgst, akzeptiere bitte die Datenschutzerklärung:</b><br>
+      <label style="display:flex; gap:8px; align-items:start; margin-top:6px;">
+        <input type="checkbox" id="chat-datenschutz-zustimmung" style="margin-top:4px;" />
+        <span>Ich akzeptiere die <a href="/datenschutz.html" target="_blank" style="color:blue; text-decoration:underline;">Datenschutzerklärung</a>.</span>
+      </label>
+    `, 'bot', true);
+
+    addChoiceButtons(['✅ Zustimmen & Starten'], () => {
+      const checkbox = document.getElementById('chat-datenschutz-zustimmung');
+      if (!checkbox || !checkbox.checked) {
+        alert('Bitte akzeptiere zuerst die Datenschutzerklärung.');
+        return;
+      }
+
+      // 🆕 ID vormerken, aber noch NICHT speichern
+      const docRef = db.collection("eierhuetten").doc();
+      editingData = {
+        id: docRef.id,
+        zustimmungDatenschutz: {
+          akzeptiert: true,
+          am: new Date().toISOString()
+        }
+      };
+
+      step = 1; // Nächster Schritt: Name abfragen
+      addMessage('Wie soll deine neue Hütte heißen?', 'bot');
+    });
+
+    return;
+  }
+
+  // =====================
+  // Spielplatz erstellen
+  // =====================
+  if (txt.includes('spielplatz')) {
+    startSpielplatzDialog();
+    return;
+  }
+
+  // =====================
+  // Fallback
+  // =====================
+  addMessage('❓ Ich habe das leider nicht verstanden. Bitte wähle eine Option aus.', 'bot');
+  addChoiceButtons(
+    [
+      '🥚 Neue Hütte erstellen',
+      '📋 Meine Hütten anzeigen',
+      '🎫 Support Anfragen'
+    ],
+    handleIntent
+  );
+  }
+/*  function handleIntent(input) {
+  const txt = input.toLowerCase();
+
+  if (txt.includes('support')) {
+    addMessage('Hallo 👋', 'bot');
+    ladeMeineSupportTickets();
+    return;
+  }
+
+  if (txt.includes('meine hütten')) {
       showMyHuts();
     return;
   }
@@ -624,7 +706,7 @@ if (txt.includes('meine spielplätze') || txt.includes('spielplätze anzeigen'))
     ],
     handleIntent
   );
-  }
+  }*/
   /*function handleIntent(input) {
   const txt = input.toLowerCase();
 
@@ -691,28 +773,29 @@ if (txt.includes('meine spielplätze') || txt.includes('spielplätze anzeigen'))
 
   // Step 1: Name
   if (step === 1) {
-    editingData.name = txt.trim();
-    step = 2;
-    addQuestionWithHelp("🪑 Hat deine Hütte Sitzplätze?", "Sind Bänke oder Stühle vorhanden?");
-    addChoiceButtons(['Ja', 'Nein'], ans => {
-      editingData.sitzplaetze = ans;
-      step = 3;
-      addQuestionWithHelp("🔌 Gibt es Strom?", "Kann man z. B. ein Handy laden?");
-      addChoiceButtons(['Ja', 'Nein'], strom => {
-        editingData.strom = strom;
-        step = 4;
-        addQuestionWithHelp("✨ Extras? (oder „keine“)", "Zum Beispiel: Getränke, Kühlschrank, Werkzeug.");
-      });
-    });
-    return;
-  }
+  editingData.name = txt.trim();
+  const docRef = db.collection("eierhuetten").doc(editingData.id);
 
-  // Step 4: Extras -> Tiere (Emoji)
-  if (step === 4) {
-    editingData.extras = txt.toLowerCase() === 'keine' ? '' : txt;
-    step = "tiere_input";
-    askForAnimals();
-    return;
+  await docRef.set({
+    userId: currentUser.uid,
+    erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+    status: "offen",
+    ...editingData
+  });
+
+  step = 2;
+  addQuestionWithHelp("🪑 Hat deine Hütte Sitzplätze?", "Sind Bänke oder Stühle vorhanden?");
+  addChoiceButtons(['Ja', 'Nein'], ans => {
+    editingData.sitzplaetze = ans;
+    step = 3;
+    addQuestionWithHelp("🔌 Gibt es Strom?", "Kann man z. B. ein Handy laden?");
+    addChoiceButtons(['Ja', 'Nein'], strom => {
+      editingData.strom = strom;
+      step = 4;
+      addQuestionWithHelp("✨ Extras? (oder „keine“)", "Zum Beispiel: Getränke, Kühlschrank, Werkzeug.");
+    });
+  });
+  return;
   }
 
   // Tiere Auswahl abgeschlossen -> Beschreibung
