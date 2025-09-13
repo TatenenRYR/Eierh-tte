@@ -616,8 +616,152 @@ function deleteSpielplatz(id) {
     handleIntent
   );
   }
+async function processUserInput(txt) {
+  // ==========================
+  // Vorschlags-Flow
+  // ==========================
+  if (step === 'suggest_email') {
+    editingData = { email: txt.trim() };
+    addMessage('✅ Danke! Möchtest du noch einen Kommentar hinzufügen?', 'bot');
+    step = 'suggest_comment';
+    return;
+  }
 
- async function processUserInput(txt) {
+  if (step === 'suggest_comment') {
+    editingData.comment = txt.trim();
+    addMessage('📍 Bitte wähle den Standort deiner Hütte aus.', 'bot');
+    showSuggestionMap(); 
+    step = 'suggest_location';
+    return;
+  }
+
+  // ==========================
+  // Hütten-Flow
+  // ==========================
+
+  // Step 1: Name
+  if (step === 1) {
+    editingData.name = txt.trim();
+    const docRef = db.collection("eierhuetten").doc(editingData.id);
+
+    await docRef.set({
+      userId: currentUser.uid,
+      erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+      status: "offen",
+      ...editingData
+    });
+
+    step = 2;
+    addQuestionWithHelp("🪑 Hat deine Hütte Sitzplätze?", "Sind Bänke oder Stühle vorhanden?");
+    addChoiceButtons(['Ja', 'Nein'], ans => {
+      editingData.sitzplaetze = ans;
+      step = 3;
+      addQuestionWithHelp("🔌 Gibt es Strom?", "Kann man z. B. ein Handy laden?");
+      addChoiceButtons(['Ja', 'Nein'], strom => {
+        editingData.strom = strom;
+        step = 4;
+        addQuestionWithHelp("✨ Extras? (oder „keine“)", "Zum Beispiel: Getränke, Kühlschrank, Werkzeug.");
+
+        // ➕ Überspringen-Button für Extras
+        addChoiceButtons(['Überspringen'], () => {
+          editingData.extras = '';
+          step = "beschreibung_input";
+          askForAnimals();
+        });
+      });
+    });
+    return;
+  }
+
+  // Step 4: Extras – Eingabe verarbeiten
+  if (step === 4) {
+    const extras = txt.trim();
+    editingData.extras = extras.toLowerCase() === 'keine' ? '' : extras;
+    step = "beschreibung_input";
+    askForAnimals();
+    return;
+  }
+
+  // Tiere Auswahl abgeschlossen -> Beschreibung
+  if (step === "beschreibung_input") {
+    editingData.beschreibung = txt.trim();
+    step = "tags_input";
+    addQuestionWithHelp("🏷️ Bitte füge bis zu 5 Schlagwörter hinzu (durch Komma getrennt).", "Beispiel: Frühstück, Getränke, schattig");
+
+    // ➕ Überspringen-Button für Beschreibung
+    addChoiceButtons(['Überspringen'], () => {
+      editingData.beschreibung = '';
+      step = "tags_input";
+      addQuestionWithHelp("🏷️ Bitte füge bis zu 5 Schlagwörter hinzu (durch Komma getrennt).", "Beispiel: Frühstück, Getränke, schattig");
+    });
+    return;
+  }
+
+  // Tags
+  if (step === "tags_input") {
+    const tags = txt.split(",").map(t => t.trim()).filter(t => t.length > 0);
+    if (tags.length > 5) {
+      addMessage("⚠️ Bitte max. 5 Tags angeben.", "bot");
+      return;
+    }
+    editingData.tags = tags;
+    step = 5;
+    addQuestionWithHelp("🕒 Wie lauten die Öffnungszeiten?", "Wenn die Hütte immer frei zugänglich ist: 'Immer geöffnet'");
+    addChoiceButtons(['Immer geöffnet', 'Von – Bis angeben'], ans => {
+      if (ans === 'Immer geöffnet') {
+        editingData.oeffnungszeiten = 'Immer geöffnet';
+        askForLocationChoice(); 
+      } else {
+        showTimePicker();
+      }
+    });
+    return;
+  }
+
+  // Step "address_input": Adresse wurde eingegeben
+  if (step === "address_input") {
+    geocodeAddress(txt.trim());
+    step = null;
+    return;
+  }
+
+  // ==========================
+  // Spielplatz-Flow (bleibt)
+  // ==========================
+  if (step === 'spielplatz_name') {
+    editingData.name = txt.trim();
+    step = 'spielplatz_location';
+    addMessage('📍 Bitte klicke den Standort des Spielplatzes auf der Karte an.', 'bot');
+    zeigeMapFuerSpielplatz();
+    return;
+  }
+
+  if (step === 'spielplatz_location') {
+    step = 'spielplatz_sitz';
+    addMessage('🪑 Gibt es Sitzmöglichkeiten?', 'bot');
+    addChoiceButtons(['Ja', 'Nein'], choice => {
+      editingData.sitz = choice;
+      step = 'spielplatz_tags';
+      addMessage('🏷️ Bitte gib Schlagwörter an (z. B. Seilrutsche, Schaukel, gepflegt):', 'bot');
+    });
+    return;
+  }
+
+  if (step === 'spielplatz_tags') {
+    editingData.tags = txt.split(',').map(t => t.trim());
+    step = 'spielplatz_fotos';
+    addMessage('📷 Lade bitte 1–3 Fotos hoch.', 'bot');
+    zeigeUploadKomponente('spielplatz_fotos');
+    return;
+  }
+
+  if (step === 'spielplatz_fotos') {
+    step = null;
+    saveSpielplatz(editingData);
+    return;
+  }
+}
+/* async function processUserInput(txt) {
   // ==========================
   // Vorschlags-Flow
   // ==========================
@@ -738,7 +882,7 @@ function deleteSpielplatz(id) {
     saveSpielplatz(editingData);
     return;
   }
-}
+}*/
 function askForAnimals() {
   addMessage("🐾 Welche Tiere gibt es an der Hütte? (Mehrfachauswahl möglich)", "bot");
 
