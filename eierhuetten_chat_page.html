@@ -877,14 +877,15 @@ function enableAddressAutocomplete(hutId) {
   });
 }
 
-async function fetchAddressSuggestions(query, container, hutId) {
+async function fetchAddressSuggestions(query, container) {
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(query)}`;
     const res = await fetch(url, { headers: { "User-Agent": "EierhuettenApp/1.0" } });
     const data = await res.json();
 
     container.innerHTML = "";
-    if (!data.length) {
+
+    if (data.length === 0) {
       container.innerHTML = "<div class='text-gray-500'>❌ Keine Ergebnisse</div>";
       return;
     }
@@ -893,48 +894,25 @@ async function fetchAddressSuggestions(query, container, hutId) {
       const div = document.createElement("div");
       div.className = "p-2 bg-gray-100 hover:bg-green-100 cursor-pointer rounded";
       div.textContent = item.display_name;
+      div.onclick = () => {
+  const lat = parseFloat(item.lat);
+  const lon = parseFloat(item.lon);
+  editingData.location = new firebase.firestore.GeoPoint(lat, lon);
+  editingData.address = item.display_name; // <--- NEU
 
-      div.onclick = async () => {
-        if (!confirm(`📍 Diese Adresse übernehmen?\n\n${item.display_name}`)) return;
+  addMessage(`✅ Adresse gewählt: ${item.display_name}`, "bot");
 
-        const docRef = db.collection("eierhuetten").doc(hutId);
-        const docSnap = await docRef.get();
+  container.innerHTML = "";
+  askForImageUpload();
 
-        if (!docSnap.exists) {
-          addMessage("❌ Fehler: Diese Hütte existiert nicht mehr.", "bot");
-          return;
-        }
-
-        try {
-          await docRef.update({
-            address: item.display_name,
-            location: new firebase.firestore.GeoPoint(
-              parseFloat(item.lat),
-              parseFloat(item.lon)
-            ),
-            status: "offen"
-          });
-
-          addMessage(`✅ Adresse gespeichert: ${item.display_name}`, "bot");
-          addMessage("⏳ Änderung gespeichert und muss erneut durch einen Admin freigeschaltet werden.", "bot");
-
-          container.innerHTML = "";
-          showMyHuts();
-        } catch (err) {
-          console.error("❌ Firestore-Update-Fehler:", err);
-          addMessage("❌ Fehler beim Speichern der Adresse: " + err.message, "bot");
-        }
       };
-
       container.appendChild(div);
     });
+
   } catch (err) {
-    console.error("❌ Adress-Suche-Fehler:", err);
     container.innerHTML = `<div class='text-red-500'>❌ Fehler: ${err.message}</div>`;
   }
   }
-
-
 async function fetchAddressSuggestions(query, container, hutId) {
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(query)}`;
