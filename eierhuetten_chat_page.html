@@ -896,33 +896,47 @@ async function fetchAddressSuggestions(query, container, hutId) {
       const div = document.createElement("div");
       div.className = "p-2 bg-gray-100 hover:bg-green-100 cursor-pointer rounded";
       div.textContent = item.display_name;
-      div.onclick = () => {
-        // Nachfrage einbauen
-        if (!confirm(`📍 Diese Adresse übernehmen?\n\n${item.display_name}`)) {
-          return;
-        }
 
-        db.collection("eierhuetten").doc(hutId).update({
+      div.onclick = async () => {
+        // Nachfrage
+        if (!confirm(`📍 Diese Adresse übernehmen?\n\n${item.display_name}`)) return;
+
+        // Debug-Ausgabe in der Konsole
+        console.log("DEBUG: Adresse speichern", {
+          hutId,
           address: item.display_name,
-          location: new firebase.firestore.GeoPoint(parseFloat(item.lat), parseFloat(item.lon)),
-          status: "offen" // zurück in Freigabe-Prozess
-        }).then(() => {
+          lat: item.lat,
+          lon: item.lon
+        });
+
+        try {
+          await db.collection("eierhuetten").doc(hutId).update({
+            address: item.display_name,
+            location: new firebase.firestore.GeoPoint(
+              parseFloat(item.lat),
+              parseFloat(item.lon)
+            ),
+            status: "offen" // zurück zur Freigabe
+          });
+
           addMessage(`✅ Adresse gespeichert: ${item.display_name}`, "bot");
-          addMessage("⏳ Änderung wurde gespeichert und muss erneut durch einen Admin freigeschaltet werden.", "bot");
+          addMessage("⏳ Änderung gespeichert und muss erneut durch einen Admin freigeschaltet werden.", "bot");
+
           container.innerHTML = "";
           showMyHuts();
-        }).catch(err => {
-          console.error("❌ Fehler beim Speichern der Adresse:", err);
-          addMessage("❌ Fehler beim Speichern der Adresse.", "bot");
-        });
+        } catch (err) {
+          console.error("❌ Fehler beim Firestore-Update:", err);
+          addMessage("❌ Fehler beim Speichern der Adresse: " + err.message, "bot");
+        }
       };
+
       container.appendChild(div);
     });
   } catch (err) {
+    console.error("❌ Fehler bei der Adresssuche:", err);
     container.innerHTML = `<div class='text-red-500'>❌ Fehler: ${err.message}</div>`;
   }
 }
-
   
   async function geocodeAddress(address) {
   try {
