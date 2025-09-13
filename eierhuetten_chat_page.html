@@ -881,27 +881,47 @@ function enableAddressAutocomplete(hutId) {
 
 
 async function fetchAddressSuggestions(query, container, hutId) {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(query)}`;
-  const res = await fetch(url);
-  const data = await res.json();
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(query)}`;
+    const res = await fetch(url, { headers: { "User-Agent": "EierhuettenApp/1.0" } });
+    const data = await res.json();
 
-  container.innerHTML = "";
-  data.forEach(item => {
-    const div = document.createElement("div");
-    div.className = "p-2 bg-gray-100 hover:bg-green-100 cursor-pointer rounded";
-    div.textContent = item.display_name;
-    div.onclick = () => {
-      db.collection("eierhuetten").doc(hutId).update({
-        address: item.display_name,
-        location: new firebase.firestore.GeoPoint(parseFloat(item.lat), parseFloat(item.lon))
-      });
-      addMessage(`✅ Adresse gespeichert: ${item.display_name}`, "bot");
-      container.innerHTML = "";
-      showMyHuts();
-    };
-    container.appendChild(div);
-  });
+    container.innerHTML = "";
+    if (!data.length) {
+      container.innerHTML = "<div class='text-gray-500'>❌ Keine Ergebnisse</div>";
+      return;
+    }
+
+    data.forEach(item => {
+      const div = document.createElement("div");
+      div.className = "p-2 bg-gray-100 hover:bg-green-100 cursor-pointer rounded";
+      div.textContent = item.display_name;
+      div.onclick = () => {
+        // Nachfrage einbauen
+        if (!confirm(`📍 Diese Adresse übernehmen?\n\n${item.display_name}`)) {
+          return;
+        }
+
+        db.collection("eierhuetten").doc(hutId).update({
+          address: item.display_name,
+          location: new firebase.firestore.GeoPoint(parseFloat(item.lat), parseFloat(item.lon)),
+          status: "offen" // zurück in Freigabe-Prozess
+        }).then(() => {
+          addMessage(`✅ Adresse gespeichert: ${item.display_name}`, "bot");
+          addMessage("⏳ Änderung wurde gespeichert und muss erneut durch einen Admin freigeschaltet werden.", "bot");
+          container.innerHTML = "";
+          showMyHuts();
+        }).catch(err => {
+          console.error("❌ Fehler beim Speichern der Adresse:", err);
+          addMessage("❌ Fehler beim Speichern der Adresse.", "bot");
+        });
+      };
+      container.appendChild(div);
+    });
+  } catch (err) {
+    container.innerHTML = `<div class='text-red-500'>❌ Fehler: ${err.message}</div>`;
   }
+}
 
   
   async function geocodeAddress(address) {
