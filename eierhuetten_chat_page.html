@@ -583,6 +583,24 @@ if (txt.includes('meine spielplätze') || txt.includes('spielplätze anzeigen'))
           am: new Date().toISOString()
         }
       };
+      // 🆕 Hier neue hutId erzeugen
+    const docRef = db.collection("eierhuetten").doc();
+    editingData = {
+      id: docRef.id,
+      zustimmungDatenschutz: {
+        akzeptiert: true,
+        am: new Date().toISOString()
+      }
+    };
+
+    // 🆕 Leeres Dokument anlegen
+    await docRef.set({
+      userId: currentUser.uid,
+      erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+      status: "offen",
+      ...editingData
+    });
+
 
       addMessage('Wie soll deine neue Hütte heißen?', 'bot');
     });
@@ -877,42 +895,7 @@ function enableAddressAutocomplete(hutId) {
   });
 }
 
-async function fetchAddressSuggestions(query, container) {
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(query)}`;
-    const res = await fetch(url, { headers: { "User-Agent": "EierhuettenApp/1.0" } });
-    const data = await res.json();
 
-    container.innerHTML = "";
-
-    if (data.length === 0) {
-      container.innerHTML = "<div class='text-gray-500'>❌ Keine Ergebnisse</div>";
-      return;
-    }
-
-    data.forEach(item => {
-      const div = document.createElement("div");
-      div.className = "p-2 bg-gray-100 hover:bg-green-100 cursor-pointer rounded";
-      div.textContent = item.display_name;
-      div.onclick = () => {
-  const lat = parseFloat(item.lat);
-  const lon = parseFloat(item.lon);
-  editingData.location = new firebase.firestore.GeoPoint(lat, lon);
-  editingData.address = item.display_name; // <--- NEU
-
-  addMessage(`✅ Adresse gewählt: ${item.display_name}`, "bot");
-
-  container.innerHTML = "";
-  askForImageUpload();
-
-      };
-      container.appendChild(div);
-    });
-
-  } catch (err) {
-    container.innerHTML = `<div class='text-red-500'>❌ Fehler: ${err.message}</div>`;
-  }
-  }
 async function fetchAddressSuggestions(query, container, hutId) {
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(query)}`;
@@ -941,23 +924,23 @@ async function fetchAddressSuggestions(query, container, hutId) {
   });
 
   const docRef = db.collection("eierhuetten").doc(hutId);
+  const updateData = {
+    address: item.display_name,
+    location: new firebase.firestore.GeoPoint(
+      parseFloat(item.lat),
+      parseFloat(item.lon)
+    ),
+    status: "offen"
+  };
 
   try {
     const doc = await docRef.get();
-    const updateData = {
-      address: item.display_name,
-      location: new firebase.firestore.GeoPoint(
-        parseFloat(item.lat),
-        parseFloat(item.lon)
-      ),
-      status: "offen"
-    };
 
     if (doc.exists) {
-      // ✅ existiert → update()
+      // ✅ Dokument existiert → update
       await docRef.update(updateData);
     } else {
-      // 🆕 existiert NICHT → set() mit merge
+      // 🆕 Dokument existiert noch nicht → set
       await docRef.set(updateData, { merge: true });
     }
 
@@ -971,6 +954,7 @@ async function fetchAddressSuggestions(query, container, hutId) {
     addMessage("❌ Fehler beim Speichern der Adresse: " + err.message, "bot");
   }
 };
+
 
 
       container.appendChild(div);
