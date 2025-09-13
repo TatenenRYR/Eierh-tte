@@ -877,7 +877,62 @@ function enableAddressAutocomplete(hutId) {
   });
 }
 
+async function fetchAddressSuggestions(query, container, hutId) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(query)}`;
+    const res = await fetch(url, { headers: { "User-Agent": "EierhuettenApp/1.0" } });
+    const data = await res.json();
 
+    container.innerHTML = "";
+    if (!data.length) {
+      container.innerHTML = "<div class='text-gray-500'>❌ Keine Ergebnisse</div>";
+      return;
+    }
+
+    data.forEach(item => {
+      const div = document.createElement("div");
+      div.className = "p-2 bg-gray-100 hover:bg-green-100 cursor-pointer rounded";
+      div.textContent = item.display_name;
+
+      div.onclick = async () => {
+        if (!confirm(`📍 Diese Adresse übernehmen?\n\n${item.display_name}`)) return;
+
+        const docRef = db.collection("eierhuetten").doc(hutId);
+        const docSnap = await docRef.get();
+
+        if (!docSnap.exists) {
+          addMessage("❌ Fehler: Diese Hütte existiert nicht mehr.", "bot");
+          return;
+        }
+
+        try {
+          await docRef.update({
+            address: item.display_name,
+            location: new firebase.firestore.GeoPoint(
+              parseFloat(item.lat),
+              parseFloat(item.lon)
+            ),
+            status: "offen"
+          });
+
+          addMessage(`✅ Adresse gespeichert: ${item.display_name}`, "bot");
+          addMessage("⏳ Änderung gespeichert und muss erneut durch einen Admin freigeschaltet werden.", "bot");
+
+          container.innerHTML = "";
+          showMyHuts();
+        } catch (err) {
+          console.error("❌ Firestore-Update-Fehler:", err);
+          addMessage("❌ Fehler beim Speichern der Adresse: " + err.message, "bot");
+        }
+      };
+
+      container.appendChild(div);
+    });
+  } catch (err) {
+    console.error("❌ Adress-Suche-Fehler:", err);
+    container.innerHTML = `<div class='text-red-500'>❌ Fehler: ${err.message}</div>`;
+  }
+  }
 
 
 async function fetchAddressSuggestions(query, container, hutId) {
@@ -1164,8 +1219,101 @@ function saveSpielplatz(data) {
   }
 
 const filterStatus = true; // oder abhängig von UI-Einstellungen
-
 async function showMyHuts() {
+  const user = auth.currentUser;
+  if (!user) {
+    addMessage("❌ Du musst eingeloggt sein, um deine Hütten zu sehen.", "bot");
+    return;
+  }
+
+  try {
+    const snapshot = await db.collection("eierhuetten")
+      .where("owner", "==", user.uid)
+      .get();
+
+    if (snapshot.empty) {
+      addMessage("📭 Du hast noch keine Hütten eingetragen.", "bot");
+      return;
+    }
+
+    chatWindow.innerHTML = "";
+    addMessage("🏠 Deine Hütten:", "bot");
+
+    const docs = snapshot.docs.filter(doc => {
+      const status = doc.data().status;
+      return status !== "archiviert" || typeof status === "undefined";
+    });
+
+    docs.forEach(doc => {
+      const d = doc.data();
+      const id = doc.id;
+
+      const container = document.createElement("div");
+      container.className = "p-4 bg-white rounded-xl shadow mb-4 text-sm";
+
+      // HTML für die Hütte
+      container.innerHTML = `
+        <label>🏷️ Name:<br>
+          <input type='text' data-id='${id}' class='edit-name w-full border px-2 py-1 rounded'
+                 value='${d.name || ''}'/>
+        </label><br><br>
+
+        <label>📍 Adresse:<br>
+          <input type='text' id='address-input-${id}' 
+                 class='edit-address w-full border px-2 py-1 rounded' 
+                 value='${d.address || ''}' placeholder="Straße, Ort"/>
+          <div id="address-suggestions-${id}" class="mt-1 space-y-1"></div>
+        </label><br><br>
+
+        <label>🐾 Tiere:<br>
+          <div id="tiere-options-${id}" class="flex flex-wrap gap-2"></div>
+        </label><br>
+
+        <label>📝 Beschreibung:<br>
+          <div id="editor-${id}" class="quill-editor border rounded"></div>
+        </label><br>
+
+        <button class="choice-btn mt-2" onclick="saveEdit('${id}')">💾 Speichern</button>
+        <button class="choice-btn mt-2 bg-red-500 text-white" onclick="deleteHut('${id}')">🗑️ Löschen</button>
+      `;
+
+      chatWindow.appendChild(container);
+
+      // Tiere rendern
+      const tiere = ["🐐 Ziege", "🐄 Kuh", "🐓 Huhn", "🐕 Hund", "🐇 Hase"];
+      const tiereContainer = container.querySelector(`#tiere-options-${id}`);
+      const selectedTiere = d.tiere || [];
+      tiere.forEach(tier => {
+        const label = document.createElement("label");
+        label.className = "flex items-center gap-1";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = tier;
+        cb.checked = selectedTiere.includes(tier);
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(tier));
+        tiereContainer.appendChild(label);
+      });
+
+      // Quill Editor für Beschreibung
+      setTimeout(() => {
+        const quill = new Quill(`#editor-${id}`, { theme: 'snow' });
+        quill.root.innerHTML = d.beschreibung || "";
+        container.querySelector("button.choice-btn").onclick = () => saveEdit(id, quill);
+      }, 200);
+
+      // Adresse Autocomplete
+      setTimeout(() => enableAddressAutocomplete(id), 300);
+    });
+
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+  } catch (err) {
+    console.error("❌ Fehler beim Laden der Hütten:", err);
+    addMessage("❌ Fehler beim Laden deiner Hütten: " + err.message, "bot");
+  }
+}
+/*async function showMyHuts() {
   chatWindow.innerHTML = '';
 
   const snapshot = await db.collection('eierhuetten')
@@ -1251,8 +1399,8 @@ async function showMyHuts() {
             <input type='text' data-id='${id}' class='edit-zeiten w-full border px-2 py-1 rounded' value='${d.oeffnungszeiten || ''}' />
           </label><br>
 
-          <label>📍 Adresse:<br>
-  <input type='text' data-id='${id}' id='address-input-${id}' 
+<label>📍 Adresse:<br>
+  <input type='text' id='address-input-${id}' 
          class='edit-address w-full border px-2 py-1 rounded' 
          value='${d.address || ''}' placeholder="Straße, Ort"/>
   <div id="address-suggestions-${id}" class="mt-1 space-y-1"></div>
@@ -1370,43 +1518,38 @@ setTimeout(() => {
     }
     setTimeout(() => enableAddressAutocomplete(id), 200);
   });
+}*/
+
+async function saveEdit(id, quill = null) {
+  try {
+    const name = document.querySelector(`.edit-name[data-id='${id}']`)?.value || "";
+    const address = document.getElementById(`address-input-${id}`)?.value || "";
+
+    // Tiere sammeln
+    const tiereContainer = document.getElementById(`tiere-options-${id}`);
+    const tiere = [...tiereContainer.querySelectorAll("input[type=checkbox]:checked")]
+      .map(cb => cb.value);
+
+    // Beschreibung aus Quill oder Textfeld
+    const beschreibung = quill ? quill.root.innerHTML :
+      document.querySelector(`.edit-beschreibung[data-id='${id}']`)?.value || "";
+
+    await db.collection("eierhuetten").doc(id).update({
+      name,
+      address,
+      tiere,
+      beschreibung,
+      status: "offen"
+    });
+
+    addMessage("✅ Änderungen gespeichert. ⏳ Muss erneut durch Admin freigeschaltet werden.", "bot");
+    showMyHuts();
+
+  } catch (err) {
+    console.error("❌ Fehler beim Speichern:", err);
+    addMessage("❌ Fehler beim Speichern: " + err.message, "bot");
+  }
 }
-
-function saveEdit(id) {
-  const name = document.querySelector(`.edit-name[data-id='${id}']`)?.value || "";
-  const sitz = document.querySelector(`.edit-sitz[data-id='${id}']`)?.value || "";
-  const strom = document.querySelector(`.edit-strom[data-id='${id}']`)?.value || "";
-  const extras = document.querySelector(`.edit-extras[data-id='${id}']`)?.value || "";
-  const zeiten = document.querySelector(`.edit-zeiten[data-id='${id}']`)?.value || "";
-
-  const tiere = document.querySelector(`.edit-tiere[data-id='${id}']`)?.value || "";
-  const beschreibung = document.querySelector(`.edit-beschreibung[data-id='${id}']`)?.value || "";
-  const tagsRaw = document.querySelector(`.edit-tags[data-id='${id}']`)?.value || "";
-  const address = document.querySelector(`.edit-address[data-id='${id}']`)?.value || "";
-
-  // Tags in Array umwandeln & auf max. 5 begrenzen
-  const tags = tagsRaw.split(",")
-    .map(t => t.trim())
-    .filter(t => t.length > 0)
-    .slice(0, 5);
-
-  db.collection("eierhuetten").doc(id).update({
-    name,
-    sitzplaetze: sitz,
-    strom,
-    extras,
-    oeffnungszeiten: zeiten,
-    tiere,
-    beschreibung,
-    tags,
-    address
-  }).then(() => {
-    addMessage(`✅ Änderungen für "${name}" gespeichert.`, "bot");
-    showMyHuts(); // Ansicht neu laden
-  }).catch(err => {
-    addMessage(`❌ Fehler beim Speichern: ${err.message}`, "bot");
-  });
-    }
 
 async function deleteHut(id) {
   if (!confirm('❗ Möchtest du diese Hütte wirklich löschen?')) return;
