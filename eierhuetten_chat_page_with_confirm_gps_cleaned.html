@@ -1,0 +1,3387 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta name="google-adsense-account" content="ca-pub-2577915567428766">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hütten Assistent Chat </title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js">
+// ==========================
+// Helper: Draft speichern
+// ==========================
+async function saveDraft(id, partial = {}) {
+  if (!id) return;
+  try {
+    await db.collection('eierhuetten').doc(id).set({
+      ...partial,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.error('Fehler beim Speichern des Drafts:', err);
+  }
+}
+
+// ==========================
+// Utility: Geocoding
+// ==========================
+async function geocodeAddress(address) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
+    const res = await fetch(url, { headers: { "User-Agent": "EierhuettenApp/1.0" } });
+    const data = await res.json();
+    if (!data || !data.length) return null;
+    return {
+      lat: parseFloat(data[0].lat),
+      lng: parseFloat(data[0].lon),
+      display_name: data[0].display_name
+    };
+  } catch (err) {
+    console.error('geocodeAddress error', err);
+    return null;
+  }
+}
+
+// ==========================
+// Tags hochzählen
+// ==========================
+async function incrementTagCounts(tags) {
+  if (!tags || !tags.length) return;
+  const batch = db.batch();
+
+  tags.forEach(tag => {
+    const tagId = tag.toLowerCase().trim();
+    if (!tagId) return;
+    const ref = db.collection('tag_counts').doc(tagId);
+    batch.set(ref, { count: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+  });
+
+  try {
+    await batch.commit();
+    console.log("✅ Tags gezählt:", tags);
+  } catch (err) {
+    console.error("❌ Fehler beim Hochzählen der Tags:", err);
+  }
+}
+
+// ==========================
+// Tiere-Auswahl
+// ==========================
+function askForAnimals() {
+  addMessage("🐾 Welche Tiere gibt es an der Hütte? (Mehrfachauswahl möglich)", "bot");
+  const tiere = ["🐐 Ziege", "🐄 Kuh", "🐓 Huhn", "🐕 Hund", "🐇 Hase", "❌ Keine"];
+  editingData.tiere = editingData.tiere || [];
+
+  const container = document.createElement("div");
+  container.classList.add("message", "bot");
+
+  tiere.forEach(tier => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.textContent = tier;
+    btn.onclick = () => {
+      if (tier === "❌ Keine") {
+        editingData.tiere = [];
+        addMessage("❌ Keine Tiere ausgewählt", "bot");
+      } else {
+        if (!editingData.tiere.includes(tier)) editingData.tiere.push(tier);
+        addMessage(`✅ Aktuell gewählt: ${editingData.tiere.join(", ")}`, "bot");
+      }
+    };
+    container.appendChild(btn);
+  });
+
+  const weiterBtn = document.createElement("button");
+  weiterBtn.className = "choice-btn mt-2";
+  weiterBtn.textContent = "➡️ Weiter";
+  weiterBtn.onclick = async () => {
+    await saveDraft(editingData.id, { tiere: editingData.tiere });
+    step = "beschreibung_input";
+    addQuestionWithHelp("📝 Bitte gib eine kurze Beschreibung deiner Hütte ein:", "z. B. kleine Frühstücksecke, Hof mit Aussicht");
+  };
+  container.appendChild(weiterBtn);
+
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// ==========================
+// Finales Absenden
+// ==========================
+
+
+// ==========================
+// Adresseingabe-Schritt
+// ==========================
+
+
+// ==========================
+// GPS-Schritt
+// ==========================
+
+
+// ==========================
+// Vorschlags-System (Autocomplete)
+// ==========================
+const suggestionBox = document.createElement("div");
+suggestionBox.id = "suggestionBox";
+suggestionBox.className = "flex flex-wrap gap-2 mt-1";
+document.querySelector("#input-container").appendChild(suggestionBox);
+
+const inputField = document.getElementById("userInput");
+inputField.addEventListener("input", async () => {
+  const query = inputField.value.trim().toLowerCase();
+  suggestionBox.innerHTML = "";
+
+  if (!query || query.length < 2) return;
+
+  // Tags aus Firestore holen
+  const snapshot = await db.collection("tag_counts")
+    .orderBy("count", "desc")
+    .limit(20)
+    .get();
+
+  let tags = snapshot.docs.map(doc => doc.id);
+
+  // Filtern nach aktueller Eingabe
+  tags = tags.filter(tag => tag.startsWith(query));
+
+  // Optional: statische Vorschläge
+  const staticSuggestions = ["immer geöffnet", "schattig", "Getränke", "ruhig"];
+  staticSuggestions.forEach(s => {
+    if (s.toLowerCase().startsWith(query) && !tags.includes(s)) {
+      tags.push(s);
+    }
+  });
+
+  // UI rendern
+  tags.slice(0, 5).forEach(tag => {
+    const btn = document.createElement("button");
+    btn.className = "px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm";
+    btn.textContent = tag;
+    btn.onclick = () => {
+      inputField.value = tag;
+      suggestionBox.innerHTML = "";
+      inputField.focus();
+    };
+    suggestionBox.appendChild(btn);
+  });
+});
+
+
+// ==========================
+// Haversine + Nearby Location Check (20m)
+// ==========================
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const toRad = x => x * Math.PI / 180;
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δφ = toRad(lat2 - lat1);
+  const Δλ = toRad(lon2 - lon1);
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+async function locationExistsNearby(lat, lng, radius = 20) {
+  const delta = 0.00018;
+  const minLat = lat - delta, maxLat = lat + delta;
+  const minLng = lng - delta, maxLng = lng + delta;
+
+  const snapshot = await db.collection("eierhuetten")
+    .where("location", ">=", new firebase.firestore.GeoPoint(minLat, minLng))
+    .where("location", "<=", new firebase.firestore.GeoPoint(maxLat, maxLng))
+    .get();
+
+  if (snapshot.empty) return false;
+
+  for (let doc of snapshot.docs) {
+    const loc = doc.data().location;
+    if (!loc) continue;
+    const dist = haversineDistance(lat, lng, loc.latitude, loc.longitude);
+    if (dist <= radius) return true;
+  }
+  return false;
+}
+
+// ==========================
+// Submit New Hut mit Duplicate-Check
+// ==========================
+async function submitNewHut() {
+  if (!editingData || !editingData.id) {
+    addMessage('❌ Kein Hüttendatenkontext vorhanden. Bitte neu starten.', 'bot');
+    return;
+  }
+
+  if (!editingData.location) {
+    addMessage('⚠️ Es wurde noch kein Standort gespeichert. Bitte Adresse eingeben oder GPS wählen.', 'bot');
+    return;
+  }
+
+  const lat = editingData.location.latitude;
+  const lng = editingData.location.longitude;
+  if (await locationExistsNearby(lat, lng)) {
+    addMessage("⚠️ An der ausgewählten Stelle existiert bereits eine Hütte.", "bot");
+    return;
+  }
+
+  try {
+    const docRef = db.collection('eierhuetten').doc(editingData.id);
+
+    const final = {
+      ...editingData,
+      fotos: (editingData.fotos || []).filter(f => f && f.url),
+      userId: currentUser.uid,
+      status: 'offen',
+      erstelltAm: editingData.createdAt || firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    await docRef.set(final, { merge: true });
+
+    if (final.tags && final.tags.length) {
+      await incrementTagCounts(final.tags);
+    }
+
+    addMessage('✅ Vielen Dank für das Einreichen deiner Hütte!', 'bot');
+    addMessage('👀 Unser Team prüft deinen Vorschlag nun sorgfältig.', 'bot');
+    addMessage('⏳ Sobald die Hütte freigegeben ist, erscheint sie für alle Nutzer sichtbar.', 'bot');
+
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'message bot';
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = '➡️ Meine Hütten anzeigen';
+    btn.onclick = () => showMyHuts();
+    btnContainer.appendChild(btn);
+    chatWindow.appendChild(btnContainer);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    step = null;
+    editingData = {};
+  } catch (err) {
+    console.error('submitNewHut error', err);
+    addMessage('❌ Fehler beim Abschicken der Hütte: ' + err.message, 'bot');
+  }
+}
+
+// ==========================
+// Address Input Handling
+// ==========================
+
+async function handleAddressInput(txt) {
+  const address = txt.trim();
+  const coords = await geocodeAddress(address);
+  if (!coords) {
+    addMessage("❌ Adresse konnte nicht gefunden werden. Bitte erneut eingeben.", "bot");
+    return;
+  }
+
+  editingData.address = coords.display_name;
+  editingData.location = new firebase.firestore.GeoPoint(coords.lat, coords.lng);
+
+  showLocationConfirmation(coords.lat, coords.lng, editingData.address);
+}
+
+
+// ==========================
+// GPS Location Handling
+// ==========================
+async function handleGPSLocation(lat, lng) {
+  editingData.location = new firebase.firestore.GeoPoint(lat, lng);
+  await saveDraft(editingData.id, { location: editingData.location });
+  await submitNewHut();
+}
+
+// ==========================
+// Tag Suggestions (Chat-Style mit Count)
+// ==========================
+async function showTagSuggestions(query) {
+  const suggestionContainer = document.createElement("div");
+  suggestionContainer.className = "message bot";
+
+  const snapshot = await db.collection("tag_counts")
+    .orderBy("count", "desc")
+    .limit(10)
+    .get();
+
+  let tags = snapshot.docs.map(doc => ({
+    tag: doc.id,
+    count: doc.data().count || 0
+  }));
+
+  tags = tags.filter(t => t.tag.startsWith(query.toLowerCase()));
+  if (!tags.length) return;
+
+  tags.forEach(({tag, count}) => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.textContent = `${tag} (${count})`;
+    btn.onclick = () => {
+      document.getElementById("userInput").value = tag;
+    };
+    suggestionContainer.appendChild(btn);
+  });
+
+  chatWindow.appendChild(suggestionContainer);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// Hook ins Input (nur wenn step tags_input)
+inputField.addEventListener("input", async () => {
+  if (typeof step !== "undefined" && step === "tags_input") {
+    const query = inputField.value.trim().toLowerCase();
+    if (query.length >= 2) {
+      await showTagSuggestions(query);
+    }
+  }
+});
+
+
+function showLocationConfirmation(lat, lng, displayName) {
+  addMessage(`📍 Gefundene Adresse: ${displayName}`, "bot");
+
+  const mapId = "confirm-map-" + Date.now();
+  const div = document.createElement("div");
+  div.className = "message bot";
+  div.innerHTML = `<div id="${mapId}" class="h-60 rounded border"></div>`;
+  chatWindow.appendChild(div);
+
+  setTimeout(() => {
+    const map = L.map(mapId).setView([lat, lng], 16);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+    const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+
+    marker.on("dragend", e => {
+      const pos = e.target.getLatLng();
+      editingData.location = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
+    });
+
+    editingData.location = new firebase.firestore.GeoPoint(lat, lng);
+  }, 200);
+
+  const btns = document.createElement("div");
+  btns.className = "message bot";
+  btns.innerHTML = `
+    <button class="choice-btn" onclick="confirmLocation()">✅ Ja, passt</button>
+    <button class="choice-btn" onclick="retryLocation()">🔄 Neu wählen</button>
+  `;
+  chatWindow.appendChild(btns);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function confirmLocation() {
+  addMessage("✅ Standort gespeichert.", "bot");
+  addMessage("⏳ Dein Vorschlag wird nun vom Team geprüft und nach Freigabe sichtbar.", "bot");
+  submitNewHut();
+}
+
+function retryLocation() {
+  addMessage("🔄 Bitte gib eine neue Adresse ein:", "bot");
+  step = "address_input";
+}
+
+</script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js">
+// ==========================
+// Helper: Draft speichern
+// ==========================
+async function saveDraft(id, partial = {}) {
+  if (!id) return;
+  try {
+    await db.collection('eierhuetten').doc(id).set({
+      ...partial,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.error('Fehler beim Speichern des Drafts:', err);
+  }
+}
+
+// ==========================
+// Utility: Geocoding
+// ==========================
+async function geocodeAddress(address) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
+    const res = await fetch(url, { headers: { "User-Agent": "EierhuettenApp/1.0" } });
+    const data = await res.json();
+    if (!data || !data.length) return null;
+    return {
+      lat: parseFloat(data[0].lat),
+      lng: parseFloat(data[0].lon),
+      display_name: data[0].display_name
+    };
+  } catch (err) {
+    console.error('geocodeAddress error', err);
+    return null;
+  }
+}
+
+// ==========================
+// Tags hochzählen
+// ==========================
+async function incrementTagCounts(tags) {
+  if (!tags || !tags.length) return;
+  const batch = db.batch();
+
+  tags.forEach(tag => {
+    const tagId = tag.toLowerCase().trim();
+    if (!tagId) return;
+    const ref = db.collection('tag_counts').doc(tagId);
+    batch.set(ref, { count: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+  });
+
+  try {
+    await batch.commit();
+    console.log("✅ Tags gezählt:", tags);
+  } catch (err) {
+    console.error("❌ Fehler beim Hochzählen der Tags:", err);
+  }
+}
+
+// ==========================
+// Tiere-Auswahl
+// ==========================
+function askForAnimals() {
+  addMessage("🐾 Welche Tiere gibt es an der Hütte? (Mehrfachauswahl möglich)", "bot");
+  const tiere = ["🐐 Ziege", "🐄 Kuh", "🐓 Huhn", "🐕 Hund", "🐇 Hase", "❌ Keine"];
+  editingData.tiere = editingData.tiere || [];
+
+  const container = document.createElement("div");
+  container.classList.add("message", "bot");
+
+  tiere.forEach(tier => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.textContent = tier;
+    btn.onclick = () => {
+      if (tier === "❌ Keine") {
+        editingData.tiere = [];
+        addMessage("❌ Keine Tiere ausgewählt", "bot");
+      } else {
+        if (!editingData.tiere.includes(tier)) editingData.tiere.push(tier);
+        addMessage(`✅ Aktuell gewählt: ${editingData.tiere.join(", ")}`, "bot");
+      }
+    };
+    container.appendChild(btn);
+  });
+
+  const weiterBtn = document.createElement("button");
+  weiterBtn.className = "choice-btn mt-2";
+  weiterBtn.textContent = "➡️ Weiter";
+  weiterBtn.onclick = async () => {
+    await saveDraft(editingData.id, { tiere: editingData.tiere });
+    step = "beschreibung_input";
+    addQuestionWithHelp("📝 Bitte gib eine kurze Beschreibung deiner Hütte ein:", "z. B. kleine Frühstücksecke, Hof mit Aussicht");
+  };
+  container.appendChild(weiterBtn);
+
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// ==========================
+// Finales Absenden
+// ==========================
+
+
+// ==========================
+// Adresseingabe-Schritt
+// ==========================
+
+
+// ==========================
+// GPS-Schritt
+// ==========================
+
+
+// ==========================
+// Vorschlags-System (Autocomplete)
+// ==========================
+const suggestionBox = document.createElement("div");
+suggestionBox.id = "suggestionBox";
+suggestionBox.className = "flex flex-wrap gap-2 mt-1";
+document.querySelector("#input-container").appendChild(suggestionBox);
+
+const inputField = document.getElementById("userInput");
+inputField.addEventListener("input", async () => {
+  const query = inputField.value.trim().toLowerCase();
+  suggestionBox.innerHTML = "";
+
+  if (!query || query.length < 2) return;
+
+  // Tags aus Firestore holen
+  const snapshot = await db.collection("tag_counts")
+    .orderBy("count", "desc")
+    .limit(20)
+    .get();
+
+  let tags = snapshot.docs.map(doc => doc.id);
+
+  // Filtern nach aktueller Eingabe
+  tags = tags.filter(tag => tag.startsWith(query));
+
+  // Optional: statische Vorschläge
+  const staticSuggestions = ["immer geöffnet", "schattig", "Getränke", "ruhig"];
+  staticSuggestions.forEach(s => {
+    if (s.toLowerCase().startsWith(query) && !tags.includes(s)) {
+      tags.push(s);
+    }
+  });
+
+  // UI rendern
+  tags.slice(0, 5).forEach(tag => {
+    const btn = document.createElement("button");
+    btn.className = "px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm";
+    btn.textContent = tag;
+    btn.onclick = () => {
+      inputField.value = tag;
+      suggestionBox.innerHTML = "";
+      inputField.focus();
+    };
+    suggestionBox.appendChild(btn);
+  });
+});
+
+
+// ==========================
+// Haversine + Nearby Location Check (20m)
+// ==========================
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const toRad = x => x * Math.PI / 180;
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δφ = toRad(lat2 - lat1);
+  const Δλ = toRad(lon2 - lon1);
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+async function locationExistsNearby(lat, lng, radius = 20) {
+  const delta = 0.00018;
+  const minLat = lat - delta, maxLat = lat + delta;
+  const minLng = lng - delta, maxLng = lng + delta;
+
+  const snapshot = await db.collection("eierhuetten")
+    .where("location", ">=", new firebase.firestore.GeoPoint(minLat, minLng))
+    .where("location", "<=", new firebase.firestore.GeoPoint(maxLat, maxLng))
+    .get();
+
+  if (snapshot.empty) return false;
+
+  for (let doc of snapshot.docs) {
+    const loc = doc.data().location;
+    if (!loc) continue;
+    const dist = haversineDistance(lat, lng, loc.latitude, loc.longitude);
+    if (dist <= radius) return true;
+  }
+  return false;
+}
+
+// ==========================
+// Submit New Hut mit Duplicate-Check
+// ==========================
+async function submitNewHut() {
+  if (!editingData || !editingData.id) {
+    addMessage('❌ Kein Hüttendatenkontext vorhanden. Bitte neu starten.', 'bot');
+    return;
+  }
+
+  if (!editingData.location) {
+    addMessage('⚠️ Es wurde noch kein Standort gespeichert. Bitte Adresse eingeben oder GPS wählen.', 'bot');
+    return;
+  }
+
+  const lat = editingData.location.latitude;
+  const lng = editingData.location.longitude;
+  if (await locationExistsNearby(lat, lng)) {
+    addMessage("⚠️ An der ausgewählten Stelle existiert bereits eine Hütte.", "bot");
+    return;
+  }
+
+  try {
+    const docRef = db.collection('eierhuetten').doc(editingData.id);
+
+    const final = {
+      ...editingData,
+      fotos: (editingData.fotos || []).filter(f => f && f.url),
+      userId: currentUser.uid,
+      status: 'offen',
+      erstelltAm: editingData.createdAt || firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    await docRef.set(final, { merge: true });
+
+    if (final.tags && final.tags.length) {
+      await incrementTagCounts(final.tags);
+    }
+
+    addMessage('✅ Vielen Dank für das Einreichen deiner Hütte!', 'bot');
+    addMessage('👀 Unser Team prüft deinen Vorschlag nun sorgfältig.', 'bot');
+    addMessage('⏳ Sobald die Hütte freigegeben ist, erscheint sie für alle Nutzer sichtbar.', 'bot');
+
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'message bot';
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = '➡️ Meine Hütten anzeigen';
+    btn.onclick = () => showMyHuts();
+    btnContainer.appendChild(btn);
+    chatWindow.appendChild(btnContainer);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    step = null;
+    editingData = {};
+  } catch (err) {
+    console.error('submitNewHut error', err);
+    addMessage('❌ Fehler beim Abschicken der Hütte: ' + err.message, 'bot');
+  }
+}
+
+// ==========================
+// Address Input Handling
+// ==========================
+
+async function handleAddressInput(txt) {
+  const address = txt.trim();
+  const coords = await geocodeAddress(address);
+  if (!coords) {
+    addMessage("❌ Adresse konnte nicht gefunden werden. Bitte erneut eingeben.", "bot");
+    return;
+  }
+
+  editingData.address = coords.display_name;
+  editingData.location = new firebase.firestore.GeoPoint(coords.lat, coords.lng);
+
+  showLocationConfirmation(coords.lat, coords.lng, editingData.address);
+}
+
+
+// ==========================
+// GPS Location Handling
+// ==========================
+async function handleGPSLocation(lat, lng) {
+  editingData.location = new firebase.firestore.GeoPoint(lat, lng);
+  await saveDraft(editingData.id, { location: editingData.location });
+  await submitNewHut();
+}
+
+// ==========================
+// Tag Suggestions (Chat-Style mit Count)
+// ==========================
+async function showTagSuggestions(query) {
+  const suggestionContainer = document.createElement("div");
+  suggestionContainer.className = "message bot";
+
+  const snapshot = await db.collection("tag_counts")
+    .orderBy("count", "desc")
+    .limit(10)
+    .get();
+
+  let tags = snapshot.docs.map(doc => ({
+    tag: doc.id,
+    count: doc.data().count || 0
+  }));
+
+  tags = tags.filter(t => t.tag.startsWith(query.toLowerCase()));
+  if (!tags.length) return;
+
+  tags.forEach(({tag, count}) => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.textContent = `${tag} (${count})`;
+    btn.onclick = () => {
+      document.getElementById("userInput").value = tag;
+    };
+    suggestionContainer.appendChild(btn);
+  });
+
+  chatWindow.appendChild(suggestionContainer);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// Hook ins Input (nur wenn step tags_input)
+inputField.addEventListener("input", async () => {
+  if (typeof step !== "undefined" && step === "tags_input") {
+    const query = inputField.value.trim().toLowerCase();
+    if (query.length >= 2) {
+      await showTagSuggestions(query);
+    }
+  }
+});
+
+
+function showLocationConfirmation(lat, lng, displayName) {
+  addMessage(`📍 Gefundene Adresse: ${displayName}`, "bot");
+
+  const mapId = "confirm-map-" + Date.now();
+  const div = document.createElement("div");
+  div.className = "message bot";
+  div.innerHTML = `<div id="${mapId}" class="h-60 rounded border"></div>`;
+  chatWindow.appendChild(div);
+
+  setTimeout(() => {
+    const map = L.map(mapId).setView([lat, lng], 16);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+    const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+
+    marker.on("dragend", e => {
+      const pos = e.target.getLatLng();
+      editingData.location = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
+    });
+
+    editingData.location = new firebase.firestore.GeoPoint(lat, lng);
+  }, 200);
+
+  const btns = document.createElement("div");
+  btns.className = "message bot";
+  btns.innerHTML = `
+    <button class="choice-btn" onclick="confirmLocation()">✅ Ja, passt</button>
+    <button class="choice-btn" onclick="retryLocation()">🔄 Neu wählen</button>
+  `;
+  chatWindow.appendChild(btns);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function confirmLocation() {
+  addMessage("✅ Standort gespeichert.", "bot");
+  addMessage("⏳ Dein Vorschlag wird nun vom Team geprüft und nach Freigabe sichtbar.", "bot");
+  submitNewHut();
+}
+
+function retryLocation() {
+  addMessage("🔄 Bitte gib eine neue Adresse ein:", "bot");
+  step = "address_input";
+}
+
+</script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js">
+// ==========================
+// Helper: Draft speichern
+// ==========================
+async function saveDraft(id, partial = {}) {
+  if (!id) return;
+  try {
+    await db.collection('eierhuetten').doc(id).set({
+      ...partial,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.error('Fehler beim Speichern des Drafts:', err);
+  }
+}
+
+// ==========================
+// Utility: Geocoding
+// ==========================
+async function geocodeAddress(address) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
+    const res = await fetch(url, { headers: { "User-Agent": "EierhuettenApp/1.0" } });
+    const data = await res.json();
+    if (!data || !data.length) return null;
+    return {
+      lat: parseFloat(data[0].lat),
+      lng: parseFloat(data[0].lon),
+      display_name: data[0].display_name
+    };
+  } catch (err) {
+    console.error('geocodeAddress error', err);
+    return null;
+  }
+}
+
+// ==========================
+// Tags hochzählen
+// ==========================
+async function incrementTagCounts(tags) {
+  if (!tags || !tags.length) return;
+  const batch = db.batch();
+
+  tags.forEach(tag => {
+    const tagId = tag.toLowerCase().trim();
+    if (!tagId) return;
+    const ref = db.collection('tag_counts').doc(tagId);
+    batch.set(ref, { count: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+  });
+
+  try {
+    await batch.commit();
+    console.log("✅ Tags gezählt:", tags);
+  } catch (err) {
+    console.error("❌ Fehler beim Hochzählen der Tags:", err);
+  }
+}
+
+// ==========================
+// Tiere-Auswahl
+// ==========================
+function askForAnimals() {
+  addMessage("🐾 Welche Tiere gibt es an der Hütte? (Mehrfachauswahl möglich)", "bot");
+  const tiere = ["🐐 Ziege", "🐄 Kuh", "🐓 Huhn", "🐕 Hund", "🐇 Hase", "❌ Keine"];
+  editingData.tiere = editingData.tiere || [];
+
+  const container = document.createElement("div");
+  container.classList.add("message", "bot");
+
+  tiere.forEach(tier => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.textContent = tier;
+    btn.onclick = () => {
+      if (tier === "❌ Keine") {
+        editingData.tiere = [];
+        addMessage("❌ Keine Tiere ausgewählt", "bot");
+      } else {
+        if (!editingData.tiere.includes(tier)) editingData.tiere.push(tier);
+        addMessage(`✅ Aktuell gewählt: ${editingData.tiere.join(", ")}`, "bot");
+      }
+    };
+    container.appendChild(btn);
+  });
+
+  const weiterBtn = document.createElement("button");
+  weiterBtn.className = "choice-btn mt-2";
+  weiterBtn.textContent = "➡️ Weiter";
+  weiterBtn.onclick = async () => {
+    await saveDraft(editingData.id, { tiere: editingData.tiere });
+    step = "beschreibung_input";
+    addQuestionWithHelp("📝 Bitte gib eine kurze Beschreibung deiner Hütte ein:", "z. B. kleine Frühstücksecke, Hof mit Aussicht");
+  };
+  container.appendChild(weiterBtn);
+
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// ==========================
+// Finales Absenden
+// ==========================
+
+
+// ==========================
+// Adresseingabe-Schritt
+// ==========================
+
+
+// ==========================
+// GPS-Schritt
+// ==========================
+
+
+// ==========================
+// Vorschlags-System (Autocomplete)
+// ==========================
+const suggestionBox = document.createElement("div");
+suggestionBox.id = "suggestionBox";
+suggestionBox.className = "flex flex-wrap gap-2 mt-1";
+document.querySelector("#input-container").appendChild(suggestionBox);
+
+const inputField = document.getElementById("userInput");
+inputField.addEventListener("input", async () => {
+  const query = inputField.value.trim().toLowerCase();
+  suggestionBox.innerHTML = "";
+
+  if (!query || query.length < 2) return;
+
+  // Tags aus Firestore holen
+  const snapshot = await db.collection("tag_counts")
+    .orderBy("count", "desc")
+    .limit(20)
+    .get();
+
+  let tags = snapshot.docs.map(doc => doc.id);
+
+  // Filtern nach aktueller Eingabe
+  tags = tags.filter(tag => tag.startsWith(query));
+
+  // Optional: statische Vorschläge
+  const staticSuggestions = ["immer geöffnet", "schattig", "Getränke", "ruhig"];
+  staticSuggestions.forEach(s => {
+    if (s.toLowerCase().startsWith(query) && !tags.includes(s)) {
+      tags.push(s);
+    }
+  });
+
+  // UI rendern
+  tags.slice(0, 5).forEach(tag => {
+    const btn = document.createElement("button");
+    btn.className = "px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm";
+    btn.textContent = tag;
+    btn.onclick = () => {
+      inputField.value = tag;
+      suggestionBox.innerHTML = "";
+      inputField.focus();
+    };
+    suggestionBox.appendChild(btn);
+  });
+});
+
+
+// ==========================
+// Haversine + Nearby Location Check (20m)
+// ==========================
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const toRad = x => x * Math.PI / 180;
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δφ = toRad(lat2 - lat1);
+  const Δλ = toRad(lon2 - lon1);
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+async function locationExistsNearby(lat, lng, radius = 20) {
+  const delta = 0.00018;
+  const minLat = lat - delta, maxLat = lat + delta;
+  const minLng = lng - delta, maxLng = lng + delta;
+
+  const snapshot = await db.collection("eierhuetten")
+    .where("location", ">=", new firebase.firestore.GeoPoint(minLat, minLng))
+    .where("location", "<=", new firebase.firestore.GeoPoint(maxLat, maxLng))
+    .get();
+
+  if (snapshot.empty) return false;
+
+  for (let doc of snapshot.docs) {
+    const loc = doc.data().location;
+    if (!loc) continue;
+    const dist = haversineDistance(lat, lng, loc.latitude, loc.longitude);
+    if (dist <= radius) return true;
+  }
+  return false;
+}
+
+// ==========================
+// Submit New Hut mit Duplicate-Check
+// ==========================
+async function submitNewHut() {
+  if (!editingData || !editingData.id) {
+    addMessage('❌ Kein Hüttendatenkontext vorhanden. Bitte neu starten.', 'bot');
+    return;
+  }
+
+  if (!editingData.location) {
+    addMessage('⚠️ Es wurde noch kein Standort gespeichert. Bitte Adresse eingeben oder GPS wählen.', 'bot');
+    return;
+  }
+
+  const lat = editingData.location.latitude;
+  const lng = editingData.location.longitude;
+  if (await locationExistsNearby(lat, lng)) {
+    addMessage("⚠️ An der ausgewählten Stelle existiert bereits eine Hütte.", "bot");
+    return;
+  }
+
+  try {
+    const docRef = db.collection('eierhuetten').doc(editingData.id);
+
+    const final = {
+      ...editingData,
+      fotos: (editingData.fotos || []).filter(f => f && f.url),
+      userId: currentUser.uid,
+      status: 'offen',
+      erstelltAm: editingData.createdAt || firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    await docRef.set(final, { merge: true });
+
+    if (final.tags && final.tags.length) {
+      await incrementTagCounts(final.tags);
+    }
+
+    addMessage('✅ Vielen Dank für das Einreichen deiner Hütte!', 'bot');
+    addMessage('👀 Unser Team prüft deinen Vorschlag nun sorgfältig.', 'bot');
+    addMessage('⏳ Sobald die Hütte freigegeben ist, erscheint sie für alle Nutzer sichtbar.', 'bot');
+
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'message bot';
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = '➡️ Meine Hütten anzeigen';
+    btn.onclick = () => showMyHuts();
+    btnContainer.appendChild(btn);
+    chatWindow.appendChild(btnContainer);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    step = null;
+    editingData = {};
+  } catch (err) {
+    console.error('submitNewHut error', err);
+    addMessage('❌ Fehler beim Abschicken der Hütte: ' + err.message, 'bot');
+  }
+}
+
+// ==========================
+// Address Input Handling
+// ==========================
+
+async function handleAddressInput(txt) {
+  const address = txt.trim();
+  const coords = await geocodeAddress(address);
+  if (!coords) {
+    addMessage("❌ Adresse konnte nicht gefunden werden. Bitte erneut eingeben.", "bot");
+    return;
+  }
+
+  editingData.address = coords.display_name;
+  editingData.location = new firebase.firestore.GeoPoint(coords.lat, coords.lng);
+
+  showLocationConfirmation(coords.lat, coords.lng, editingData.address);
+}
+
+
+// ==========================
+// GPS Location Handling
+// ==========================
+async function handleGPSLocation(lat, lng) {
+  editingData.location = new firebase.firestore.GeoPoint(lat, lng);
+  await saveDraft(editingData.id, { location: editingData.location });
+  await submitNewHut();
+}
+
+// ==========================
+// Tag Suggestions (Chat-Style mit Count)
+// ==========================
+async function showTagSuggestions(query) {
+  const suggestionContainer = document.createElement("div");
+  suggestionContainer.className = "message bot";
+
+  const snapshot = await db.collection("tag_counts")
+    .orderBy("count", "desc")
+    .limit(10)
+    .get();
+
+  let tags = snapshot.docs.map(doc => ({
+    tag: doc.id,
+    count: doc.data().count || 0
+  }));
+
+  tags = tags.filter(t => t.tag.startsWith(query.toLowerCase()));
+  if (!tags.length) return;
+
+  tags.forEach(({tag, count}) => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.textContent = `${tag} (${count})`;
+    btn.onclick = () => {
+      document.getElementById("userInput").value = tag;
+    };
+    suggestionContainer.appendChild(btn);
+  });
+
+  chatWindow.appendChild(suggestionContainer);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// Hook ins Input (nur wenn step tags_input)
+inputField.addEventListener("input", async () => {
+  if (typeof step !== "undefined" && step === "tags_input") {
+    const query = inputField.value.trim().toLowerCase();
+    if (query.length >= 2) {
+      await showTagSuggestions(query);
+    }
+  }
+});
+
+
+function showLocationConfirmation(lat, lng, displayName) {
+  addMessage(`📍 Gefundene Adresse: ${displayName}`, "bot");
+
+  const mapId = "confirm-map-" + Date.now();
+  const div = document.createElement("div");
+  div.className = "message bot";
+  div.innerHTML = `<div id="${mapId}" class="h-60 rounded border"></div>`;
+  chatWindow.appendChild(div);
+
+  setTimeout(() => {
+    const map = L.map(mapId).setView([lat, lng], 16);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+    const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+
+    marker.on("dragend", e => {
+      const pos = e.target.getLatLng();
+      editingData.location = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
+    });
+
+    editingData.location = new firebase.firestore.GeoPoint(lat, lng);
+  }, 200);
+
+  const btns = document.createElement("div");
+  btns.className = "message bot";
+  btns.innerHTML = `
+    <button class="choice-btn" onclick="confirmLocation()">✅ Ja, passt</button>
+    <button class="choice-btn" onclick="retryLocation()">🔄 Neu wählen</button>
+  `;
+  chatWindow.appendChild(btns);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function confirmLocation() {
+  addMessage("✅ Standort gespeichert.", "bot");
+  addMessage("⏳ Dein Vorschlag wird nun vom Team geprüft und nach Freigabe sichtbar.", "bot");
+  submitNewHut();
+}
+
+function retryLocation() {
+  addMessage("🔄 Bitte gib eine neue Adresse ein:", "bot");
+  step = "address_input";
+}
+
+</script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-storage-compat.js">
+// ==========================
+// Helper: Draft speichern
+// ==========================
+async function saveDraft(id, partial = {}) {
+  if (!id) return;
+  try {
+    await db.collection('eierhuetten').doc(id).set({
+      ...partial,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.error('Fehler beim Speichern des Drafts:', err);
+  }
+}
+
+// ==========================
+// Utility: Geocoding
+// ==========================
+async function geocodeAddress(address) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
+    const res = await fetch(url, { headers: { "User-Agent": "EierhuettenApp/1.0" } });
+    const data = await res.json();
+    if (!data || !data.length) return null;
+    return {
+      lat: parseFloat(data[0].lat),
+      lng: parseFloat(data[0].lon),
+      display_name: data[0].display_name
+    };
+  } catch (err) {
+    console.error('geocodeAddress error', err);
+    return null;
+  }
+}
+
+// ==========================
+// Tags hochzählen
+// ==========================
+async function incrementTagCounts(tags) {
+  if (!tags || !tags.length) return;
+  const batch = db.batch();
+
+  tags.forEach(tag => {
+    const tagId = tag.toLowerCase().trim();
+    if (!tagId) return;
+    const ref = db.collection('tag_counts').doc(tagId);
+    batch.set(ref, { count: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+  });
+
+  try {
+    await batch.commit();
+    console.log("✅ Tags gezählt:", tags);
+  } catch (err) {
+    console.error("❌ Fehler beim Hochzählen der Tags:", err);
+  }
+}
+
+// ==========================
+// Tiere-Auswahl
+// ==========================
+function askForAnimals() {
+  addMessage("🐾 Welche Tiere gibt es an der Hütte? (Mehrfachauswahl möglich)", "bot");
+  const tiere = ["🐐 Ziege", "🐄 Kuh", "🐓 Huhn", "🐕 Hund", "🐇 Hase", "❌ Keine"];
+  editingData.tiere = editingData.tiere || [];
+
+  const container = document.createElement("div");
+  container.classList.add("message", "bot");
+
+  tiere.forEach(tier => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.textContent = tier;
+    btn.onclick = () => {
+      if (tier === "❌ Keine") {
+        editingData.tiere = [];
+        addMessage("❌ Keine Tiere ausgewählt", "bot");
+      } else {
+        if (!editingData.tiere.includes(tier)) editingData.tiere.push(tier);
+        addMessage(`✅ Aktuell gewählt: ${editingData.tiere.join(", ")}`, "bot");
+      }
+    };
+    container.appendChild(btn);
+  });
+
+  const weiterBtn = document.createElement("button");
+  weiterBtn.className = "choice-btn mt-2";
+  weiterBtn.textContent = "➡️ Weiter";
+  weiterBtn.onclick = async () => {
+    await saveDraft(editingData.id, { tiere: editingData.tiere });
+    step = "beschreibung_input";
+    addQuestionWithHelp("📝 Bitte gib eine kurze Beschreibung deiner Hütte ein:", "z. B. kleine Frühstücksecke, Hof mit Aussicht");
+  };
+  container.appendChild(weiterBtn);
+
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// ==========================
+// Finales Absenden
+// ==========================
+
+
+// ==========================
+// Adresseingabe-Schritt
+// ==========================
+
+
+// ==========================
+// GPS-Schritt
+// ==========================
+
+
+// ==========================
+// Vorschlags-System (Autocomplete)
+// ==========================
+const suggestionBox = document.createElement("div");
+suggestionBox.id = "suggestionBox";
+suggestionBox.className = "flex flex-wrap gap-2 mt-1";
+document.querySelector("#input-container").appendChild(suggestionBox);
+
+const inputField = document.getElementById("userInput");
+inputField.addEventListener("input", async () => {
+  const query = inputField.value.trim().toLowerCase();
+  suggestionBox.innerHTML = "";
+
+  if (!query || query.length < 2) return;
+
+  // Tags aus Firestore holen
+  const snapshot = await db.collection("tag_counts")
+    .orderBy("count", "desc")
+    .limit(20)
+    .get();
+
+  let tags = snapshot.docs.map(doc => doc.id);
+
+  // Filtern nach aktueller Eingabe
+  tags = tags.filter(tag => tag.startsWith(query));
+
+  // Optional: statische Vorschläge
+  const staticSuggestions = ["immer geöffnet", "schattig", "Getränke", "ruhig"];
+  staticSuggestions.forEach(s => {
+    if (s.toLowerCase().startsWith(query) && !tags.includes(s)) {
+      tags.push(s);
+    }
+  });
+
+  // UI rendern
+  tags.slice(0, 5).forEach(tag => {
+    const btn = document.createElement("button");
+    btn.className = "px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm";
+    btn.textContent = tag;
+    btn.onclick = () => {
+      inputField.value = tag;
+      suggestionBox.innerHTML = "";
+      inputField.focus();
+    };
+    suggestionBox.appendChild(btn);
+  });
+});
+
+
+// ==========================
+// Haversine + Nearby Location Check (20m)
+// ==========================
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const toRad = x => x * Math.PI / 180;
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δφ = toRad(lat2 - lat1);
+  const Δλ = toRad(lon2 - lon1);
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+async function locationExistsNearby(lat, lng, radius = 20) {
+  const delta = 0.00018;
+  const minLat = lat - delta, maxLat = lat + delta;
+  const minLng = lng - delta, maxLng = lng + delta;
+
+  const snapshot = await db.collection("eierhuetten")
+    .where("location", ">=", new firebase.firestore.GeoPoint(minLat, minLng))
+    .where("location", "<=", new firebase.firestore.GeoPoint(maxLat, maxLng))
+    .get();
+
+  if (snapshot.empty) return false;
+
+  for (let doc of snapshot.docs) {
+    const loc = doc.data().location;
+    if (!loc) continue;
+    const dist = haversineDistance(lat, lng, loc.latitude, loc.longitude);
+    if (dist <= radius) return true;
+  }
+  return false;
+}
+
+// ==========================
+// Submit New Hut mit Duplicate-Check
+// ==========================
+async function submitNewHut() {
+  if (!editingData || !editingData.id) {
+    addMessage('❌ Kein Hüttendatenkontext vorhanden. Bitte neu starten.', 'bot');
+    return;
+  }
+
+  if (!editingData.location) {
+    addMessage('⚠️ Es wurde noch kein Standort gespeichert. Bitte Adresse eingeben oder GPS wählen.', 'bot');
+    return;
+  }
+
+  const lat = editingData.location.latitude;
+  const lng = editingData.location.longitude;
+  if (await locationExistsNearby(lat, lng)) {
+    addMessage("⚠️ An der ausgewählten Stelle existiert bereits eine Hütte.", "bot");
+    return;
+  }
+
+  try {
+    const docRef = db.collection('eierhuetten').doc(editingData.id);
+
+    const final = {
+      ...editingData,
+      fotos: (editingData.fotos || []).filter(f => f && f.url),
+      userId: currentUser.uid,
+      status: 'offen',
+      erstelltAm: editingData.createdAt || firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    await docRef.set(final, { merge: true });
+
+    if (final.tags && final.tags.length) {
+      await incrementTagCounts(final.tags);
+    }
+
+    addMessage('✅ Vielen Dank für das Einreichen deiner Hütte!', 'bot');
+    addMessage('👀 Unser Team prüft deinen Vorschlag nun sorgfältig.', 'bot');
+    addMessage('⏳ Sobald die Hütte freigegeben ist, erscheint sie für alle Nutzer sichtbar.', 'bot');
+
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'message bot';
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = '➡️ Meine Hütten anzeigen';
+    btn.onclick = () => showMyHuts();
+    btnContainer.appendChild(btn);
+    chatWindow.appendChild(btnContainer);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    step = null;
+    editingData = {};
+  } catch (err) {
+    console.error('submitNewHut error', err);
+    addMessage('❌ Fehler beim Abschicken der Hütte: ' + err.message, 'bot');
+  }
+}
+
+// ==========================
+// Address Input Handling
+// ==========================
+
+async function handleAddressInput(txt) {
+  const address = txt.trim();
+  const coords = await geocodeAddress(address);
+  if (!coords) {
+    addMessage("❌ Adresse konnte nicht gefunden werden. Bitte erneut eingeben.", "bot");
+    return;
+  }
+
+  editingData.address = coords.display_name;
+  editingData.location = new firebase.firestore.GeoPoint(coords.lat, coords.lng);
+
+  showLocationConfirmation(coords.lat, coords.lng, editingData.address);
+}
+
+
+// ==========================
+// GPS Location Handling
+// ==========================
+async function handleGPSLocation(lat, lng) {
+  editingData.location = new firebase.firestore.GeoPoint(lat, lng);
+  await saveDraft(editingData.id, { location: editingData.location });
+  await submitNewHut();
+}
+
+// ==========================
+// Tag Suggestions (Chat-Style mit Count)
+// ==========================
+async function showTagSuggestions(query) {
+  const suggestionContainer = document.createElement("div");
+  suggestionContainer.className = "message bot";
+
+  const snapshot = await db.collection("tag_counts")
+    .orderBy("count", "desc")
+    .limit(10)
+    .get();
+
+  let tags = snapshot.docs.map(doc => ({
+    tag: doc.id,
+    count: doc.data().count || 0
+  }));
+
+  tags = tags.filter(t => t.tag.startsWith(query.toLowerCase()));
+  if (!tags.length) return;
+
+  tags.forEach(({tag, count}) => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.textContent = `${tag} (${count})`;
+    btn.onclick = () => {
+      document.getElementById("userInput").value = tag;
+    };
+    suggestionContainer.appendChild(btn);
+  });
+
+  chatWindow.appendChild(suggestionContainer);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// Hook ins Input (nur wenn step tags_input)
+inputField.addEventListener("input", async () => {
+  if (typeof step !== "undefined" && step === "tags_input") {
+    const query = inputField.value.trim().toLowerCase();
+    if (query.length >= 2) {
+      await showTagSuggestions(query);
+    }
+  }
+});
+
+
+function showLocationConfirmation(lat, lng, displayName) {
+  addMessage(`📍 Gefundene Adresse: ${displayName}`, "bot");
+
+  const mapId = "confirm-map-" + Date.now();
+  const div = document.createElement("div");
+  div.className = "message bot";
+  div.innerHTML = `<div id="${mapId}" class="h-60 rounded border"></div>`;
+  chatWindow.appendChild(div);
+
+  setTimeout(() => {
+    const map = L.map(mapId).setView([lat, lng], 16);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+    const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+
+    marker.on("dragend", e => {
+      const pos = e.target.getLatLng();
+      editingData.location = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
+    });
+
+    editingData.location = new firebase.firestore.GeoPoint(lat, lng);
+  }, 200);
+
+  const btns = document.createElement("div");
+  btns.className = "message bot";
+  btns.innerHTML = `
+    <button class="choice-btn" onclick="confirmLocation()">✅ Ja, passt</button>
+    <button class="choice-btn" onclick="retryLocation()">🔄 Neu wählen</button>
+  `;
+  chatWindow.appendChild(btns);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function confirmLocation() {
+  addMessage("✅ Standort gespeichert.", "bot");
+  addMessage("⏳ Dein Vorschlag wird nun vom Team geprüft und nach Freigabe sichtbar.", "bot");
+  submitNewHut();
+}
+
+function retryLocation() {
+  addMessage("🔄 Bitte gib eine neue Adresse ein:", "bot");
+  step = "address_input";
+}
+
+</script>
+  <script src="https://cdn.tailwindcss.com">
+// ==========================
+// Helper: Draft speichern
+// ==========================
+async function saveDraft(id, partial = {}) {
+  if (!id) return;
+  try {
+    await db.collection('eierhuetten').doc(id).set({
+      ...partial,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.error('Fehler beim Speichern des Drafts:', err);
+  }
+}
+
+// ==========================
+// Utility: Geocoding
+// ==========================
+async function geocodeAddress(address) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
+    const res = await fetch(url, { headers: { "User-Agent": "EierhuettenApp/1.0" } });
+    const data = await res.json();
+    if (!data || !data.length) return null;
+    return {
+      lat: parseFloat(data[0].lat),
+      lng: parseFloat(data[0].lon),
+      display_name: data[0].display_name
+    };
+  } catch (err) {
+    console.error('geocodeAddress error', err);
+    return null;
+  }
+}
+
+// ==========================
+// Tags hochzählen
+// ==========================
+async function incrementTagCounts(tags) {
+  if (!tags || !tags.length) return;
+  const batch = db.batch();
+
+  tags.forEach(tag => {
+    const tagId = tag.toLowerCase().trim();
+    if (!tagId) return;
+    const ref = db.collection('tag_counts').doc(tagId);
+    batch.set(ref, { count: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+  });
+
+  try {
+    await batch.commit();
+    console.log("✅ Tags gezählt:", tags);
+  } catch (err) {
+    console.error("❌ Fehler beim Hochzählen der Tags:", err);
+  }
+}
+
+// ==========================
+// Tiere-Auswahl
+// ==========================
+function askForAnimals() {
+  addMessage("🐾 Welche Tiere gibt es an der Hütte? (Mehrfachauswahl möglich)", "bot");
+  const tiere = ["🐐 Ziege", "🐄 Kuh", "🐓 Huhn", "🐕 Hund", "🐇 Hase", "❌ Keine"];
+  editingData.tiere = editingData.tiere || [];
+
+  const container = document.createElement("div");
+  container.classList.add("message", "bot");
+
+  tiere.forEach(tier => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.textContent = tier;
+    btn.onclick = () => {
+      if (tier === "❌ Keine") {
+        editingData.tiere = [];
+        addMessage("❌ Keine Tiere ausgewählt", "bot");
+      } else {
+        if (!editingData.tiere.includes(tier)) editingData.tiere.push(tier);
+        addMessage(`✅ Aktuell gewählt: ${editingData.tiere.join(", ")}`, "bot");
+      }
+    };
+    container.appendChild(btn);
+  });
+
+  const weiterBtn = document.createElement("button");
+  weiterBtn.className = "choice-btn mt-2";
+  weiterBtn.textContent = "➡️ Weiter";
+  weiterBtn.onclick = async () => {
+    await saveDraft(editingData.id, { tiere: editingData.tiere });
+    step = "beschreibung_input";
+    addQuestionWithHelp("📝 Bitte gib eine kurze Beschreibung deiner Hütte ein:", "z. B. kleine Frühstücksecke, Hof mit Aussicht");
+  };
+  container.appendChild(weiterBtn);
+
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// ==========================
+// Finales Absenden
+// ==========================
+
+
+// ==========================
+// Adresseingabe-Schritt
+// ==========================
+
+
+// ==========================
+// GPS-Schritt
+// ==========================
+
+
+// ==========================
+// Vorschlags-System (Autocomplete)
+// ==========================
+const suggestionBox = document.createElement("div");
+suggestionBox.id = "suggestionBox";
+suggestionBox.className = "flex flex-wrap gap-2 mt-1";
+document.querySelector("#input-container").appendChild(suggestionBox);
+
+const inputField = document.getElementById("userInput");
+inputField.addEventListener("input", async () => {
+  const query = inputField.value.trim().toLowerCase();
+  suggestionBox.innerHTML = "";
+
+  if (!query || query.length < 2) return;
+
+  // Tags aus Firestore holen
+  const snapshot = await db.collection("tag_counts")
+    .orderBy("count", "desc")
+    .limit(20)
+    .get();
+
+  let tags = snapshot.docs.map(doc => doc.id);
+
+  // Filtern nach aktueller Eingabe
+  tags = tags.filter(tag => tag.startsWith(query));
+
+  // Optional: statische Vorschläge
+  const staticSuggestions = ["immer geöffnet", "schattig", "Getränke", "ruhig"];
+  staticSuggestions.forEach(s => {
+    if (s.toLowerCase().startsWith(query) && !tags.includes(s)) {
+      tags.push(s);
+    }
+  });
+
+  // UI rendern
+  tags.slice(0, 5).forEach(tag => {
+    const btn = document.createElement("button");
+    btn.className = "px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm";
+    btn.textContent = tag;
+    btn.onclick = () => {
+      inputField.value = tag;
+      suggestionBox.innerHTML = "";
+      inputField.focus();
+    };
+    suggestionBox.appendChild(btn);
+  });
+});
+
+
+// ==========================
+// Haversine + Nearby Location Check (20m)
+// ==========================
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const toRad = x => x * Math.PI / 180;
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δφ = toRad(lat2 - lat1);
+  const Δλ = toRad(lon2 - lon1);
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+async function locationExistsNearby(lat, lng, radius = 20) {
+  const delta = 0.00018;
+  const minLat = lat - delta, maxLat = lat + delta;
+  const minLng = lng - delta, maxLng = lng + delta;
+
+  const snapshot = await db.collection("eierhuetten")
+    .where("location", ">=", new firebase.firestore.GeoPoint(minLat, minLng))
+    .where("location", "<=", new firebase.firestore.GeoPoint(maxLat, maxLng))
+    .get();
+
+  if (snapshot.empty) return false;
+
+  for (let doc of snapshot.docs) {
+    const loc = doc.data().location;
+    if (!loc) continue;
+    const dist = haversineDistance(lat, lng, loc.latitude, loc.longitude);
+    if (dist <= radius) return true;
+  }
+  return false;
+}
+
+// ==========================
+// Submit New Hut mit Duplicate-Check
+// ==========================
+async function submitNewHut() {
+  if (!editingData || !editingData.id) {
+    addMessage('❌ Kein Hüttendatenkontext vorhanden. Bitte neu starten.', 'bot');
+    return;
+  }
+
+  if (!editingData.location) {
+    addMessage('⚠️ Es wurde noch kein Standort gespeichert. Bitte Adresse eingeben oder GPS wählen.', 'bot');
+    return;
+  }
+
+  const lat = editingData.location.latitude;
+  const lng = editingData.location.longitude;
+  if (await locationExistsNearby(lat, lng)) {
+    addMessage("⚠️ An der ausgewählten Stelle existiert bereits eine Hütte.", "bot");
+    return;
+  }
+
+  try {
+    const docRef = db.collection('eierhuetten').doc(editingData.id);
+
+    const final = {
+      ...editingData,
+      fotos: (editingData.fotos || []).filter(f => f && f.url),
+      userId: currentUser.uid,
+      status: 'offen',
+      erstelltAm: editingData.createdAt || firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    await docRef.set(final, { merge: true });
+
+    if (final.tags && final.tags.length) {
+      await incrementTagCounts(final.tags);
+    }
+
+    addMessage('✅ Vielen Dank für das Einreichen deiner Hütte!', 'bot');
+    addMessage('👀 Unser Team prüft deinen Vorschlag nun sorgfältig.', 'bot');
+    addMessage('⏳ Sobald die Hütte freigegeben ist, erscheint sie für alle Nutzer sichtbar.', 'bot');
+
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'message bot';
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = '➡️ Meine Hütten anzeigen';
+    btn.onclick = () => showMyHuts();
+    btnContainer.appendChild(btn);
+    chatWindow.appendChild(btnContainer);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    step = null;
+    editingData = {};
+  } catch (err) {
+    console.error('submitNewHut error', err);
+    addMessage('❌ Fehler beim Abschicken der Hütte: ' + err.message, 'bot');
+  }
+}
+
+// ==========================
+// Address Input Handling
+// ==========================
+
+async function handleAddressInput(txt) {
+  const address = txt.trim();
+  const coords = await geocodeAddress(address);
+  if (!coords) {
+    addMessage("❌ Adresse konnte nicht gefunden werden. Bitte erneut eingeben.", "bot");
+    return;
+  }
+
+  editingData.address = coords.display_name;
+  editingData.location = new firebase.firestore.GeoPoint(coords.lat, coords.lng);
+
+  showLocationConfirmation(coords.lat, coords.lng, editingData.address);
+}
+
+
+// ==========================
+// GPS Location Handling
+// ==========================
+async function handleGPSLocation(lat, lng) {
+  editingData.location = new firebase.firestore.GeoPoint(lat, lng);
+  await saveDraft(editingData.id, { location: editingData.location });
+  await submitNewHut();
+}
+
+// ==========================
+// Tag Suggestions (Chat-Style mit Count)
+// ==========================
+async function showTagSuggestions(query) {
+  const suggestionContainer = document.createElement("div");
+  suggestionContainer.className = "message bot";
+
+  const snapshot = await db.collection("tag_counts")
+    .orderBy("count", "desc")
+    .limit(10)
+    .get();
+
+  let tags = snapshot.docs.map(doc => ({
+    tag: doc.id,
+    count: doc.data().count || 0
+  }));
+
+  tags = tags.filter(t => t.tag.startsWith(query.toLowerCase()));
+  if (!tags.length) return;
+
+  tags.forEach(({tag, count}) => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.textContent = `${tag} (${count})`;
+    btn.onclick = () => {
+      document.getElementById("userInput").value = tag;
+    };
+    suggestionContainer.appendChild(btn);
+  });
+
+  chatWindow.appendChild(suggestionContainer);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// Hook ins Input (nur wenn step tags_input)
+inputField.addEventListener("input", async () => {
+  if (typeof step !== "undefined" && step === "tags_input") {
+    const query = inputField.value.trim().toLowerCase();
+    if (query.length >= 2) {
+      await showTagSuggestions(query);
+    }
+  }
+});
+
+
+function showLocationConfirmation(lat, lng, displayName) {
+  addMessage(`📍 Gefundene Adresse: ${displayName}`, "bot");
+
+  const mapId = "confirm-map-" + Date.now();
+  const div = document.createElement("div");
+  div.className = "message bot";
+  div.innerHTML = `<div id="${mapId}" class="h-60 rounded border"></div>`;
+  chatWindow.appendChild(div);
+
+  setTimeout(() => {
+    const map = L.map(mapId).setView([lat, lng], 16);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+    const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+
+    marker.on("dragend", e => {
+      const pos = e.target.getLatLng();
+      editingData.location = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
+    });
+
+    editingData.location = new firebase.firestore.GeoPoint(lat, lng);
+  }, 200);
+
+  const btns = document.createElement("div");
+  btns.className = "message bot";
+  btns.innerHTML = `
+    <button class="choice-btn" onclick="confirmLocation()">✅ Ja, passt</button>
+    <button class="choice-btn" onclick="retryLocation()">🔄 Neu wählen</button>
+  `;
+  chatWindow.appendChild(btns);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function confirmLocation() {
+  addMessage("✅ Standort gespeichert.", "bot");
+  addMessage("⏳ Dein Vorschlag wird nun vom Team geprüft und nach Freigabe sichtbar.", "bot");
+  submitNewHut();
+}
+
+function retryLocation() {
+  addMessage("🔄 Bitte gib eine neue Adresse ein:", "bot");
+  step = "address_input";
+}
+
+</script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+// ==========================
+// Helper: Draft speichern
+// ==========================
+async function saveDraft(id, partial = {}) {
+  if (!id) return;
+  try {
+    await db.collection('eierhuetten').doc(id).set({
+      ...partial,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.error('Fehler beim Speichern des Drafts:', err);
+  }
+}
+
+// ==========================
+// Utility: Geocoding
+// ==========================
+async function geocodeAddress(address) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
+    const res = await fetch(url, { headers: { "User-Agent": "EierhuettenApp/1.0" } });
+    const data = await res.json();
+    if (!data || !data.length) return null;
+    return {
+      lat: parseFloat(data[0].lat),
+      lng: parseFloat(data[0].lon),
+      display_name: data[0].display_name
+    };
+  } catch (err) {
+    console.error('geocodeAddress error', err);
+    return null;
+  }
+}
+
+// ==========================
+// Tags hochzählen
+// ==========================
+async function incrementTagCounts(tags) {
+  if (!tags || !tags.length) return;
+  const batch = db.batch();
+
+  tags.forEach(tag => {
+    const tagId = tag.toLowerCase().trim();
+    if (!tagId) return;
+    const ref = db.collection('tag_counts').doc(tagId);
+    batch.set(ref, { count: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+  });
+
+  try {
+    await batch.commit();
+    console.log("✅ Tags gezählt:", tags);
+  } catch (err) {
+    console.error("❌ Fehler beim Hochzählen der Tags:", err);
+  }
+}
+
+// ==========================
+// Tiere-Auswahl
+// ==========================
+function askForAnimals() {
+  addMessage("🐾 Welche Tiere gibt es an der Hütte? (Mehrfachauswahl möglich)", "bot");
+  const tiere = ["🐐 Ziege", "🐄 Kuh", "🐓 Huhn", "🐕 Hund", "🐇 Hase", "❌ Keine"];
+  editingData.tiere = editingData.tiere || [];
+
+  const container = document.createElement("div");
+  container.classList.add("message", "bot");
+
+  tiere.forEach(tier => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.textContent = tier;
+    btn.onclick = () => {
+      if (tier === "❌ Keine") {
+        editingData.tiere = [];
+        addMessage("❌ Keine Tiere ausgewählt", "bot");
+      } else {
+        if (!editingData.tiere.includes(tier)) editingData.tiere.push(tier);
+        addMessage(`✅ Aktuell gewählt: ${editingData.tiere.join(", ")}`, "bot");
+      }
+    };
+    container.appendChild(btn);
+  });
+
+  const weiterBtn = document.createElement("button");
+  weiterBtn.className = "choice-btn mt-2";
+  weiterBtn.textContent = "➡️ Weiter";
+  weiterBtn.onclick = async () => {
+    await saveDraft(editingData.id, { tiere: editingData.tiere });
+    step = "beschreibung_input";
+    addQuestionWithHelp("📝 Bitte gib eine kurze Beschreibung deiner Hütte ein:", "z. B. kleine Frühstücksecke, Hof mit Aussicht");
+  };
+  container.appendChild(weiterBtn);
+
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// ==========================
+// Finales Absenden
+// ==========================
+
+
+// ==========================
+// Adresseingabe-Schritt
+// ==========================
+
+
+// ==========================
+// GPS-Schritt
+// ==========================
+
+
+// ==========================
+// Vorschlags-System (Autocomplete)
+// ==========================
+const suggestionBox = document.createElement("div");
+suggestionBox.id = "suggestionBox";
+suggestionBox.className = "flex flex-wrap gap-2 mt-1";
+document.querySelector("#input-container").appendChild(suggestionBox);
+
+const inputField = document.getElementById("userInput");
+inputField.addEventListener("input", async () => {
+  const query = inputField.value.trim().toLowerCase();
+  suggestionBox.innerHTML = "";
+
+  if (!query || query.length < 2) return;
+
+  // Tags aus Firestore holen
+  const snapshot = await db.collection("tag_counts")
+    .orderBy("count", "desc")
+    .limit(20)
+    .get();
+
+  let tags = snapshot.docs.map(doc => doc.id);
+
+  // Filtern nach aktueller Eingabe
+  tags = tags.filter(tag => tag.startsWith(query));
+
+  // Optional: statische Vorschläge
+  const staticSuggestions = ["immer geöffnet", "schattig", "Getränke", "ruhig"];
+  staticSuggestions.forEach(s => {
+    if (s.toLowerCase().startsWith(query) && !tags.includes(s)) {
+      tags.push(s);
+    }
+  });
+
+  // UI rendern
+  tags.slice(0, 5).forEach(tag => {
+    const btn = document.createElement("button");
+    btn.className = "px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm";
+    btn.textContent = tag;
+    btn.onclick = () => {
+      inputField.value = tag;
+      suggestionBox.innerHTML = "";
+      inputField.focus();
+    };
+    suggestionBox.appendChild(btn);
+  });
+});
+
+
+// ==========================
+// Haversine + Nearby Location Check (20m)
+// ==========================
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const toRad = x => x * Math.PI / 180;
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δφ = toRad(lat2 - lat1);
+  const Δλ = toRad(lon2 - lon1);
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+async function locationExistsNearby(lat, lng, radius = 20) {
+  const delta = 0.00018;
+  const minLat = lat - delta, maxLat = lat + delta;
+  const minLng = lng - delta, maxLng = lng + delta;
+
+  const snapshot = await db.collection("eierhuetten")
+    .where("location", ">=", new firebase.firestore.GeoPoint(minLat, minLng))
+    .where("location", "<=", new firebase.firestore.GeoPoint(maxLat, maxLng))
+    .get();
+
+  if (snapshot.empty) return false;
+
+  for (let doc of snapshot.docs) {
+    const loc = doc.data().location;
+    if (!loc) continue;
+    const dist = haversineDistance(lat, lng, loc.latitude, loc.longitude);
+    if (dist <= radius) return true;
+  }
+  return false;
+}
+
+// ==========================
+// Submit New Hut mit Duplicate-Check
+// ==========================
+async function submitNewHut() {
+  if (!editingData || !editingData.id) {
+    addMessage('❌ Kein Hüttendatenkontext vorhanden. Bitte neu starten.', 'bot');
+    return;
+  }
+
+  if (!editingData.location) {
+    addMessage('⚠️ Es wurde noch kein Standort gespeichert. Bitte Adresse eingeben oder GPS wählen.', 'bot');
+    return;
+  }
+
+  const lat = editingData.location.latitude;
+  const lng = editingData.location.longitude;
+  if (await locationExistsNearby(lat, lng)) {
+    addMessage("⚠️ An der ausgewählten Stelle existiert bereits eine Hütte.", "bot");
+    return;
+  }
+
+  try {
+    const docRef = db.collection('eierhuetten').doc(editingData.id);
+
+    const final = {
+      ...editingData,
+      fotos: (editingData.fotos || []).filter(f => f && f.url),
+      userId: currentUser.uid,
+      status: 'offen',
+      erstelltAm: editingData.createdAt || firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    await docRef.set(final, { merge: true });
+
+    if (final.tags && final.tags.length) {
+      await incrementTagCounts(final.tags);
+    }
+
+    addMessage('✅ Vielen Dank für das Einreichen deiner Hütte!', 'bot');
+    addMessage('👀 Unser Team prüft deinen Vorschlag nun sorgfältig.', 'bot');
+    addMessage('⏳ Sobald die Hütte freigegeben ist, erscheint sie für alle Nutzer sichtbar.', 'bot');
+
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'message bot';
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = '➡️ Meine Hütten anzeigen';
+    btn.onclick = () => showMyHuts();
+    btnContainer.appendChild(btn);
+    chatWindow.appendChild(btnContainer);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    step = null;
+    editingData = {};
+  } catch (err) {
+    console.error('submitNewHut error', err);
+    addMessage('❌ Fehler beim Abschicken der Hütte: ' + err.message, 'bot');
+  }
+}
+
+// ==========================
+// Address Input Handling
+// ==========================
+
+async function handleAddressInput(txt) {
+  const address = txt.trim();
+  const coords = await geocodeAddress(address);
+  if (!coords) {
+    addMessage("❌ Adresse konnte nicht gefunden werden. Bitte erneut eingeben.", "bot");
+    return;
+  }
+
+  editingData.address = coords.display_name;
+  editingData.location = new firebase.firestore.GeoPoint(coords.lat, coords.lng);
+
+  showLocationConfirmation(coords.lat, coords.lng, editingData.address);
+}
+
+
+// ==========================
+// GPS Location Handling
+// ==========================
+async function handleGPSLocation(lat, lng) {
+  editingData.location = new firebase.firestore.GeoPoint(lat, lng);
+  await saveDraft(editingData.id, { location: editingData.location });
+  await submitNewHut();
+}
+
+// ==========================
+// Tag Suggestions (Chat-Style mit Count)
+// ==========================
+async function showTagSuggestions(query) {
+  const suggestionContainer = document.createElement("div");
+  suggestionContainer.className = "message bot";
+
+  const snapshot = await db.collection("tag_counts")
+    .orderBy("count", "desc")
+    .limit(10)
+    .get();
+
+  let tags = snapshot.docs.map(doc => ({
+    tag: doc.id,
+    count: doc.data().count || 0
+  }));
+
+  tags = tags.filter(t => t.tag.startsWith(query.toLowerCase()));
+  if (!tags.length) return;
+
+  tags.forEach(({tag, count}) => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.textContent = `${tag} (${count})`;
+    btn.onclick = () => {
+      document.getElementById("userInput").value = tag;
+    };
+    suggestionContainer.appendChild(btn);
+  });
+
+  chatWindow.appendChild(suggestionContainer);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// Hook ins Input (nur wenn step tags_input)
+inputField.addEventListener("input", async () => {
+  if (typeof step !== "undefined" && step === "tags_input") {
+    const query = inputField.value.trim().toLowerCase();
+    if (query.length >= 2) {
+      await showTagSuggestions(query);
+    }
+  }
+});
+
+
+function showLocationConfirmation(lat, lng, displayName) {
+  addMessage(`📍 Gefundene Adresse: ${displayName}`, "bot");
+
+  const mapId = "confirm-map-" + Date.now();
+  const div = document.createElement("div");
+  div.className = "message bot";
+  div.innerHTML = `<div id="${mapId}" class="h-60 rounded border"></div>`;
+  chatWindow.appendChild(div);
+
+  setTimeout(() => {
+    const map = L.map(mapId).setView([lat, lng], 16);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+    const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+
+    marker.on("dragend", e => {
+      const pos = e.target.getLatLng();
+      editingData.location = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
+    });
+
+    editingData.location = new firebase.firestore.GeoPoint(lat, lng);
+  }, 200);
+
+  const btns = document.createElement("div");
+  btns.className = "message bot";
+  btns.innerHTML = `
+    <button class="choice-btn" onclick="confirmLocation()">✅ Ja, passt</button>
+    <button class="choice-btn" onclick="retryLocation()">🔄 Neu wählen</button>
+  `;
+  chatWindow.appendChild(btns);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function confirmLocation() {
+  addMessage("✅ Standort gespeichert.", "bot");
+  addMessage("⏳ Dein Vorschlag wird nun vom Team geprüft und nach Freigabe sichtbar.", "bot");
+  submitNewHut();
+}
+
+function retryLocation() {
+  addMessage("🔄 Bitte gib eine neue Adresse ein:", "bot");
+  step = "address_input";
+}
+
+</script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-functions-compat.js">
+// ==========================
+// Helper: Draft speichern
+// ==========================
+async function saveDraft(id, partial = {}) {
+  if (!id) return;
+  try {
+    await db.collection('eierhuetten').doc(id).set({
+      ...partial,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.error('Fehler beim Speichern des Drafts:', err);
+  }
+}
+
+// ==========================
+// Utility: Geocoding
+// ==========================
+async function geocodeAddress(address) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
+    const res = await fetch(url, { headers: { "User-Agent": "EierhuettenApp/1.0" } });
+    const data = await res.json();
+    if (!data || !data.length) return null;
+    return {
+      lat: parseFloat(data[0].lat),
+      lng: parseFloat(data[0].lon),
+      display_name: data[0].display_name
+    };
+  } catch (err) {
+    console.error('geocodeAddress error', err);
+    return null;
+  }
+}
+
+// ==========================
+// Tags hochzählen
+// ==========================
+async function incrementTagCounts(tags) {
+  if (!tags || !tags.length) return;
+  const batch = db.batch();
+
+  tags.forEach(tag => {
+    const tagId = tag.toLowerCase().trim();
+    if (!tagId) return;
+    const ref = db.collection('tag_counts').doc(tagId);
+    batch.set(ref, { count: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+  });
+
+  try {
+    await batch.commit();
+    console.log("✅ Tags gezählt:", tags);
+  } catch (err) {
+    console.error("❌ Fehler beim Hochzählen der Tags:", err);
+  }
+}
+
+// ==========================
+// Tiere-Auswahl
+// ==========================
+function askForAnimals() {
+  addMessage("🐾 Welche Tiere gibt es an der Hütte? (Mehrfachauswahl möglich)", "bot");
+  const tiere = ["🐐 Ziege", "🐄 Kuh", "🐓 Huhn", "🐕 Hund", "🐇 Hase", "❌ Keine"];
+  editingData.tiere = editingData.tiere || [];
+
+  const container = document.createElement("div");
+  container.classList.add("message", "bot");
+
+  tiere.forEach(tier => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.textContent = tier;
+    btn.onclick = () => {
+      if (tier === "❌ Keine") {
+        editingData.tiere = [];
+        addMessage("❌ Keine Tiere ausgewählt", "bot");
+      } else {
+        if (!editingData.tiere.includes(tier)) editingData.tiere.push(tier);
+        addMessage(`✅ Aktuell gewählt: ${editingData.tiere.join(", ")}`, "bot");
+      }
+    };
+    container.appendChild(btn);
+  });
+
+  const weiterBtn = document.createElement("button");
+  weiterBtn.className = "choice-btn mt-2";
+  weiterBtn.textContent = "➡️ Weiter";
+  weiterBtn.onclick = async () => {
+    await saveDraft(editingData.id, { tiere: editingData.tiere });
+    step = "beschreibung_input";
+    addQuestionWithHelp("📝 Bitte gib eine kurze Beschreibung deiner Hütte ein:", "z. B. kleine Frühstücksecke, Hof mit Aussicht");
+  };
+  container.appendChild(weiterBtn);
+
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// ==========================
+// Finales Absenden
+// ==========================
+
+
+// ==========================
+// Adresseingabe-Schritt
+// ==========================
+
+
+// ==========================
+// GPS-Schritt
+// ==========================
+
+
+// ==========================
+// Vorschlags-System (Autocomplete)
+// ==========================
+const suggestionBox = document.createElement("div");
+suggestionBox.id = "suggestionBox";
+suggestionBox.className = "flex flex-wrap gap-2 mt-1";
+document.querySelector("#input-container").appendChild(suggestionBox);
+
+const inputField = document.getElementById("userInput");
+inputField.addEventListener("input", async () => {
+  const query = inputField.value.trim().toLowerCase();
+  suggestionBox.innerHTML = "";
+
+  if (!query || query.length < 2) return;
+
+  // Tags aus Firestore holen
+  const snapshot = await db.collection("tag_counts")
+    .orderBy("count", "desc")
+    .limit(20)
+    .get();
+
+  let tags = snapshot.docs.map(doc => doc.id);
+
+  // Filtern nach aktueller Eingabe
+  tags = tags.filter(tag => tag.startsWith(query));
+
+  // Optional: statische Vorschläge
+  const staticSuggestions = ["immer geöffnet", "schattig", "Getränke", "ruhig"];
+  staticSuggestions.forEach(s => {
+    if (s.toLowerCase().startsWith(query) && !tags.includes(s)) {
+      tags.push(s);
+    }
+  });
+
+  // UI rendern
+  tags.slice(0, 5).forEach(tag => {
+    const btn = document.createElement("button");
+    btn.className = "px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm";
+    btn.textContent = tag;
+    btn.onclick = () => {
+      inputField.value = tag;
+      suggestionBox.innerHTML = "";
+      inputField.focus();
+    };
+    suggestionBox.appendChild(btn);
+  });
+});
+
+
+// ==========================
+// Haversine + Nearby Location Check (20m)
+// ==========================
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const toRad = x => x * Math.PI / 180;
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δφ = toRad(lat2 - lat1);
+  const Δλ = toRad(lon2 - lon1);
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+async function locationExistsNearby(lat, lng, radius = 20) {
+  const delta = 0.00018;
+  const minLat = lat - delta, maxLat = lat + delta;
+  const minLng = lng - delta, maxLng = lng + delta;
+
+  const snapshot = await db.collection("eierhuetten")
+    .where("location", ">=", new firebase.firestore.GeoPoint(minLat, minLng))
+    .where("location", "<=", new firebase.firestore.GeoPoint(maxLat, maxLng))
+    .get();
+
+  if (snapshot.empty) return false;
+
+  for (let doc of snapshot.docs) {
+    const loc = doc.data().location;
+    if (!loc) continue;
+    const dist = haversineDistance(lat, lng, loc.latitude, loc.longitude);
+    if (dist <= radius) return true;
+  }
+  return false;
+}
+
+// ==========================
+// Submit New Hut mit Duplicate-Check
+// ==========================
+async function submitNewHut() {
+  if (!editingData || !editingData.id) {
+    addMessage('❌ Kein Hüttendatenkontext vorhanden. Bitte neu starten.', 'bot');
+    return;
+  }
+
+  if (!editingData.location) {
+    addMessage('⚠️ Es wurde noch kein Standort gespeichert. Bitte Adresse eingeben oder GPS wählen.', 'bot');
+    return;
+  }
+
+  const lat = editingData.location.latitude;
+  const lng = editingData.location.longitude;
+  if (await locationExistsNearby(lat, lng)) {
+    addMessage("⚠️ An der ausgewählten Stelle existiert bereits eine Hütte.", "bot");
+    return;
+  }
+
+  try {
+    const docRef = db.collection('eierhuetten').doc(editingData.id);
+
+    const final = {
+      ...editingData,
+      fotos: (editingData.fotos || []).filter(f => f && f.url),
+      userId: currentUser.uid,
+      status: 'offen',
+      erstelltAm: editingData.createdAt || firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    await docRef.set(final, { merge: true });
+
+    if (final.tags && final.tags.length) {
+      await incrementTagCounts(final.tags);
+    }
+
+    addMessage('✅ Vielen Dank für das Einreichen deiner Hütte!', 'bot');
+    addMessage('👀 Unser Team prüft deinen Vorschlag nun sorgfältig.', 'bot');
+    addMessage('⏳ Sobald die Hütte freigegeben ist, erscheint sie für alle Nutzer sichtbar.', 'bot');
+
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'message bot';
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = '➡️ Meine Hütten anzeigen';
+    btn.onclick = () => showMyHuts();
+    btnContainer.appendChild(btn);
+    chatWindow.appendChild(btnContainer);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    step = null;
+    editingData = {};
+  } catch (err) {
+    console.error('submitNewHut error', err);
+    addMessage('❌ Fehler beim Abschicken der Hütte: ' + err.message, 'bot');
+  }
+}
+
+// ==========================
+// Address Input Handling
+// ==========================
+
+async function handleAddressInput(txt) {
+  const address = txt.trim();
+  const coords = await geocodeAddress(address);
+  if (!coords) {
+    addMessage("❌ Adresse konnte nicht gefunden werden. Bitte erneut eingeben.", "bot");
+    return;
+  }
+
+  editingData.address = coords.display_name;
+  editingData.location = new firebase.firestore.GeoPoint(coords.lat, coords.lng);
+
+  showLocationConfirmation(coords.lat, coords.lng, editingData.address);
+}
+
+
+// ==========================
+// GPS Location Handling
+// ==========================
+async function handleGPSLocation(lat, lng) {
+  editingData.location = new firebase.firestore.GeoPoint(lat, lng);
+  await saveDraft(editingData.id, { location: editingData.location });
+  await submitNewHut();
+}
+
+// ==========================
+// Tag Suggestions (Chat-Style mit Count)
+// ==========================
+async function showTagSuggestions(query) {
+  const suggestionContainer = document.createElement("div");
+  suggestionContainer.className = "message bot";
+
+  const snapshot = await db.collection("tag_counts")
+    .orderBy("count", "desc")
+    .limit(10)
+    .get();
+
+  let tags = snapshot.docs.map(doc => ({
+    tag: doc.id,
+    count: doc.data().count || 0
+  }));
+
+  tags = tags.filter(t => t.tag.startsWith(query.toLowerCase()));
+  if (!tags.length) return;
+
+  tags.forEach(({tag, count}) => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.textContent = `${tag} (${count})`;
+    btn.onclick = () => {
+      document.getElementById("userInput").value = tag;
+    };
+    suggestionContainer.appendChild(btn);
+  });
+
+  chatWindow.appendChild(suggestionContainer);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// Hook ins Input (nur wenn step tags_input)
+inputField.addEventListener("input", async () => {
+  if (typeof step !== "undefined" && step === "tags_input") {
+    const query = inputField.value.trim().toLowerCase();
+    if (query.length >= 2) {
+      await showTagSuggestions(query);
+    }
+  }
+});
+
+
+function showLocationConfirmation(lat, lng, displayName) {
+  addMessage(`📍 Gefundene Adresse: ${displayName}`, "bot");
+
+  const mapId = "confirm-map-" + Date.now();
+  const div = document.createElement("div");
+  div.className = "message bot";
+  div.innerHTML = `<div id="${mapId}" class="h-60 rounded border"></div>`;
+  chatWindow.appendChild(div);
+
+  setTimeout(() => {
+    const map = L.map(mapId).setView([lat, lng], 16);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+    const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+
+    marker.on("dragend", e => {
+      const pos = e.target.getLatLng();
+      editingData.location = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
+    });
+
+    editingData.location = new firebase.firestore.GeoPoint(lat, lng);
+  }, 200);
+
+  const btns = document.createElement("div");
+  btns.className = "message bot";
+  btns.innerHTML = `
+    <button class="choice-btn" onclick="confirmLocation()">✅ Ja, passt</button>
+    <button class="choice-btn" onclick="retryLocation()">🔄 Neu wählen</button>
+  `;
+  chatWindow.appendChild(btns);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function confirmLocation() {
+  addMessage("✅ Standort gespeichert.", "bot");
+  addMessage("⏳ Dein Vorschlag wird nun vom Team geprüft und nach Freigabe sichtbar.", "bot");
+  submitNewHut();
+}
+
+function retryLocation() {
+  addMessage("🔄 Bitte gib eine neue Adresse ein:", "bot");
+  step = "address_input";
+}
+
+</script>
+  <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+<script src="https://cdn.quilljs.com/1.3.6/quill.min.js">
+// ==========================
+// Helper: Draft speichern
+// ==========================
+async function saveDraft(id, partial = {}) {
+  if (!id) return;
+  try {
+    await db.collection('eierhuetten').doc(id).set({
+      ...partial,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.error('Fehler beim Speichern des Drafts:', err);
+  }
+}
+
+// ==========================
+// Utility: Geocoding
+// ==========================
+async function geocodeAddress(address) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
+    const res = await fetch(url, { headers: { "User-Agent": "EierhuettenApp/1.0" } });
+    const data = await res.json();
+    if (!data || !data.length) return null;
+    return {
+      lat: parseFloat(data[0].lat),
+      lng: parseFloat(data[0].lon),
+      display_name: data[0].display_name
+    };
+  } catch (err) {
+    console.error('geocodeAddress error', err);
+    return null;
+  }
+}
+
+// ==========================
+// Tags hochzählen
+// ==========================
+async function incrementTagCounts(tags) {
+  if (!tags || !tags.length) return;
+  const batch = db.batch();
+
+  tags.forEach(tag => {
+    const tagId = tag.toLowerCase().trim();
+    if (!tagId) return;
+    const ref = db.collection('tag_counts').doc(tagId);
+    batch.set(ref, { count: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+  });
+
+  try {
+    await batch.commit();
+    console.log("✅ Tags gezählt:", tags);
+  } catch (err) {
+    console.error("❌ Fehler beim Hochzählen der Tags:", err);
+  }
+}
+
+// ==========================
+// Tiere-Auswahl
+// ==========================
+function askForAnimals() {
+  addMessage("🐾 Welche Tiere gibt es an der Hütte? (Mehrfachauswahl möglich)", "bot");
+  const tiere = ["🐐 Ziege", "🐄 Kuh", "🐓 Huhn", "🐕 Hund", "🐇 Hase", "❌ Keine"];
+  editingData.tiere = editingData.tiere || [];
+
+  const container = document.createElement("div");
+  container.classList.add("message", "bot");
+
+  tiere.forEach(tier => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.textContent = tier;
+    btn.onclick = () => {
+      if (tier === "❌ Keine") {
+        editingData.tiere = [];
+        addMessage("❌ Keine Tiere ausgewählt", "bot");
+      } else {
+        if (!editingData.tiere.includes(tier)) editingData.tiere.push(tier);
+        addMessage(`✅ Aktuell gewählt: ${editingData.tiere.join(", ")}`, "bot");
+      }
+    };
+    container.appendChild(btn);
+  });
+
+  const weiterBtn = document.createElement("button");
+  weiterBtn.className = "choice-btn mt-2";
+  weiterBtn.textContent = "➡️ Weiter";
+  weiterBtn.onclick = async () => {
+    await saveDraft(editingData.id, { tiere: editingData.tiere });
+    step = "beschreibung_input";
+    addQuestionWithHelp("📝 Bitte gib eine kurze Beschreibung deiner Hütte ein:", "z. B. kleine Frühstücksecke, Hof mit Aussicht");
+  };
+  container.appendChild(weiterBtn);
+
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// ==========================
+// Finales Absenden
+// ==========================
+
+
+// ==========================
+// Adresseingabe-Schritt
+// ==========================
+
+
+// ==========================
+// GPS-Schritt
+// ==========================
+
+
+// ==========================
+// Vorschlags-System (Autocomplete)
+// ==========================
+const suggestionBox = document.createElement("div");
+suggestionBox.id = "suggestionBox";
+suggestionBox.className = "flex flex-wrap gap-2 mt-1";
+document.querySelector("#input-container").appendChild(suggestionBox);
+
+const inputField = document.getElementById("userInput");
+inputField.addEventListener("input", async () => {
+  const query = inputField.value.trim().toLowerCase();
+  suggestionBox.innerHTML = "";
+
+  if (!query || query.length < 2) return;
+
+  // Tags aus Firestore holen
+  const snapshot = await db.collection("tag_counts")
+    .orderBy("count", "desc")
+    .limit(20)
+    .get();
+
+  let tags = snapshot.docs.map(doc => doc.id);
+
+  // Filtern nach aktueller Eingabe
+  tags = tags.filter(tag => tag.startsWith(query));
+
+  // Optional: statische Vorschläge
+  const staticSuggestions = ["immer geöffnet", "schattig", "Getränke", "ruhig"];
+  staticSuggestions.forEach(s => {
+    if (s.toLowerCase().startsWith(query) && !tags.includes(s)) {
+      tags.push(s);
+    }
+  });
+
+  // UI rendern
+  tags.slice(0, 5).forEach(tag => {
+    const btn = document.createElement("button");
+    btn.className = "px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-sm";
+    btn.textContent = tag;
+    btn.onclick = () => {
+      inputField.value = tag;
+      suggestionBox.innerHTML = "";
+      inputField.focus();
+    };
+    suggestionBox.appendChild(btn);
+  });
+});
+
+
+// ==========================
+// Haversine + Nearby Location Check (20m)
+// ==========================
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const toRad = x => x * Math.PI / 180;
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δφ = toRad(lat2 - lat1);
+  const Δλ = toRad(lon2 - lon1);
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+async function locationExistsNearby(lat, lng, radius = 20) {
+  const delta = 0.00018;
+  const minLat = lat - delta, maxLat = lat + delta;
+  const minLng = lng - delta, maxLng = lng + delta;
+
+  const snapshot = await db.collection("eierhuetten")
+    .where("location", ">=", new firebase.firestore.GeoPoint(minLat, minLng))
+    .where("location", "<=", new firebase.firestore.GeoPoint(maxLat, maxLng))
+    .get();
+
+  if (snapshot.empty) return false;
+
+  for (let doc of snapshot.docs) {
+    const loc = doc.data().location;
+    if (!loc) continue;
+    const dist = haversineDistance(lat, lng, loc.latitude, loc.longitude);
+    if (dist <= radius) return true;
+  }
+  return false;
+}
+
+// ==========================
+// Submit New Hut mit Duplicate-Check
+// ==========================
+async function submitNewHut() {
+  if (!editingData || !editingData.id) {
+    addMessage('❌ Kein Hüttendatenkontext vorhanden. Bitte neu starten.', 'bot');
+    return;
+  }
+
+  if (!editingData.location) {
+    addMessage('⚠️ Es wurde noch kein Standort gespeichert. Bitte Adresse eingeben oder GPS wählen.', 'bot');
+    return;
+  }
+
+  const lat = editingData.location.latitude;
+  const lng = editingData.location.longitude;
+  if (await locationExistsNearby(lat, lng)) {
+    addMessage("⚠️ An der ausgewählten Stelle existiert bereits eine Hütte.", "bot");
+    return;
+  }
+
+  try {
+    const docRef = db.collection('eierhuetten').doc(editingData.id);
+
+    const final = {
+      ...editingData,
+      fotos: (editingData.fotos || []).filter(f => f && f.url),
+      userId: currentUser.uid,
+      status: 'offen',
+      erstelltAm: editingData.createdAt || firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    await docRef.set(final, { merge: true });
+
+    if (final.tags && final.tags.length) {
+      await incrementTagCounts(final.tags);
+    }
+
+    addMessage('✅ Vielen Dank für das Einreichen deiner Hütte!', 'bot');
+    addMessage('👀 Unser Team prüft deinen Vorschlag nun sorgfältig.', 'bot');
+    addMessage('⏳ Sobald die Hütte freigegeben ist, erscheint sie für alle Nutzer sichtbar.', 'bot');
+
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'message bot';
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = '➡️ Meine Hütten anzeigen';
+    btn.onclick = () => showMyHuts();
+    btnContainer.appendChild(btn);
+    chatWindow.appendChild(btnContainer);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    step = null;
+    editingData = {};
+  } catch (err) {
+    console.error('submitNewHut error', err);
+    addMessage('❌ Fehler beim Abschicken der Hütte: ' + err.message, 'bot');
+  }
+}
+
+// ==========================
+// Address Input Handling
+// ==========================
+
+async function handleAddressInput(txt) {
+  const address = txt.trim();
+  const coords = await geocodeAddress(address);
+  if (!coords) {
+    addMessage("❌ Adresse konnte nicht gefunden werden. Bitte erneut eingeben.", "bot");
+    return;
+  }
+
+  editingData.address = coords.display_name;
+  editingData.location = new firebase.firestore.GeoPoint(coords.lat, coords.lng);
+
+  showLocationConfirmation(coords.lat, coords.lng, editingData.address);
+}
+
+
+// ==========================
+// GPS Location Handling
+// ==========================
+async function handleGPSLocation(lat, lng) {
+  editingData.location = new firebase.firestore.GeoPoint(lat, lng);
+  await saveDraft(editingData.id, { location: editingData.location });
+  await submitNewHut();
+}
+
+// ==========================
+// Tag Suggestions (Chat-Style mit Count)
+// ==========================
+async function showTagSuggestions(query) {
+  const suggestionContainer = document.createElement("div");
+  suggestionContainer.className = "message bot";
+
+  const snapshot = await db.collection("tag_counts")
+    .orderBy("count", "desc")
+    .limit(10)
+    .get();
+
+  let tags = snapshot.docs.map(doc => ({
+    tag: doc.id,
+    count: doc.data().count || 0
+  }));
+
+  tags = tags.filter(t => t.tag.startsWith(query.toLowerCase()));
+  if (!tags.length) return;
+
+  tags.forEach(({tag, count}) => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.textContent = `${tag} (${count})`;
+    btn.onclick = () => {
+      document.getElementById("userInput").value = tag;
+    };
+    suggestionContainer.appendChild(btn);
+  });
+
+  chatWindow.appendChild(suggestionContainer);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// Hook ins Input (nur wenn step tags_input)
+inputField.addEventListener("input", async () => {
+  if (typeof step !== "undefined" && step === "tags_input") {
+    const query = inputField.value.trim().toLowerCase();
+    if (query.length >= 2) {
+      await showTagSuggestions(query);
+    }
+  }
+});
+
+
+function showLocationConfirmation(lat, lng, displayName) {
+  addMessage(`📍 Gefundene Adresse: ${displayName}`, "bot");
+
+  const mapId = "confirm-map-" + Date.now();
+  const div = document.createElement("div");
+  div.className = "message bot";
+  div.innerHTML = `<div id="${mapId}" class="h-60 rounded border"></div>`;
+  chatWindow.appendChild(div);
+
+  setTimeout(() => {
+    const map = L.map(mapId).setView([lat, lng], 16);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+    const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+
+    marker.on("dragend", e => {
+      const pos = e.target.getLatLng();
+      editingData.location = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
+    });
+
+    editingData.location = new firebase.firestore.GeoPoint(lat, lng);
+  }, 200);
+
+  const btns = document.createElement("div");
+  btns.className = "message bot";
+  btns.innerHTML = `
+    <button class="choice-btn" onclick="confirmLocation()">✅ Ja, passt</button>
+    <button class="choice-btn" onclick="retryLocation()">🔄 Neu wählen</button>
+  `;
+  chatWindow.appendChild(btns);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function confirmLocation() {
+  addMessage("✅ Standort gespeichert.", "bot");
+  addMessage("⏳ Dein Vorschlag wird nun vom Team geprüft und nach Freigabe sichtbar.", "bot");
+  submitNewHut();
+}
+
+function retryLocation() {
+  addMessage("🔄 Bitte gib eine neue Adresse ein:", "bot");
+  step = "address_input";
+}
+
+</script>
+ <style>
+    body { background: #f3f4f6; font-family: Arial, sans-serif; }
+    #chat-window { height: 500px; overflow-y: auto; padding: 1rem; background: #fff; border-radius: 0.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .message { clear: both; margin-bottom: 1rem; max-width: 100%; padding: 0.75rem 1rem; border-radius: 1rem; }
+    .bot { float: left; background: #e0f2fe; color: #0369a1; }
+    .user { float: right; background: #dcfce7; color: #166534; text-align: right; }
+    #input-area { margin-top: 1rem; display: flex; gap: 0.5rem; }
+    #chat-input { flex-grow: 1; padding: 0.5rem 1rem; border: 1px solid #cbd5e1; border-radius: 0.5rem; }
+    #send-btn { background: #0284c7; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; }
+    #send-btn:hover { background: #0369a1; }
+    .choice-btn, .edit-btn, .delete-btn {
+      margin-top: 0.5rem; background: #fbbf24; color: #92400e;
+      padding: 0.3rem 0.6rem; border-radius: 0.5rem; cursor: pointer;
+      display: inline-block; margin-right: 0.5rem;
+    }
+    .delete-btn { background: #dc2626; color: white; }
+    #map { width: 100%; height: 300px; border-radius: 0.5rem; margin-top: 1rem; }
+    .minimap { width: 100%; height: 200px; margin-top: 0.5rem; border-radius: 0.5rem; }
+    .time-picker { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+    .time-picker input { padding: 0.4rem; border: 1px solid #ccc; border-radius: 0.5rem; width: 45%; }
+ 
+.stats-bar {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  background-color: #d1fae5;
+  color: #065f46;
+  padding: 0.5rem;
+  margin-bottom: 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-family: sans-serif;
+  border: 1px solid #065f46;
+}
+
+
+
+
+    /* Hover-Effekte für Links */
+  #consent-modal a:hover {
+    color: #0056b3 !important;
+    border-color: #0056b3 !important;
+  }
+
+  /* Button Hover-Effekt */
+  #consent-accept:hover {
+    background: linear-gradient(135deg, #45A049, #3e8e41);
+    transform: translateY(-1px);
+  }
+
+  /* Button Klick-Effekt */
+  #consent-accept:active {
+    transform: translateY(0);
+  }
+   .hidden {
+  display: none !important;
+   }
+ </style>
+</head>
+  <body class="bg-gray-50">
+  <!-- Login -->
+  <div id="login-section" class="flex items-center justify-center min-h-screen">
+    <div class="bg-white p-8 rounded-xl shadow max-w-sm w-full text-center space-y-4">
+      <h1 class="text-2xl font-bold">Login</h1>
+      <p class="text-gray-500">Bitte mit Google anmelden.</p>
+      <button id="google-login" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded w-full">
+        Mit Google anmelden
+      </button>
+    </div>
+  </div>
+
+<!-- Werbung oberhalb vom Chat -->
+<div id="adsense-container" style="margin:20px auto; text-align:center; display:none;">
+  <ins class="adsbygoogle"
+       style="display:block"
+       data-ad-client="ca-pub-2577915567428766"
+       data-ad-slot="3060614235"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+</div>
+  <section id="main-section" class="max-w-md mx-auto mt-6 bg-white p-4 rounded-lg shadow hidden">
+
+    
+    
+    <!-- Navigation -->
+<div id="topbar" style="display:none; justify-content:space-between; align-items:center;
+     background:#f0fdf4; padding:10px 20px; border-bottom:1px solid #ccc; font-family:sans-serif;">
+  
+  <div id="user-info" style="font-weight:bold; font-size:14px;">
+    👤 <span id="user-name">Lädt...</span>
+  </div>
+
+  <div style="display:flex; gap:10px;">
+    <button onclick="refresh()" style="background:#34d399; color:white; border:none; 
+            padding:8px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">
+      🔄
+    </button>
+    
+    <button onclick="goToMainPage()" style="background:#34d399; color:white; border:none;
+            padding:8px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">
+      🏠
+    </button>
+
+    <button onclick="logout()" style="background:#f87171; color:white; border:none; 
+            padding:8px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">
+      🔓
+    </button>
+  </div>
+</div>
+
+
+    
+    <div class="text-center font-bold text-2xl text-green-700 mb-4">Hütten Assistent Chat</div>
+    <div id="chat-window" aria-live="polite" role="log"></div>
+   <input type="file" id="image-upload" accept="image/*" multiple hidden />
+    <div id="input-area">
+      <input id="chat-input" type="text" placeholder="Antwort hier..." autocomplete="off" class="border border-gray-300 rounded px-3 py-2"/>
+      <button id="send-btn">Senden</button>
+    </div>
+  </section>
+
+
+<!-- Consent Modal -->
+
+<div id="consent-modal" class="hidden" style="position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px;">    <div style="background:white; padding:25px 30px; max-width:520px; width:100%; border-radius:12px; box-shadow:0 8px 30px rgba(0,0,0,0.3); font-family:sans-serif; line-height:1.6; color:#333;">  
+    
+    <h2 style="margin-top:0; font-size:1.6rem; font-weight:600; color:#222; margin-bottom:15px;">Datenschutz & Cookies</h2>  
+    
+    <p style="margin-bottom:15px; font-size:1rem;">  
+      Wir verwenden Cookies und ähnliche Technologien, um unsere Dienste bereitzustellen und zu verbessern.  
+      Mehr dazu in unserer   
+      <a href="/datenschutz.html" target="_blank" style="color:#007BFF; font-weight:500; text-decoration:none; border-bottom:1px solid transparent; transition:border-color 0.2s, color 0.2s;">  
+        Datenschutzerklärung  
+      </a>.  
+    </p>  
+    
+    <label style="display:flex; align-items:center; margin-top:15px; cursor:pointer; font-size:0.95rem;">  
+      <input type="checkbox" id="consent-privacy" style="margin-right:10px; transform:scale(1.2);">  
+      <span>Ich stimme der <a href="/datenschutz.html" target="_blank" style="color:#007BFF; font-weight:500; text-decoration:none; border-bottom:1px solid transparent; transition:border-color 0.2s, color 0.2s;">Datenschutzerklärung</a> zu</span>  
+    </label>  
+    
+    <label style="display:flex; align-items:center; margin-top:10px; cursor:pointer; font-size:0.95rem;">  
+      <input type="checkbox" id="consent-cookies" style="margin-right:10px; transform:scale(1.2);">  
+      <span>Ich stimme der Verwendung von Cookies gemäß der <a href="/cookies.html" target="_blank" style="color:#007BFF; font-weight:500; text-decoration:none; border-bottom:1px solid transparent; transition:border-color 0.2s, color 0.2s;">Cookie-Richtlinie</a> zu</span>  
+    </label>  
+
+    <div style="margin-top:25px; text-align:right;">  
+<button id="consent-accept" onclick="acceptConsent()" style="padding:10px 20px; background:linear-gradient(135deg, #4CAF50, #45A049); color:white; border:none; border-radius:6px; font-size:1rem; font-weight:500; cursor:pointer; transition:background 0.3s, transform 0.1s;">
+  Zustimmen
+</button>
+    </div>  
+  </div>  
+</div>  
+
+
+
+
+<script>
+// === Eierhuetten Consolidated Script (cleaned) ===
+// Handles: location confirmation, duplicate check, tags suggestions, submit flow
+
+let editingData = {};
+let step = null;
+const chatWindow = document.getElementById('chat-window') || document.body;
+const inputField = document.getElementById('chat-input');
+
+function addMessage(content, who='bot') {
+  const wrapper = document.createElement('div');
+  wrapper.className = who === 'bot' ? 'message bot' : 'message user';
+  wrapper.innerHTML = content;
+  chatWindow.appendChild(wrapper);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+  return wrapper;
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+// --- Geocoding ---
+async function geocodeAddress(address) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'EierhuettenApp/1.0' } });
+    const data = await res.json();
+    if (!data || !data.length) return null;
+    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), display_name: data[0].display_name };
+  } catch { return null; }
+}
+
+// --- Distance (Haversine) ---
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R=6371e3, toRad=x=>x*Math.PI/180;
+  const φ1=toRad(lat1), φ2=toRad(lat2);
+  const Δφ=toRad(lat2-lat1), Δλ=toRad(lon2-lon1);
+  const a=Math.sin(Δφ/2)**2+Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  return 2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))*R;
+}
+
+// --- Duplicate location check ---
+async function locationExistsNearby(lat,lng,radius=20) {
+  const delta=0.00018;
+  const minLat=lat-delta, maxLat=lat+delta;
+  try {
+    const snap=await db.collection('eierhuetten').where('location.latitude','>=',minLat).where('location.latitude','<=',maxLat).get();
+    if (snap.empty) return false;
+    for (const doc of snap.docs) {
+      const d=doc.data();
+      if (!d.location || d.status==='archiviert') continue;
+      const dist=haversineDistance(lat,lng,d.location.latitude,d.location.longitude);
+      if (dist<=radius) return true;
+    }
+    return false;
+  } catch { return false; }
+}
+
+// --- Show confirmation map ---
+function showLocationConfirmation(lat,lng,label) {
+  addMessage(`📍 Gefundene Adresse: <strong>${escapeHtml(label)}</strong>`, 'bot');
+  const mapId='confirm-map-'+Date.now();
+  const mapDiv=document.createElement('div');
+  mapDiv.className='message bot';
+  mapDiv.innerHTML=`<div id="${mapId}" style="height:300px;border:1px solid #ccc;border-radius:6px;"></div>`;
+  chatWindow.appendChild(mapDiv);
+  const btns=document.createElement('div');
+  btns.className='message bot';
+  btns.innerHTML=`<button id="confirm-yes" class="choice-btn">✅ Ja, passt</button> <button id="confirm-retry" class="choice-btn">🔄 Neu wählen</button>`;
+  chatWindow.appendChild(btns);
+  chatWindow.scrollTop=chatWindow.scrollHeight;
+
+  setTimeout(()=>{
+    const map=L.map(mapId).setView([lat,lng],16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const marker=L.marker([lat,lng],{draggable:true}).addTo(map);
+    marker.on('dragend', e=>{
+      const pos=e.target.getLatLng();
+      editingData.location=new firebase.firestore.GeoPoint(pos.lat,pos.lng);
+    });
+    editingData.location=new firebase.firestore.GeoPoint(lat,lng);
+  },200);
+
+  setTimeout(()=>{
+    const yes=document.getElementById('confirm-yes');
+    const retry=document.getElementById('confirm-retry');
+    if (yes) yes.onclick=()=>{ confirmLocation(); };
+    if (retry) retry.onclick=()=>{ addMessage('🔄 Bitte gib eine neue Adresse ein:','bot'); step='address_input'; };
+  },300);
+}
+
+function confirmLocation() {
+  addMessage('✅ Standort gespeichert.','bot');
+  addMessage('⏳ Dein Vorschlag wird nun vom Team geprüft und nach Freigabe sichtbar.','bot');
+  submitNewHut();
+}
+
+// --- Tag suggestions ---
+async function showTagSuggestions(query) {
+  if (!query || query.length<2) return;
+  const snap=await db.collection('tag_counts').orderBy('count','desc').limit(20).get();
+  const tags=snap.docs.map(d=>({tag:d.id,count:d.data().count||0})).filter(t=>t.tag.startsWith(query.toLowerCase()));
+  if (!tags.length) return;
+  const container=document.createElement('div'); container.className='message bot';
+  tags.slice(0,8).forEach(t=>{
+    const btn=document.createElement('button'); btn.className='choice-btn'; btn.textContent=`${t.tag} (${t.count})`;
+    btn.onclick=()=>{ inputField.value=t.tag; container.remove(); inputField.focus(); };
+    container.appendChild(btn);
+  });
+  chatWindow.appendChild(container); chatWindow.scrollTop=chatWindow.scrollHeight;
+}
+
+if (inputField) {
+  inputField.addEventListener('input', ()=>{ if (step==='tags_input') showTagSuggestions(inputField.value.trim().toLowerCase()); });
+}
+
+// --- Tag counting ---
+async function incrementTagCounts(tags) {
+  if (!tags||!tags.length) return;
+  try {
+    const fn=firebase.app().functions('us-central1').httpsCallable('incrementTagCounts');
+    await fn({tags});
+  } catch {
+    const batch=db.batch();
+    tags.forEach(tag=>{
+      const ref=db.collection('tag_counts').doc(tag.toLowerCase());
+      batch.set(ref,{count:firebase.firestore.FieldValue.increment(1)},{merge:true});
+    });
+    await batch.commit();
+  }
+}
+
+// --- Submit Hut ---
+async function submitNewHut() {
+  if (!editingData.id) editingData.id=db.collection('eierhuetten').doc().id;
+  if (!editingData.location) { addMessage('⚠️ Kein Standort gespeichert.','bot'); return; }
+  const lat=editingData.location.latitude, lng=editingData.location.longitude;
+  if (await locationExistsNearby(lat,lng,20)) { addMessage('⚠️ An der Stelle existiert bereits eine Hütte.','bot'); return; }
+  const docRef=db.collection('eierhuetten').doc(editingData.id);
+  const final={...editingData, userId:currentUser?.uid||null, status:'offen', erstelltAm:firebase.firestore.FieldValue.serverTimestamp()};
+  await docRef.set(final,{merge:true});
+  if (final.tags&&final.tags.length) await incrementTagCounts(final.tags);
+  addMessage('✅ Vielen Dank — deine Hütte wurde eingereicht!','bot');
+  addMessage('🔎 Wir prüfen deinen Vorschlag. Du findest sie unter „Meine Hütten“, sobald sie freigegeben ist.','bot');
+  const btn=document.createElement('div'); btn.className='message bot'; btn.innerHTML='<button class="choice-btn" onclick="showMyHuts()">➡️ Meine Hütten anzeigen</button>'; chatWindow.appendChild(btn);
+  step=null; editingData={};
+}
+
+// --- My Huts ---
+async function showMyHuts() {
+  chatWindow.innerHTML='';
+  const snap=await db.collection('eierhuetten').where('userId','==',currentUser.uid).get();
+  if (snap.empty) { addMessage('Du hast noch keine Hütten.','bot'); return; }
+  const wrap=document.createElement('div'); wrap.className='message bot'; wrap.innerHTML='<strong>Meine Hütten</strong><div id="hut-list"></div>'; chatWindow.appendChild(wrap);
+  const list=wrap.querySelector('#hut-list');
+  snap.docs.forEach(doc=>{
+    const d=doc.data(),id=doc.id;
+    const item=document.createElement('div'); item.style.borderTop='1px solid #ccc'; item.style.padding='6px';
+    item.innerHTML=`<div><strong>🏡 ${escapeHtml(d.name||'(ohne Namen)')}</strong></div><div>📌 Status: ${escapeHtml(d.status||'offen')}</div>`;
+    if (d.status==='angenommen') {
+      const chatArea=document.createElement('div'); chatArea.id='chat-messages-'+id; chatArea.textContent='Lade Nachrichten...'; item.appendChild(chatArea);
+      ladeHutNachrichtenListe(id).catch(e=>chatArea.innerHTML='<em>Fehler beim Laden</em>');
+    } else {
+      const info=document.createElement('div'); info.style.fontStyle='italic'; info.textContent='💬 Nachrichten erst nach Freigabe'; item.appendChild(info);
+    }
+    list.appendChild(item);
+  });
+  chatWindow.scrollTop=chatWindow.scrollHeight;
+}
+
+// Expose
+window.handleAddressInput=async txt=>{ const c=await geocodeAddress(txt); if (!c) return addMessage('❌ Adresse nicht gefunden.','bot'); editingData.address=c.display_name; editingData.location=new firebase.firestore.GeoPoint(c.lat,c.lng); showLocationConfirmation(c.lat,c.lng,c.display_name); };
+window.handleGPSLocation=(lat,lng)=>{ editingData.location=new firebase.firestore.GeoPoint(lat,lng); showLocationConfirmation(lat,lng,'GPS-Standort'); };
+window.submitNewHut=submitNewHut;
+window.showMyHuts=showMyHuts;
+</script>
+
+</body>
+  </html>
