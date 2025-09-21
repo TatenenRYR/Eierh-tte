@@ -1,153 +1,200 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>📖 Fahrtenbuch</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>📖 Fahrtenbuch — Komplett</title>
 
-  <!-- Tailwind CSS (CDN) -->
-  <script src="https://cdn.tailwindcss.com"></script>
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Leaflet & Heatmap -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- leaflet.heat -->
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
 
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-  <!-- Firebase (compat, stabil im Browser) -->
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+<!-- DiceBear Avatar (no lib needed, simple URL) -->
 
-  <style>
-    /* Leaflet Tooltip für User/Marker etc. (wird hier nur für Style-Konsistenz genutzt) */
-    .user-label {
-      background: rgba(255,255,255,0.92);
-      border-radius: 6px;
-      padding: 4px 8px;
-      color: #111827; /* gray-900 */
-      font-size: .8rem;
-      box-shadow: 0 2px 6px rgba(0,0,0,.15);
-      border: 1px solid rgba(0,0,0,.06);
-    }
-  </style>
+<!-- Firebase (compat) -->
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js"></script>
+
+<style>
+  body { transition: background .2s, color .2s;}
+  .card { background: white; border-radius: 1rem; padding: 1rem; box-shadow: 0 6px 18px rgba(2,6,23,0.06); }
+  .small { font-size:.85rem; color:#6b7280; }
+</style>
 </head>
 <body class="bg-gray-50 text-gray-900">
-  <!-- App Wrapper -->
-  <div class="max-w-6xl mx-auto p-4 sm:p-6">
-    <header class="flex items-center justify-between mb-6">
-      <h1 class="text-2xl sm:text-3xl font-bold">📖 Mein Fahrtenbuch</h1>
-      <button id="refreshBtn" class="rounded-xl px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 transition">
-        ↻ Aktualisieren
-      </button>
-    </header>
+<div class="max-w-6xl mx-auto p-4 sm:p-6">
 
-    <!-- Profil Card -->
-    <section class="bg-white rounded-2xl shadow p-4 sm:p-6 mb-6">
-      <div class="flex items-center gap-4 sm:gap-6">
-        <div class="relative">
-          <img id="profilePic" src="default.jpg" alt="Profilbild"
-               class="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover ring-2 ring-indigo-100 cursor-pointer" />
-          <button id="picBtn" class="absolute -bottom-2 -right-2 bg-white border rounded-full p-2 shadow hover:shadow-md"
-                  title="Profilbild ändern">📷</button>
-        </div>
-        <div class="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <input id="profileName" placeholder="Dein Name"
-                 class="rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"/>
-          <select id="profileTitle" class="rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
-            <option value="">Kein Titel</option>
-          </select>
+  <header class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl sm:text-3xl font-bold">📖 Mein Fahrtenbuch — Komplett</h1>
+    <div class="flex gap-2">
+      <button id="refreshBtn" class="rounded-xl px-4 py-2 bg-indigo-600 text-white">↻ Aktualisieren</button>
+      <button id="toggleDarkBtn" class="rounded-xl px-4 py-2 bg-gray-100">🌓</button>
+    </div>
+  </header>
 
-          <div class="col-span-1 sm:col-span-2 flex items-center gap-3">
-            <button id="saveProfileBtn" class="rounded-xl px-4 py-2 bg-gray-100 hover:bg-gray-200 transition">💾 Speichern</button>
-            <button id="syncProfileBtn" class="rounded-xl px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 transition">🌍 Öffentlich machen</button>
-          </div>
-
-          <input id="shareLink" readonly
-                 class="col-span-1 sm:col-span-2 rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
-                 placeholder="Profil-Share-Link erscheint hier nach dem Sync…"/>
+  <!-- Profile / Controls -->
+  <section class="card mb-6 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+    <div class="flex items-center gap-4">
+      <img id="profilePic" src="default.jpg" alt="Avatar" class="w-20 h-20 rounded-full object-cover shadow cursor-pointer"/>
+      <div>
+        <input id="profileName" placeholder="Dein Name" class="border rounded-lg p-2 w-full" />
+        <div class="flex gap-2 mt-2">
+          <select id="profileRole" class="rounded-lg p-2 border"><option>User</option><option>Admin</option><option>Premium</option></select>
+          <select id="profileTitle" class="rounded-lg p-2 border"><option value="">Kein Titel</option></select>
         </div>
       </div>
-    </section>
+    </div>
 
-    <!-- Stats -->
-    <section class="grid md:grid-cols-3 gap-4 mb-6">
-      <div class="bg-white rounded-2xl shadow p-5">
-        <p class="text-gray-500">Gesamt Distanz</p>
-        <p id="totalKm" class="text-2xl font-semibold">0 km</p>
-      </div>
-      <div class="bg-white rounded-2xl shadow p-5">
-        <p class="text-gray-500">Gesamt Zeit</p>
-        <p id="totalTime" class="text-2xl font-semibold">0 h</p>
-      </div>
-      <div class="bg-white rounded-2xl shadow p-5">
-        <p class="text-gray-500">Ø Geschwindigkeit</p>
-        <p id="avgSpeed" class="text-2xl font-semibold">0 km/h</p>
-      </div>
-    </section>
+    <div class="col-span-1 md:col-span-2 flex flex-col gap-2">
+      <div class="flex gap-2 items-center">
+        <button id="saveProfileBtn" class="px-4 py-2 rounded-xl bg-gray-100">💾 Speichern</button>
+        <button id="syncProfileBtn" class="px-4 py-2 rounded-xl bg-emerald-600 text-white">🌍 Öffentlich machen</button>
+        <button id="deleteProfileBtn" class="px-4 py-2 rounded-xl bg-red-600 text-white">🗑️ Profil löschen</button>
 
-    <!-- Charts -->
-    <section class="bg-white rounded-2xl shadow p-4 sm:p-6 mb-6">
-      <h2 class="text-xl font-semibold mb-4">📊 Aktivität</h2>
-      <div class="grid lg:grid-cols-2 gap-6">
-        <div>
-          <canvas id="distChart" height="110"></canvas>
-        </div>
-        <div>
-          <canvas id="monthChart" height="110"></canvas>
-        </div>
+        <label class="ml-auto small">Avatar: <input id="avatarFile" type="file" accept="image/*" class="ml-2" /></label>
       </div>
-    </section>
 
-    <!-- Badges -->
-    <section class="bg-white rounded-2xl shadow p-4 sm:p-6 mb-6">
-      <h2 class="text-xl font-semibold mb-4">🏅 Meine Abzeichen</h2>
-      <div id="badgeList" class="flex flex-wrap gap-3"></div>
-    </section>
+      <div class="flex gap-2 items-center">
+        <input id="shareLink" readonly placeholder="Profil-Link erscheint nach Sync" class="flex-1 p-2 border rounded-lg" />
+        <button id="importBtn" class="px-4 py-2 rounded-xl bg-emerald-600 text-white">📂 Fahrten importieren</button>
+        <input id="importFile" type="file" accept=".csv,.gpx" class="hidden" />
+        <button id="exportAllGpx" class="px-4 py-2 rounded-xl bg-indigo-600 text-white">⬇️ Alle als GPX</button>
+      </div>
 
-    <!-- Fahrten-Tabelle + Map -->
-    <section class="bg-white rounded-2xl shadow p-4 sm:p-6">
-      <div class="flex items-center justify-between mb-4 gap-3">
-        <h2 class="text-xl font-semibold">Touren</h2>
-        <div class="flex items-center gap-2">
-          <input id="searchInput" class="rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
-                 placeholder="Suche (Datum/Strecke)…"/>
-          <select id="sortSelect" class="rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
-            <option value="date_desc">Neueste zuerst</option>
-            <option value="date_asc">Älteste zuerst</option>
-            <option value="dist_desc">Distanz (↓)</option>
-            <option value="dist_asc">Distanz (↑)</option>
-          </select>
+      <div class="flex gap-2 small mt-1">
+        <label class="flex items-center gap-1"><input id="privacyToggle" type="checkbox"> Öffentlich sichtbar</label>
+        <label class="flex items-center gap-1"><input id="notifToggle" type="checkbox"> Browser-Notifikationen</label>
+      </div>
+    </div>
+  </section>
+
+  <!-- Stats / Goals -->
+  <section class="grid md:grid-cols-3 gap-4 mb-6">
+    <div class="card">
+      <p class="small">Gesamt Distanz</p>
+      <h2 id="totalKm" class="text-2xl font-semibold">0 km</h2>
+      <p class="small">Bestleistung: <span id="bestDistance">–</span></p>
+    </div>
+    <div class="card">
+      <p class="small">Ziele</p>
+      <div class="flex gap-2 items-center">
+        <input id="monthlyGoal" type="number" placeholder="Monat km" class="p-2 border rounded" />
+        <div class="flex-1">
+          <div class="w-full bg-gray-100 rounded h-3 overflow-hidden"><div id="monthlyProgress" class="h-3 bg-green-500 w-0"></div></div>
+          <div class="small mt-1" id="monthlyLabel">0 / 0 km</div>
         </div>
       </div>
-
-      <div class="overflow-x-auto rounded-xl border">
-        <table class="min-w-full text-sm">
-          <thead class="bg-gray-50">
-            <tr>
-              <th class="text-left px-4 py-3">Datum</th>
-              <th class="text-left px-4 py-3">Dauer</th>
-              <th class="text-left px-4 py-3">Distanz</th>
-              <th class="text-left px-4 py-3">Ø Speed</th>
-              <th class="text-left px-4 py-3">Aktion</th>
-            </tr>
-          </thead>
-          <tbody id="logTable"></tbody>
-        </table>
+      <div class="mt-3 small">Wöchentlich</div>
+      <div class="flex gap-2 items-center mt-1">
+        <input id="weeklyGoal" type="number" placeholder="Woche km" class="p-2 border rounded" />
+        <div class="flex-1">
+          <div class="w-full bg-gray-100 rounded h-3 overflow-hidden"><div id="weeklyProgress" class="h-3 bg-blue-500 w-0"></div></div>
+          <div class="small mt-1" id="weeklyLabel">0 / 0 km</div>
+        </div>
       </div>
+    </div>
+    <div class="card">
+      <p class="small">Bestleistungen & Trends</p>
+      <ul class="small mt-2 space-y-1">
+        <li>Längste Fahrt: <span id="longestRide">—</span></li>
+        <li>Schnellste Fahrt (Ø): <span id="fastestRide">—</span></li>
+        <li>Monats-Trend (letzte 6 Monate): <canvas id="trendChart" height="60"></canvas></li>
+      </ul>
+    </div>
+  </section>
 
-      <div id="map" class="mt-4 h-[320px] rounded-xl border"></div>
-    </section>
-  </div>
+  <!-- Charts / Badges / Level / Challenges -->
+  <section class="grid lg:grid-cols-3 gap-4 mb-6">
+    <div class="card lg:col-span-2">
+      <h3 class="font-semibold mb-2">📊 Aktivität</h3>
+      <div class="grid lg:grid-cols-2 gap-4">
+        <canvas id="distChart" height="120"></canvas>
+        <canvas id="monthChart" height="120"></canvas>
+      </div>
+    </div>
 
-  <!-- Toast -->
-  <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 hidden
-                         bg-gray-900 text-white px-4 py-2 rounded-xl shadow-lg"></div>
+    <div class="card">
+      <h3 class="font-semibold">🏅 Abzeichen & Level</h3>
+      <div id="badgeList" class="flex flex-wrap gap-2 mt-3"></div>
+      <div class="mt-3">
+        <div class="small">Level: <strong id="levelLabel">0</strong></div>
+        <div class="w-full bg-gray-100 rounded h-3 mt-1 overflow-hidden"><div id="levelProgress" class="h-3 bg-indigo-600 w-0"></div></div>
+      </div>
+      <div class="mt-3">
+        <h4 class="small font-semibold">Challenge erstellen</h4>
+        <input id="challengeName" placeholder="Name" class="p-2 border rounded w-full mt-1"/>
+        <input id="challengeKm" type="number" placeholder="km Ziel" class="p-2 border rounded w-full mt-1"/>
+        <button id="createChallenge" class="mt-2 px-4 py-2 bg-yellow-500 rounded">➕ Erstellen</button>
+        <div id="challenges" class="mt-3 small"></div>
+      </div>
+    </div>
+  </section>
 
+  <!-- Table / Map / Calendar / Heatmap -->
+  <section class="card mb-6">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold">Touren</h3>
+      <div class="flex gap-2">
+        <input id="searchInput" placeholder="Suche Datum/Distanz..." class="p-2 border rounded" />
+        <select id="sortSelect" class="p-2 border rounded">
+          <option value="date_desc">Neueste zuerst</option>
+          <option value="date_asc">Älteste zuerst</option>
+          <option value="dist_desc">Distanz ↓</option>
+          <option value="dist_asc">Distanz ↑</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50"><tr>
+          <th class="px-4 py-2 text-left">Datum</th><th class="px-4 py-2 text-left">Dauer</th><th class="px-4 py-2 text-left">Distanz</th><th class="px-4 py-2 text-left">Ø Speed</th><th class="px-4 py-2">Aktionen</th>
+        </tr></thead>
+        <tbody id="logTable"></tbody>
+      </table>
+    </div>
+
+    <div class="mt-4 grid lg:grid-cols-2 gap-4">
+      <div id="map" class="h-96 rounded border"></div>
+      <div>
+        <h4 class="font-semibold">Kalender</h4>
+        <div id="calendar" class="mt-2 grid grid-cols-7 gap-1 text-xs"></div>
+        <h4 class="font-semibold mt-4">Heatmap</h4>
+        <div id="heatmapContainer" class="h-64 rounded border mt-2"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Friends / Sharing -->
+  <section class="card mb-6">
+    <div class="flex justify-between items-center">
+      <h3 class="font-semibold">👥 Freunde & Teilen</h3>
+      <div>
+        <input id="friendEmail" placeholder="Freund (E-Mail)" class="p-2 border rounded" />
+        <button id="addFriendBtn" class="px-3 py-2 bg-indigo-600 text-white rounded">➕</button>
+      </div>
+    </div>
+    <div id="friendsList" class="mt-3 small"></div>
+  </section>
+
+</div>
+
+<!-- Service Worker registration hint -->
 <script>
-/* ─────────────────────────────
- * Firebase Setup
- * ───────────────────────────── */
+/* ---------------------------
+   Config (passen falls nötig)
+   --------------------------- */
+const IMGBB_KEY = "5df04de9bfd2776f101329be4193e44c"; // dein imgbb key
 const firebaseConfig = {
   apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
   authDomain: "eierhuettentour.firebaseapp.com",
@@ -159,327 +206,475 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+const auth = firebase.auth();
 
-/* ─────────────────────────────
- * Globals
- * ───────────────────────────── */
-let map, routeLayer;
-let rides = []; // zusammengeführt: Firestore + localStorage
-let distChart, monthChart;
-const userId = initUserId();
-
-/* ─────────────────────────────
- * Utils
- * ───────────────────────────── */
-function initUserId(){
+/* ---------------------------
+   Globals
+   --------------------------- */
+let userId = (() => {
   let id = localStorage.getItem("userId");
-  if (!id) {
-    id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
-    localStorage.setItem("userId", id);
-  }
+  if (!id) { id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()); localStorage.setItem("userId", id); }
   return id;
-}
+})();
+let rides = []; // merged
+let map, routeLayer, heatLayer;
+let distChart, monthChart, trendChart;
+let badges = JSON.parse(localStorage.getItem("badges")||"[]");
+let challenges = JSON.parse(localStorage.getItem("challenges")||"[]");
 
-function toast(msg, type="info") {
-  const t = document.getElementById("toast");
-  t.textContent = msg;
-  t.classList.remove("hidden");
-  t.style.background = type === "error" ? "#dc2626" : type === "ok" ? "#065f46" : "#111827";
-  setTimeout(() => t.classList.add("hidden"), 2200);
-}
-
-function fmtDate(iso) {
-  const d = new Date(iso);
-  return d.toLocaleString();
-}
-function fmtHMS(sec) {
-  const h = Math.floor(sec/3600);
-  const m = Math.floor((sec%3600)/60);
-  return h ? `${h}h ${m}min` : `${m}min`;
+/* ---------------------------
+   Utils
+   --------------------------- */
+function toast(msg, type="info"){
+  const el = document.getElementById("refreshBtn");
+  // simple flash
+  el.textContent = "↻ " + msg;
+  setTimeout(()=>el.textContent="↻ Aktualisieren",2200);
+  console.log(type, msg);
 }
 function km(m){ return (m/1000).toFixed(1); }
-function kmh(m, s){ return ( (m/1000) / (s/3600) ).toFixed(1); }
+function fmtHMS(sec){ const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60); return h?`${h}h ${m}m`:`${m}m`; }
+function nowISO(){ return new Date().toISOString(); }
 
-/* ─────────────────────────────
- * Profil / Titel / Badges
- * ───────────────────────────── */
-let titleDefs = {};
-async function loadTitleDefs() {
-  const snap = await db.collection("titles").get();
-  snap.forEach(doc => {
-    const t = doc.data();
-    titleDefs[doc.id] = t.name;
+/* ---------------------------
+   imgbb upload
+   --------------------------- */
+async function uploadToImgBB(file){
+  return new Promise((resolve,reject)=>{
+    const r = new FileReader();
+    r.onload = async () => {
+      try{
+        const base64 = r.result.split(',')[1];
+        const fd = new FormData();
+        fd.append("key", IMGBB_KEY);
+        fd.append("image", base64);
+        const res = await fetch("https://api.imgbb.com/1/upload", { method: "POST", body: fd });
+        const j = await res.json();
+        if (j?.data) resolve(j.data);
+        else reject(j);
+      }catch(e){ reject(e); }
+    };
+    r.onerror = () => reject("Read error");
+    r.readAsDataURL(file);
   });
 }
 
-let badgeDefs = {};
-async function loadBadgeDefs() {
-  const snap = await db.collection("badgesDefs").get();
-  snap.forEach(doc => {
-    const b = doc.data();
-    badgeDefs[doc.id] = { name: b.name, icon: b.icon };
-  });
-}
-
-
+/* ---------------------------
+   Profile
+   --------------------------- */
 function loadProfileUI(){
   document.getElementById("profileName").value = localStorage.getItem("profileName") || "";
+  document.getElementById("profileRole").value = localStorage.getItem("profileRole") || "User";
   const pic = localStorage.getItem("profilePic");
   if (pic) document.getElementById("profilePic").src = pic;
-  renderTitles();
+  document.getElementById("monthlyGoal").value = localStorage.getItem("monthlyGoal") || "";
+  document.getElementById("weeklyGoal").value = localStorage.getItem("weeklyGoal") || "";
+  renderBadges();
+  renderChallenges();
 }
-
-async function renderTitles(){
-  const sel = document.getElementById("profileTitle");
-  sel.innerHTML = "<option value=''>Kein Titel</option>";
-
-  const badges = JSON.parse(localStorage.getItem("badges") || "[]");
-  const snap = await db.collection("titles").get();
-
-  badges.forEach(b => {
-    const match = snap.docs.find(d => d.id === b.id);
-    if (match) {
-      const t = match.data();
-      const opt = document.createElement("option");
-      opt.value = t.name;
-      opt.textContent = t.name;
-      sel.appendChild(opt);
-    }
-  });
-
-  if (localStorage.getItem("adminTitle")) {
-    const opt = document.createElement("option");
-    opt.value = "👑 Admin";
-    opt.textContent = "👑 Admin";
-    sel.appendChild(opt);
-  }
-
-  sel.value = localStorage.getItem("profileTitle") || "";
-}
-
-
-async function syncProfileToFirebase(){
-  try {
+document.getElementById("saveProfileBtn").addEventListener("click", ()=>{
+  localStorage.setItem("profileName", document.getElementById("profileName").value);
+  localStorage.setItem("profileRole", document.getElementById("profileRole").value);
+  toast("Profil lokal gespeichert","ok");
+});
+document.getElementById("syncProfileBtn").addEventListener("click", async ()=>{
+  try{
     const profile = {
-      name: localStorage.getItem("profileName") || "",
-      title: localStorage.getItem("profileTitle") || "",
-      pic: localStorage.getItem("profilePic") || "",
-      badges: JSON.parse(localStorage.getItem("badges") || "[]"),
-      stats: {
-        totalKm: document.getElementById("totalKm").textContent,
-        totalTime: document.getElementById("totalTime").textContent,
-        avgSpeed: document.getElementById("avgSpeed").textContent
-      },
-      updatedAt: new Date().toISOString()
+      name: localStorage.getItem("profileName")||"",
+      title: localStorage.getItem("profileTitle")||"",
+      role: localStorage.getItem("profileRole")||"User",
+      pic: localStorage.getItem("profilePic")||"",
+      badges: badges,
+      updatedAt: nowISO(),
+      public: document.getElementById("privacyToggle").checked || false
     };
     await db.collection("profiles").doc(userId).set(profile, { merge: true });
     const link = `${location.origin}/profile.html?id=${userId}`;
     document.getElementById("shareLink").value = link;
-    toast("Profil synchronisiert", "ok");
-  } catch(e){
-    console.error(e);
-    toast("Profil Sync fehlgeschlagen", "error");
-  }
-}
+    toast("Profil synchronisiert","ok");
+  }catch(e){ console.error(e); toast("Sync fehlgeschlagen","error"); }
+});
+document.getElementById("deleteProfileBtn").addEventListener("click", async ()=>{
+  if (!confirm("Profil unwiderruflich löschen?")) return;
+  try {
+    await db.collection("profiles").doc(userId).delete();
+    await db.collection("users").doc(userId).delete();
+    localStorage.clear();
+    toast("Profil gelöscht","ok");
+    location.reload();
+  } catch(e){ console.error(e); toast("Löschung fehlgeschlagen","error"); }
+});
 
-function renderBadges(){
-  const list = document.getElementById("badgeList");
-  const badges = JSON.parse(localStorage.getItem("badges") || "[]");
-  list.innerHTML = "";
-  if (!badges.length){
-    list.innerHTML = `<div class="text-gray-500">Noch keine Abzeichen freigeschaltet 🚀</div>`;
-    return;
-  }
-  for (const b of badges){
-    const card = document.createElement("div");
-    card.className = "px-3 py-2 rounded-xl border bg-white hover:shadow transition";
-    card.innerHTML = `<div class="text-2xl text-center">${b.icon || "🏅"}</div>
-                      <div class="text-center">${b.title || b.id}</div>
-                      <div class="text-xs text-gray-500 text-center">${new Date(b.date).toLocaleDateString()}</div>`;
-    list.appendChild(card);
-  }
-}
+/* avatar upload */
+document.getElementById("avatarFile").addEventListener("change", async (e)=>{
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const img = await uploadToImgBB(file);
+    localStorage.setItem("profilePic", img.url);
+    document.getElementById("profilePic").src = img.url;
+    await db.collection("profiles").doc(userId).update({ pic: img.url, pic_delete: img.delete_url||null });
+    toast("Avatar hochgeladen","ok");
+  } catch(err){ console.error(err); toast("Avatar Upload fehlgeschlagen","error"); }
+});
 
-/* ─────────────────────────────
- * Fahrten laden (Firestore + localStorage)
- * ───────────────────────────── */
+/* quick avatar click -> dicebear generator */
+document.getElementById("profilePic").addEventListener("click", ()=>{
+  const seed = (localStorage.getItem("profileName") || "user") + "-" + Math.floor(Math.random()*10000);
+  const url = `https://api.dicebear.com/8.x/identicon/svg?seed=${encodeURIComponent(seed)}`;
+  document.getElementById("profilePic").src = url;
+  localStorage.setItem("profilePic", url);
+});
+
+/* ---------------------------
+   Rides load/merge/import/export
+   --------------------------- */
 async function loadRidesFromFirestore(){
   try{
-    const snap = await db.collection("users").doc(userId).collection("rides").orderBy("startTime", "desc").get();
-    const arr = [];
-    snap.forEach(doc => arr.push({ id: doc.id, ...doc.data(), source: "cloud" }));
-    return arr;
+    const snap = await db.collection("users").doc(userId).collection("rides").orderBy("startTime","desc").get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data(), source: "cloud" }));
   }catch(e){
-    console.warn("Firestore load error:", e);
+    console.warn("Firestore load failed", e);
     return [];
   }
 }
 function loadRidesFromLocal(){
-  const local = JSON.parse(localStorage.getItem("fahrtenbuch") || "[]");
-  // map zu kompatiblem Format
-  return local.map((l, idx) => ({
-    id: `local-${idx}-${l.date}`,
+  const local = JSON.parse(localStorage.getItem("fahrtenbuch")||"[]");
+  return local.map((l,idx)=>({
+    id: `local-${idx}-${l.date||idx}`,
     startTime: l.date,
-    endTime: l.date, // nicht exakt, aber für Anzeige ok
     duration: l.duration,
     distance: l.distance,
-    avgSpeed: l.avgSpeed,
-    route: (l.route || []).map(p => Array.isArray(p) ? {lat:p[0], lng:p[1]} : p),
+    route: (l.route||[]).map(p => Array.isArray(p)?{lat:p[0],lng:p[1]}:p),
     source: "local"
   }));
 }
-
-/* Dubletten-Schutz: wenn es dieselben Zeit-/Distanzwerte sind, nimm Cloud */
 function mergeRides(cloud, local){
-  const key = r => `${new Date(r.startTime).getTime()}_${Math.round(r.distance||0)}_${Math.round(r.duration||0)}`;
   const map = new Map();
-  for (const r of local){ map.set(key(r), r); }
-  for (const r of cloud){ map.set(key(r), r); } // Cloud überschreibt
-  return Array.from(map.values());
+  for (const r of local) map.set(`${new Date(r.startTime).getTime()}_${Math.round(r.distance||0)}`, r);
+  for (const r of cloud) map.set(`${new Date(r.startTime).getTime()}_${Math.round(r.distance||0)}`, r);
+  return Array.from(map.values()).sort((a,b)=>new Date(b.startTime)-new Date(a.startTime));
 }
 
-/* Migration alter Koordinaten ([lat,lng] → {lat,lng}) für Cloud */
-async function migrateRideCoords(){
-  try{
-    const snap = await db.collection("users").doc(userId).collection("rides").get();
-    const batch = db.batch();
-    let changed = 0;
-    snap.forEach(doc => {
-      const d = doc.data();
-      const fixArrToObj = (arr) => Array.isArray(arr) ? arr.map(p => Array.isArray(p) ? ({lat:p[0], lng:p[1]}) : p) : [];
-      const newCoords = fixArrToObj(d.coords || []);
-      const newPlanned = fixArrToObj(d.routePlanned || []);
-      const needUpdate = JSON.stringify(newCoords) !== JSON.stringify(d.coords || []) ||
-                         JSON.stringify(newPlanned) !== JSON.stringify(d.routePlanned || []);
-      if (needUpdate){
-        batch.update(doc.ref, { coords: newCoords, routePlanned: newPlanned });
-        changed++;
-      }
-    });
-    if (changed>0){
-      await batch.commit();
-      console.log(`Migration: ${changed} Fahrten korrigiert`);
+/* Import CSV/GPX */
+function parseCSV(text){
+  const lines = text.trim().split(/\r?\n/);
+  const h = lines.shift().split(",").map(s=>s.trim());
+  return lines.map(line=>{
+    const cols = line.split(",");
+    const obj = {};
+    h.forEach((k,i)=> obj[k] = (cols[i]||"").trim());
+    return obj;
+  });
+}
+function parseGPX(text){
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(text, "application/xml");
+  const trks = Array.from(xml.getElementsByTagName("trk"));
+  const rides = [];
+  for (const trk of trks){
+    for (const trkseg of trk.getElementsByTagName("trkseg")){
+      const pts = Array.from(trkseg.getElementsByTagName("trkpt")).map(p=>({lat: parseFloat(p.getAttribute("lat")), lng: parseFloat(p.getAttribute("lon"))}));
+      rides.push({ startTime: nowISO(), duration: 0, distance: 0, route: pts });
     }
-  }catch(e){
-    console.warn("Migration skipped/failed:", e);
   }
+  return rides;
 }
+async function importRidesFromFile(file){
+  const text = await file.text();
+  let newRides = [];
+  if (file.name.endsWith(".csv")){
+    const rows = parseCSV(text);
+    newRides = rows.map(r => ({ startTime: r.date || nowISO(), duration: Number(r.duration||0), distance: Number(r.distance||0), route: r.route?JSON.parse(r.route):[] }));
+  } else if (file.name.endsWith(".gpx")){
+    newRides = parseGPX(text);
+  } else { toast("Unsupported file"); return; }
+  if (!newRides.length) { toast("Keine Fahrten erkannt"); return; }
 
-/* ─────────────────────────────
- * Tabelle & Map Rendering
- * ───────────────────────────── */
-function renderStats(list){
-  if (!list.length){
-    document.getElementById("totalKm").innerText = "0 km";
-    document.getElementById("totalTime").innerText = "0 h";
-    document.getElementById("avgSpeed").innerText = "0 km/h";
-    return;
-  }
-  const totalDist = list.reduce((a,b)=>a+(b.distance||0),0);
-  const totalTime = list.reduce((a,b)=>a+(b.duration||0),0);
-  const avg = totalDist && totalTime ? ( (totalDist/1000) / (totalTime/3600) ) : 0;
-
-  document.getElementById("totalKm").innerText = `${(totalDist/1000).toFixed(1)} km`;
-  document.getElementById("totalTime").innerText = `${(totalTime/3600).toFixed(1)} h`;
-  document.getElementById("avgSpeed").innerText = `${avg.toFixed(1)} km/h`;
-}
-
-function renderCharts(list){
-  // Distanz-Zeitreihe (pro Fahrt)
-  const labels = list.map(r => new Date(r.startTime).toLocaleDateString());
-  const dists = list.map(r => (r.distance||0)/1000);
-
-  if (distChart) distChart.destroy();
-  distChart = new Chart(document.getElementById("distChart"), {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [{ label: "Distanz (km)", data: dists }]
-    },
-    options: { responsive: true, maintainAspectRatio: false }
+  // save to firestore
+  const batch = db.batch();
+  newRides.forEach(r => {
+    const ref = db.collection("users").doc(userId).collection("rides").doc();
+    batch.set(ref, r);
   });
+  await batch.commit().catch(e=>console.error(e));
 
-  // Monats-Summen
-  const byMonth = {};
-  for (const r of list){
-    const d = new Date(r.startTime);
-    const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-    byMonth[k] = (byMonth[k]||0) + (r.distance||0)/1000;
-  }
-  const mLabels = Object.keys(byMonth).sort();
-  const mData = mLabels.map(k => byMonth[k]);
-
-  if (monthChart) monthChart.destroy();
-  monthChart = new Chart(document.getElementById("monthChart"), {
-    type: "line",
-    data: { labels: mLabels, datasets: [{ label: "Monatsdistanz (km)", data: mData, tension: .3 }] },
-    options: { responsive: true, maintainAspectRatio: false }
-  });
+  // local storage
+  const local = JSON.parse(localStorage.getItem("fahrtenbuch")||"[]");
+  newRides.forEach(r => local.push({ date: r.startTime, duration: r.duration, distance: r.distance, route: r.route }));
+  localStorage.setItem("fahrtenbuch", JSON.stringify(local));
+  toast(`${newRides.length} Fahrten importiert`, "ok");
+  await init(); // reload
 }
 
+document.getElementById("importBtn").addEventListener("click", ()=>document.getElementById("importFile").click());
+document.getElementById("importFile").addEventListener("change", (e)=>{ const f=e.target.files[0]; if(f) importRidesFromFile(f); });
+
+/* GPX export single/all */
+function rideToGpx(ride){
+  const header = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Fahrtenbuch">\n<trk><name>Fahrt ${ride.startTime}</name><trkseg>\n`;
+  const pts = (ride.route||[]).map(p=>`<trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`).join("\n");
+  const footer = `\n</trkseg></trk>\n</gpx>`;
+  return header + pts + footer;
+}
+document.getElementById("exportAllGpx").addEventListener("click", async ()=>{
+  const cloud = await loadRidesFromFirestore();
+  const local = loadRidesFromLocal();
+  const all = mergeRides(cloud, local);
+  // create single GPX with all points
+  let gpx = `<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="Fahrtenbuch">`;
+  for (const r of all){
+    gpx += `<trk><name>${r.startTime}</name><trkseg>`;
+    (r.route||[]).forEach(p=> gpx += `<trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`);
+    gpx += `</trkseg></trk>`;
+  }
+  gpx += `</gpx>`;
+  const blob = new Blob([gpx], { type: "application/gpx+xml" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = `all_rides_${new Date().toISOString().slice(0,10)}.gpx`; a.click();
+});
+
+/* ---------------------------
+   Render table / charts / map / heatmap / calendar
+   --------------------------- */
+function ensureMap(){
+  if (!map) {
+    map = L.map("map").setView([51.1657,10.4515], 6);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+  }
+}
 function renderTable(list){
-  const tbody = document.getElementById("logTable");
-  tbody.innerHTML = "";
-  if (!list.length){
-    tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">Keine Fahrten gefunden</td></tr>`;
-    return;
-  }
+  const tbody = document.getElementById("logTable"); tbody.innerHTML = "";
+  if (!list.length){ tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-6 text-center">Keine Fahrten</td></tr>`; return; }
   for (const r of list){
-    const tr = document.createElement("tr");
-    tr.className = "border-b hover:bg-gray-50";
-    const distKm = km(r.distance||0);
-    const avg = r.duration ? kmh(r.distance||0, r.duration) : "0.0";
-    tr.innerHTML = `
-      <td class="px-4 py-3">${fmtDate(r.startTime)}</td>
-      <td class="px-4 py-3">${fmtHMS(r.duration||0)}</td>
-      <td class="px-4 py-3">${distKm} km</td>
-      <td class="px-4 py-3">${avg} km/h</td>
-      <td class="px-4 py-3">
-        <button class="px-3 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition">Anzeigen</button>
-      </td>`;
-    tr.querySelector("button").onclick = () => showRoute(r);
+    const tr = document.createElement("tr"); tr.className = "border-b hover:bg-gray-50";
+    const distKm = ((r.distance||0)/1000).toFixed(1);
+    const avg = r.duration ? ((r.distance/1000)/(r.duration/3600)).toFixed(1) : "-";
+    tr.innerHTML = `<td class="px-4 py-3">${new Date(r.startTime).toLocaleString()}</td>
+                    <td class="px-4 py-3">${fmtHMS(r.duration||0)}</td>
+                    <td class="px-4 py-3">${distKm} km</td>
+                    <td class="px-4 py-3">${avg} km/h</td>
+                    <td class="px-4 py-3">
+                      <button class="px-2 py-1 bg-indigo-600 text-white rounded showBtn">Anzeigen</button>
+                      <button class="px-2 py-1 bg-gray-200 rounded ml-1 shareBtn">Teilen</button>
+                      <button class="px-2 py-1 bg-red-500 text-white rounded ml-1 exportBtn">GPX</button>
+                    </td>`;
+    tr.querySelector(".showBtn").onclick = ()=> showRoute(r);
+    tr.querySelector(".shareBtn").onclick = ()=> shareRide(r);
+    tr.querySelector(".exportBtn").onclick = ()=> {
+      const g = rideToGpx(r);
+      const blob = new Blob([g], { type: "application/gpx+xml" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = `ride_${r.startTime}.gpx`; a.click();
+    };
     tbody.appendChild(tr);
   }
 }
-
-function ensureMap(){
-  if (!map){
-    map = L.map("map").setView([51, 10], 6);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
-  }
+function renderStats(list){
+  const totalDist = list.reduce((a,b)=>a+(b.distance||0),0);
+  const totalTime = list.reduce((a,b)=>a+(b.duration||0),0);
+  document.getElementById("totalKm").innerText = `${(totalDist/1000).toFixed(1)} km`;
+  // best / longest / fastest
+  const longest = list.reduce((mx,r)=> r.distance> (mx.distance||0) ? r : mx, {});
+  document.getElementById("longestRide").innerText = longest.distance ? `${(longest.distance/1000).toFixed(1)} km` : "–";
+  const fastest = list.reduce((mx,r)=> ((r.distance && r.duration) && ((r.distance/r.duration) > (mx.distance/mx.duration || 0)))? r : mx, {});
+  document.getElementById("fastestRide").innerText = fastest.distance ? `${(((fastest.distance/1000)/(fastest.duration/3600)).toFixed(1))} km/h` : "–";
+  // goals
+  const monthlyGoal = Number(document.getElementById("monthlyGoal").value || localStorage.getItem("monthlyGoal") || 0);
+  const weeklyGoal = Number(document.getElementById("weeklyGoal").value || localStorage.getItem("weeklyGoal") || 0);
+  localStorage.setItem("monthlyGoal", monthlyGoal);
+  localStorage.setItem("weeklyGoal", weeklyGoal);
+  // compute month sum
+  const now = new Date();
+  const monthSum = list.filter(r => { const d=new Date(r.startTime); return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear(); }).reduce((a,b)=>a+(b.distance||0),0)/1000;
+  const weekSum = list.filter(r => { const d=new Date(r.startTime); const diff = (now - d)/(1000*60*60*24); return diff <= 7; }).reduce((a,b)=>a+(b.distance||0),0)/1000;
+  // progress bar
+  const mPerc = monthlyGoal? Math.min(100, Math.round((monthSum/monthlyGoal)*100)) : 0;
+  const wPerc = weeklyGoal? Math.min(100, Math.round((weekSum/weeklyGoal)*100)) : 0;
+  document.getElementById("monthlyProgress").style.width = mPerc + "%";
+  document.getElementById("monthlyLabel").innerText = `${monthSum.toFixed(1)} / ${monthlyGoal} km`;
+  document.getElementById("weeklyProgress").style.width = wPerc + "%";
+  document.getElementById("weeklyLabel").innerText = `${weekSum.toFixed(1)} / ${weeklyGoal} km`;
 }
+
+/* Map + Heat */
 function showRoute(ride){
   ensureMap();
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
-
-  const route = (ride.route && ride.route.length) ? ride.route
-               : (ride.coords && ride.coords.length) ? ride.coords
-               : (ride.routePlanned || []);
-
-  const latlngs = route.map(p => L.latLng(p.lat, p.lng)).filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
-
-  if (!latlngs.length){
-    toast("Keine Route/Koordinaten vorhanden", "error");
-    return;
-  }
+  const latlngs = (ride.route||[]).map(p => L.latLng(p.lat, p.lng)).filter(p=>Number.isFinite(p.lat));
+  if (!latlngs.length) { toast("Keine Route vorhanden"); return; }
   routeLayer = L.polyline(latlngs, { color: "#1d4ed8", weight: 4 }).addTo(map);
-  map.fitBounds(routeLayer.getBounds(), { padding: [30,30] });
+  map.fitBounds(routeLayer.getBounds(), { padding: [20,20] });
+}
+function renderHeatmap(list){
+  const container = document.getElementById("heatmapContainer");
+  container.innerHTML = "<div id='heatmap' style='height:100%'></div>";
+  if (heatLayer) { try{ map.removeLayer(heatLayer);}catch(e){} heatLayer = null; }
+  ensureMap();
+  const points = [];
+  list.forEach(r => { (r.route||[]).forEach(p => points.push([p.lat, p.lng, 0.5])); });
+  heatLayer = L.heatLayer(points, { radius: 25, blur: 15 }).addTo(map);
 }
 
-/* Suche/Sortierung */
+/* Calendar (simple month grid, mark days with rides) */
+function renderCalendar(list){
+  const cal = document.getElementById("calendar");
+  cal.innerHTML = "";
+  const now = new Date();
+  const year = now.getFullYear(), month = now.getMonth();
+  const first = new Date(year, month, 1);
+  const startWeekday = first.getDay();
+  const days = new Date(year, month+1, 0).getDate();
+  const dayMap = {};
+  list.forEach(r => {
+    const d = new Date(r.startTime).getDate();
+    dayMap[d] = (dayMap[d]||0) + 1;
+  });
+  // fill cells (7 columns)
+  for (let i=0;i<startWeekday;i++) { const c=document.createElement("div"); cal.appendChild(c); }
+  for (let d=1; d<=days; d++){
+    const el = document.createElement("div");
+    el.className = "p-2 border rounded small text-center";
+    el.innerHTML = `<div>${d}</div><div class="text-xs text-green-600">${dayMap[d]||''}</div>`;
+    cal.appendChild(el);
+  }
+}
+
+/* Charts */
+function renderCharts(list){
+  // dist per ride
+  const labels = list.map(r => new Date(r.startTime).toLocaleDateString());
+  const dists = list.map(r => (r.distance||0)/1000);
+  if (distChart) distChart.destroy();
+  distChart = new Chart(document.getElementById("distChart"), {
+    type: "bar",
+    data: { labels, datasets: [{ label: "Distanz (km)", data: dists }] },
+    options: { responsive:true, maintainAspectRatio:false }
+  });
+  // by month
+  const byMonth = {};
+  list.forEach(r => { const d=new Date(r.startTime); const k=`${d.getFullYear()}-${d.getMonth()+1}`; byMonth[k] = (byMonth[k]||0) + (r.distance||0)/1000; });
+  const mlabels = Object.keys(byMonth).sort();
+  const mdata = mlabels.map(k => byMonth[k]);
+  if (monthChart) monthChart.destroy();
+  monthChart = new Chart(document.getElementById("monthChart"), {
+    type: "line",
+    data: { labels: mlabels, datasets: [{ label: "Monatsdistanz (km)", data: mdata, tension:0.3 }] },
+    options: { responsive:true, maintainAspectRatio:false }
+  });
+  // trend (simple moving average)
+  if (trendChart) trendChart.destroy();
+  const windowSize = 3;
+  const sma = mdata.map((_,i)=> {
+    const slice = mdata.slice(Math.max(0,i-windowSize+1), i+1);
+    return slice.reduce((a,b)=>a+b,0)/slice.length;
+  });
+  trendChart = new Chart(document.getElementById("trendChart"), {
+    type: "line",
+    data: { labels: mlabels, datasets: [{ label: "SMA", data: sma, borderDash:[5,5] }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}} }
+  });
+}
+
+/* ---------------------------
+   Badges / Level / Challenges
+   --------------------------- */
+function evaluateBadges(list){
+  // rules: 100km total -> bronze, 500 -> silver, 1000 -> gold
+  const total = list.reduce((a,b)=>a+(b.distance||0),0)/1000;
+  const earned = [];
+  if (total >= 100) earned.push({ id:"bronze", title:"100 km erreicht", icon:"🥉" });
+  if (total >= 500) earned.push({ id:"silver", title:"500 km erreicht", icon:"🥈" });
+  if (total >= 1000) earned.push({ id:"gold", title:"1000 km erreicht", icon:"🥇" });
+  badges = earned;
+  localStorage.setItem("badges", JSON.stringify(badges));
+  renderBadges();
+}
+function renderBadges(){
+  const el = document.getElementById("badgeList"); el.innerHTML = "";
+  if (!badges.length) el.innerHTML = "<div class='small text-gray-500'>Noch keine Abzeichen</div>";
+  for (const b of badges){
+    const d = document.createElement("div"); d.className = "px-3 py-2 rounded-xl border bg-white";
+    d.innerHTML = `<div class="text-lg">${b.icon||"🏅"}</div><div class="text-xs">${b.title}</div>`;
+    el.appendChild(d);
+  }
+}
+function computeLevel(list){
+  const kmTotal = list.reduce((a,b)=>a+(b.distance||0),0)/1000;
+  const points = Math.floor(kmTotal); // 1 point per km
+  const level = Math.floor(points/100);
+  const progress = (points % 100);
+  document.getElementById("levelLabel").innerText = level;
+  document.getElementById("levelProgress").style.width = (progress) + "%";
+}
+
+/* challenges */
+document.getElementById("createChallenge").addEventListener("click", ()=>{
+  const name = document.getElementById("challengeName").value.trim();
+  const km = Number(document.getElementById("challengeKm").value || 0);
+  if (!name || !km) return alert("Bitte Name und km");
+  challenges.push({ name, km, progress:0, created: nowISO() });
+  localStorage.setItem("challenges", JSON.stringify(challenges));
+  renderChallenges();
+});
+function renderChallenges(){
+  const el = document.getElementById("challenges");
+  el.innerHTML = "";
+  if (!challenges.length) el.innerHTML = "<div class='small text-gray-500'>Keine Challenges</div>";
+  challenges.forEach((c,idx)=>{
+    const div = document.createElement("div"); div.className="p-2 border rounded mb-1 small";
+    div.innerHTML = `<strong>${c.name}</strong> — ${c.progress}/${c.km} km <button class="ml-2 text-xs" data-idx="${idx}">🔁 Reset</button>`;
+    el.appendChild(div);
+    div.querySelector("button").addEventListener("click", ()=>{ challenges[idx].progress = 0; localStorage.setItem("challenges", JSON.stringify(challenges)); renderChallenges(); });
+  });
+}
+
+/* ---------------------------
+   Friends
+   --------------------------- */
+document.getElementById("addFriendBtn").addEventListener("click", async ()=>{
+  const email = document.getElementById("friendEmail").value.trim();
+  if (!email) return;
+  try {
+    await db.collection("friends").add({ owner: userId, friendEmail: email, addedAt: nowISO() });
+    toast("Freund hinzugefügt");
+    loadFriends();
+  } catch(e){ console.error(e); toast("Fehler", "error"); }
+});
+async function loadFriends(){
+  const snap = await db.collection("friends").where("owner","==",userId).get();
+  const el = document.getElementById("friendsList"); el.innerHTML = "";
+  snap.forEach(doc => {
+    const d = doc.data();
+    const row = document.createElement("div"); row.className="p-2 border rounded mb-1 small";
+    row.innerHTML = `<strong>${d.friendEmail}</strong> <button data-id="${doc.id}" class="ml-2 text-xs">Entfernen</button>`;
+    el.appendChild(row);
+    row.querySelector("button").addEventListener("click", async ()=>{ await db.collection("friends").doc(doc.id).delete(); loadFriends(); });
+  });
+}
+
+/* ---------------------------
+   Sharing
+   --------------------------- */
+function shareRide(ride){
+  const url = `${location.origin}/profile.html?id=${userId}&ride=${encodeURIComponent(ride.id||ride.startTime)}`;
+  if (navigator.share) {
+    navigator.share({ title: "Meine Fahrt", text: "Schau dir meine Fahrt an", url }).catch(e=>console.log(e));
+  } else {
+    // whatsapp fallback
+    const wa = `https://wa.me/?text=${encodeURIComponent("Schau dir meine Fahrt an: "+url)}`;
+    window.open(wa,"_blank");
+  }
+}
+
+/* ---------------------------
+   Search / Sort / Init
+   --------------------------- */
 function applySearchSort(source){
-  const q = document.getElementById("searchInput").value.trim().toLowerCase();
+  const q = (document.getElementById("searchInput").value || "").toLowerCase();
   const sort = document.getElementById("sortSelect").value;
   let arr = [...source];
-
-  if (q){
-    arr = arr.filter(r => {
-      const d = new Date(r.startTime).toLocaleString().toLowerCase();
-      const dist = String(Math.round((r.distance||0)/100)/10);
-      return d.includes(q) || dist.includes(q);
-    });
-  }
-
+  if (q) arr = arr.filter(r => (new Date(r.startTime).toLocaleString().toLowerCase().includes(q) || ((r.distance||0)/1000).toFixed(1).includes(q)));
   arr.sort((a,b)=>{
     if (sort==="date_asc") return new Date(a.startTime)-new Date(b.startTime);
     if (sort==="date_desc") return new Date(b.startTime)-new Date(a.startTime);
@@ -487,76 +682,59 @@ function applySearchSort(source){
     if (sort==="dist_desc") return (b.distance||0)-(a.distance||0);
     return 0;
   });
-
   return arr;
 }
 
-/* ─────────────────────────────
- * Initialisierung
- * ───────────────────────────── */
+document.getElementById("searchInput").addEventListener("input", ()=> renderTable(applySearchSort(rides)));
+document.getElementById("sortSelect").addEventListener("change", ()=> renderTable(applySearchSort(rides)));
+document.getElementById("refreshBtn").addEventListener("click", ()=> init());
+
+/* ---------------------------
+   Notifications, Darkmode, SW
+   --------------------------- */
+document.getElementById("notifToggle").addEventListener("change", async (e)=>{
+  if (e.target.checked) {
+    if (!("Notification" in window)) return alert("Notifications not supported");
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") { alert("Notification denied"); e.target.checked=false; return; }
+    toast("Notifications aktiviert");
+  } else { toast("Notifications deaktiviert"); }
+});
+
+document.getElementById("toggleDarkBtn").addEventListener("click", ()=>{
+  document.documentElement.classList.toggle("dark");
+  document.body.classList.toggle("bg-gray-900");
+  document.body.classList.toggle("text-white");
+});
+
+/* Service worker skeleton (PWA offline basics) */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw-fahrtenbuch.js').then(()=>console.log('sw registered')).catch(()=>console.log('sw reg failed'));
+}
+
+/* ---------------------------
+   Init function — assembles everything
+   --------------------------- */
 async function init(){
-  // Profil UI
   loadProfileUI();
-  renderBadges();
-
-  // Migration (silent best effort)
-  await migrateRideCoords();
-
-  // Rides sammeln
+  // load rides
   const cloud = await loadRidesFromFirestore();
   const local = loadRidesFromLocal();
   rides = mergeRides(cloud, local);
-
-  // Render
   renderStats(rides);
+  renderTable(applySearchSort(rides));
   renderCharts(rides);
-  renderTable(applySearchSort(rides));
+  renderHeatmap(rides);
+  renderCalendar(rides);
+  evaluateBadges(rides);
+  computeLevel(rides);
+  loadFriends();
+  // pre-fill monthly/weekly goals labels
+  document.getElementById("monthlyGoal").value = localStorage.getItem("monthlyGoal") || "";
+  document.getElementById("weeklyGoal").value = localStorage.getItem("weeklyGoal") || "";
 }
-
-/* ─────────────────────────────
- * Events
- * ───────────────────────────── */
-document.getElementById("refreshBtn").addEventListener("click", async ()=>{
-  toast("Lade Daten…");
-  await init();
-  toast("Aktualisiert", "ok");
-});
-
-document.getElementById("searchInput").addEventListener("input", ()=>{
-  renderTable(applySearchSort(rides));
-});
-document.getElementById("sortSelect").addEventListener("change", ()=>{
-  renderTable(applySearchSort(rides));
-});
-
-document.getElementById("saveProfileBtn").addEventListener("click", ()=>{
-  localStorage.setItem("profileName", document.getElementById("profileName").value);
-  localStorage.setItem("profileTitle", document.getElementById("profileTitle").value);
-  toast("Profil gespeichert", "ok");
-});
-
-document.getElementById("syncProfileBtn").addEventListener("click", syncProfileToFirebase);
-
-document.getElementById("picBtn").addEventListener("click", ()=>{
-  const input = document.createElement("input");
-  input.type = "file"; input.accept = "image/*";
-  input.onchange = e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      localStorage.setItem("profilePic", ev.target.result);
-      document.getElementById("profilePic").src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
-  };
-  input.click();
-});
-
-/* ─────────────────────────────
- * Start
- * ───────────────────────────── */
 init();
+
 </script>
 </body>
 </html>
