@@ -343,7 +343,7 @@ async function submitNewHutAdmin() {
       });
       
         initLiveNewHuts();
-      renderPendingFotos(allHuts);
+      initLivePendingFotos();
     }
   });
 
@@ -1614,38 +1614,75 @@ function uploadFoto(input, hutId) {
     showNotification('❌ Fehler beim Löschen der Hütte.', 'bot');
   });
 }
-  function renderPendingFotos(list) {
+  // 🔴 Live-Listener für wartende Fotos
+function initLivePendingFotos() {
+  db.collection('eierhuetten').onSnapshot(snapshot => {
+    const pending = [];
+
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      // nur Hütten, die mindestens 1 wartendes Foto haben
+      if (
+        Array.isArray(data.fotos) &&
+        data.fotos.some(f => f && typeof f === "object" && f.status === "wartet")
+      ) {
+        pending.push({ id: doc.id, ...data });
+      }
+    });
+
+    renderPendingFotos(pending);   // → deine bestehende Renderfunktion
+    showNotification('🔄 Live-Update: Wartende Fotos wurden aktualisiert.');
+  }, err => {
+    console.error("❌ Fehler beim Live-Update der wartenden Fotos:", err);
+  });
+}
+function renderPendingFotos(list) {
   const container = document.getElementById("pending-fotos");
   container.innerHTML = "";
 
-  const huettenMitPending = list.filter(h => 
-    Array.isArray(h.fotos) && h.fotos.some(f => typeof f === "object" && f.status === "wartet")
-  );
-
-  if (huettenMitPending.length === 0) {
-    container.innerHTML = `<p class="text-gray-500 italic">📷 Keine Fotos warten auf Freigabe.</p>`;
+  if (!Array.isArray(list) || list.length === 0) {
+    container.innerHTML =
+      `<p class="text-gray-500 italic">📷 Keine Fotos warten auf Freigabe.</p>`;
     return;
   }
 
-  huettenMitPending.forEach(hut => {
+  list.forEach(hut => {
+    // ✅ Zählung absichern (Strings vs. Objekte)
+    const count = (hut.fotos || []).filter(
+      f => f && typeof f === "object" && f.status === "wartet"
+    ).length;
+
+    // Falls inzwischen keine wartenden Fotos mehr → überspringen
+    if (count === 0) return;
+
     const el = document.createElement("div");
-    el.className = "flex justify-between items-center bg-blue-50 border p-2 rounded mb-2";
+    el.className =
+      "flex justify-between items-center bg-blue-50 border p-2 rounded mb-2";
 
     el.innerHTML = `
-      <span>📷 ${hut.name} – <em>${hut.fotos.filter(f => f.status === "wartet").length} Foto(s) warten</em></span>
-      <button onclick="scrollToHut('${hut.id}')" class="bg-blue-600 text-white px-2 py-1 rounded">🔎 Anzeigen</button>
+      <span>📷 ${hut.name} – <em>${count} Foto(s) warten</em></span>
+      <button onclick="scrollToHut('${hut.id}')" 
+              class="bg-blue-600 text-white px-2 py-1 rounded">🔎 Anzeigen</button>
     `;
     container.appendChild(el);
   });
+
+  // Falls nach dem Filtern keine Hütten übrig sind
+  if (container.innerHTML === "") {
+    container.innerHTML =
+      `<p class="text-gray-500 italic">📷 Keine Fotos warten auf Freigabe.</p>`;
   }
-  function scrollToHut(hutId) {
+}
+function scrollToHut(hutId) {
   const target = document.getElementById(`hut-${hutId}`);
   if (target) {
     target.scrollIntoView({ behavior: "smooth", block: "start" });
     target.classList.add("ring-4", "ring-yellow-400");
     setTimeout(() => target.classList.remove("ring-4", "ring-yellow-400"), 2000);
   }
-  }
+}
+  
+  
 // Live-Update für neue Hütten
 function initLiveNewHuts() {
   db.collection('eierhuetten')
@@ -1664,24 +1701,30 @@ function initLiveNewHuts() {
 
 function renderNewEntries(list) {
   const neueListe = document.getElementById("neueListe");
-  const neue = list.filter(h => h.status === "offen");
-  if (neue.length === 0) {
-    neueListe.innerHTML = "<p class='italic text-gray-500'>Keine neuen Eintragungen.</p>";
+  if (!Array.isArray(list) || list.length === 0) {
+    neueListe.innerHTML =
+      "<p class='italic text-gray-500'>Keine neuen Eintragungen.</p>";
     return;
   }
 
   neueListe.innerHTML = "";
-  neue.forEach(hut => {
-    const row = document.createElement("div");
-    row.className = "flex justify-between items-center bg-white shadow rounded px-3 py-2";
-    row.innerHTML = `
-      <a href="#hut-${hut.id}" class="text-blue-600 hover:underline font-medium">${hut.name}</a>
-      <div class="space-x-2">
-        <button onclick="updateField('${hut.id}', 'status', 'angenommen')" class="px-2 py-1 bg-green-500 text-white rounded">Annehmen</button>
-        <button onclick="updateField('${hut.id}', 'status', 'abgelehnt')" class="px-2 py-1 bg-red-500 text-white rounded">Ablehnen</button>
-      </div>
+
+  list.forEach(hut => {
+    const el = document.createElement("div");
+    el.className =
+      "flex justify-between items-center bg-green-50 border p-2 rounded mb-2";
+
+    el.innerHTML = `
+      <span class="truncate max-w-[70%] block" title="${hut.name}">
+        🆕 ${hut.name}
+      </span>
+      <button onclick="scrollToHut('${hut.id}')"
+        class="bg-green-600 text-white px-2 py-1 rounded whitespace-nowrap">
+        🔎 Anzeigen
+      </button>
     `;
-    neueListe.appendChild(row);
+
+    neueListe.appendChild(el);
   });
 }
    // Warten bis DOM geladen ist
