@@ -46,10 +46,38 @@
     <section class="bg-white rounded-2xl shadow p-4 sm:p-6 mb-6">
       <div class="flex items-center gap-4 sm:gap-6">
         <div class="relative">
-          <img id="profilePic" src="default.jpg" alt="Profilbild"
-               class="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover ring-2 ring-indigo-100 cursor-pointer" />
-          <button id="picBtn" class="absolute -bottom-2 -right-2 bg-white border rounded-full p-2 shadow hover:shadow-md"
-                  title="Profilbild ändern">📷</button>
+          <!-- Profilbild-Auswahl Popup -->
+<div id="picModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+  <div class="bg-white rounded-2xl shadow-xl p-6 w-96 text-center">
+    <h3 class="text-lg font-semibold mb-4">Profilbild auswählen</h3>
+
+    <!-- Avatar Styles -->
+    <label class="block text-left text-sm font-medium mb-1">🎨 Avatar-Stil</label>
+    <select id="avatarStyle" class="w-full rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 mb-4">
+      <option value="bottts">🤖 Bottts</option>
+      <option value="pixel-art">🟦 Pixel Art</option>
+      <option value="identicon">🌀 Identicon</option>
+      <option value="adventurer">🧙 Adventurer</option>
+      <option value="big-ears">🐰 Big Ears</option>
+    </select>
+
+    <div class="flex flex-col gap-3">
+      <button id="avatarBtn" 
+        class="px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition">
+        🎨 Avatar generieren
+      </button>
+      <button id="uploadBtn" 
+        class="px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition">
+        📤 Eigenes Bild hochladen
+      </button>
+      <button id="closeModal" 
+        class="px-4 py-2 bg-gray-200 rounded-xl hover:bg-gray-300 transition">
+        ❌ Abbrechen
+      </button>
+    </div>
+  </div>
+</div>
+        
         </div>
         <div class="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <input id="profileName" placeholder="Dein Name"
@@ -631,31 +659,58 @@ async function uploadProfilePic(file) {
   }
 }
 
-// Button 📷 löst File-Dialog aus
-// Auswahl-Menü für Profilbild
-document.getElementById("picBtn").addEventListener("click", () => {
-  const choice = confirm("👉 Willst du ein eigenes Bild hochladen?\n\n❌ Nein = Avatar generieren");
-  if (choice) {
-    // Eigenes Bild hochladen
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-    input.onchange = e => {
-      const file = e.target.files[0];
-      if (file) uploadProfilePic(file); // Funktion aus vorherigem Code
-    };
-    input.click();
-  } else {
-    // Avatar generieren (z.B. mit DiceBear)
-    const seed = localStorage.getItem("profileName") || userId;
-    const url = `https://api.dicebear.com/7.x/bottts/png?seed=${encodeURIComponent(seed)}`;
 
+
+  // 📷 Button öffnet Popup
+document.getElementById("picBtn").addEventListener("click", () => {
+  document.getElementById("picModal").classList.remove("hidden");
+  document.getElementById("picModal").classList.add("flex");
+});
+
+// ❌ Modal schließen
+document.getElementById("closeModal").addEventListener("click", () => {
+  document.getElementById("picModal").classList.add("hidden");
+  document.getElementById("picModal").classList.remove("flex");
+});
+
+// 🎨 Avatar generieren mit Stil-Auswahl
+document.getElementById("avatarBtn").addEventListener("click", async () => {
+  const style = document.getElementById("avatarStyle").value;
+  const seed = localStorage.getItem("profileName") || userId;
+  const url = `https://api.dicebear.com/7.x/${style}/png?seed=${encodeURIComponent(seed)}`;
+
+  try {
     localStorage.setItem("profilePic", url);
     document.getElementById("profilePic").src = url;
 
-    db.collection("profiles").doc(userId).set({ pic: url }, { merge: true });
+    await db.collection("profiles").doc(userId).set(
+      { pic: url },
+      { merge: true }
+    );
+
     toast("🎨 Avatar generiert ✅", "ok");
+  } catch (err) {
+    console.error(err);
+    toast("❌ Fehler beim Generieren", "error");
   }
+
+  document.getElementById("picModal").classList.add("hidden");
+  document.getElementById("picModal").classList.remove("flex");
+});
+
+// 📤 Eigenes Bild hochladen
+document.getElementById("uploadBtn").addEventListener("click", () => {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/*";
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if (file) uploadProfilePic(file); // nutzt deine vorhandene Funktion
+  };
+  input.click();
+
+  document.getElementById("picModal").classList.add("hidden");
+  document.getElementById("picModal").classList.remove("flex");
 });
 /* ─────────────────────────────
  * Initialisierung
@@ -718,7 +773,6 @@ document.getElementById("picBtn").addEventListener("click", ()=>{
   };
   input.click();
 });
-
 /* ─────────────────────────────
  * Start
  * ───────────────────────────── */
