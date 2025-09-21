@@ -237,7 +237,27 @@ async function loadBadgeDefs() {
   });
 }
 
+async function loadProfileFromFirestore() {
+  try {
+    const doc = await db.collection("profiles").doc(userId).get();
+    if (!doc.exists) {
+      console.warn("Kein Profil gefunden");
+      return;
+    }
+    const profile = doc.data();
 
+    document.getElementById("profileName").value = profile.name || "";
+    document.getElementById("profilePic").src = profile.pic || "default.jpg";
+    document.getElementById("profileTitle").value = profile.title || "";
+
+    // Badges rendern
+    localStorage.setItem("badges", JSON.stringify(profile.badges || []));
+    renderBadges();
+
+  } catch (e) {
+    console.error("Profil laden fehlgeschlagen:", e);
+  }
+}
 function loadProfileUI(){
   document.getElementById("profileName").value = localStorage.getItem("profileName") || "";
   const pic = localStorage.getItem("profilePic");
@@ -690,13 +710,29 @@ document.getElementById("uploadBtn").addEventListener("click", () => {
   document.getElementById("picModal").classList.add("hidden");
   document.getElementById("picModal").classList.remove("flex");
 });
+  document.getElementById("saveProfileBtn").addEventListener("click", async () => {
+  try {
+    const profile = {
+      name: document.getElementById("profileName").value,
+      title: document.getElementById("profileTitle").value,
+      pic: document.getElementById("profilePic").src,
+      badges: JSON.parse(localStorage.getItem("badges") || "[]"),
+      updatedAt: new Date().toISOString()
+    };
+    await db.collection("profiles").doc(userId).set(profile, { merge: true });
+    toast("Profil gespeichert ✅", "ok");
+  } catch (err) {
+    console.error(err);
+    toast("❌ Fehler beim Speichern", "error");
+  }
+});
   });
 /* ─────────────────────────────
  * Initialisierung
  * ───────────────────────────── */
 async function init(){
   // Profil UI
-  loadProfileUI();
+  loadProfileFromFirestore();
   renderBadges();
 
   // Migration (silent best effort)
