@@ -1669,83 +1669,6 @@ function initLivePendingFotos() {
     console.error("❌ Fehler beim Live-Update der wartenden Fotos:", err);
   });
 }
-function renderPendingFotos(list) {
-  const container = document.getElementById("pending-fotos");
-  container.innerHTML = "";
-
-  const huettenMitPending = list.filter(h =>
-    Array.isArray(h.fotos) && h.fotos.some(f => f.status === "wartet")
-  );
-
-  if (!huettenMitPending.length) {
-    container.innerHTML = "<p class='italic text-gray-500'>Keine Fotos warten.</p>";
-    return;
-  }
-
-  const selected = new Set();
-
-  huettenMitPending.forEach(hut => {
-    const wartendeFotos = hut.fotos.filter(f => f.status === "wartet");
-    const el = document.createElement("div");
-    el.className = "bg-blue-50 border p-3 rounded mb-4";
-
-    // Mini-Galerie: Klick auf Bild = Freigabe
-    const thumbs = wartendeFotos.map((f, idx) => `
-      <div class="relative group">
-        <img src="${f.url}"
-             class="w-24 h-24 object-cover rounded border cursor-pointer hover:ring-4 hover:ring-green-400"
-             title="Klicken zum Freigeben"
-             onclick="approveSingleFoto('${hut.id}', ${idx})" />
-        <span class="absolute top-1 right-1 bg-black/50 text-white text-xs px-1 rounded hidden group-hover:block">
-          ✅
-        </span>
-      </div>
-    `).join('');
-
-    el.innerHTML = `
-      <div class="flex justify-between items-center mb-2">
-        <label class="flex items-center space-x-2">
-          <input type="checkbox" onchange="toggleSelect('${hut.id}', this.checked)">
-          <span class="font-semibold">${hut.name} – ${wartendeFotos.length} Foto(s)</span>
-        </label>
-        <button onclick="jumpToHut('${hut.id}')"
-                class="bg-blue-600 text-white px-2 py-1 rounded">🔎 Anzeigen</button>
-      </div>
-      <div class="flex flex-wrap gap-2">${thumbs}</div>
-    `;
-    container.appendChild(el);
-  });
-
-  // Massenfreigabe
-  const btn = document.createElement("button");
-  btn.textContent = "✅ Ausgewählte Hütten freigeben";
-  btn.className = "mt-4 bg-green-600 text-white px-4 py-2 rounded";
-  btn.onclick = async () => {
-    for (const id of selected) {
-      await approveAllFotosForHut(id);
-    }
-    alert("✅ Ausgewählte Fotos freigegeben!");
-  };
-  container.appendChild(btn);
-
-  window.toggleSelect = (id, checked) => {
-    checked ? selected.add(id) : selected.delete(id);
-  };
-}
-
-// Einzelnes Foto in Firestore freigeben
-async function approveSingleFoto(hutId, fotoIndex) {
-  const docRef = db.collection('eierhuetten').doc(hutId);
-  const snap = await docRef.get();
-  if (!snap.exists) return;
-
-  const fotos = snap.data().fotos.map((f, i) =>
-    (f.status === 'wartet' && i === fotoIndex) ? { ...f, status: 'freigegeben' } : f
-  );
-
-  await docRef.update({ fotos });
-  console.log(`Foto ${fotoIndex} von Hütte ${hutId} freigegeben`);
-}
 
 
 /*function scrollToHut(hutId) {
@@ -1756,7 +1679,170 @@ async function approveSingleFoto(hutId, fotoIndex) {
     setTimeout(() => target.classList.remove("ring-4", "ring-yellow-400"), 2000);
   }
 }*/
-  
+  // global, damit Auswahl über Re-renders hinweg erhalten bleibt
+let pendingSelected = new Set();
+
+/**
+ * Rendert alle wartenden Fotos je Hütte als klickbare Thumbs.
+ * Klick auf ein Thumb => approveSingleFoto(hutId, originalIndex)
+ */
+function renderPendingFotos(list) {
+  const container = document.getElementById("pending-fotos");
+  container.innerHTML = "";
+
+  if (!Array.isArray(list) || list.length === 0) {
+    container.innerHTML = "<p class='italic text-gray-500'>Keine Fotos warten.</p>";
+    return;
+  }
+
+  // Filtere Hütten, die mindestens 1 wartendes Foto haben
+  const huettenMitPending = list.filter(h =>
+    Array.isArray(h.fotos) && h.fotos.some(f => f && typeof f === 'object' && f.status === 'wartet')
+  );
+
+  if (huettenMitPending.length === 0) {
+    container.innerHTML = "<p class='italic text-gray-500'>Keine Fotos warten.</p>";
+    return;
+  }
+
+  huettenMitPending.forEach(hut => {
+    // Erzeuge Liste von {f,i} mit originalem Index i
+    const wartende = (hut.fotos || [])
+      .map((f, i) => ({ f, i }))
+      .filter(item => item.f && typeof item.f === 'object' && item.f.status === 'wartet');
+
+    if (wartende.length === 0) return;
+
+    const card = document.createElement('div');
+    card.className = "bg-blue-50 border p-3 rounded mb-4";
+
+    // Header: Checkbox + Hüttentitel + Jump-Button
+    const header = document.createElement('div');
+    header.className = "flex justify-between items-center mb-2";
+
+    const label = document.createElement('label');
+    label.className = "flex items-center space-x-2";
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = pendingSelected.has(hut.id);
+    checkbox.addEventListener('change', (ev) => {
+      if (ev.target.checked) pendingSelected.add(hut.id);
+      else pendingSelected.delete(hut.id);
+    });
+
+    const title = document.createElement('span');
+    title.className = "font-semibold";
+    title.textContent = `${hut.name} – ${wartende.length} Foto(s)`;
+
+    label.appendChild(checkbox);
+    label.appendChild(title);
+    header.appendChild(label);
+
+    const btn = document.createElement('button');
+    btn.className = "bg-blue-600 text-white px-2 py-1 rounded";
+    btn.textContent = "🔎 Anzeigen";
+    btn.addEventListener('click', () => scrollToHut(hut.id)); // <-- nutzt showSection + scroll
+    header.appendChild(btn);
+
+    card.appendChild(header);
+
+    // Galerie
+    const gallery = document.createElement('div');
+    gallery.className = "flex flex-wrap gap-2";
+
+    wartende.forEach(item => {
+      const wrapper = document.createElement('div');
+      wrapper.className = "relative group";
+
+      const img = document.createElement('img');
+      img.src = item.f.url;
+      img.title = "Klicken zum Freigeben";
+      img.className = "w-24 h-24 object-cover rounded border cursor-pointer hover:ring-4 hover:ring-green-400";
+      img.addEventListener('click', async () => {
+        // optional: disable while working
+        img.style.opacity = '0.6';
+        try {
+          await approveSingleFoto(hut.id, item.i); // item.i = originaler Index
+          // optional: Entfernen des Thumbs nach erfolgreicher Freigabe:
+          wrapper.remove();
+        } catch (e) {
+          console.error(e);
+          showNotification('❌ Fehler beim Freigeben des Fotos.');
+          img.style.opacity = '1';
+        }
+      });
+
+      // optional overlay icon
+      const overlay = document.createElement('span');
+      overlay.className = "absolute top-1 right-1 bg-black/50 text-white text-xs px-1 rounded hidden group-hover:block";
+      overlay.textContent = "✅";
+
+      wrapper.appendChild(img);
+      wrapper.appendChild(overlay);
+      gallery.appendChild(wrapper);
+    });
+
+    card.appendChild(gallery);
+    container.appendChild(card);
+  });
+
+  // Massenfreigabe-Button
+  const massBtn = document.createElement('button');
+  massBtn.textContent = "✅ Ausgewählte Hütten freigeben";
+  massBtn.className = "mt-4 bg-green-600 text-white px-4 py-2 rounded";
+  massBtn.addEventListener('click', async () => {
+    if (pendingSelected.size === 0) {
+      showNotification('ℹ️ Keine Hütten ausgewählt.');
+      return;
+    }
+    massBtn.disabled = true;
+    for (const id of Array.from(pendingSelected)) {
+      await approveAllFotosForHut(id);
+    }
+    pendingSelected.clear();
+    massBtn.disabled = false;
+    showNotification('✅ Ausgewählte Fotos freigegeben.');
+  });
+  container.appendChild(massBtn);
+}
+  async function approveSingleFoto(hutId, fotoIndex) {
+  try {
+    const docRef = db.collection('eierhuetten').doc(hutId);
+    const snap = await docRef.get();
+    if (!snap.exists) {
+      showNotification('❌ Hütte nicht gefunden.');
+      return;
+    }
+
+    const fotos = Array.isArray(snap.data().fotos) ? snap.data().fotos.slice() : [];
+    const f = fotos[fotoIndex];
+    if (!f || typeof f === 'string') {
+      showNotification('ℹ️ Foto nicht gefunden oder bereits als String gespeichert.');
+      return;
+    }
+
+    // setze status
+    fotos[fotoIndex] = { ...f, status: 'freigegeben' };
+
+    await docRef.update({ fotos });
+
+    // Log
+    await docRef.collection('log').add({
+      admin: currentUser.displayName || currentUser.email,
+      feld: 'fotos',
+      wert: `Foto freigegeben: ${f.url}`,
+      zeitpunkt: new Date()
+    });
+
+    showNotification('✅ Foto freigegeben');
+    // optional: loadHuts(); aber wenn du onSnapshot nutzt, aktualisiert sich UI automatisch
+  } catch (err) {
+    console.error(err);
+    showNotification('❌ Fehler beim Freigeben.');
+    throw err;
+  }
+  }
   function scrollToHut(hutId) {
   // 1. Auf die Hütten-Section umschalten
   showSection('huts');   // <- deine bestehende Funktion zum Anzeigen der richtigen Kategorie
