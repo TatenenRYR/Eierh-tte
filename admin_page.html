@@ -121,8 +121,15 @@
         <!-- Profile Verwaltung -->
 <h2 class="text-2xl font-bold mt-10 mb-4 text-purple-700">👤 Profile Verwaltung</h2>
 <div class="bg-white p-4 rounded shadow space-y-3">
-  <input id="profile-search" type="text" placeholder="Profil-ID oder Name eingeben..." class="w-full border p-2 rounded" />
-  <button onclick="loadProfileAdmin()" class="bg-blue-600 text-white px-3 py-1 rounded">🔍 Laden</button>
+  <div class="relative">
+  <input id="profile-search"
+         type="text"
+         placeholder="Profil suchen..."
+         class="w-full border p-2 rounded" />
+  <div id="profile-suggestions"
+       class="absolute bg-white border w-full mt-1 rounded shadow hidden"></div>
+</div>
+
 
   <div id="profile-admin-area" class="hidden space-y-4">
     <div class="flex items-center space-x-4">
@@ -1669,38 +1676,55 @@ function renderPendingFotos(list) {
   const container = document.getElementById("pending-fotos");
   container.innerHTML = "";
 
-  if (!Array.isArray(list) || list.length === 0) {
-    container.innerHTML =
-      `<p class="text-gray-500 italic">📷 Keine Fotos warten auf Freigabe.</p>`;
+  const huettenMitPending = list.filter(h =>
+    Array.isArray(h.fotos) && h.fotos.some(f => f.status === "wartet")
+  );
+
+  if (!huettenMitPending.length) {
+    container.innerHTML = "<p class='italic text-gray-500'>Keine Fotos warten.</p>";
     return;
   }
 
-  list.forEach(hut => {
-    // ✅ Zählung absichern (Strings vs. Objekte)
-    const count = (hut.fotos || []).filter(
-      f => f && typeof f === "object" && f.status === "wartet"
-    ).length;
+  const selected = new Set();
 
-    // Falls inzwischen keine wartenden Fotos mehr → überspringen
-    if (count === 0) return;
-
+  huettenMitPending.forEach(hut => {
     const el = document.createElement("div");
-    el.className =
-      "flex justify-between items-center bg-blue-50 border p-2 rounded mb-2";
-
+    el.className = "flex justify-between items-center bg-blue-50 border p-2 rounded mb-2";
     el.innerHTML = `
-      <span>📷 ${hut.name} – <em>${count} Foto(s) warten</em></span>
-      <button onclick="scrollToHut('${hut.id}')" 
-              class="bg-blue-600 text-white px-2 py-1 rounded">🔎 Anzeigen</button>
+      <label class="flex items-center space-x-2">
+        <input type="checkbox" onchange="toggleSelect('${hut.id}', this.checked)">
+        <span>${hut.name} – ${hut.fotos.filter(f=>f.status==='wartet').length} Foto(s)</span>
+      </label>
+      <button onclick="scrollToHut('${hut.id}')" class="bg-blue-600 text-white px-2 py-1 rounded">🔎 Anzeigen</button>
     `;
     container.appendChild(el);
   });
 
-  // Falls nach dem Filtern keine Hütten übrig sind
-  if (container.innerHTML === "") {
-    container.innerHTML =
-      `<p class="text-gray-500 italic">📷 Keine Fotos warten auf Freigabe.</p>`;
-  }
+  // Massenfreigabe Button
+  const btn = document.createElement("button");
+  btn.textContent = "✅ Alle ausgewählten freigeben";
+  btn.className = "mt-4 bg-green-600 text-white px-4 py-2 rounded";
+  btn.onclick = async () => {
+    for (const id of selected) {
+      await approveAllFotosForHut(id);
+    }
+    alert("✅ Ausgewählte Fotos freigegeben!");
+  };
+  container.appendChild(btn);
+
+  window.toggleSelect = (id, checked) => {
+    checked ? selected.add(id) : selected.delete(id);
+  };
+}
+
+async function approveAllFotosForHut(hutId) {
+  const docRef = db.collection('eierhuetten').doc(hutId);
+  const snap = await docRef.get();
+  if (!snap.exists) return;
+  const fotos = snap.data().fotos.map(f =>
+    f.status === 'wartet' ? { ...f, status: 'freigegeben' } : f
+  );
+  await docRef.update({ fotos });
 }
 /*function scrollToHut(hutId) {
   const target = document.getElementById(`hut-${hutId}`);
@@ -2185,6 +2209,25 @@ async function badgeFormUploadToImgBB(file) {
 }
 
   document.addEventListener("DOMContentLoaded", loadBadges);
+  document.getElementById('profile-search').addEventListener('input', async e => {
+  const q = e.target.value.trim();
+  const box = document.getElementById('profile-suggestions');
+  if (q.length < 3) { box.classList.add('hidden'); return; }
+
+  const snap = await db.collection('profiles')
+    .where('name', '>=', q)
+    .where('name', '<=', q + '\uf8ff')
+    .limit(5).get();
+
+  box.innerHTML = snap.empty
+    ? "<p class='p-2 text-gray-500 italic'>Keine Treffer</p>"
+    : snap.docs.map(d => `
+        <div class="p-2 hover:bg-gray-100 cursor-pointer"
+             onclick="loadProfileAdmin('${d.id}')">
+          ${d.data().name}
+        </div>`).join('');
+  box.classList.remove('hidden');
+});
   
 document.getElementById('menu-toggle').addEventListener('click', () => {
   const sidebar = document.getElementById('sidebar');
