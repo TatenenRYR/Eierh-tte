@@ -1689,10 +1689,18 @@ function renderPendingFotos(list) {
     const el = document.createElement("div");
     el.className = "bg-blue-50 border p-3 rounded mb-4";
 
-    // kleine Galerie aus allen wartenden Fotos
-    const thumbs = wartendeFotos.map(f =>
-      `<img src="${f.url}" class="w-20 h-20 object-cover rounded border" />`
-    ).join('');
+    // Mini-Galerie: Klick auf Bild = Freigabe
+    const thumbs = wartendeFotos.map((f, idx) => `
+      <div class="relative group">
+        <img src="${f.url}"
+             class="w-24 h-24 object-cover rounded border cursor-pointer hover:ring-4 hover:ring-green-400"
+             title="Klicken zum Freigeben"
+             onclick="approveSingleFoto('${hut.id}', ${idx})" />
+        <span class="absolute top-1 right-1 bg-black/50 text-white text-xs px-1 rounded hidden group-hover:block">
+          ✅
+        </span>
+      </div>
+    `).join('');
 
     el.innerHTML = `
       <div class="flex justify-between items-center mb-2">
@@ -1708,6 +1716,7 @@ function renderPendingFotos(list) {
     container.appendChild(el);
   });
 
+  // Massenfreigabe
   const btn = document.createElement("button");
   btn.textContent = "✅ Ausgewählte Hütten freigeben";
   btn.className = "mt-4 bg-green-600 text-white px-4 py-2 rounded";
@@ -1724,15 +1733,21 @@ function renderPendingFotos(list) {
   };
 }
 
-async function approveAllFotosForHut(hutId) {
+// Einzelnes Foto in Firestore freigeben
+async function approveSingleFoto(hutId, fotoIndex) {
   const docRef = db.collection('eierhuetten').doc(hutId);
   const snap = await docRef.get();
   if (!snap.exists) return;
-  const fotos = snap.data().fotos.map(f =>
-    f.status === 'wartet' ? { ...f, status: 'freigegeben' } : f
+
+  const fotos = snap.data().fotos.map((f, i) =>
+    (f.status === 'wartet' && i === fotoIndex) ? { ...f, status: 'freigegeben' } : f
   );
+
   await docRef.update({ fotos });
+  console.log(`Foto ${fotoIndex} von Hütte ${hutId} freigegeben`);
 }
+
+
 /*function scrollToHut(hutId) {
   const target = document.getElementById(`hut-${hutId}`);
   if (target) {
