@@ -15,6 +15,7 @@
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     .minimap { height: 200px; width: 100%; border-radius: 0.5rem; margin-top: 0.5rem; }
     .progress-bar { width: 100%; background-color: #e5e7eb; border-radius: 0.5rem; margin-top: 5px; }
@@ -77,7 +78,9 @@
       <section id="overview" class="dash-section">
         <h2 class="section-title">📊 Übersicht</h2>
         <div id="stats" class="text-gray-700"></div>
-     
+        <!-- Stats + Diagramm -->
+<div id="statsContainer" class="grid grid-cols-1 lg:grid-cols-2 gap-6"></div>
+<canvas id="statsChart" class="bg-white rounded shadow p-4 mt-6"></canvas>
         <h2 class="section-title">🆕 Neue Eintragungen</h2>
         <div id="neueListe" class="space-y-2 bg-gray-50 p-4 rounded shadow"></div>
 
@@ -412,13 +415,74 @@ async function submitNewHutAdmin() {
     renderStats(allHuts);
   }
 
-  function renderStats(list) {
-    const total = list.length;
-    const withStrom = list.filter(h => h.strom === 'Ja').length;
-    const withFotos = list.filter(h => Array.isArray(h.fotos) && h.fotos.length > 0).length;
-    const count247 = list.filter(h => h.oeffnungszeiten === '24/7').length;
-    stats.innerHTML = `🔢 <strong>${total}</strong> Hütten · ⚡ ${withStrom} mit Strom · 🖼️ ${withFotos} mit Fotos · 🕒 ${count247} sind 24/7 geöffnet`;
+  let statsChart; // Chart-Instanz für Updates merken
+
+function renderStats(list) {
+  const total        = list.length;
+  const withStrom    = list.filter(h => h.strom === 'Ja').length;
+  const withFotos    = list.filter(h => Array.isArray(h.fotos) && h.fotos.length > 0).length;
+  const count247     = list.filter(h => h.oeffnungszeiten === '24/7').length;
+  const newEntries   = list.filter(h => h.status === 'offen').length;
+  const pendingFotos = list.reduce((sum, h) =>
+      sum + (Array.isArray(h.fotos)
+             ? h.fotos.filter(f => f.status === 'wartet').length
+             : 0), 0);
+
+  // Karten
+  const c = document.getElementById("statsContainer");
+  c.innerHTML = `
+    <div class="bg-white p-4 rounded shadow text-center">
+      <p class="text-3xl font-bold">${total}</p>
+      <p class="text-gray-500">Gesamt&nbsp;Hütten</p>
+    </div>
+    <div class="bg-white p-4 rounded shadow text-center">
+      <p class="text-3xl font-bold">${newEntries}</p>
+      <p class="text-gray-500">Neue&nbsp;Eintragungen</p>
+    </div>
+    <div class="bg-white p-4 rounded shadow text-center">
+      <p class="text-3xl font-bold">${withStrom}</p>
+      <p class="text-gray-500">mit&nbsp;Strom</p>
+    </div>
+    <div class="bg-white p-4 rounded shadow text-center">
+      <p class="text-3xl font-bold">${withFotos}</p>
+      <p class="text-gray-500">mit&nbsp;Fotos</p>
+    </div>
+    <div class="bg-white p-4 rounded shadow text-center">
+      <p class="text-3xl font-bold">${pendingFotos}</p>
+      <p class="text-gray-500">wartende&nbsp;Fotos</p>
+    </div>
+    <div class="bg-white p-4 rounded shadow text-center">
+      <p class="text-3xl font-bold">${count247}</p>
+      <p class="text-gray-500">24/7 geöffnet</p>
+    </div>
+  `;
+
+  // Kreisdiagramm aktualisieren/erstellen
+  const ctx = document.getElementById('statsChart').getContext('2d');
+  const data = {
+    labels: ['mit Strom','mit Fotos','24/7 geöffnet','Neue Eintragungen'],
+    datasets: [{
+      data: [withStrom, withFotos, count247, newEntries],
+      backgroundColor: ['#3b82f6','#10b981','#f59e0b','#ef4444']
+    }]
+  };
+  const options = {
+    plugins: {
+      legend: { position: 'bottom' },
+      title: {
+        display: true,
+        text: 'Verteilung besonderer Merkmale'
+      }
+    }
+  };
+
+  if (statsChart) {
+    statsChart.data = data;
+    statsChart.update();
+  } else {
+    statsChart = new Chart(ctx, { type: 'doughnut', data, options });
   }
+}
 
  async function approveFoto(hutId, index) {
   try {
