@@ -89,54 +89,16 @@
       </section>
 
       <section id="huts" class="dash-section hidden">
-  <h2 class="section-title">🏠 Alle Hütten</h2>
-
-  <!-- Such- & Filterleiste -->
-  <div class="bg-white p-4 rounded shadow mb-4 flex flex-col md:flex-row md:items-center md:space-x-4 space-y-2 md:space-y-0">
-    <input id="search-input" type="text" placeholder="🔍 Name oder Ort suchen..."
-           class="border p-2 rounded flex-1" />
-
-    <select id="filter-strom" class="border p-2 rounded">
-      <option value="">⚡ Strom (alle)</option>
-      <option value="Ja">mit Strom</option>
-      <option value="Nein">ohne Strom</option>
-    </select>
-
-    <select id="filter-status" class="border p-2 rounded">
-      <option value="">Status (alle)</option>
-      <option value="offen">Neu / offen</option>
-      <option value="angenommen">Angenommen</option>
-      <option value="abgelehnt">Abgelehnt</option>
-    </select>
-
-    <select id="filter-open" class="border p-2 rounded">
-      <option value="">Öffnungszeiten (alle)</option>
-      <option value="24/7">24/7</option>
-      <option value="tagsüber">nur Tagsüber</option>
-    </select>
-
-    <select id="sort-select" class="border p-2 rounded">
-      <option value="name">🔤 Name A–Z</option>
-      <option value="created_desc">🕒 Neueste zuerst</option>
-      <option value="created_asc">Älteste zuerst</option>
-    </select>
-  </div>
-
-  <!-- Massen-Aktion -->
-  <div class="flex justify-between mb-2">
-    <label class="flex items-center space-x-2">
-      <input type="checkbox" id="select-all">
-      <span>Alle auswählen</span>
-    </label>
-    <button id="bulk-approve"
-            class="bg-green-600 text-white px-3 py-1 rounded disabled:opacity-40"
-            disabled>
-      ✅ Ausgewählte freigeben
-    </button>
-  </div>
-
-  <!-- Ergebnisliste -->
-  <div id="hut-list" class="space-y-4"></div>
+        <h2 class="section-title">🏠 Alle Hütten</h2>
+        <div class="flex items-center gap-2 mb-4">
+          <select id="sortSelect" class="p-2 border rounded">
+            <option value="name">🔤 Nach Name</option>
+            <option value="createdAt">🕒 Neueste zuerst</option>
+          </select>
+          <input id="search-input" placeholder="🔍 Suchen..." class="p-2 border rounded w-full">
+        </div>
+        <div id="hut-list" class="space-y-4"></div>
+        <div id="pagination" class="mt-4 flex flex-wrap justify-center gap-2"></div>
       </section>
 
       <section id="support" class="dash-section hidden">
@@ -2036,110 +1998,6 @@ document.getElementById("search-input").addEventListener("input", applySearchAnd
     });
   });
   
-function initHutListener() {
-  db.collection('eierhuetten').onSnapshot(snapshot => {
-    allHuts = [];
-    snapshot.forEach(doc => allHuts.push({ id: doc.id, ...doc.data() }));
-    applyHutFilters();
-  });
-}
-
-function applyHutFilters() {
-  const q       = document.getElementById('search-input').value.trim().toLowerCase();
-  const strom   = document.getElementById('filter-strom').value;
-  const status  = document.getElementById('filter-status').value;
-  const offen   = document.getElementById('filter-open').value;
-  const sort    = document.getElementById('sort-select').value;
-
-  let list = allHuts.filter(h => {
-    const textMatch = !q || (h.name?.toLowerCase().includes(q) || h.location?.toLowerCase().includes(q));
-    const stromMatch = !strom || h.strom === strom;
-    const statusMatch = !status || h.status === status;
-    const openMatch = !offen || h.oeffnungszeiten === offen;
-    return textMatch && stromMatch && statusMatch && openMatch;
-  });
-
-  // Sortierung
-  list.sort((a,b) => {
-    if (sort === "name")         return a.name.localeCompare(b.name);
-    if (sort === "created_desc") return (b.erstelltAm?.seconds || 0) - (a.erstelltAm?.seconds || 0);
-    if (sort === "created_asc")  return (a.erstelltAm?.seconds || 0) - (b.erstelltAm?.seconds || 0);
-    return 0;
-  });
-
-  renderHutList(list);
-}
-
-// Events binden
-['search-input','filter-strom','filter-status','filter-open','sort-select']
-  .forEach(id => {
-    document.getElementById(id).addEventListener('input', applyHutFilters);
-    document.getElementById(id).addEventListener('change', applyHutFilters);
-  });
-
-// „Alle auswählen“ Checkbox
-document.getElementById('select-all').addEventListener('change', e => {
-  if (e.target.checked) {
-    selectedHuts = new Set(allHuts.map(h => h.id));
-  } else {
-    selectedHuts.clear();
-  }
-  applyHutFilters(); // neu rendern mit aktualisierter Auswahl
-  updateBulkButton();
-});
-
-// Massenfreigabe-Button
-document.getElementById('bulk-approve').addEventListener('click', async () => {
-  if (!selectedHuts.size) return;
-  const promises = [];
-  selectedHuts.forEach(id => {
-    promises.push(db.collection('eierhuetten').doc(id).update({ status: 'angenommen' }));
-  });
-  await Promise.all(promises);
-  alert(`✅ ${selectedHuts.size} Hütten freigegeben`);
-  selectedHuts.clear();
-  document.getElementById('select-all').checked = false;
-  updateBulkButton();
-});
-
-// Renderer
-function renderHutList(list) {
-  const container = document.getElementById('hut-list');
-  if (!list.length) {
-    container.innerHTML = "<p class='italic text-gray-500'>Keine Hütten gefunden.</p>";
-    updateBulkButton();
-    return;
-  }
-  container.innerHTML = list.map(h => `
-    <div id="hut-${h.id}" class="bg-gray-50 p-3 rounded shadow flex items-start justify-between">
-      <div>
-        <h3 class="font-bold text-lg">${h.name}</h3>
-        <p class="text-sm text-gray-600">
-          📍 ${h.location || '-'}<br>
-          ⚡ Strom: ${h.strom || '-'} |
-          Status: ${h.status || '-'} |
-          Öffnungszeiten: ${h.oeffnungszeiten || '-'}
-        </p>
-      </div>
-      <input type="checkbox"
-             ${selectedHuts.has(h.id) ? 'checked' : ''}
-             onchange="toggleHutSelection('${h.id}', this.checked)">
-    </div>
-  `).join('');
-  updateBulkButton();
-}
-
-// Auswahl einzelner Hütten
-window.toggleHutSelection = (id, checked) => {
-  checked ? selectedHuts.add(id) : selectedHuts.delete(id);
-  updateBulkButton();
-};
-
-// Button aktivieren/deaktivieren
-function updateBulkButton() {
-  const btn = document.getElementById('bulk-approve');
-  btn.disabled = selectedHuts.size === 0;
-}
 function logout() {
   firebase.auth().signOut().then(() => {
     location.reload(); // Seite neu laden nach Logout
@@ -2566,4 +2424,4 @@ document.getElementById('menu-toggle').addEventListener('click', () => {
 
 </script>
 </body>
-</html>
+  </html>
