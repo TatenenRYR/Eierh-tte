@@ -797,7 +797,7 @@ async function rejectFoto(hutId, index) {
     });
   }*/
   // Änderung bestätigen + speichern (ohne Abo-Verwaltung)
-function updateField(hutId, field, value) {
+/*function updateField(hutId, field, value) {
   if (!confirm(`⚠️ Willst du wirklich das Feld "${field}" auf "${value}" ändern?`)) {
     return; // Abbrechen, wenn Admin nicht bestätigt
   }
@@ -809,7 +809,38 @@ function updateField(hutId, field, value) {
     wert: value,
     zeitpunkt: new Date()
   });
-}
+}*/
+  async function updateField(hutId, field, value) {
+  await db.collection('eierhuetten').doc(hutId).update({ [field]: value });
+
+  // Log-Eintrag für die Änderung
+  await db.collection('eierhuetten').doc(hutId).collection('log').add({
+    admin: currentUser.displayName || currentUser.email,
+    feld: field,
+    wert: value,
+    zeitpunkt: new Date()
+  });
+
+  // Extra Logik für Statusänderungen (Abo-Verwaltung)
+  if (field === 'status') {
+    const aboRef = db.collection('abos').doc(hutId);
+
+    if (value === 'offen') {
+      await aboRef.update({
+        status: 'paused',
+        updated: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      logHistory(hutId, 'Abo automatisch pausiert wegen Status "offen"');
+
+    } else if (value === 'abgelehnt') {
+      await aboRef.update({
+        status: 'cancelled',
+        updated: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      logHistory(hutId, 'Abo automatisch gekündigt wegen Status "abgelehnt"');
+    }
+  }
+  }
 function showSection(id) {
   document.querySelectorAll('.dash-section').forEach(sec =>
     sec.classList.add('hidden')
