@@ -864,20 +864,26 @@ async function processUserInput(txt) {
   }
 
   // Beschreibung
-  if (step === "beschreibung_input") {
-    editingData.beschreibung = txt;
-    step = "tags_input";
-    
-    addChoiceButtons(["Überspringen"], () => {
-      editingData.beschreibung = "";
-      step = "tags_input";
-      addQuestionWithHelp(
-        "🏷️ Bitte füge bis zu 5 Schlagwörter hinzu (durch Komma getrennt).",
-        "Beispiel: Frühstück, Getränke, schattig"
-      );
-    });
-    return;
-  }
+if (step === "beschreibung_input") {
+  editingData.beschreibung = txt;
+  step = "tags_input";
+
+  // 👉 Frage nach den Tags direkt anzeigen
+  addQuestionWithHelp(
+    "🏷️ Bitte füge bis zu 5 Schlagwörter hinzu (durch Komma getrennt).",
+    "Beispiel: Frühstück, Getränke, schattig"
+  );
+
+  // 👉 Zusätzlich Überspringen anbieten
+  addChoiceButtons(["Überspringen"], () => {
+    editingData.tags = [];
+    // Weiter im Flow, z.B. zu den Öffnungszeiten
+    step = "zeiten_input";
+    showOpeningTimeChoice();   // oder deine nächste Funktion für Zeiten
+  });
+
+  return;
+}
 
   // Tags
   if (step === "tags_input") {
@@ -1376,10 +1382,15 @@ function showLocationConfirmation(lat, lng, label) {
   const mapId = 'confirm-map-' + Date.now();
   const mapBubble = document.createElement('div');
   mapBubble.className = 'message bot';
-    mapBubble.innerHTML = `
-  <div id="${mapId}"
-       style="width:100%; height:320px; border:1px solid #ddd;
-              border-radius:6px; margin-top:6px;"></div>`;
+  // 👉 Breite direkt hier erzwingen
+  mapBubble.style.width = "100%";
+  mapBubble.style.maxWidth = "100%";
+  mapBubble.style.boxSizing = "border-box";
+
+  mapBubble.innerHTML = `
+    <div id="${mapId}"
+         style="width:100%; height:320px; border:1px solid #ddd;
+                border-radius:6px; margin-top:6px;"></div>`;
   chatWindow.appendChild(mapBubble);
 
   const btnBubble = document.createElement('div');
@@ -1402,12 +1413,20 @@ function showLocationConfirmation(lat, lng, label) {
         const pos = e.target.getLatLng();
         editingData.location = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
       });
-      map.whenReady(() => map.invalidateSize());
+
+      // ➕ Sicherstellen, dass die Karte die volle Breite nutzt
+      map.whenReady(() => {
+        map.invalidateSize();
+        // zweites Mal, falls das Layout erst nachträglich fertig ist
+        setTimeout(() => map.invalidateSize(), 300);
+      });
+
       editingData.location = new firebase.firestore.GeoPoint(lat, lng);
     } catch (e) {
+      console.error(e);
       addMessage('⚠️ Karte konnte nicht geladen werden.', 'bot');
     }
-  }, 200);
+  }, 300); // etwas längerer Delay gibt dem DOM mehr Zeit
 
   setTimeout(() => {
     const yes = document.getElementById('confirm-yes');
@@ -1415,8 +1434,6 @@ function showLocationConfirmation(lat, lng, label) {
 
     if (yes) {
       yes.onclick = async () => {
-        //addMessage('✅ Standort gespeichert.', 'bot');
-        //addMessage('⏳ Dein Vorschlag wird nun vom Team geprüft und nach Freigabe sichtbar.', 'bot');
         await showHutSummary();
       };
     }
