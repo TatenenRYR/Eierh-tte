@@ -596,6 +596,20 @@ setTimeout(() => {
 
         // Buttons verknüpfen
         document.getElementById('confirm-accept').onclick = () => {
+          // 🆕 ID vormerken, aber noch NICHT speichern
+    const docRef = db.collection("eierhuetten").doc();
+    editingData = {
+      id: docRef.id,
+      zustimmungDatenschutz: {
+        akzeptiert: true,
+        am: new Date().toISOString()
+      }
+    };
+
+    // 🚀 Flow starten
+    step = 1;
+    addMessage('📝 Bitte gib den Namen deiner neuen Hütte ein:', 'bot');
+
           msg.remove(); // Nachfrage schließen, Haken bleibt
         };
         document.getElementById('confirm-cancel').onclick = () => {
@@ -611,27 +625,6 @@ setTimeout(() => {
 }, 150);
 
     
-  addChoiceButtons(['✅ Zustimmen & Starten'], () => {
-    const checkbox = document.getElementById('chat-datenschutz-zustimmung');
-    if (!checkbox || !checkbox.checked) {
-      alert('Bitte akzeptiere zuerst die Datenschutzerklärung.');
-      return;
-    }
-
-    // 🆕 ID vormerken, aber noch NICHT speichern
-    const docRef = db.collection("eierhuetten").doc();
-    editingData = {
-      id: docRef.id,
-      zustimmungDatenschutz: {
-        akzeptiert: true,
-        am: new Date().toISOString()
-      }
-    };
-
-    // 🚀 Flow starten
-    step = 1;
-    addMessage('📝 Bitte gib den Namen deiner neuen Hütte ein:', 'bot');
-  });
 
   return;
 }
@@ -657,7 +650,65 @@ setTimeout(() => {
     handleIntent
   );
   }
-function showHutSummary() {
+  function showHutSummary() {
+  // Zusammenbauen der Summary-HTML (verwende editingData wie in showHutSummary)
+  const modal = document.createElement('div');
+  modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center';
+  modal.style.zIndex = 9999;
+
+  const content = document.createElement('div');
+  content.className = 'bg-white rounded-xl p-4 max-w-2xl w-full';
+  content.innerHTML = `
+    <div class="flex justify-between items-center">
+      <h3 class="text-lg font-bold">📋 Übersicht deiner Hütte</h3>
+      <button id="closeSummary" class="choice-btn">✖</button>
+    </div>
+    <div id="summary-content" style="margin-top:10px;">
+      <div><strong>Name:</strong> ${escapeHtml(editingData.name || "-")}</div>
+      <div><strong>🕒 Öffnungszeiten:</strong> ${JSON.stringify(editingData.oeffnungszeiten) || "-"}</div>
+      <div><strong>🐾 Tiere:</strong> ${(editingData.tiere || []).join(", ") || "-"}</div>
+      <div style="margin-top:8px;"><div id="summary-map" style="height:300px;border:1px solid #ddd;border-radius:8px;"></div></div>
+      <div style="margin-top:8px;" class="flex gap-2">
+        <button id="submitHut" class="choice-btn">✅ Einreichen</button>
+        <button id="editHut" class="choice-btn">✏️ Bearbeiten</button>
+      </div>
+    </div>
+  `;
+
+  modal.appendChild(content);
+  document.body.appendChild(modal);
+
+  document.getElementById('closeSummary').onclick = () => { modal.remove(); };
+
+  // Map initialisieren
+  setTimeout(() => {
+    try {
+      const lat = editingData.location?.latitude || editingData.lat || 51.1657;
+      const lng = editingData.location?.longitude || editingData.lng || 10.4515;
+      const m = L.map('summary-map').setView([lat, lng], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
+      const mk = L.marker([lat, lng], { draggable: true }).addTo(m);
+      mk.on('dragend', e => {
+        const pos = e.target.getLatLng();
+        editingData.location = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
+      });
+    } catch (e) {
+      console.error('Karte konnte nicht initialisiert werden', e);
+    }
+  }, 200);
+
+  document.getElementById('submitHut').onclick = async () => {
+    modal.remove();
+    await submitNewHut(); // deine bestehende Submits-Funktion
+  };
+  document.getElementById('editHut').onclick = () => {
+    modal.remove();
+    // optional: bringe Nutzer zurück zu einem Schritt (z.B. step = 1)
+    step = 1;
+    addMessage('✏️ Du kannst die Angaben nun bearbeiten. Beginne mit dem Namen:', 'bot');
+  };
+  }
+/*function showHutSummary() {
   // Tiere als Emoji-Liste mappen
   const tiereEmojiMap = {
     Alpaka: "🦙",
@@ -723,7 +774,7 @@ function showHutSummary() {
       editingData = {};
     }
   });
-}
+}*/
   // Hilfsfunktion: Fragen mit zusätzlichem Hinweis anzeigen
 function addQuestionWithHelp(question, helpText) {
   // Hauptfrage
@@ -816,10 +867,7 @@ async function processUserInput(txt) {
   if (step === "beschreibung_input") {
     editingData.beschreibung = txt;
     step = "tags_input";
-    addQuestionWithHelp(
-      "🏷️ Bitte füge bis zu 5 Schlagwörter hinzu (durch Komma getrennt).",
-      "Beispiel: Frühstück, Getränke, schattig"
-    );
+    
     addChoiceButtons(["Überspringen"], () => {
       editingData.beschreibung = "";
       step = "tags_input";
@@ -845,13 +893,15 @@ async function processUserInput(txt) {
       "Wenn die Hütte immer frei zugänglich ist: 'Immer geöffnet'"
     );
     addChoiceButtons(["Immer geöffnet", "Von – Bis angeben"], ans => {
-      if (ans === "Immer geöffnet") {
-        editingData.oeffnungszeiten = "Immer geöffnet";
-        showLocationChoices();
-      } else {
-        showTimePicker();
-      }
-    });
+  if (ans === "Immer geöffnet") {
+    editingData.oeffnungszeiten = "Immer geöffnet";
+    // klar definierter nächster Schritt:
+    step = "address_input";
+    askForLocationChoice();
+  } else {
+    showMultiDayTimePicker();
+  }
+});
     return;
   }
 
@@ -908,6 +958,72 @@ async function processUserInput(txt) {
   // Fallback
   addMessage("❓ Ich habe das nicht verstanden. Bitte antworte passend zur Frage.", "bot");
 }
+  function showMultiDayTimePicker() {
+  const container = document.createElement('div');
+  container.className = 'message bot';
+  container.innerHTML = `<div><strong>Öffnungszeiten (mehrere Tage/Zeiträume)</strong></div>`;
+  
+  const list = document.createElement('div');
+  list.style.marginTop = '8px';
+
+  function addRow(defaultDay='Mo', defaultVon='', defaultBis='') {
+    const row = document.createElement('div');
+    row.className = 'time-row';
+    row.style.display = 'flex';
+    row.style.gap = '8px';
+    row.style.marginTop = '6px';
+
+    const daySelect = document.createElement('select');
+    ['Mo','Di','Mi','Do','Fr','Sa','So','Mo–Fr','Sa–So'].forEach(d => {
+      const o = document.createElement('option'); o.value = d; o.textContent = d;
+      if (d === defaultDay) o.selected = true;
+      daySelect.appendChild(o);
+    });
+
+    const von = document.createElement('input'); von.type = 'time'; von.value = defaultVon;
+    const bis = document.createElement('input'); bis.type = 'time'; bis.value = defaultBis;
+
+    const rem = document.createElement('button'); rem.className = 'choice-btn'; rem.textContent = '✖';
+    rem.onclick = () => { row.remove(); };
+
+    row.appendChild(daySelect); row.appendChild(von); row.appendChild(bis); row.appendChild(rem);
+    list.appendChild(row);
+  }
+
+  addRow(); // erste Zeile
+  const addBtn = document.createElement('button'); addBtn.className = 'choice-btn'; addBtn.textContent = '+ Tag hinzufügen';
+  addBtn.onclick = () => addRow();
+
+  const doneBtn = document.createElement('button'); doneBtn.className = 'choice-btn'; doneBtn.textContent = '✅ Fertig';
+  doneBtn.onclick = () => {
+    const rows = Array.from(list.querySelectorAll('.time-row'));
+    const entries = [];
+    for (const r of rows) {
+      const day = r.querySelector('select').value;
+      const v = r.querySelector('input[type="time"]:nth-of-type(1)').value;
+      const b = r.querySelector('input[type="time"]:nth-of-type(2)').value;
+      if (!v || !b) { alert('Bitte alle Zeiten ausfüllen oder Zeile entfernen.'); return; }
+
+      // Mindestdauer prüfen (siehe Punkt 6)
+      const diff = (new Date(`1970-01-01T${b}`) - new Date(`1970-01-01T${v}`))/3600000;
+      if (diff < 2) { alert('Jeder Zeitraum muss mindestens 2 Stunden dauern.'); return; }
+
+      entries.push({ tag: day, von: v, bis: b });
+    }
+    editingData.oeffnungszeiten = entries;
+    addMessage('🕒 Öffnungszeiten gespeichert.', 'bot');
+    container.remove();
+    // nächster Schritt: Standortwahl
+    step = 'address_input';
+    askForLocationChoice();
+  };
+
+  container.appendChild(list);
+  container.appendChild(addBtn);
+  container.appendChild(doneBtn);
+  chatWindow.appendChild(container);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+                             }
 /* async function processUserInput(txt) {
   // ==========================
   // Vorschlags-Flow
@@ -1344,41 +1460,36 @@ async function fetchAddressSuggestions(query, container, hutId) {
       div.onclick = async () => {
   if (!confirm(`📍 Diese Adresse übernehmen?\n\n${item.display_name}`)) return;
 
-  console.log("DEBUG: Adresse speichern", {
-    hutId,
-    address: item.display_name,
-    lat: item.lat,
-    lon: item.lon
-  });
+  if (!hutId) {
+    // NEUE HÜTTE: nicht sofort in DB schreiben — stattdessen Karte anzeigen und Marker anpassen
+    editingData.address = item.display_name;
+    // showLocationConfirmation erwartet (lat, lng, label)
+    showLocationConfirmation(parseFloat(item.lat), parseFloat(item.lon), item.display_name);
+    // optional: setze step, damit die weitere Eingabe korrekt läuft
+    step = 'address_input';
+    container.innerHTML = '';
+    return;
+  }
 
+  // EXISTIERENDE HÜTTE: dein bisheriger DB-Update-Flow (belassen)
   const docRef = db.collection("eierhuetten").doc(hutId);
   const updateData = {
     address: item.display_name,
-    location: new firebase.firestore.GeoPoint(
-      parseFloat(item.lat),
-      parseFloat(item.lon)
-    ),
+    location: new firebase.firestore.GeoPoint(parseFloat(item.lat), parseFloat(item.lon)),
     status: "offen"
   };
-
   try {
     const doc = await docRef.get();
-
     if (doc.exists) {
-      // ✅ Dokument existiert → update
       await docRef.update(updateData);
     } else {
-      // 🆕 Dokument existiert noch nicht → set
       await docRef.set(updateData, { merge: true });
     }
-
     addMessage(`✅ Adresse gespeichert: ${item.display_name}`, "bot");
-    addMessage("⏳ Änderung gespeichert und muss erneut durch einen Admin freigeschaltet werden.", "bot");
-
     container.innerHTML = "";
     showMyHuts();
   } catch (err) {
-    console.error("❌ Fehler beim Firestore-Update:", err);
+    console.error(err);
     addMessage("❌ Fehler beim Speichern der Adresse: " + err.message, "bot");
   }
 };
