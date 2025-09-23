@@ -2139,10 +2139,23 @@ setTimeout(() => {
             <input type='text' data-id='${id}' class='edit-extras w-full border px-2 py-1 rounded' value='${d.extras || ''}' />
           </label><br>
 
-          <label>🐾 Tiere:<br>
-            <input type='text' data-id='${id}' class='edit-tiere w-full border px-2 py-1 rounded'
-             value='${(d.tiere || []).join(", ")}' placeholder="z. B. 🐐 Ziege, 🐓 Huhn" />
-          </label>
+          <!-- 🐾 Tiere als kleine Buttons -->
+<label>🐾 Tiere:<br>
+  <div class="tiere-buttons flex flex-wrap gap-1 mt-1" data-id="${id}">
+    ${["🐐 Ziege","🐓 Huhn","🐄 Kuh","🐇 Hase","🐕 Hund","🐈 Katze","Keine Tiere"]
+      .map(t => {
+        const isSelected = (d.tiere || []).includes(t);
+        return `<button type="button"
+                   class="tiere-btn px-2 py-1 text-xs border rounded
+                          ${isSelected ? 'bg-green-200 border-green-400' : 'bg-gray-100 border-gray-300'}"
+                   data-tiere="${t}">
+                   ${t}
+                </button>`;
+      }).join("")}
+  </div>
+</label>
+<!-- Hidden Input zum Speichern (für Kompatibilität) -->
+<input type="hidden" data-id="${id}" class="edit-tiere-hidden" value='${(d.tiere || []).join(",")}' />
 
           <label>📝 Beschreibung:<br>
             <div id="editor-${id}" class="quill-editor border rounded"></div>
@@ -2270,6 +2283,49 @@ setTimeout(() => {
         }
       }, 300);
     }
+    // ===== 🐾 Tiere Buttons aktivieren =====
+setTimeout(() => {
+  document.querySelectorAll('.tiere-buttons').forEach(container => {
+    const hutId = container.getAttribute('data-id');
+    const hiddenInput = container.parentElement.querySelector('.edit-tiere-hidden');
+
+    container.querySelectorAll('.tiere-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const val = btn.getAttribute('data-tiere');
+        const current = hiddenInput.value ? hiddenInput.value.split(',') : [];
+        const idx = current.indexOf(val);
+
+        // Toggle Auswahl
+        if (idx >= 0) {
+          current.splice(idx, 1);
+          btn.classList.remove('bg-green-200','border-green-400');
+          btn.classList.add('bg-gray-100','border-gray-300');
+        } else {
+          // Sonderfall: "Keine Tiere"
+          if (val === "Keine Tiere") {
+            current.length = 0; // alles raus
+            container.querySelectorAll('.tiere-btn').forEach(b => {
+              b.classList.remove('bg-green-200','border-green-400');
+              b.classList.add('bg-gray-100','border-gray-300');
+            });
+          } else {
+            // wenn anderes Tier → "Keine Tiere" abwählen
+            const noneIdx = current.indexOf("Keine Tiere");
+            if (noneIdx >= 0) current.splice(noneIdx, 1);
+            container.querySelectorAll('.tiere-btn[data-tiere="Keine Tiere"]')
+                     .forEach(b => b.classList.remove('bg-green-200','border-green-400'));
+            current.push(val);
+          }
+          btn.classList.add('bg-green-200','border-green-400');
+          btn.classList.remove('bg-gray-100','border-gray-300');
+        }
+
+        // Hidden Input für saveEdit aktualisieren
+        hiddenInput.value = current.join(',');
+      });
+    });
+  });
+}, 500);
 
     // Nachrichten laden
     if (d.status === 'angenommen' && d.allowMessages === true) {
@@ -2287,24 +2343,27 @@ setTimeout(() => {
   }
 async function saveEdit(id, quill = null) {
   try {
-    const name = document.querySelector(`.edit-name[data-id='${id}']`)?.value || "";
+    const name    = document.querySelector(`.edit-name[data-id='${id}']`)?.value || "";
     const address = document.getElementById(`address-input-${id}`)?.value || "";
 
-    // Tiere sammeln
-    const tiereContainer = document.getElementById(`tiere-options-${id}`);
-    const tiere = [...tiereContainer.querySelectorAll("input[type=checkbox]:checked")]
-      .map(cb => cb.value);
+    // 🐾 Tiere sammeln – jetzt aus dem versteckten Feld, das die Buttons aktualisieren
+    const tiereHidden = document.querySelector(`.edit-tiere-hidden[data-id='${id}']`);
+    const tiere = tiereHidden && tiereHidden.value
+      ? tiereHidden.value.split(",").map(t => t.trim()).filter(Boolean)
+      : [];
 
-    // Beschreibung aus Quill oder Textfeld
-    const beschreibung = quill ? quill.root.innerHTML :
-      document.querySelector(`.edit-beschreibung[data-id='${id}']`)?.value || "";
+    // 📝 Beschreibung aus Quill oder Textfeld
+    const beschreibung = quill
+      ? quill.root.innerHTML
+      : document.querySelector(`.edit-beschreibung[data-id='${id}']`)?.value || "";
 
+    // 🔄 Speichern
     await db.collection("eierhuetten").doc(id).update({
       name,
       address,
       tiere,
       beschreibung,
-      status: "offen"
+      status: "offen" // nach Edit wieder auf "offen"
     });
 
     addMessage("✅ Änderungen gespeichert. ⏳ Muss erneut durch Admin freigeschaltet werden.", "bot");
@@ -2314,7 +2373,7 @@ async function saveEdit(id, quill = null) {
     console.error("❌ Fehler beim Speichern:", err);
     addMessage("❌ Fehler beim Speichern: " + err.message, "bot");
   }
-}
+      }
 
 async function deleteHut(id) {
   if (!confirm('❗ Möchtest du diese Hütte wirklich löschen?')) return;
