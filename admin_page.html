@@ -1778,28 +1778,40 @@ function uploadFoto(input, hutId) {
     showNotification('❌ Fehler beim Löschen der Hütte.', 'bot');
   });
 }*/
-  async function deleteHut(id) {
+  
+
+async function deleteHut(id) {
   if (!confirm('Möchtest du diese Hütte wirklich löschen?')) return;
 
-  db.collection('eierhuetten').doc(id).get().then(doc => {
+  try {
+    const doc = await db.collection('eierhuetten').doc(id).get();
+
     if (!doc.exists) {
       showNotification('❌ Hütte nicht gefunden.', 'bot');
       return;
     }
 
-    const hut = doc.data();
+    const hut = { id: doc.id, ...doc.data() };
+
+    // Debug: Zeitfeld fallback (optional)
+    const created = hut.createdAt?.toDate?.() || hut.erstelltAm?.toDate?.() || null;
+    console.log(`🕒 Lösche Hütte "${hut.name}" (ID: ${hut.id}) erstellt am:`, created);
 
     // Prüfen, ob Abo existiert
     if (hut.paypalSubscriptionId) {
       showNotification('🔄 Kündige PayPal-Abo...', 'bot');
       console.log('➡️ Sende Abo-Kündigung für:', hut.paypalSubscriptionId);
 
-      fetch('https://us-central1-eierhuettentour.cloudfunctions.net/cancelPaypalSubscription', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscriptionId: hut.paypalSubscriptionId })
-      })
-      .then(async response => {
+      try {
+        const response = await fetch(
+          'https://us-central1-eierhuettentour.cloudfunctions.net/cancelPaypalSubscription',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subscriptionId: hut.paypalSubscriptionId })
+          }
+        );
+
         if (!response.ok) {
           let errorText = await response.text();
           try {
@@ -1814,50 +1826,50 @@ function uploadFoto(input, hutId) {
         if (result.success) {
           showNotification('✅ Abo erfolgreich gekündigt.', 'bot');
           console.log('✅ Kündigung erfolgreich');
-
-          // Danach Hütte löschen
-          db.collection('eierhuetten').doc(id).delete().then(() => {
-            showNotification('🗑️ Hütte gelöscht.', 'bot');
-            korrigiereFehlendeAbos().then(() => showMyHuts());
-          });
         } else {
           console.error('❌ Fehler bei Kündigung:', result.error || result);
-          if (confirm(`⚠️ Das PayPal-Abo konnte nicht automatisch gekündigt werden.\nMöchtest du die Hütte trotzdem löschen?`)) {
-            db.collection('eierhuetten').doc(id).delete().then(() => {
-              showNotification('🗑️ Hütte gelöscht (Abo evtl. noch aktiv).', 'bot');
-              loadHuts();
-            });
-          } else {
+          if (!confirm(`⚠️ Das PayPal-Abo konnte nicht automatisch gekündigt werden.\nMöchtest du die Hütte trotzdem löschen?`)) {
             showNotification('🚫 Löschvorgang abgebrochen.', 'bot');
+            return;
           }
         }
-      })
-      .catch(err => {
+      } catch (err) {
         console.error('❌ Fehler bei Kündigung:', err.message || err);
-        if (confirm(`⚠️ Fehler bei der PayPal-Kündigung: ${err.message || 'Unbekannt'}\nMöchtest du die Hütte trotzdem löschen?`)) {
-          db.collection('eierhuetten').doc(id).delete().then(() => {
-            showNotification('🗑️ Hütte gelöscht (Abo evtl. noch aktiv).', 'bot');
-            loadHuts();
-          });
-        } else {
+        if (!confirm(`⚠️ Fehler bei der PayPal-Kündigung: ${err.message || 'Unbekannt'}\nMöchtest du die Hütte trotzdem löschen?`)) {
           showNotification('🚫 Löschvorgang abgebrochen.', 'bot');
+          return;
         }
-      });
-
-    } else {
-      // Kein Abo → direkt löschen
-      db.collection('eierhuetten').doc(id).delete().then(() => {
-        showNotification('🗑️ Hütte gelöscht.', 'bot');
-        loadHuts();
-      });
+      }
     }
-  }).catch(err => {
-    console.error('❌ Fehler beim Abrufen der Hütte:', err.message || err);
+
+    // 🖼️ Fotos zuerst bei imgbb löschen, falls delete_url vorhanden
+    if (Array.isArray(hut.fotos)) {
+      for (const f of hut.fotos) {
+        let deleteUrl = null;
+        if (typeof f === "object" && f.delete_url) {
+          deleteUrl = f.delete_url;
+        }
+        if (deleteUrl) {
+          try {
+            await fetch(deleteUrl);
+            console.log(`🗑️ Foto gelöscht von imgbb: ${deleteUrl}`);
+          } catch (err) {
+            console.warn(`⚠️ Foto konnte nicht bei imgbb entfernt werden: ${deleteUrl}`, err);
+          }
+        }
+      }
+    }
+
+    // Danach Hütte aus Firestore löschen
+    await db.collection('eierhuetten').doc(id).delete();
+    showNotification('🗑️ Hütte und zugehörige Fotos gelöscht.', 'bot');
+    loadHuts();
+
+  } catch (err) {
+    console.error('❌ Fehler beim Löschen der Hütte:', err.message || err);
     showNotification('❌ Fehler beim Löschen der Hütte.', 'bot');
-  });
+  }
 }
-
-
 
   
   /*async function deleteHut(id) {
