@@ -2343,7 +2343,122 @@ setTimeout(() => {
     }
   });
   }
-async function saveEdit(id, quill = null) {
+
+  // Robust: Event-Delegation für .tiere-btn (funktioniert auch bei nachträglich erzeugten Elementen)
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.tiere-btn');
+  if (!btn) return;
+
+  const container = btn.closest('.tiere-buttons');
+  if (!container) return;
+
+  const hutId = container.getAttribute('data-id');
+  const hiddenInput = document.querySelector(`.edit-tiere-hidden[data-id="${hutId}"]`);
+  if (!hiddenInput) {
+    console.warn('Kein hidden-input für Tiere gefunden (id):', hutId);
+    return;
+  }
+
+  const val = btn.getAttribute('data-tiere');
+  // normalize current array
+  let current = hiddenInput.value
+    ? hiddenInput.value.split(',').map(s => s.trim()).filter(Boolean)
+    : [];
+
+  const idx = current.indexOf(val);
+
+  if (idx >= 0) {
+    // abwählen
+    current.splice(idx, 1);
+    btn.classList.remove('bg-green-200','border-green-400');
+    btn.classList.add('bg-gray-100','border-gray-300');
+  } else {
+    if (val === 'Keine Tiere') {
+      // "Keine Tiere" setzt alles zurück und markiert nur diesen
+      current = ['Keine Tiere'];
+      container.querySelectorAll('.tiere-btn').forEach(b => {
+        b.classList.remove('bg-green-200','border-green-400');
+        b.classList.add('bg-gray-100','border-gray-300');
+      });
+      btn.classList.add('bg-green-200','border-green-400');
+      btn.classList.remove('bg-gray-100','border-gray-300');
+    } else {
+      // wähle normales Tier: entferne ggf. "Keine Tiere"
+      current = current.filter(x => x !== 'Keine Tiere');
+      const noneBtn = container.querySelector('.tiere-btn[data-tiere="Keine Tiere"]');
+      if (noneBtn) {
+        noneBtn.classList.remove('bg-green-200','border-green-400');
+        noneBtn.classList.add('bg-gray-100','border-gray-300');
+      }
+      btn.classList.add('bg-green-200','border-green-400');
+      btn.classList.remove('bg-gray-100','border-gray-300');
+      // nur einmal hinzufügen
+      if (!current.includes(val)) current.push(val);
+    }
+  }
+
+  hiddenInput.value = current.join(',');
+  // DEBUG: prüfe ob Klick ankommt
+  console.log('Tiere für', hutId, '=>', current);
+});
+  async function saveEdit(id, beschreibungHTML) {
+  try {
+    const nameEl = document.querySelector(`.edit-name[data-id="${id}"]`);
+    const sitzEl = document.querySelector(`.edit-sitz[data-id="${id}"]`);
+    const stromEl = document.querySelector(`.edit-strom[data-id="${id}"]`);
+    const extrasEl = document.querySelector(`.edit-extras[data-id="${id}"]`);
+    const tiereHidden = document.querySelector(`.edit-tiere-hidden[data-id="${id}"]`);
+    const tagsEl = document.querySelector(`.edit-tags[data-id="${id}"]`);
+    const zeitenEl = document.querySelector(`.edit-zeiten[data-id="${id}"]`);
+    const addrEl = document.querySelector(`#address-input-${id}`);
+    const allowMessagesEl = document.getElementById(`allowMessages-${id}`);
+
+    const payload = {};
+
+    if (nameEl) payload.name = nameEl.value.trim();
+    if (sitzEl) payload.sitzplaetze = sitzEl.value;
+    if (stromEl) payload.strom = stromEl.value;
+    if (extrasEl) payload.extras = extrasEl.value.trim();
+    if (beschreibungHTML !== undefined) payload.beschreibung = beschreibungHTML;
+
+    // Tiere -> Array
+    if (tiereHidden) {
+      const arr = tiereHidden.value
+        ? tiereHidden.value.split(',').map(s => s.trim()).filter(Boolean)
+        : [];
+      payload.tiere = arr;
+    }
+
+    // Tags -> Array (max 5)
+    if (tagsEl) {
+      payload.tags = tagsEl.value
+        ? tagsEl.value.split(',').map(s => s.trim()).filter(Boolean).slice(0,5)
+        : [];
+    }
+
+    if (zeitenEl) payload.oeffnungszeiten = zeitenEl.value.trim();
+    if (addrEl) payload.address = addrEl.value.trim();
+    if (allowMessagesEl) payload.allowMessages = !!allowMessagesEl.checked;
+
+    await db.collection('eierhuetten').doc(id).update(payload);
+
+    // Log
+    await db.collection('eierhuetten').doc(id).collection('log').add({
+      admin: currentUser.displayName || currentUser.email,
+      feld: 'edit',
+      wert: JSON.stringify(payload),
+      zeitpunkt: new Date()
+    });
+
+    addMessage('✅ Änderungen gespeichert', 'bot');
+    // optional: lade die Hütten neu
+    if (typeof loadHuts === 'function') loadHuts();
+  } catch (err) {
+    console.error('saveEdit error', err);
+    addMessage('❌ Fehler beim Speichern: ' + (err.message || err), 'bot');
+  }
+  }
+/*async function saveEdit(id, quill = null) {
   try {
     const name    = document.querySelector(`.edit-name[data-id='${id}']`)?.value || "";
     const address = document.getElementById(`address-input-${id}`)?.value || "";
@@ -2376,7 +2491,7 @@ async function saveEdit(id, quill = null) {
     addMessage("❌ Fehler beim Speichern: " + err.message, "bot");
   }
       }
-
+*/
 async function deleteHut(id) {
   if (!confirm('❗ Möchtest du diese Hütte wirklich löschen?')) return;
 
