@@ -279,6 +279,7 @@ function startDialog() {
     ],
     handleIntent
   );
+  await migrateOeffnungszeitenUserChat();
 }
  // ==========================
 // Spielplatz anlegen (Dialog)
@@ -558,6 +559,11 @@ function deleteSpielplatz(id) {
     showMySpielplaetze();
     return;
   }
+
+    if (txt === "!migrate") {
+  await migrateOeffnungszeitenUserChat();
+  return;
+    }
 
   // =====================
   // Hütte erstellen
@@ -2169,21 +2175,23 @@ setTimeout(() => {
 
 <div class="oeffnungszeiten-container space-y-2" data-id="${id}">
   ${["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"].map(tag => {
-    const times = d.oeffnungszeiten?.[tag] || {};
-    return `
-      <div class="flex items-center gap-2">
-        <span class="w-24">${tag}</span>
-        <input type="time" class="oeff-anfang border rounded px-2 py-1" data-id="${id}" data-tag="${tag}" value="${times.start || ''}" />
-        <span>-</span>
-        <input type="time" class="oeff-ende border rounded px-2 py-1" data-id="${id}" data-tag="${tag}" value="${times.ende || ''}" />
-      </div>
-    `;
-  }).join("")}
+  const times = (typeof d.oeffnungszeiten === "object" && !d.oeffnungszeiten.immer)
+    ? (d.oeffnungszeiten?.[tag] || {})
+    : {};
+  return `
+    <div class="flex items-center gap-2">
+      <span class="w-24">${tag}</span>
+      <input type="time" class="oeff-anfang border rounded px-2 py-1" data-id="${id}" data-tag="${tag}" value="${times.start || ''}" />
+      <span>-</span>
+      <input type="time" class="oeff-ende border rounded px-2 py-1" data-id="${id}" data-tag="${tag}" value="${times.ende || ''}" />
+    </div>
+  `;
+}).join("")}
 </div>
 
 <div class="mt-2">
   <label class="inline-flex items-center">
-    <input type="checkbox" class="oeff-immer mr-2" data-id="${id}" ${d.oeffnungszeiten?.immer ? 'checked' : ''}>
+    <input type="checkbox" class="oeff-immer mr-2" data-id="${id}" ${(typeof d.oeffnungszeiten === "object" && d.oeffnungszeiten.immer) ? 'checked' : ''}>
     Immer geöffnet
   </label>
 </div>
@@ -2497,6 +2505,45 @@ document.addEventListener('click', (e) => {
     console.error('saveEdit error', err);
     addMessage('❌ Fehler beim Speichern: ' + (err.message || err), 'bot');
   }
+  }
+  async function migrateOeffnungszeitenUserChat() {
+  const snapshot = await db.collection('eierhuetten')
+    .where('userId', '==', currentUser.uid)
+    .get();
+
+  let count = 0;
+
+  for (const doc of snapshot.docs) {
+    const data = doc.data();
+    const hutId = doc.id;
+
+    if (typeof data.oeffnungszeiten === "string" && data.oeffnungszeiten.trim() !== "") {
+      let newFormat = {};
+
+      if (/immer/i.test(data.oeffnungszeiten)) {
+        newFormat = { immer: true };
+      } else {
+        const match = data.oeffnungszeiten.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
+        if (match) {
+          newFormat = {};
+          ["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"].forEach(tag => {
+            newFormat[tag] = { start: match[1], ende: match[2] };
+          });
+        } else {
+          newFormat = { Montag: { start: "", ende: data.oeffnungszeiten.trim() } };
+        }
+      }
+
+      await db.collection('eierhuetten').doc(hutId).update({
+        oeffnungszeiten: newFormat
+      });
+
+      count++;
+    }
+  }
+
+  // ✅ Meldung im Chatfenster ausgeben
+  addMessage(`🚀 Migration abgeschlossen. ${count} Hütte(n) aktualisiert.`, 'bot');
   }
 /*async function saveEdit(id, quill = null) {
   try {
