@@ -2165,9 +2165,28 @@ setTimeout(() => {
             <input type='text' data-id='${id}' class='edit-tags w-full border px-2 py-1 rounded' value='${(d.tags || []).join(", ")}' placeholder="max. 5, Komma getrennt"/>
           </label><br>
 
-          <label>🕒 Öffnungszeiten:<br>
-            <input type='text' data-id='${id}' class='edit-zeiten w-full border px-2 py-1 rounded' value='${d.oeffnungszeiten || ''}' />
-          </label><br>
+          <label class="block mb-2">🕒 Öffnungszeiten:</label>
+
+<div class="oeffnungszeiten-container space-y-2" data-id="${id}">
+  ${["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"].map(tag => {
+    const times = d.oeffnungszeiten?.[tag] || {};
+    return `
+      <div class="flex items-center gap-2">
+        <span class="w-24">${tag}</span>
+        <input type="time" class="oeff-anfang border rounded px-2 py-1" data-id="${id}" data-tag="${tag}" value="${times.start || ''}" />
+        <span>-</span>
+        <input type="time" class="oeff-ende border rounded px-2 py-1" data-id="${id}" data-tag="${tag}" value="${times.ende || ''}" />
+      </div>
+    `;
+  }).join("")}
+</div>
+
+<div class="mt-2">
+  <label class="inline-flex items-center">
+    <input type="checkbox" class="oeff-immer mr-2" data-id="${id}" ${d.oeffnungszeiten?.immer ? 'checked' : ''}>
+    Immer geöffnet
+  </label>
+</div>
 
           <label>📍 Adresse:<br>
             <input type='text' id='address-input-${id}' 
@@ -2409,7 +2428,6 @@ document.addEventListener('click', (e) => {
     const extrasEl = document.querySelector(`.edit-extras[data-id="${id}"]`);
     const tiereHidden = document.querySelector(`.edit-tiere-hidden[data-id="${id}"]`);
     const tagsEl = document.querySelector(`.edit-tags[data-id="${id}"]`);
-    const zeitenEl = document.querySelector(`.edit-zeiten[data-id="${id}"]`);
     const addrEl = document.querySelector(`#address-input-${id}`);
     const allowMessagesEl = document.getElementById(`allowMessages-${id}`);
 
@@ -2421,7 +2439,7 @@ document.addEventListener('click', (e) => {
     if (extrasEl) payload.extras = extrasEl.value.trim();
     if (beschreibungHTML !== undefined) payload.beschreibung = beschreibungHTML;
 
-    // Tiere -> Array
+    // 🐾 Tiere -> Array
     if (tiereHidden) {
       const arr = tiereHidden.value
         ? tiereHidden.value.split(',').map(s => s.trim()).filter(Boolean)
@@ -2429,20 +2447,42 @@ document.addEventListener('click', (e) => {
       payload.tiere = arr;
     }
 
-    // Tags -> Array (max 5)
+    // 🏷️ Tags -> Array (max. 5)
     if (tagsEl) {
       payload.tags = tagsEl.value
-        ? tagsEl.value.split(',').map(s => s.trim()).filter(Boolean).slice(0,5)
+        ? tagsEl.value.split(',').map(s => s.trim()).filter(Boolean).slice(0, 5)
         : [];
     }
 
-    if (zeitenEl) payload.oeffnungszeiten = zeitenEl.value.trim();
+    // 🕒 Öffnungszeiten -> Struktur wie bei Erstellung
+    const immerEl = document.querySelector(`.oeff-immer[data-id="${id}"]`);
+    if (immerEl && immerEl.checked) {
+      payload.oeffnungszeiten = { immer: true };
+    } else {
+      const tage = [
+        "Montag","Dienstag","Mittwoch",
+        "Donnerstag","Freitag","Samstag","Sonntag"
+      ];
+      payload.oeffnungszeiten = {};
+      tage.forEach(tag => {
+        const startEl = document.querySelector(`.oeff-anfang[data-id="${id}"][data-tag="${tag}"]`);
+        const endeEl  = document.querySelector(`.oeff-ende[data-id="${id}"][data-tag="${tag}"]`);
+        if (startEl && endeEl && (startEl.value || endeEl.value)) {
+          payload.oeffnungszeiten[tag] = {
+            start: startEl.value || "",
+            ende: endeEl.value || ""
+          };
+        }
+      });
+    }
+
     if (addrEl) payload.address = addrEl.value.trim();
     if (allowMessagesEl) payload.allowMessages = !!allowMessagesEl.checked;
 
+    // 🔄 Update in Firestore
     await db.collection('eierhuetten').doc(id).update(payload);
 
-    // Log
+    // 📝 Log schreiben
     await db.collection('eierhuetten').doc(id).collection('log').add({
       admin: currentUser.displayName || currentUser.email,
       feld: 'edit',
@@ -2451,7 +2491,7 @@ document.addEventListener('click', (e) => {
     });
 
     addMessage('✅ Änderungen gespeichert', 'bot');
-    // optional: lade die Hütten neu
+
     if (typeof loadHuts === 'function') loadHuts();
   } catch (err) {
     console.error('saveEdit error', err);
