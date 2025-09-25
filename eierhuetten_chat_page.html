@@ -2449,10 +2449,48 @@ async function resumeHut(id) {
       return; // früh raus, Rest nicht rendern
     } 
 
-    const tage = ["Mo","Di","Mi","Do","Fr","Sa","So"];
-const timesByTag = Array.isArray(d.oeffnungszeiten) 
-  ? mapOeffnungszeiten(d.oeffnungszeiten)
-  : {};
+    const { typ, data } = parseOeffnungszeiten(d.oeffnungszeiten);
+
+let oeffHTML = "";
+
+if (typ === "string") {
+  // Immer geöffnet
+  oeffHTML = `
+    <div class="mt-2">
+      <label class="inline-flex items-center">
+        <input type="checkbox" class="oeff-immer mr-2" data-id="${id}" checked>
+        Immer geöffnet
+      </label>
+    </div>
+  `;
+}
+
+if (typ === "array" || typ === "object") {
+  const tage = ["Mo","Di","Mi","Do","Fr","Sa","So"];
+  oeffHTML = `
+    <div class="oeffnungszeiten-container space-y-2" data-id="${id}">
+      ${tage.map(tag => {
+        const eintrag = data.find(e => e.tag === tag) || {};
+        return `
+          <div class="flex items-center gap-2">
+            <span class="w-16">${tag}</span>
+            <input type="time" class="oeff-anfang border rounded px-2 py-1"
+                   data-id="${id}" data-tag="${tag}" value="${eintrag.von || ""}" />
+            <span>-</span>
+            <input type="time" class="oeff-ende border rounded px-2 py-1"
+                   data-id="${id}" data-tag="${tag}" value="${eintrag.bis || ""}" />
+          </div>
+        `;
+      }).join("")}
+    </div>
+    <div class="mt-2">
+      <label class="inline-flex items-center">
+        <input type="checkbox" class="oeff-immer mr-2" data-id="${id}">
+        Immer geöffnet
+      </label>
+    </div>
+  `;
+}
 
     
     const div = document.createElement('div');
@@ -2514,31 +2552,8 @@ const timesByTag = Array.isArray(d.oeffnungszeiten)
             <input type='text' data-id='${id}' class='edit-tags w-full border px-2 py-1 rounded' value='${(d.tags || []).join(", ")}' placeholder="max. 5, Komma getrennt"/>
           </label><br>
 
-          <label class="block mb-2">🕒 Öffnungszeiten:</label>
-
-<div class="oeffnungszeiten-container space-y-2" data-id="${id}">
-    ${tage.map(tag => {
-      const times = timesByTag[tag] || {};
-      return `
-        <div class="flex items-center gap-2">
-          <span class="w-24">${tag}</span>
-          <input type="time" class="oeff-anfang border rounded px-2 py-1"
-                 data-id="${id}" data-tag="${tag}" value="${times.start || ''}" />
-          <span>-</span>
-          <input type="time" class="oeff-ende border rounded px-2 py-1"
-                 data-id="${id}" data-tag="${tag}" value="${times.ende || ''}" />
-        </div>
-      `;
-    }).join("")}
-  </div>
-
-  <div class="mt-2">
-    <label class="inline-flex items-center">
-      <input type="checkbox" class="oeff-immer mr-2" data-id="${id}" 
-        ${d.oeffnungszeiten === "Immer geöffnet" ? 'checked' : ''}>
-      Immer geöffnet
-    </label>
-  </div>
+          
+<div><strong>🕒 Öffnungszeiten:</strong> ${oeffHTML}</div>
 
           <label>📍 Adresse:<br>
             <input type='text' id='address-input-${id}' 
@@ -2785,7 +2800,34 @@ document.addEventListener('click', (e) => {
   // DEBUG: prüfe ob Klick ankommt
   console.log('Tiere für', hutId, '=>', current);
 });
+function parseOeffnungszeiten(raw) {
+  if (!raw) return { typ: "leer", data: [] };
 
+  // Fall 1: String
+  if (typeof raw === "string") {
+    return { typ: "string", data: raw }; // z. B. "Immer geöffnet"
+  }
+
+  // Fall 2: Neues Array
+  if (Array.isArray(raw)) {
+    return { typ: "array", data: raw }; // [{tag:"Mo", von:"08:00", bis:"12:00"}]
+  }
+
+  // Fall 3: Altes Objekt
+  if (typeof raw === "object") {
+    const arr = [];
+    for (const [tag, zeiten] of Object.entries(raw)) {
+      arr.push({
+        tag: tag.slice(0,2),          // "Mo", "Di" …
+        von: zeiten.start || "",
+        bis: zeiten.ende || ""
+      });
+    }
+    return { typ: "object", data: arr };
+  }
+
+  return { typ: "unbekannt", data: [] };
+}
   // Array -> Map (für Inputs)
 function mapOeffnungszeiten(oeffArray = []) {
   const result = {};
