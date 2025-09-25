@@ -183,11 +183,16 @@ async function ensureDocCreated() {
 async function saveField(field, value) {
   const dr = await ensureDocCreated();
   if (!dr) throw new Error("Kein DocumentRef in saveField");
+  
   const payload = {}; 
   payload[field] = value;
+  payload.step = step; // 👉 aktuellen Schritt mit speichern
+  
   await dr.set(payload, { merge: true });
   editingData[field] = value;
-  console.log("Saved field", field, value);
+  editingData.step = step; // auch lokal merken
+  
+  console.log("Saved field", field, value, "Step:", step);
   return dr;
 }
   
@@ -581,6 +586,7 @@ function deleteSpielplatz(id) {
         akzeptiert: true,
         am: new Date().toISOString()
     },
+    step: 1, // 👉 Start bei Step 1
     erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
   };
 
@@ -2156,10 +2162,19 @@ async function resumeHut(id) {
     addMessage("❌ Hütte nicht gefunden.", "bot");
     return;
   }
+
   editingData = { id, ...snap.data() };
+  step = editingData.step || 1; // 👉 gespeicherter Step oder 1 als Fallback
+
   addMessage("✏️ Du kannst deine Hütte jetzt weiter bearbeiten.", "bot");
-  step = 1; // oder der Step, an dem du wieder einsetzen willst
-  addMessage("Wie heißt deine Hütte?", "bot");
+
+  // Optional direkt die passende Frage stellen
+  if (step === 1) {
+    addMessage("Wie heißt deine Hütte?", "bot");
+  } else if (step === 2) {
+    addMessage("🪑 Hat deine Hütte Sitzplätze?", "bot");
+  }
+  // usw. für die restlichen Steps
 }
 
   async function showMyHuts() {
