@@ -157,6 +157,40 @@ let editingData = {};
 let step = 0;
 let map, marker;
 
+
+// Holt die aktuelle Hut-Dokument-Referenz oder erstellt es neu
+async function ensureDocCreated() {
+  if (!editingData) editingData = {};
+  if (editingData.id) {
+    const dr = db.collection("eierhuetten").doc(editingData.id);
+    const snap = await dr.get();
+    if (snap.exists) return dr;
+  }
+  const docRef = db.collection("eierhuetten").doc(editingData.id || undefined);
+  const base = {
+    userId: currentUser?.uid || null,
+    erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+    status: "offen",
+    fotos: editingData.fotos || [],
+    zustimmungDatenschutz: editingData.zustimmungDatenschutz || null
+  };
+  await docRef.set(base, { merge: true });
+  editingData.id = docRef.id;
+  return docRef;
+}
+
+// Speichert ein einzelnes Feld sofort in Firestore
+async function saveField(field, value) {
+  const dr = await ensureDocCreated();
+  if (!dr) throw new Error("Kein DocumentRef in saveField");
+  const payload = {}; 
+  payload[field] = value;
+  await dr.set(payload, { merge: true });
+  editingData[field] = value;
+  console.log("Saved field", field, value);
+  return dr;
+}
+  
 const chatWindow = document.getElementById('chat-window');
 const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
@@ -535,6 +569,28 @@ function deleteSpielplatz(id) {
     }
   });
   }*/
+  async function startNewHut() {
+  // Neues Dokument in Firestore vorbereiten
+  const docRef = db.collection("eierhuetten").doc();
+
+  editingData = {
+    id: docRef.id, // 👉 ID merken
+    userId: currentUser.uid,
+    status: "in_bearbeitung",
+    zustimmungDatenschutz: {
+        akzeptiert: true,
+        am: new Date().toISOString()
+    },
+    erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
+  };
+
+  await docRef.set(editingData); // Basis-Dokument sofort speichern
+msg.remove(); // Nachfrage schließen, Haken bleibt
+     
+  console.log("🆕 Neue Hütte gestartet mit ID:", editingData.id);
+}
+
+
  async function handleIntent(input) {
   const txt = input.toLowerCase();
 
@@ -600,24 +656,12 @@ setTimeout(() => {
         chatWindow.appendChild(msg);
         chatWindow.scrollTop = chatWindow.scrollHeight;
 
-        // Buttons verknüpfen
-        document.getElementById('confirm-accept').onclick = () => {
-          // 🆕 ID vormerken, aber noch NICHT speichern
-    const docRef = db.collection("eierhuetten").doc();
-    editingData = {
-      id: docRef.id,
-      zustimmungDatenschutz: {
-        akzeptiert: true,
-        am: new Date().toISOString()
-      }
-    };
-
-    // 🚀 Flow starten
-    step = 1;
-    addMessage('📝 Bitte gib den Namen deiner neuen Hütte ein:', 'bot');
-
-          msg.remove(); // Nachfrage schließen, Haken bleibt
-        };
+        document.getElementById("confirm-accept").onclick = async () => {
+  await startNewHut(); // 👉 Dokument sofort anlegen
+  step = 1;
+  addMessage("✅ Super! Dann starten wir. Wie heißt deine Hütte?", "bot");
+};
+        
         document.getElementById('confirm-cancel').onclick = () => {
           box.checked = false; // Haken entfernen
           msg.remove();        // Nachfrage schließen
@@ -657,7 +701,7 @@ setTimeout(() => {
   );
   }
   function showHutSummary() {
-  // Zusammenbauen der Summary-HTML (verwende editingData wie in showHutSummary)
+  // Zusammenbauen der Summary-HTML
   const modal = document.createElement('div');
   modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center';
   modal.style.zIndex = 9999;
@@ -694,9 +738,15 @@ setTimeout(() => {
       const m = L.map('summary-map').setView([lat, lng], 13);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
       const mk = L.marker([lat, lng], { draggable: true }).addTo(m);
-      mk.on('dragend', e => {
+
+      mk.on('dragend', async e => {
         const pos = e.target.getLatLng();
         editingData.location = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
+
+        // 🔥 sofort in Firestore speichern
+        await saveField("location", editingData.location);
+
+        addMessage("📍 Neuer Standort gespeichert.", "bot");
       });
     } catch (e) {
       console.error('Karte konnte nicht initialisiert werden', e);
@@ -705,15 +755,14 @@ setTimeout(() => {
 
   document.getElementById('submitHut').onclick = async () => {
     modal.remove();
-    await submitNewHut(); // deine bestehende Submits-Funktion
+    await submitNewHut(); // deine bestehende Submit-Funktion
   };
   document.getElementById('editHut').onclick = () => {
     modal.remove();
-    // optional: bringe Nutzer zurück zu einem Schritt (z.B. step = 1)
     step = 1;
     addMessage('✏️ Du kannst die Angaben nun bearbeiten. Beginne mit dem Namen:', 'bot');
   };
-  }
+}
 /*function showHutSummary() {
   // Tiere als Emoji-Liste mappen
   const tiereEmojiMap = {
@@ -837,41 +886,51 @@ async function processUserInput(txt) {
   // Hütten-Flow
   // ==========================
 
-  // Step 1: Name
-  if (step === 1) {
-    editingData.name = txt.trim();
+// Step 1: Name
+if (step === 1) {
+  editingData.name = txt.trim();
+  await saveField("name", editingData.name);   // 🔥 sofort speichern
 
-    step = 2;
-    addQuestionWithHelp("🪑 Hat deine Hütte Sitzplätze?", "Sind Bänke oder Stühle vorhanden?");
-    addChoiceButtons(['Ja', 'Nein'], ans => {
-      editingData.sitzplaetze = ans;
-      step = 3;
-      addQuestionWithHelp("🔌 Gibt es Strom?", "Kann man z. B. ein Handy laden oder sein E-Bike aufladen?");
-      addChoiceButtons(['Ja', 'Nein'], strom => {
-        editingData.strom = strom;
-        step = 4;
-        addQuestionWithHelp("✨ Extras? (oder „keine“)", "Zum Beispiel: Getränke, Kühlschrank, Werkzeug.");
-        addChoiceButtons(['Überspringen'], () => {
-          editingData.extras = '';
-          step = "beschreibung_input";
-          askForAnimals();
-        });
+  step = 2;
+  addQuestionWithHelp("🪑 Hat deine Hütte Sitzplätze?", "Sind Bänke oder Stühle vorhanden?");
+  addChoiceButtons(['Ja', 'Nein'], async ans => {
+    editingData.sitzplaetze = ans;
+    await saveField("sitzplaetze", ans);       // 🔥 sofort speichern
+
+    step = 3;
+    addQuestionWithHelp("🔌 Gibt es Strom?", "Kann man z. B. ein Handy laden oder sein E-Bike aufladen?");
+    addChoiceButtons(['Ja', 'Nein'], async strom => {
+      editingData.strom = strom;
+      await saveField("strom", strom);         // 🔥 sofort speichern
+
+      step = 4;
+      addQuestionWithHelp("✨ Extras? (oder „keine“)", "Zum Beispiel: Getränke, Kühlschrank, Werkzeug.");
+      addChoiceButtons(['Überspringen'], async () => {
+        editingData.extras = '';
+        await saveField("extras", '');         // 🔥 sofort speichern
+
+        step = "beschreibung_input";
+        askForAnimals();
       });
     });
-    return;
-  }
+  });
+  return;
+}
+ // Step 4: Extras
+if (step === 4) {
+  editingData.extras = txt.toLowerCase() === "keine" ? "" : txt;
+  await saveField("extras", editingData.extras);   // 🔥 sofort speichern
 
-  // Step 4: Extras
-  if (step === 4) {
-    editingData.extras = txt.toLowerCase() === "keine" ? "" : txt;
-    step = "beschreibung_input";
-    askForAnimals();
-    return;
-  }
+  step = "beschreibung_input";
+  askForAnimals();
+  return;
+}
 
-  // Beschreibung
+// Beschreibung
 if (step === "beschreibung_input") {
   editingData.beschreibung = txt;
+  await saveField("beschreibung", txt);           // 🔥 sofort speichern
+
   step = "tags_input";
 
   // 👉 Frage nach den Tags direkt anzeigen
@@ -881,79 +940,86 @@ if (step === "beschreibung_input") {
   );
 
   // 👉 Zusätzlich Überspringen anbieten
-  addChoiceButtons(["Überspringen"], () => {
-  editingData.tags = [];
-  // 👉 nächster Schritt: Öffnungszeiten
+  addChoiceButtons(["Überspringen"], async () => {
+    editingData.tags = [];
+    await saveField("tags", []);                  // 🔥 sofort speichern
+
+    // 👉 nächster Schritt: Öffnungszeiten
+    step = "zeiten_input";
+    addQuestionWithHelp(
+      "🕒 Wie lauten die Öffnungszeiten?",
+      "Wenn die Hütte immer frei zugänglich ist: 'Immer geöffnet'"
+    );
+    addChoiceButtons(["Immer geöffnet", "Von – Bis angeben"], async ans => {
+      if (ans === "Immer geöffnet") {
+        editingData.oeffnungszeiten = "Immer geöffnet";
+        await saveField("oeffnungszeiten", "Immer geöffnet"); // 🔥
+
+        step = "address_input";
+        askForLocationChoice();
+      } else {
+        showMultiDayTimePicker();
+      }
+    });
+  });
+
+  return;
+}
+  // Tags
+if (step === "tags_input") {
+  const tags = txt.split(",").map(t => t.trim()).filter(t => t.length > 0);
+  if (tags.length > 5) {
+    addMessage("⚠️ Bitte max. 5 Tags angeben.", "bot");
+    return;
+  }
+  editingData.tags = tags;
+  await saveField("tags", tags);                        // 🔥 sofort speichern
+
   step = "zeiten_input";
   addQuestionWithHelp(
     "🕒 Wie lauten die Öffnungszeiten?",
     "Wenn die Hütte immer frei zugänglich ist: 'Immer geöffnet'"
   );
-  addChoiceButtons(["Immer geöffnet", "Von – Bis angeben"], ans => {
+  addChoiceButtons(["Immer geöffnet", "Von – Bis angeben"], async ans => {
     if (ans === "Immer geöffnet") {
       editingData.oeffnungszeiten = "Immer geöffnet";
+      await saveField("oeffnungszeiten", "Immer geöffnet"); // 🔥 sofort speichern
+
+      // klar definierter nächster Schritt:
       step = "address_input";
       askForLocationChoice();
     } else {
       showMultiDayTimePicker();
     }
   });
-});
-
   return;
 }
 
-  // Tags
-  if (step === "tags_input") {
-    const tags = txt.split(",").map(t => t.trim()).filter(t => t.length > 0);
-    if (tags.length > 5) {
-      addMessage("⚠️ Bitte max. 5 Tags angeben.", "bot");
-      return;
-    }
-    editingData.tags = tags;
-    step = "zeiten_input";
-    addQuestionWithHelp(
-      "🕒 Wie lauten die Öffnungszeiten?",
-      "Wenn die Hütte immer frei zugänglich ist: 'Immer geöffnet'"
+// Öffnungszeiten manuell
+if (step === "zeiten_input") {
+  editingData.oeffnungszeiten = txt;
+  await saveField("oeffnungszeiten", txt);             // 🔥 sofort speichern
+  showLocationChoices();
+  return;
+}
+
+// Adresse / GPS
+if (step === "address_input") {
+  if (txt.toLowerCase() === "gps") {
+    navigator.geolocation.getCurrentPosition(
+      async pos => {
+        await handleGPSLocation(pos.coords.latitude, pos.coords.longitude);
+      },
+      err => {
+        addMessage("❌ GPS nicht verfügbar: " + err.message, "bot");
+      }
     );
-    addChoiceButtons(["Immer geöffnet", "Von – Bis angeben"], ans => {
-  if (ans === "Immer geöffnet") {
-    editingData.oeffnungszeiten = "Immer geöffnet";
-    // klar definierter nächster Schritt:
-    step = "address_input";
-    askForLocationChoice();
+    return;
   } else {
-    showMultiDayTimePicker();
-  }
-});
+    await handleAddressInput(txt); // öffnet Karte + Bestätigungsbuttons
     return;
   }
-
-  // Öffnungszeiten manuell
-  if (step === "zeiten_input") {
-    editingData.oeffnungszeiten = txt;
-    showLocationChoices();
-    return;
-  }
-
-  // Adresse / GPS
-  if (step === "address_input") {
-    if (txt.toLowerCase() === "gps") {
-      navigator.geolocation.getCurrentPosition(
-        pos => {
-          handleGPSLocation(pos.coords.latitude, pos.coords.longitude);
-        },
-        err => {
-          addMessage("❌ GPS nicht verfügbar: " + err.message, "bot");
-        }
-      );
-      return;
-    } else {
-      await handleAddressInput(txt); // öffnet Karte + Bestätigungsbuttons
-      return;
-    }
-  }
-
+}
   // ==========================
   // Spielplatz-Flow
   // ==========================
@@ -1464,21 +1530,7 @@ function showLocationConfirmation(lat, lng, label) {
     }
   }, 500);
 }
-  async function handleAddressInput(txt) {
-  const coords = await geocodeAddress(txt.trim());
-
-  if (!coords) {
-    addMessage('❌ Adresse konnte nicht gefunden werden. Bitte erneut eingeben.', 'bot');
-    return;
-  }
-
-  editingData.address = coords.display_name;
-  editingData.location = new firebase.firestore.GeoPoint(coords.lat, coords.lng);
-
-  // Karte mit Bestätigung anzeigen
-  showLocationConfirmation(coords.lat, coords.lng, editingData.address);
-  }
-async function fetchAddressSuggestions(query, container, hutId) {
+  async function fetchAddressSuggestions(query, container, hutId) {
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(query)}`;
     const res = await fetch(url, { headers: { "User-Agent": "EierhuettenApp/1.0" } });
@@ -1496,43 +1548,50 @@ async function fetchAddressSuggestions(query, container, hutId) {
       div.textContent = item.display_name;
 
       div.onclick = async () => {
-  if (!confirm(`📍 Diese Adresse übernehmen?\n\n${item.display_name}`)) return;
+        if (!confirm(`📍 Diese Adresse übernehmen?\n\n${item.display_name}`)) return;
 
-  if (!hutId) {
-    // NEUE HÜTTE: nicht sofort in DB schreiben — stattdessen Karte anzeigen und Marker anpassen
-    editingData.address = item.display_name;
-    // showLocationConfirmation erwartet (lat, lng, label)
-    showLocationConfirmation(parseFloat(item.lat), parseFloat(item.lon), item.display_name);
-    // optional: setze step, damit die weitere Eingabe korrekt läuft
-    step = 'address_input';
-    container.innerHTML = '';
-    return;
-  }
+        const lat = parseFloat(item.lat);
+        const lon = parseFloat(item.lon);
 
-  // EXISTIERENDE HÜTTE: dein bisheriger DB-Update-Flow (belassen)
-  const docRef = db.collection("eierhuetten").doc(hutId);
-  const updateData = {
-    address: item.display_name,
-    location: new firebase.firestore.GeoPoint(parseFloat(item.lat), parseFloat(item.lon)),
-    status: "offen"
-  };
-  try {
-    const doc = await docRef.get();
-    if (doc.exists) {
-      await docRef.update(updateData);
-    } else {
-      await docRef.set(updateData, { merge: true });
-    }
-    addMessage(`✅ Adresse gespeichert: ${item.display_name}`, "bot");
-    container.innerHTML = "";
-    showMyHuts();
-  } catch (err) {
-    console.error(err);
-    addMessage("❌ Fehler beim Speichern der Adresse: " + err.message, "bot");
-  }
-};
+        if (!hutId) {
+          // 👉 NEUE HÜTTE: direkt in Firestore speichern
+          editingData.address = item.display_name;
+          editingData.location = new firebase.firestore.GeoPoint(lat, lon);
 
+          await saveField("address", editingData.address);   // 🔥
+          await saveField("location", editingData.location); // 🔥
 
+          // Karte zeigen wie bisher
+          showLocationConfirmation(lat, lon, item.display_name);
+
+          // optional Step zurücksetzen
+          step = "address_input";
+          container.innerHTML = "";
+          return;
+        }
+
+        // 👉 EXISTIERENDE HÜTTE: dein bisheriger Update-Flow
+        const docRef = db.collection("eierhuetten").doc(hutId);
+        const updateData = {
+          address: item.display_name,
+          location: new firebase.firestore.GeoPoint(lat, lon),
+          status: "offen"
+        };
+        try {
+          const doc = await docRef.get();
+          if (doc.exists) {
+            await docRef.update(updateData);
+          } else {
+            await docRef.set(updateData, { merge: true });
+          }
+          addMessage(`✅ Adresse gespeichert: ${item.display_name}`, "bot");
+          container.innerHTML = "";
+          showMyHuts();
+        } catch (err) {
+          console.error(err);
+          addMessage("❌ Fehler beim Speichern der Adresse: " + err.message, "bot");
+        }
+      };
 
       container.appendChild(div);
     });
@@ -1540,8 +1599,22 @@ async function fetchAddressSuggestions(query, container, hutId) {
     console.error("❌ Fehler bei der Adresssuche:", err);
     container.innerHTML = `<div class='text-red-500'>❌ Fehler: ${err.message}</div>`;
   }
-}
-  
+  }
+  async function handleAddressInput(txt) {
+  const coords = await geocodeAddress(txt.trim());
+
+  if (!coords) {
+    addMessage('❌ Adresse konnte nicht gefunden werden. Bitte erneut eingeben.', 'bot');
+    return;
+  }
+
+  editingData.address = coords.display_name;
+  editingData.location = new firebase.firestore.GeoPoint(coords.lat, coords.lng);
+
+  // Karte mit Bestätigung anzeigen
+  showLocationConfirmation(coords.lat, coords.lng, editingData.address);
+  }
+
   async function geocodeAddress(address) {
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`;
@@ -2863,65 +2936,47 @@ async function deleteImage(hutId, imageUrl, deleteUrl) {
   }
 }
 async function submitNewHut() {
-/* const zustimmung = document.getElementById('datenschutz-zustimmung');
-  if (!zustimmung.checked) {
-    alert('❗ Bitte bestätige die Datenschutzerklärung, um fortzufahren.');
-    return;
-  }*/
-  
   if (!editingData.name || !editingData.location) {
     addMessage('❌ Bitte gib alle Daten ein (mindestens Name und Standort).', 'bot');
     return;
   }
 
-  // 🔒 Sicherheit: Nur gültige Bilder übernehmen (mit url UND delete_url)
+  // 🔒 Sicherheit: Nur gültige Bilder übernehmen
   const validFotos = (editingData.fotos || []).filter(f =>
-    typeof f === 'object' &&
-    f.url &&
-    f.delete_url
+    typeof f === 'object' && f.url && f.delete_url
   );
 
-  const hut = {
-    ...editingData,
-    userId: currentUser.uid,
-    erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
-    status: 'offen',
-    fotos: validFotos,
-    datenschutzZustimmung: {
-       bestätigtAm: firebase.firestore.FieldValue.serverTimestamp(),
-       durch: firebase.auth().currentUser?.email || "Gast"
-    }
-  };
-
-  console.log('📸 Fotos werden gespeichert:', JSON.stringify(hut.fotos));
-
   try {
-    const docRef = await db.collection('eierhuetten').add(hut);
-    addMessage('🎉 Deine Hütte wurde erfolgreich erstellt.', 'bot');
-    db.collection('eierhuetten').doc(docRef.id).update({
-            status: 'offen'
-          }).then(() => {
-              // addMessage('✅ Deine Hütte wurde zur Freigabe weitergeleitet.', 'bot');
-             // addMessage('Wir prüfen nun Deine Angaben und schalten alles frei, sobald alles passt.', 'bot');
-           /* setTimeout(() => {
-              showMyHuts();
-              startDialog();
-            }, 5000);*/
-             addMessage('✅ Vielen Dank — deine Hütte wurde eingereicht!', 'bot');
-addMessage('🔎 Wir prüfen deinen Vorschlag nun. Du kannst deine Einträge unter „Meine Hütten“ sehen, sobald sie freigegeben sind.', 'bot');
+    const docRef = db.collection('eierhuetten').doc(editingData.id);
 
-const btn = document.createElement('div');
-btn.className = 'message bot';
-btn.innerHTML = '<button class="choice-btn" onclick="showMyHuts()">➡️ Meine Hütten anzeigen</button>';
-chatWindow.appendChild(btn);
-          });
+    await docRef.set(
+      {
+        fotos: validFotos,
+        status: 'offen',
+        erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+        userId: currentUser.uid,
+        datenschutzZustimmung: {
+          bestätigtAm: firebase.firestore.FieldValue.serverTimestamp(),
+          durch: firebase.auth().currentUser?.email || "Gast"
+        }
+      },
+      { merge: true }
+    );
+
+    addMessage('✅ Vielen Dank — deine Hütte wurde eingereicht!', 'bot');
+    addMessage('🔎 Wir prüfen deinen Vorschlag nun. Du kannst deine Einträge unter „Meine Hütten“ sehen, sobald sie freigegeben sind.', 'bot');
+
+    const btn = document.createElement('div');
+    btn.className = 'message bot';
+    btn.innerHTML = '<button class="choice-btn" onclick="showMyHuts()">➡️ Meine Hütten anzeigen</button>';
+    chatWindow.appendChild(btn);
 
     // Reset
     step = 0;
     editingData = {};
 
   } catch (err) {
-    addMessage('❌ Fehler beim Erstellen der Hütte: ' + err.message, 'bot');
+    addMessage('❌ Fehler beim Einreichen: ' + err.message, 'bot');
     setTimeout(() => startDialog(), 1500);
   }
 }
