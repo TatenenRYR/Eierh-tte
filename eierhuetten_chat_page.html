@@ -881,7 +881,185 @@ function escapeHtml(text) {
 // ==========================
 // Haupt-Eingabeverarbeitung
 // ==========================
-async function processUserInput(txt) {
+  async function processUserInput(txt) {
+  txt = (txt || "").trim();
+
+  // ==========================
+  // Hütten-Flow
+  // ==========================
+
+  // Step 1: Name
+  if (step === 1) {
+    if (!txt) {
+      addQuestionWithHelp("Wie heißt deine Hütte?", "");
+      return;
+    }
+
+    editingData.name = txt;
+    await saveField("name", editingData.name);
+    step = 2;
+    await saveField("step", step);
+
+    addQuestionWithHelp("🪑 Hat deine Hütte Sitzplätze?", "Sind Bänke oder Stühle vorhanden?");
+    addChoiceButtons(['Ja', 'Nein'], async ans => {
+      editingData.sitzplaetze = ans;
+      await saveField("sitzplaetze", ans);
+
+      step = 3;
+      await saveField("step", step);
+
+      processUserInput(""); // nächster Step
+    });
+    return;
+  }
+
+  // Step 2/3: Strom
+  if (step === 3) {
+    if (!txt) {
+      addQuestionWithHelp("🔌 Gibt es Strom?", "Kann man z. B. ein Handy laden oder sein E-Bike aufladen?");
+      addChoiceButtons(['Ja', 'Nein'], async strom => {
+        editingData.strom = strom;
+        await saveField("strom", strom);
+
+        step = 4;
+        await saveField("step", step);
+
+        processUserInput("");
+      });
+      return;
+    }
+  }
+
+  // Step 4: Extras
+  if (step === 4) {
+    if (!txt) {
+      addQuestionWithHelp("✨ Extras? (oder „keine“)", "Zum Beispiel: Getränke, Kühlschrank, Werkzeug.");
+      addChoiceButtons(['Überspringen'], async () => {
+        editingData.extras = '';
+        await saveField("extras", '');
+        step = "beschreibung_input";
+        await saveField("step", step);
+        processUserInput("");
+      });
+      return;
+    }
+
+    editingData.extras = txt.toLowerCase() === "keine" ? "" : txt;
+    await saveField("extras", editingData.extras);
+    step = "beschreibung_input";
+    await saveField("step", step);
+    askForAnimals();
+    return;
+  }
+
+  // Beschreibung
+  if (step === "beschreibung_input") {
+    if (!txt) {
+      addQuestionWithHelp("📝 Bitte beschreibe deine Hütte kurz.", "Zum Beispiel: 'Kleine Schutzhütte mit Bank und Tisch.'");
+      return;
+    }
+
+    editingData.beschreibung = txt;
+    await saveField("beschreibung", txt);
+
+    step = "tags_input";
+    await saveField("step", step);
+
+    addQuestionWithHelp("🏷️ Bitte füge bis zu 5 Schlagwörter hinzu (durch Komma getrennt).", "Beispiel: Frühstück, Getränke, schattig");
+    addChoiceButtons(["Überspringen"], async () => {
+      editingData.tags = [];
+      await saveField("tags", []);
+      step = "zeiten_input";
+      await saveField("step", step);
+      processUserInput("");
+    });
+    return;
+  }
+
+  // Tags
+  if (step === "tags_input") {
+    if (!txt) {
+      addQuestionWithHelp("🏷️ Bitte füge bis zu 5 Schlagwörter hinzu (durch Komma getrennt).", "Beispiel: Frühstück, Getränke, schattig");
+      addChoiceButtons(["Überspringen"], async () => {
+        editingData.tags = [];
+        await saveField("tags", []);
+        step = "zeiten_input";
+        await saveField("step", step);
+        processUserInput("");
+      });
+      return;
+    }
+
+    const tags = txt.split(",").map(t => t.trim()).filter(t => t.length > 0);
+    if (tags.length > 5) {
+      addMessage("⚠️ Bitte max. 5 Tags angeben.", "bot");
+      return;
+    }
+    editingData.tags = tags;
+    await saveField("tags", tags);
+
+    step = "zeiten_input";
+    await saveField("step", step);
+    processUserInput("");
+    return;
+  }
+
+  // Zeiten
+  if (step === "zeiten_input") {
+    if (!txt) {
+      addQuestionWithHelp("🕒 Wie lauten die Öffnungszeiten?", "Wenn die Hütte immer frei zugänglich ist: 'Immer geöffnet'");
+      addChoiceButtons(["Immer geöffnet", "Von – Bis angeben"], async ans => {
+        if (ans === "Immer geöffnet") {
+          editingData.oeffnungszeiten = "Immer geöffnet";
+          await saveField("oeffnungszeiten", "Immer geöffnet");
+          step = "address_input";
+          await saveField("step", step);
+          processUserInput("");
+        } else {
+          showMultiDayTimePicker();
+        }
+      });
+      return;
+    }
+
+    editingData.oeffnungszeiten = txt;
+    await saveField("oeffnungszeiten", txt);
+
+    step = "address_input";
+    await saveField("step", step);
+
+    processUserInput("");
+    return;
+  }
+
+  // Adresse
+  if (step === "address_input") {
+    if (!txt) {
+      askForLocationChoice();
+      return;
+    }
+
+    if (txt.toLowerCase() === "gps") {
+      navigator.geolocation.getCurrentPosition(
+        async pos => {
+          await handleGPSLocation(pos.coords.latitude, pos.coords.longitude);
+        },
+        err => {
+          addMessage("❌ GPS nicht verfügbar: " + err.message, "bot");
+        }
+      );
+    } else {
+      await handleAddressInput(txt);
+    }
+    return;
+  }
+
+  // Fallback
+  if (txt) {
+    addMessage("❓ Ich habe das nicht verstanden. Bitte antworte passend zur Frage.", "bot");
+  }
+  }
+/*async function processUserInput(txt) {
   txt = (txt || "").trim();
   //if (!txt) return;
 
@@ -1070,8 +1248,11 @@ if (step === "address_input") {
   }
 
   // Fallback
-  addMessage("❓ Ich habe das nicht verstanden. Bitte antworte passend zur Frage.", "bot");
-}
+  
+  if (txt) {
+    addMessage("❓ Ich habe das nicht verstanden. Bitte antworte passend zur Frage.", "bot");
+  }
+}*/
   function showMultiDayTimePicker() {
   const container = document.createElement('div');
   container.className = 'message bot';
