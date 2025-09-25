@@ -2453,44 +2453,34 @@ async function resumeHut(id) {
 
 let oeffHTML = "";
 
-if (typ === "string") {
-  // Immer geöffnet
+const parsed = parseOeffnungszeiten(d.oeffnungszeiten);
+let oeffHTML = "";
+
+if (parsed.type === "always") {
   oeffHTML = `
-    <div class="mt-2">
-      <label class="inline-flex items-center">
-        <input type="checkbox" class="oeff-immer mr-2" data-id="${id}" checked>
-        Immer geöffnet
-      </label>
+    <label>
+      <input type="checkbox" class="always-open" checked />
+      Immer geöffnet
+    </label>
+  `;
+} else if (parsed.type === "array") {
+  oeffHTML = `
+    <div class="oeffzeiten-container">
+      ${parsed.entries.map(e => `
+        <div class="flex gap-2 mt-1">
+          <span class="w-12">${e.tag}</span>
+          <input type="time" value="${e.von || ""}" class="von border rounded px-1" />
+          <input type="time" value="${e.bis || ""}" class="bis border rounded px-1" />
+        </div>
+      `).join("")}
     </div>
   `;
+} else if (parsed.type === "text") {
+  oeffHTML = `<div>${parsed.value}</div>`;
+} else {
+  oeffHTML = `<div class="text-gray-500 italic">Keine Öffnungszeiten</div>`;
 }
 
-if (typ === "array" || typ === "object") {
-  const tage = ["Mo","Di","Mi","Do","Fr","Sa","So"];
-  oeffHTML = `
-    <div class="oeffnungszeiten-container space-y-2" data-id="${id}">
-      ${tage.map(tag => {
-        const eintrag = data.find(e => e.tag === tag) || {};
-        return `
-          <div class="flex items-center gap-2">
-            <span class="w-16">${tag}</span>
-            <input type="time" class="oeff-anfang border rounded px-2 py-1"
-                   data-id="${id}" data-tag="${tag}" value="${eintrag.von || ""}" />
-            <span>-</span>
-            <input type="time" class="oeff-ende border rounded px-2 py-1"
-                   data-id="${id}" data-tag="${tag}" value="${eintrag.bis || ""}" />
-          </div>
-        `;
-      }).join("")}
-    </div>
-    <div class="mt-2">
-      <label class="inline-flex items-center">
-        <input type="checkbox" class="oeff-immer mr-2" data-id="${id}">
-        Immer geöffnet
-      </label>
-    </div>
-  `;
-}
 
     
     const div = document.createElement('div');
@@ -2800,34 +2790,31 @@ document.addEventListener('click', (e) => {
   // DEBUG: prüfe ob Klick ankommt
   console.log('Tiere für', hutId, '=>', current);
 });
+// Hilfsfunktion oben im Skript einfügen
 function parseOeffnungszeiten(raw) {
-  if (!raw) return { typ: "leer", data: [] };
+  if (!raw) return { type: "none" };
 
-  // Fall 1: String
   if (typeof raw === "string") {
-    return { typ: "string", data: raw }; // z. B. "Immer geöffnet"
+    return raw.toLowerCase().includes("immer")
+      ? { type: "always" }
+      : { type: "text", value: raw };
   }
 
-  // Fall 2: Neues Array
   if (Array.isArray(raw)) {
-    return { typ: "array", data: raw }; // [{tag:"Mo", von:"08:00", bis:"12:00"}]
+    return { type: "array", entries: raw };
   }
 
-  // Fall 3: Altes Objekt
   if (typeof raw === "object") {
-    const arr = [];
-    for (const [tag, zeiten] of Object.entries(raw)) {
-      arr.push({
-        tag: tag.slice(0,2),          // "Mo", "Di" …
-        von: zeiten.start || "",
-        bis: zeiten.ende || ""
-      });
-    }
-    return { typ: "object", data: arr };
+    const entries = Object.entries(raw).map(([tag, zeiten]) => ({
+      tag,
+      von: zeiten.start || zeiten.von,
+      bis: zeiten.ende || zeiten.bis,
+    }));
+    return { type: "array", entries };
   }
 
-  return { typ: "unbekannt", data: [] };
-}
+  return { type: "none" };
+    }
   // Array -> Map (für Inputs)
 function mapOeffnungszeiten(oeffArray = []) {
   const result = {};
