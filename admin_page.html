@@ -915,61 +915,163 @@ function showSection(id) {
         console.error(`❌ Fehler beim Laden der Logs für Hütte ${hut.id}:`, err);
       }
 
-      // Nachrichten laden
-      let messagesHTML = '<p class="text-sm text-gray-500 italic">💬 Nachrichten deaktiviert.</p>';
-      if (hut.allowMessages) {
-        try {
-          const msgSnap = await db.collection('hutMessages')
-            .where('hutId', '==', hut.id)
-            .orderBy('createdAt', 'desc')
-            .limit(50)
-            .get();
+      // Tiere
+      const alleTiere = {
+        "🦙": "Alpaka",
+        "🐄": "Kuh",
+        "🐖": "Schwein",
+        "🐐": "Ziege",
+        "🐑": "Schaf",
+        "🐶": "Hund",
+        "🐱": "Katze",
+        "🐇": "Hase",
+        "🐔": "Huhn",
+        "🦆": "Ente",
+        "🐴": "Pferd"
+      };
 
-          const normale = [];
-          const archivierte = [];
+      let tiereHTML = `
+        <div class="flex flex-wrap gap-2">
+          ${Object.entries(alleTiere).map(([emoji, name]) => `
+            <button type="button" 
+              onclick="toggleTier('${hut.id}','${emoji}')" 
+              class="text-2xl ${Array.isArray(hut.tiere) && hut.tiere.includes(emoji) ? 'bg-yellow-200' : 'bg-gray-100'} rounded p-1"
+              title="${name}">
+              ${emoji}
+            </button>
+          `).join('')}
+        </div>
+      `;
 
-          msgSnap.forEach(doc => {
-            const m = doc.data();
-            const datum = m.createdAt?.toDate().toLocaleString('de-DE') || '-';
-            const msgHTML = `
-              <div class="p-2 bg-white border rounded text-sm flex justify-between items-center">
-                <div>
-                  <div><strong>${m.senderName || 'Unbekannt'}</strong> – ${datum}</div>
-                  <div class="mt-1">${m.message || ''}</div>
-                </div>
-                <div class="space-x-2">
-                  <button onclick="deleteMessage('${doc.id}')" 
-                    class="px-2 py-1 bg-red-500 text-white rounded text-xs">🗑️</button>
-                  ${!m.archived ? `
-                    <button onclick="archiveMessage('${doc.id}')" 
-                      class="px-2 py-1 bg-yellow-500 text-white rounded text-xs">📦</button>
-                  ` : ''}
-                </div>
-              </div>
-            `;
-            if (m.archived) archivierte.push(msgHTML);
-            else normale.push(msgHTML);
-          });
+      // Tags
+      let tagsHTML = `
+        <div class="flex flex-wrap gap-2">
+          ${(Array.isArray(hut.tags)?hut.tags:[]).map(t => `
+            <span class="px-2 py-1 bg-blue-100 rounded-full">
+              ${t} <button type="button" onclick="removeTag('${hut.id}','${t}')">✖</button>
+            </span>
+          `).join('')}
+          <input type="text" placeholder="Neuer Tag" 
+            onkeydown="if(event.key==='Enter'){addTag('${hut.id}',this.value);this.value='';this.placeholder='✔️ gespeichert';setTimeout(()=>this.placeholder='Neuer Tag',1500)}"
+            class="border rounded px-2 py-1">
+        </div>
+      `;
 
-          messagesHTML = `
-            <div class="mt-4 p-2 bg-gray-50 border rounded">
-              <strong>💬 Nachrichten</strong>
-              <div class="mt-2 space-y-2 max-h-60 overflow-y-auto">
-                ${normale.length ? normale.join('') : '<p class="text-gray-500">📭 Keine Nachrichten.</p>'}
-              </div>
+      // Fotos (freigegeben)
+      let fotosFreigegeben = fotos
+        .map((foto, i) => {
+          const f = typeof foto === 'string' ? { url: foto, status: 'freigegeben' } : foto;
+          if (f.status !== 'freigegeben') return '';
+          return `
+            <div class="relative w-24 h-24 rounded overflow-hidden border border-gray-300">
+              <img src="${f.url}" alt="Foto" class="object-cover w-full h-full" />
+              <button type="button" onclick="deleteFoto('${hut.id}', '${f.url}')" 
+                class="absolute top-0 right-0 bg-red-600 text-white rounded-bl px-1 text-sm font-bold hover:bg-red-700">×</button>
             </div>
-            <div class="mt-4 p-2 bg-gray-100 border rounded">
-              <strong>📦 Archivierte Nachrichten</strong>
-              <div class="mt-2 space-y-2 max-h-40 overflow-y-auto">
-                ${archivierte.length ? archivierte.join('') : '<p class="text-gray-500">📭 Keine archivierten Nachrichten.</p>'}
+          `;
+        })
+        .join('') || '<p class="text-gray-500">Keine Fotos</p>';
+
+      // Fotos (wartend)
+      let fotosWartend = fotos
+        .map((f, i) => {
+          if (typeof f === 'string' || f.status !== 'wartet') return '';
+          return `
+            <div class="relative w-24 h-24 rounded overflow-hidden border border-yellow-400 border-dashed">
+              <img src="${f.url}" alt="wartet" class="object-cover w-full h-full opacity-50 grayscale" />
+              <div class="absolute inset-0 flex flex-col items-center justify-center text-xs text-white bg-black/50">
+                ⏳ Wartet
+                <button type="button" onclick="approveFoto('${hut.id}', ${i})" class="bg-green-600 mt-1 px-1 rounded">✔ Freigeben</button>
+                <button type="button" onclick="rejectFoto('${hut.id}', ${i})" class="bg-red-600 mt-1 px-1 rounded">✖ Löschen</button>
               </div>
             </div>
           `;
-        } catch (err) {
-          console.error(`❌ Fehler beim Laden der Nachrichten für Hütte ${hut.id}:`, err);
-          messagesHTML = '<p class="text-sm text-red-500">❌ Fehler beim Laden der Nachrichten.</p>';
-        }
-      }
+        })
+        .join('');
+
+      // Haupt-HTML
+      el.innerHTML = `
+        <input class="text-xl font-bold w-full mb-2" 
+          value="${hut.name || ''}" 
+          onchange="updateField('${hut.id}', 'name', this.value)">
+
+        <!-- Beschreibung -->
+        <label>Beschreibung:
+          <textarea onchange="updateField('${hut.id}','beschreibung',this.value)" 
+            class="w-full border rounded p-1">${hut.beschreibung || ''}</textarea>
+        </label>
+
+        <!-- Tiere -->
+        <div><strong>Tiere:</strong> ${tiereHTML}</div>
+
+        <!-- Tags -->
+        <div><strong>Tags:</strong> ${tagsHTML}</div>
+
+        <!-- Fotos -->
+        <div>
+          <strong>Fotos (freigegeben):</strong>
+          <div class="flex flex-wrap gap-2 mb-2">${fotosFreigegeben}</div>
+        </div>
+        ${fotosWartend ? `
+          <div>
+            <strong>Fotos (warten auf Freigabe):</strong>
+            <div class="flex flex-wrap gap-2 mb-2">${fotosWartend}</div>
+          </div>
+        ` : ''}
+
+        <!-- Upload -->
+        <label class="block mt-2 text-sm">📷 Neues Bild:
+          <input type="file" accept="image/*" onchange="initImageUpload(this, '${hut.id}')" class="upload-image mt-1" />
+        </label>
+
+        <!-- Sitzplätze -->
+        <label>Sitzplätze:
+          <select onchange="updateField('${hut.id}', 'sitzplaetze', this.value)" class="w-full mb-2">
+            ${['Ja','Nein'].map(o => `<option ${o===hut.sitzplaetze?'selected':''}>${o}</option>`).join('')}
+          </select>
+        </label>
+
+        <!-- Strom -->
+        <label>Strom:
+          <select onchange="updateField('${hut.id}', 'strom', this.value)" class="w-full mb-2">
+            ${['Ja','Nein'].map(o => `<option ${o===hut.strom?'selected':''}>${o}</option>`).join('')}
+          </select>
+        </label>
+
+        <!-- Status -->
+        <label>Status:
+          <select onchange="updateField('${hut.id}', 'status', this.value)" class="w-full mb-2">
+            ${['offen','angenommen','abgelehnt'].map(s => `<option ${s===hut.status?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </label>
+
+        <!-- Logs -->
+        <details class="mt-3">
+          <summary>Bearbeitungs-Log (${logs.length})</summary>
+          <ul class="text-xs max-h-48 overflow-auto">
+            ${logs.map(log => `
+              <li><strong>${log.admin}</strong> änderte <em>${log.feld}</em> 
+              auf <code>${log.wert}</code> 
+              am ${new Date(log.zeitpunkt?.seconds * 1000 || Date.now()).toLocaleString()}</li>
+            `).join('')}
+          </ul>
+        </details>
+
+        <button type="button" onclick="deleteHut('${hut.id}')" 
+          class="bg-red-600 text-white px-2 py-1 rounded mt-3 w-full">Hütte löschen</button>
+      `;
+
+      hutList.appendChild(el);
+
+    } catch (err) {
+      console.warn(`❌ Hütte konnte nicht gerendert werden: ${hut?.id || 'unbekannt'}`, err);
+      const fallback = document.createElement('div');
+      fallback.className = 'bg-red-100 text-red-800 p-2 rounded mb-2';
+      fallback.textContent = `⚠️ Hütte konnte nicht geladen werden (ID: ${hut?.id || 'unbekannt'})`;
+      hutList.appendChild(fallback);
+    }
+  }
+}
 
       // --- Öffnungszeiten Parser ---
       function parseOeffnungszeiten(data) {
