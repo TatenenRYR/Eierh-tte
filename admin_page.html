@@ -245,6 +245,37 @@ let adminMarker;
 let adminMap;
 let adminLocation;
 
+
+// === TIERE MAPPING / Normalisierung (global) ===
+const TIERE_EMOJI_TO_NAME = {
+  "🦙": "Alpaka",
+  "🐄": "Kuh",
+  "🐖": "Schwein",
+  "🐐": "Ziege",
+  "🐑": "Schaf",
+  "🐶": "Hund",
+  "🐱": "Katze",
+  "🐇": "Hase",
+  "🐔": "Huhn",
+  "🦆": "Ente",
+  "🐴": "Pferd",
+  "❌": "Keine Tiere"
+};
+const TIERE_NAME_TO_EMOJI = Object.fromEntries(
+  Object.entries(TIERE_EMOJI_TO_NAME).map(([e, n]) => [n, e])
+);
+
+function normalizeToEmojiArray(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.map(v => {
+    if (!v) return null;
+    v = String(v).trim();
+    if (TIERE_EMOJI_TO_NAME[v]) return v;           // already emoji
+    if (TIERE_NAME_TO_EMOJI[v]) return TIERE_NAME_TO_EMOJI[v]; // name -> emoji
+    return null;
+  }).filter(Boolean);
+}
+  
 document.addEventListener('DOMContentLoaded', () => {
   // Leaflet-Karte initialisieren
   adminMap = L.map('admin-map').setView([51.1657, 10.4515], 6); // Mitte Deutschland
@@ -850,19 +881,49 @@ async function rejectFoto(hutId, index) {
     }
   }
   }*/
-  function updateField(hutId, field, value) {
-  if (!confirm(`⚠️ Willst du wirklich das Feld "${field}" auf "${value}" ändern?`)) {
-    return; // Abbrechen, wenn Admin nicht bestätigt
+  async function updateField(hutId, field, value) {
+  // Abfrage nur für "einfache Felder" (Name, Strom, Sitzplätze etc.)
+  if (field !== "tiere") {
+    if (!confirm(`⚠️ Willst du wirklich das Feld "${field}" auf "${value}" ändern?`)) {
+      return; // Abbrechen, wenn Admin nicht bestätigt
+    }
+
+    await db.collection('eierhuetten').doc(hutId).update({ [field]: value });
+    await db.collection('eierhuetten').doc(hutId).collection('log').add({
+      admin: currentUser.displayName || currentUser.email,
+      feld: field,
+      wert: value,
+      zeitpunkt: new Date()
+    });
+    return;
   }
 
-  db.collection('eierhuetten').doc(hutId).update({ [field]: value });
-  db.collection('eierhuetten').doc(hutId).collection('log').add({
-    admin: currentUser.displayName || currentUser.email,
-    feld: field,
-    wert: value,
-    zeitpunkt: new Date()
+  // 🐾 Sonderbehandlung: Tiere (Emoji-Toggle)
+  const ref = db.collection("eierhuetten").doc(hutId);
+
+  await db.runTransaction(async tx => {
+    const doc = await tx.get(ref);
+    if (!doc.exists) throw new Error("Hütte nicht gefunden");
+
+    let tiere = Array.isArray(doc.data().tiere) ? doc.data().tiere : [];
+    tiere = normalizeToEmojiArray(tiere); // 🔄 normalisiere alles auf Emojis
+
+    if (tiere.includes(value)) {
+      tiere = tiere.filter(t => t !== value); // abwählen
+    } else {
+      tiere = tiere.filter(t => t !== "❌"); // "Keine Tiere" entfernen
+      tiere.push(value); // hinzufügen
+    }
+
+    tx.update(ref, { tiere });
+    await ref.collection("log").add({
+      admin: currentUser.displayName || currentUser.email,
+      feld: "tiere",
+      wert: tiere.join(", "),
+      zeitpunkt: new Date()
+    });
   });
-}
+  }
 
 function showSection(id) {
   document.querySelectorAll('.dash-section').forEach(sec =>
@@ -917,21 +978,22 @@ async function renderHuts(list) {
         "🐴": "Pferd"
       };
 
-      let tiereHTML = `
-        <label>🐾 Tiere:</label>
-<div class="flex flex-wrap gap-2 mb-2" id="tiere-container-${hut.id}">
-  ${['Alpaka','Kuh','Schwein','Ziege','Schaf','Hund','Katze','Hase','Huhn','Ente','Pferd']
-    .map(tier => {
-      const selected = (hut.tiere || []).includes(tier);
-      return `
-        <button onclick="toggleTier('${hut.id}', '${tier}')" 
-                class="px-2 py-1 rounded ${selected ? 'bg-green-500 text-white' : 'bg-gray-200'}">
-          ${tier}
-        </button>
-      `;
-    }).join('')}
-</div>
-      `;
+      // --- Tiere (Emoji-Buttons) ---
+const selectedEmojis = new Set(normalizeToEmojiArray(hut.tiere || []));
+
+let tiereHTML = `
+  <div class="flex flex-wrap gap-2" data-hut-id="${hut.id}">
+    ${Object.entries(TIERE_EMOJI_TO_NAME).map(([emoji, name]) => `
+      <button type="button"
+        data-hut-id="${hut.id}"
+        data-emoji="${emoji}"
+        class="admin-tiere-btn text-2xl ${selectedEmojis.has(emoji) ? 'bg-yellow-200' : 'bg-gray-100'} rounded p-1"
+        title="${name}">
+        ${emoji}
+      </button>
+    `).join('')}
+  </div>
+`;
 
       // Tags
       let tagsHTML = `
@@ -1123,6 +1185,72 @@ async function renderHuts(list) {
   });
 
   loadHuts(); // Ansicht aktualisieren
+}
+  // Event-Delegation: reagiert, auch wenn Buttons dynamisch nachgeladen werden
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.admin-tiere-btn');
+  if (!btn) return;
+
+  const hutId = btn.dataset.hutId;
+  const emoji = btn.dataset.emoji;
+  if (!hutId || !emoji) return;
+
+  // Optimistische UI: sofort sichtbar toggeln
+  const willSelect = !btn.classList.contains('bg-yellow-200');
+  btn.classList.toggle('bg-yellow-200', willSelect);
+  btn.classList.toggle('bg-gray-100', !willSelect);
+
+  try {
+    await toggleTier(hutId, emoji);
+  } catch (err) {
+    console.error('toggleTier Fehler:', err);
+    // rollback UI bei Fehler
+    btn.classList.toggle('bg-yellow-200', !willSelect);
+    btn.classList.toggle('bg-gray-100', willSelect === false);
+    showNotification('❌ Fehler beim Speichern der Tier-Auswahl');
+  }
+});
+
+async function toggleTier(hutId, emoji) {
+  const ref = db.collection('eierhuetten').doc(hutId);
+  let newArray = [];
+
+  // atomisch mit transaction aktualisieren
+  await db.runTransaction(async tx => {
+    const doc = await tx.get(ref);
+    if (!doc.exists) throw new Error('Hütte nicht gefunden');
+
+    let tiere = Array.isArray(doc.data().tiere) ? doc.data().tiere : [];
+    tiere = normalizeToEmojiArray(tiere);
+
+    const idx = tiere.indexOf(emoji);
+    if (idx >= 0) {
+      tiere.splice(idx, 1);
+    } else {
+      // falls "❌ / Keine Tiere" vorhanden → entfernen
+      tiere = tiere.filter(t => t !== '❌');
+      tiere.push(emoji);
+    }
+
+    newArray = tiere;
+    tx.update(ref, { tiere });
+  });
+updateField(hutId, "tiere", emoji);
+  // Log nach der erfolgreichen transaction
+  try {
+    await db.collection('eierhuetten').doc(hutId).collection('log').add({
+      admin: currentUser.displayName || currentUser.email,
+      feld: 'tiere',
+      wert: newArray.join(', '),
+      zeitpunkt: new Date()
+    });
+  } catch (e) {
+    console.warn('Log konnte nicht geschrieben werden', e);
+  }
+
+  showNotification(`🐾 Tiere aktualisiert: ${newArray.map(e => TIERE_EMOJI_TO_NAME[e] || e).join(', ')}`);
+  // UI aktualisieren (lädt die Hüttendaten neu)
+  loadHuts();
 }
       // --- Öffnungszeiten Parser ---
       function parseOeffnungszeiten(data) {
