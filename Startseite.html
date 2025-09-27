@@ -341,6 +341,20 @@ body.popup-open { overflow: hidden; }
   margin: 6px 0;
   color: #444;
 }
+    .map-preview {
+  width: 100%;
+  height: 180px;
+  margin-top: 8px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.oeffnungszeiten-list {
+  margin: 4px 0;
+  padding-left: 18px;
+  font-size: 0.85rem;
+  color: #333;
+}
   </style>
 </head>
 <body>
@@ -393,21 +407,44 @@ body.popup-open { overflow: hidden; }
 </main>
 
 
-  
-  
-  <!-- Popup --><div id="hut-popup">
+  <!-- Popup -->
+<div id="hut-popup">
   <div id="hut-popup-content">
     <span id="hut-popup-close">✖</span>
+    
+    <!-- Name -->
     <h3 id="popup-name"></h3>
+    
+    <!-- Bilder Slideshow -->
     <div class="popup-image-container" id="popup-images"></div>
-    <div id="popup-map" style="height:200px; border-radius:1rem; margin-bottom:1rem;"></div>
-    <p><b>Öffnungszeiten:</b> <span id="popup-oeffnungszeiten"></span></p>
+    
+    <!-- Karte -->
+    <div id="popup-map" style="height:200px; border-radius:1rem; margin:1rem 0;"></div>
+    <a id="popup-route" href="#" target="_blank" style="display:inline-block; margin-bottom:1rem; color:#007bff; text-decoration:underline;">📍 Route planen</a>
+    
+    <!-- Beschreibung -->
+    <p id="popup-beschreibung" style="margin-bottom:1rem;"></p>
+    
+    <!-- Öffnungszeiten -->
+    <div>
+      <b>Öffnungszeiten:</b>
+      <div id="popup-oeffnungszeiten"></div>
+    </div>
+    
+    <!-- Details -->
     <p><b>Strom:</b> <span id="popup-strom"></span></p>
     <p><b>Sitzplätze:</b> <span id="popup-sitzplaetze"></span></p>
     <p><b>Extras:</b> <span id="popup-extras"></span></p>
     <p><b>Start:</b> <span id="popup-start"></span></p>
+    
+    <!-- Tiere -->
+    <div id="popup-tiere" style="margin:0.5rem 0; font-size:1.3rem;"></div>
+    
+    <!-- Tags -->
+    <div id="popup-tags" style="margin:0.5rem 0;"></div>
   </div>
 </div>
+  
  <footer>
   <div class="footer-box">
     <p>© 2025 RadlMap | Mit dem Fahrrad die Region entdecken</p>
@@ -465,18 +502,22 @@ db.collection("eierhuetten")
 
       // Bilder: eigenes Bild oder zufälliges aus noImgArray
       const bilderUrls = (d.fotos || [])
-        .map(f => typeof f === "string" ? f : f.url)
+        .map(f => (typeof f === "string" ? f : f.url))
         .filter(Boolean);
       const erstesBild =
         bilderUrls[0] ||
         noImgArray[Math.floor(Math.random() * noImgArray.length)];
 
       // Öffnungszeiten formatieren
-      let oeffnungszeitenText = "-";
-      if (Array.isArray(d.oeffnungszeiten) && d.oeffnungszeiten.length > 0) {
-        oeffnungszeitenText = d.oeffnungszeiten
-          .map(e => `${e.tag}: ${e.von} - ${e.bis}`)
-          .join(", ");
+      let oeffnungszeitenHTML = "-";
+      if (d.immerGeoeffnet === true) {
+        oeffnungszeitenHTML = "Immer geöffnet ✅";
+      } else if (Array.isArray(d.oeffnungszeiten) && d.oeffnungszeiten.length > 0) {
+        oeffnungszeitenHTML = "<ul class='oeffnungszeiten-list'>" +
+          d.oeffnungszeiten
+            .map(e => `<li>${e.tag}: ${e.von} - ${e.bis}</li>`)
+            .join("") +
+          "</ul>";
       }
 
       // Tiere (falls vorhanden)
@@ -513,23 +554,40 @@ db.collection("eierhuetten")
           ${tiereHTML}
           ${tagsHTML}
           <div class="details">
-            <span><b>Öffnungszeiten:</b> ${oeffnungszeitenText}</span><br>
-            <span><b>Strom:</b> ${
-              d.strom === "Ja" ? "⚡ Ja" : "❌ Nein"
-            }</span><br>
-            <span><b>Sitzplätze:</b> ${
-              d.sitzplaetze === "Ja" ? "✅ Ja" : "❌ Nein"
-            }</span><br>
-            <span><b>Extras:</b> ${d.extras || "–"}</span><br>
-            <span><b>Start:</b> ${
+            <b>Öffnungszeiten:</b> ${oeffnungszeitenHTML}<br>
+            <b>Strom:</b> ${d.strom === "Ja" ? "⚡ Ja" : "❌ Nein"}<br>
+            <b>Sitzplätze:</b> ${d.sitzplaetze === "Ja" ? "✅ Ja" : "❌ Nein"}<br>
+            <b>Extras:</b> ${d.extras || "–"}<br>
+            <b>Start:</b> ${
               d.aboStart?.toDate?.().toLocaleDateString("de-DE") || "-"
-            }</span>
+            }
           </div>
+          <div class="map-preview" id="map-${doc.id}"></div>
         </div>
       `;
       card.onclick = () => openHutPopup(d, bilderUrls);
       container.appendChild(card);
       index++;
+
+      // 🌍 Leaflet-Karte initialisieren (wenn Standort vorhanden)
+      if (d.location?.latitude && d.location?.longitude) {
+        setTimeout(() => {
+          const map = L.map(`map-${doc.id}`, {
+            zoomControl: false,
+            attributionControl: false,
+            dragging: false,
+            scrollWheelZoom: false,
+            doubleClickZoom: false,
+            boxZoom: false,
+            keyboard: false,
+          }).setView([d.location.latitude, d.location.longitude], 14);
+
+          L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+          L.marker([d.location.latitude, d.location.longitude]).addTo(map);
+
+          setTimeout(() => map.invalidateSize(), 200);
+        }, 300);
+      }
     });
   });
 // Popup Funktionen
@@ -561,14 +619,68 @@ function openHutPopup(d, bilderUrls) {
   popup.style.display = "flex";
   setTimeout(() => { content.style.transform = "translateY(0)"; }, 50);
 
+  // Name + Beschreibung
   document.getElementById("popup-name").textContent = d.name || "Unbenannt";
-  document.getElementById("popup-oeffnungszeiten").textContent = d.oeffnungszeiten || "-";
+  document.getElementById("popup-beschreibung").textContent = d.beschreibung || "";
+
+  // Öffnungszeiten
+  let oeffnungszeitenHTML = "-";
+  if (d.immerGeoeffnet === true) {
+    oeffnungszeitenHTML = "Immer geöffnet ✅";
+  } else if (Array.isArray(d.oeffnungszeiten) && d.oeffnungszeiten.length > 0) {
+    oeffnungszeitenHTML = "<ul class='oeffnungszeiten-list'>" +
+      d.oeffnungszeiten.map(e => `<li>${e.tag}: ${e.von} - ${e.bis}</li>`).join("") +
+      "</ul>";
+  }
+  document.getElementById("popup-oeffnungszeiten").innerHTML = oeffnungszeitenHTML;
+
+  // Strom, Sitzplätze, Extras, Start
   document.getElementById("popup-strom").textContent = d.strom === "Ja" ? "✅ Ja" : "❌ Nein";
   document.getElementById("popup-sitzplaetze").textContent = d.sitzplaetze === "Ja" ? "✅ Ja" : "❌ Nein";
   document.getElementById("popup-extras").textContent = d.extras || "–";
-  document.getElementById("popup-start").textContent = d.aboStart?.toDate?.().toLocaleDateString("de-DE") || "-";
+  document.getElementById("popup-start").textContent =
+    d.aboStart?.toDate?.().toLocaleDateString("de-DE") || "-";
 
+  // Tiere
+  const tiereContainer = document.getElementById("popup-tiere");
+  if (Array.isArray(d.tiere) && d.tiere.length > 0) {
+    tiereContainer.innerHTML = "🐾 " + d.tiere.join(" ");
+  } else {
+    tiereContainer.innerHTML = "";
+  }
+
+  // Tags
+  const tagsContainer = document.getElementById("popup-tags");
+  if (Array.isArray(d.tags) && d.tags.length > 0) {
+    tagsContainer.innerHTML = d.tags.map(t => `<span class="tag">#${t}</span>`).join(" ");
+  } else {
+    tagsContainer.innerHTML = "";
+  }
+
+  // Slideshow Bilder
   renderSlideshow(document.getElementById("popup-images"), bilderUrls);
+
+  // Karte
+  const mapContainer = document.getElementById("popup-map");
+  mapContainer.innerHTML = ""; // reset, falls Popup mehrfach geöffnet wird
+  if (d.location?.latitude && d.location?.longitude) {
+    setTimeout(() => {
+      const map = L.map("popup-map", {
+        zoomControl: true,
+        attributionControl: true,
+        dragging: true,
+        scrollWheelZoom: true,
+        doubleClickZoom: true,
+        boxZoom: true,
+        keyboard: true
+      }).setView([d.location.latitude, d.location.longitude], 15);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+      L.marker([d.location.latitude, d.location.longitude]).addTo(map);
+
+      setTimeout(() => map.invalidateSize(), 200);
+    }, 200);
+  }
 }
 
 function closeHutPopup() {
