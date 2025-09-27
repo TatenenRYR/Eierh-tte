@@ -918,16 +918,19 @@ async function renderHuts(list) {
       };
 
       let tiereHTML = `
-        <div class="flex flex-wrap gap-2">
-          ${Object.entries(alleTiere).map(([emoji, name]) => `
-            <button type="button" 
-              onclick="toggleTier('${hut.id}','${emoji}')" 
-              class="text-2xl ${Array.isArray(hut.tiere) && hut.tiere.includes(emoji) ? 'bg-yellow-200' : 'bg-gray-100'} rounded p-1"
-              title="${name}">
-              ${emoji}
-            </button>
-          `).join('')}
-        </div>
+        <label>🐾 Tiere:</label>
+<div class="flex flex-wrap gap-2 mb-2" id="tiere-container-${hut.id}">
+  ${['Alpaka','Kuh','Schwein','Ziege','Schaf','Hund','Katze','Hase','Huhn','Ente','Pferd']
+    .map(tier => {
+      const selected = (hut.tiere || []).includes(tier);
+      return `
+        <button onclick="toggleTier('${hut.id}', '${tier}')" 
+                class="px-2 py-1 rounded ${selected ? 'bg-green-500 text-white' : 'bg-gray-200'}">
+          ${tier}
+        </button>
+      `;
+    }).join('')}
+</div>
       `;
 
       // Tags
@@ -989,7 +992,7 @@ async function renderHuts(list) {
         </label>
 
         <!-- Tiere -->
-        <div><strong>Tiere:</strong> ${tiereHTML}</div>
+        <div>${tiereHTML}</div>
 
         <!-- Tags -->
         <div><strong>Tags:</strong> ${tagsHTML}</div>
@@ -1100,28 +1103,27 @@ async function renderHuts(list) {
     }
   }
 }
-          async function toggleTier(hutId, emoji) {
-  const docRef = db.collection('eierhuetten').doc(hutId);
-  const hutDoc = await docRef.get();
-  let tiere = Array.isArray(hutDoc.data().tiere) ? hutDoc.data().tiere : [];
+          async function toggleTier(hutId, tier) {
+  const ref = db.collection('eierhuetten').doc(hutId);
+  const snap = await ref.get();
+  let tiere = snap.data().tiere || [];
 
-  let nachricht = "";
-  if (tiere.includes(emoji)) {
-    tiere = tiere.filter(t => t !== emoji);
-    nachricht = `${emoji} entfernt`;
+  if (tiere.includes(tier)) {
+    tiere = tiere.filter(t => t !== tier);
   } else {
-    tiere.push(emoji);
-    nachricht = `${emoji} hinzugefügt`;
+    tiere.push(tier);
   }
 
-  await docRef.update({ tiere });
+  await ref.update({ tiere });
+  await ref.collection('log').add({
+    admin: currentUser.displayName || currentUser.email,
+    feld: 'tiere',
+    wert: tiere.join(', '),
+    zeitpunkt: new Date()
+  });
 
-  // 🔔 Notification
-  showNotification(nachricht);
-
-  // 🔄 UI sofort neu laden
-  loadHuts();
-          }
+  loadHuts(); // Ansicht aktualisieren
+}
       // --- Öffnungszeiten Parser ---
       function parseOeffnungszeiten(data) {
         if (!data) return { type: "none", days: [] };
