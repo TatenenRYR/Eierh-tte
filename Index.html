@@ -3858,29 +3858,25 @@ const m = L.marker([h.lat, h.lng], { icon: huettenIcon }).bindPopup(`
     <div class="mt-3 space-y-1 text-sm">
       <h3 class="font-semibold text-base text-green-700">${d.name || "Unbenannt"}</h3>
 
-      <!-- 🕓 Öffnungszeiten -->
+      // 🕓 Öffnungszeiten
 ${
-  typeof d.oeffnungszeiten === "string"
-    ? `<p>🕓 <b>Öffnungszeiten:</b> ${d.oeffnungszeiten}</p>`
-    : d.oeffnungszeiten?.immer
-      ? `<p>🕓 <b>Öffnungszeiten:</b> Immer geöffnet</p>`
-      : (() => {
-          const tageReihenfolge = ["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"];
-          const tageKurz = { Montag:"Mo", Dienstag:"Di", Mittwoch:"Mi", Donnerstag:"Do", Freitag:"Fr", Samstag:"Sa", Sonntag:"So" };
+  d.oeffnungszeiten?.immer || d.immerGeoeffnet
+    ? `<p>🕓 <b>Öffnungszeiten:</b> Immer geöffnet ✅</p>`
+    : Array.isArray(d.oeffnungszeiten)
+      ? (() => {
+          // Array-Format: [{tag, von, bis}]
+          const tageReihenfolge = ["Mo","Di","Mi","Do","Fr","Sa","So"];
+          const geoeffneteTage = d.oeffnungszeiten
+            .filter(e => e.von && e.bis)
+            .map(e => ({ tag: e.tag, start: e.von, ende: e.bis }));
 
-          // Nur Tage mit Zeiten
-          const geoeffneteTage = tageReihenfolge
-            .filter(tag => d.oeffnungszeiten[tag]?.start || d.oeffnungszeiten[tag]?.ende)
-            .map(tag => ({ 
-              tag, 
-              start: d.oeffnungszeiten[tag].start || "-", 
-              ende: d.oeffnungszeiten[tag].ende || "-"
-            }));
+          // Reihenfolge sortieren
+          geoeffneteTage.sort((a, b) => tageReihenfolge.indexOf(a.tag) - tageReihenfolge.indexOf(b.tag));
 
-          // Zusammenhängende Tage mit gleichen Zeiten gruppieren
+          // Gruppen bilden
           const gruppen = [];
           let aktuelleGruppe = null;
-          geoeffneteTage.forEach((t) => {
+          geoeffneteTage.forEach(t => {
             if (!aktuelleGruppe) {
               aktuelleGruppe = { startTag: t.tag, endTag: t.tag, startZeit: t.start, endeZeit: t.ende };
             } else if (t.start === aktuelleGruppe.startZeit && t.ende === aktuelleGruppe.endeZeit) {
@@ -3898,9 +3894,7 @@ ${
               <table class="mt-1 text-xs border-collapse w-full">
                 <tbody>
                   ${gruppen.map(g => {
-                    const tagText = g.startTag === g.endTag
-                      ? tageKurz[g.startTag] || g.startTag
-                      : `${tageKurz[g.startTag] || g.startTag}–${tageKurz[g.endTag] || g.endTag}`;
+                    const tagText = g.startTag === g.endTag ? g.startTag : `${g.startTag}–${g.endTag}`;
                     return `<tr>
                               <td class="pr-2 font-medium">${tagText}</td>
                               <td>${g.startZeit} – ${g.endeZeit}</td>
@@ -3911,6 +3905,53 @@ ${
             </div>
           `;
         })()
+      : typeof d.oeffnungszeiten === "object" && d.oeffnungszeiten !== null
+        ? (() => {
+            // Objekt-Format: { Montag: { start, ende }, ... }
+            const tageReihenfolge = ["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"];
+            const tageKurz = { Montag:"Mo", Dienstag:"Di", Mittwoch:"Mi", Donnerstag:"Do", Freitag:"Fr", Samstag:"Sa", Sonntag:"So" };
+            const geoeffneteTage = tageReihenfolge
+              .filter(tag => d.oeffnungszeiten[tag]?.start || d.oeffnungszeiten[tag]?.ende)
+              .map(tag => ({
+                tag,
+                start: d.oeffnungszeiten[tag].start || "-",
+                ende: d.oeffnungszeiten[tag].ende || "-"
+              }));
+
+            const gruppen = [];
+            let aktuelleGruppe = null;
+            geoeffneteTage.forEach(t => {
+              if (!aktuelleGruppe) {
+                aktuelleGruppe = { startTag: t.tag, endTag: t.tag, startZeit: t.start, endeZeit: t.ende };
+              } else if (t.start === aktuelleGruppe.startZeit && t.ende === aktuelleGruppe.endeZeit) {
+                aktuelleGruppe.endTag = t.tag;
+              } else {
+                gruppen.push(aktuelleGruppe);
+                aktuelleGruppe = { startTag: t.tag, endTag: t.tag, startZeit: t.start, endeZeit: t.ende };
+              }
+            });
+            if (aktuelleGruppe) gruppen.push(aktuelleGruppe);
+
+            return `
+              <div>
+                <b>🕓 Öffnungszeiten:</b>
+                <table class="mt-1 text-xs border-collapse w-full">
+                  <tbody>
+                    ${gruppen.map(g => {
+                      const tagText = g.startTag === g.endTag
+                        ? tageKurz[g.startTag] || g.startTag
+                        : `${tageKurz[g.startTag] || g.startTag}–${tageKurz[g.endTag] || g.endTag}`;
+                      return `<tr>
+                                <td class="pr-2 font-medium">${tagText}</td>
+                                <td>${g.startZeit} – ${g.endeZeit}</td>
+                              </tr>`;
+                    }).join("")}
+                  </tbody>
+                </table>
+              </div>
+            `;
+          })()
+        : `<p>🕓 <b>Öffnungszeiten:</b> -</p>`
 }
 
       <p>⚡ <b>Strom:</b> ${d.strom === "Ja" ? "✅" : "❌"}</p>
