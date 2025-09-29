@@ -1,115 +1,237 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Eierhütten – Eintragen</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Eierhütten — OnePage User</title>
+
+<!-- Tailwind -->
 <script src="https://cdn.tailwindcss.com"></script>
 
-<!-- Firebase -->
+<!-- Firebase (compat) -->
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
 
 <!-- Leaflet -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+  /* Rundes Side-Nav Design */
+  .side-btn {
+    width:56px;height:56px;border-radius:9999px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(15,23,42,0.08);
+    transition:transform .15s, background .15s;
+  }
+  .side-btn:hover { transform:translateY(-4px) }
+  .side-btn.active { background:linear-gradient(135deg,#10b981,#059669); color:white; }
+  /* kleine Animation für Fortschritt */
+  .progress-anim { transition: width .35s cubic-bezier(.2,.9,.3,1); }
+  /* Wizard step holder */
+  .wizard-step { display:none; }
+  .wizard-step.active { display:block; animation:fadeIn .22s ease; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(6px)} to { opacity:1; transform:none } }
+</style>
 </head>
-<body class="bg-gray-50">
+<body class="bg-gray-50 font-sans text-gray-800">
 
-<!-- LOGIN -->
-<div id="loginPage" class="flex flex-col items-center justify-center min-h-screen p-6">
-  <img src="logo.png" class="w-40 rounded-xl shadow mb-6">
-  <h1 class="text-3xl font-bold mb-4 text-green-700">Willkommen bei Eierhütten!</h1>
-  <button id="googleLogin" class="bg-green-600 text-white px-6 py-3 rounded-xl hover:bg-green-700">
-    Mit Google anmelden
-  </button>
-</div>
+<!-- ===== APP LAYOUT ===== -->
+<div id="app-root" class="min-h-screen flex">
 
-<!-- DASHBOARD -->
-<div id="dashboard" class="hidden max-w-3xl mx-auto p-6">
-  <h2 class="text-2xl font-bold mb-4 text-center">Neue Eintragung</h2>
+  <!-- SIDEBAR -->
+  <aside class="hidden md:flex flex-col items-center gap-4 p-4 w-24 bg-white border-r">
+    <div class="mt-2 mb-4">
+      <img src="https://images.unsplash.com/photo-1601004890684-d8cbf643f5f2?q=80&w=400&auto=format&fit=crop&ixlib=rb-4.0.3&s=1ad4d9d39fbf7ff2e5b6a9d1e4d2f0d8"
+           class="w-12 h-12 rounded-full object-cover shadow-md" alt="logo">
+    </div>
 
-  <!-- Fortschritt -->
-  <div class="w-full bg-gray-200 h-3 rounded mb-6">
-    <div id="progressBar" class="bg-green-500 h-3 rounded" style="width:0%"></div>
-  </div>
+    <button class="side-btn p-2" data-target="home" title="Start" id="nav-home">
+      <!-- Home SVG -->
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l9-9 9 9v8a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V12H9v8a2 2 0 0 1-2 2H3z"/>
+      </svg>
+    </button>
 
-  <!-- Wizard Steps -->
-  <form id="wizardForm" class="space-y-6">
-    <!-- STEP 1 – Kategorie -->
-    <div class="step">
-      <h3 class="text-xl font-semibold mb-4">1. Was möchtest du eintragen?</h3>
-      <div id="catOptions" class="grid grid-cols-2 gap-4">
-        <!-- Beispielbilder lokal bereitstellen -->
-        <div class="option"><img src="eierhuette.jpg" class="h-40 w-full object-cover rounded-t">
-          <div class="p-3 text-center font-bold bg-white rounded-b">Eierhütte</div></div>
-        <div class="option"><img src="hofladen.jpg" class="h-40 w-full object-cover rounded-t">
-          <div class="p-3 text-center font-bold bg-white rounded-b">Hofladen</div></div>
-        <div class="option"><img src="geschenk.jpg" class="h-40 w-full object-cover rounded-t">
-          <div class="p-3 text-center font-bold bg-white rounded-b">Geschenkehütte</div></div>
-        <div class="option"><img src="sonstiges.jpg" class="h-40 w-full object-cover rounded-t">
-          <div class="p-3 text-center font-bold bg-white rounded-b">Sonstiges</div></div>
+    <button class="side-btn p-2" data-target="wizard" title="Neue Hütte" id="nav-wizard">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M12 2a1 1 0 0 1 .832.445l8 12A1 1 0 0 1 20 16H4a1 1 0 0 1-.832-1.555l8-12A1 1 0 0 1 12 2zM12 4.618L6.618 14h10.764L12 4.618z"/>
+      </svg>
+    </button>
+
+    <button class="side-btn p-2" data-target="list" title="Meine Hütten" id="nav-list">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M3 12h18M3 17h18"/>
+      </svg>
+    </button>
+
+    <button class="side-btn p-2" data-target="support" title="Support" id="nav-support">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8-1.62 0-3.14-.3-4.5-.86L3 20l.86-4.5A9.96 9.96 0 0 1 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+      </svg>
+    </button>
+
+    <button class="side-btn p-2" data-target="profile" title="Profil" id="nav-profile">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+               d="M5.121 17.804A13.937 13.937 0 0 1 12 15c2.5 0 4.847.596 6.879 1.804M15 11a3 3 0 1 0-6 0 3 3 0 0 0 6 0z"/>
+      </svg>
+    </button>
+
+    <div class="mt-auto mb-4">
+      <button id="logoutBtn" class="side-btn p-2 bg-red-50 text-red-600" title="Abmelden">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7"/>
+        </svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="flex-1 p-6">
+    <!-- Topbar (mobile simplified) -->
+    <div class="md:hidden flex items-center justify-between mb-4">
+      <div>
+        <button id="openMenuMobile" class="p-2 rounded bg-white shadow">☰</button>
       </div>
+      <div><img id="userAvatarMobile" class="w-10 h-10 rounded" src="" alt=""></div>
     </div>
 
-    <!-- STEP 2 – Name & Beschreibung -->
-    <div class="step hidden">
-      <h3 class="text-xl font-semibold mb-4">2. Name & Beschreibung</h3>
-      <input id="hutName" class="w-full border p-2 rounded mb-3" placeholder="Name" required>
-      <textarea id="hutDesc" class="w-full border p-2 rounded" placeholder="Beschreibung" required></textarea>
-    </div>
+    <!-- SECTION: HOME / WELCOME + WIZARD START -->
+    <section id="home" class="space-y-6">
+      <div class="bg-white rounded-2xl p-6 shadow-lg flex flex-col lg:flex-row gap-6 items-center">
+        <div class="flex-1">
+          <h1 id="greeting" class="text-3xl font-extrabold text-green-700">Willkommen!</h1>
+          <p id="greetingSub" class="mt-2 text-gray-600">Schön, dass du hier bist. Folge einfach den Schritten, um deine Hütte einzutragen — alles Schritt für Schritt und mit großen Illustrationen.</p>
 
-    <!-- STEP 3 – Öffnungszeiten -->
-    <div class="step hidden">
-      <h3 class="text-xl font-semibold mb-4">3. Öffnungszeiten</h3>
-      <input id="hutTimes" class="w-full border p-2 rounded" placeholder="z.B. Mo–Fr 08–18 Uhr">
-    </div>
+          <div class="mt-6 flex gap-3">
+            <button id="startWizardBtn" class="bg-green-600 hover:bg-green-700 text-white px-5 py-3 rounded-xl shadow-lg">Jetzt Eintragen ➤</button>
+            <button id="viewMyHutsBtn" class="bg-white border px-5 py-3 rounded-xl">Meine Einträge</button>
+          </div>
+        </div>
 
-    <!-- STEP 4 – Standort -->
-    <div class="step hidden">
-      <h3 class="text-xl font-semibold mb-4">4. Standort</h3>
-      <div id="map" class="h-60 rounded border"></div>
-    </div>
+        <div class="w-full lg:w-1/2">
+          <!-- große Illustration -->
+          <img src="https://images.unsplash.com/photo-1506967228489-3f1ad26f9de3?q=80&w=1200&auto=format&fit=crop&ixlib=rb-4.0.3&s=2f1db9a2eb558a6bd548e7c6f6b5b1ab"
+               class="rounded-2xl object-cover w-full h-56 shadow-xl" alt="Illustration">
+        </div>
+      </div>
 
-    <!-- STEP 5 – Fotos -->
-    <div class="step hidden">
-      <h3 class="text-xl font-semibold mb-4">5. Fotos hochladen</h3>
-      <input type="file" id="hutPhotos" multiple accept="image/*">
-      <div id="photoPreview" class="grid grid-cols-3 gap-2 mt-3"></div>
-    </div>
+      <!-- Wizard embedded directly on Home (Schritt-für-Schritt sichtbar) -->
+      <div id="embeddedWizard" class="mt-6 bg-white rounded-2xl shadow-xl p-6">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-bold">Schritt für Schritt</h2>
+          <div class="text-sm text-gray-500">Schritt <span id="stepNumber">1</span> / <span id="stepTotal">6</span></div>
+        </div>
 
-    <!-- STEP 6 – Zusammenfassung -->
-    <div class="step hidden">
-      <h3 class="text-xl font-semibold mb-4">6. Zusammenfassung</h3>
-      <div id="summary" class="bg-gray-100 p-4 rounded"></div>
-    </div>
+        <div class="w-full bg-gray-200 h-3 rounded-full mt-4">
+          <div id="embeddedProgress" class="bg-green-500 h-3 rounded-full progress-anim" style="width:0%"></div>
+        </div>
 
-    <!-- Navigation -->
-    <div class="flex justify-between">
-      <button type="button" id="prevBtn" class="bg-gray-200 px-4 py-2 rounded">Zurück</button>
-      <button type="button" id="nextBtn" class="bg-green-600 text-white px-4 py-2 rounded">Weiter</button>
-    </div>
-  </form>
+        <div id="embeddedSteps" class="mt-6">
+          <!-- wizard steps will be rendered here -->
+        </div>
 
-  <!-- Meine Einträge -->
-  <div class="mt-12">
-    <h3 class="text-xl font-bold mb-4">Meine Einträge</h3>
-    <div id="hutList" class="grid gap-4"></div>
+        <div class="mt-6 flex justify-between">
+          <button id="embeddedPrev" class="bg-gray-200 px-4 py-2 rounded-xl">Zurück</button>
+          <div class="flex gap-3">
+            <button id="embeddedSaveDraft" class="bg-yellow-400 px-4 py-2 rounded-xl">Zwischenspeichern</button>
+            <button id="embeddedNext" class="bg-green-600 text-white px-4 py-2 rounded-xl">Weiter</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION: WIZARD (vollständig) -->
+    <section id="wizard" class="hidden">
+      <div class="bg-white rounded-2xl shadow-xl p-6">
+        <div class="flex items-center justify-between">
+          <h2 class="text-2xl font-bold text-green-700">Neue Hütte eintragen</h2>
+          <div class="flex items-center gap-4">
+            <div id="wizardProgressText" class="text-sm text-gray-600"></div>
+          </div>
+        </div>
+
+        <div class="w-full bg-gray-200 h-3 rounded-full mt-4">
+          <div id="wizardProgress" class="bg-green-500 h-3 rounded-full progress-anim" style="width:0%"></div>
+        </div>
+
+        <div id="wizardSteps" class="mt-6">
+          <!-- steps injected by JS -->
+        </div>
+
+        <div class="mt-6 flex justify-between">
+          <button id="wizardPrev" class="bg-gray-200 px-4 py-2 rounded-xl">⬅️ Zurück</button>
+          <div class="flex gap-3">
+            <button id="wizardCancel" class="bg-white border px-4 py-2 rounded-xl">Abbrechen</button>
+            <button id="wizardNext" class="bg-green-600 text-white px-4 py-2 rounded-xl">Weiter ➜</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION: MY HUTS -->
+    <section id="list" class="hidden">
+      <h2 class="text-2xl font-bold mb-4">Meine Hütten</h2>
+      <div id="myHuts" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+    </section>
+
+    <!-- SECTION: SUPPORT -->
+    <section id="support" class="hidden">
+      <h2 class="text-2xl font-bold mb-4">Support</h2>
+      <div class="bg-white p-4 rounded-xl shadow space-y-4">
+        <textarea id="supportText" class="w-full border rounded p-3" rows="4" placeholder="Worum geht's?"></textarea>
+        <div class="flex justify-end">
+          <button id="sendSupport" class="bg-green-600 text-white px-4 py-2 rounded-xl">Ticket senden</button>
+        </div>
+        <div id="myTickets" class="mt-4 space-y-2"></div>
+      </div>
+    </section>
+
+    <!-- SECTION: PROFILE -->
+    <section id="profile" class="hidden">
+      <div class="bg-white rounded-2xl p-6 shadow-lg">
+        <div class="flex items-center gap-6">
+          <img id="profilePic" class="w-24 h-24 rounded-full object-cover" src="" alt="Profilbild">
+          <div>
+            <h3 id="profileName" class="text-2xl font-bold"></h3>
+            <p id="profileEmail" class="text-gray-500"></p>
+            <div class="mt-4 flex gap-3">
+              <button id="editProfileBtn" class="bg-blue-500 text-white px-4 py-2 rounded-xl">Profil bearbeiten</button>
+              <button id="signOutBtn" class="bg-red-500 text-white px-4 py-2 rounded-xl">Abmelden</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- SUMMARY PREVIEW MODAL -->
+<div id="summaryModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50">
+  <div class="bg-white rounded-2xl shadow-xl max-w-3xl w-full p-6">
+    <div class="flex justify-between items-start">
+      <h3 class="text-xl font-bold">Vorschau & Zusammenfassung</h3>
+      <button id="closeSummary" class="text-gray-500">✕</button>
+    </div>
+    <div id="summaryContent" class="mt-4 space-y-4"></div>
+    <div class="mt-4 flex justify-end gap-3">
+      <button id="editBeforeSubmit" class="bg-gray-200 px-4 py-2 rounded-xl">Zurück bearbeiten</button>
+      <button id="confirmSubmit" class="bg-green-600 text-white px-4 py-2 rounded-xl">Einreichen</button>
+    </div>
   </div>
 </div>
+
+<!-- Notifications -->
+<div id="toast" class="fixed right-6 bottom-6 bg-black text-white px-4 py-2 rounded hidden"></div>
 
 <script>
-/* === Firebase Config (eigene Daten einsetzen!) === */
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+/* =========================================
+   Firebase config — bitte so wie du angegeben hast
+   ========================================= */
 const firebaseConfig = {
   apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
   authDomain: "eierhuettentour.firebaseapp.com",
@@ -119,148 +241,569 @@ const firebaseConfig = {
   appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
   measurementId: "G-16V6K5GXDT"
 };
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
 const storage = firebase.storage();
 
-/* === DOM === */
-const loginPage = document.getElementById('loginPage');
-const dashboard = document.getElementById('dashboard');
-const steps = document.querySelectorAll('.step');
-const progressBar = document.getElementById('progressBar');
-let currentStep = 0;
-let marker;
-let category = "";
+/* ========== Global state ========== */
+let currentUser = null;
+let embeddedStepIndex = 0;
+const EMBEDDED_STEPS_COUNT = 6;
 
-/* === Login === */
-document.getElementById('googleLogin').onclick = () =>
-  auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+let wizardIndex = 0;
+const WIZARD_STEPS = []; // will be populated below
+let wizardData = { name:'', description:'', sitz:'', strom:'', tags:[], oeffnungszeiten: null, location:null, fotos: [] };
 
-auth.onAuthStateChanged(user => {
+/* ========== UI helpers ========== */
+function showToast(msg, time=3000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.remove('hidden');
+  setTimeout(()=>t.classList.add('hidden'), time);
+}
+function showSection(id) {
+  document.querySelectorAll('main section').forEach(s => s.classList.add('hidden'));
+  const el = document.getElementById(id);
+  if (el) el.classList.remove('hidden');
+
+  // set active nav button
+  document.querySelectorAll('[data-target]').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`[data-target="${id}"]`);
+  if (btn) btn.classList.add('active');
+}
+
+/* ===== NAV handlers ===== */
+document.querySelectorAll('[data-target]').forEach(btn=>{
+  btn.addEventListener('click', ()=> {
+    const t = btn.dataset.target;
+    showSection(t);
+    // scroll top
+    window.scrollTo({top:0, behavior:'smooth'});
+  });
+});
+document.getElementById('startWizardBtn').addEventListener('click', ()=> { showSection('wizard'); startWizard(); });
+document.getElementById('viewMyHutsBtn').addEventListener('click', ()=> { showSection('list'); loadMyHuts(); });
+document.getElementById('newEntry').addEventListener('click', ()=> { showSection('wizard'); startWizard(); });
+document.getElementById('logoutBtn').addEventListener('click', ()=> auth.signOut());
+document.getElementById('signOutBtn').addEventListener('click', ()=> auth.signOut());
+
+/* ===== Auth ===== */
+document.getElementById('openMenuMobile').addEventListener('click', ()=> {
+  // open side nav on mobile
+  alert('Auf Mobilgeräten ist die Seitenleiste unterbrechend; nutze die Buttons oben.');
+});
+auth.onAuthStateChanged(async user => {
+  currentUser = user;
   if (user) {
-    loginPage.classList.add('hidden');
-    dashboard.classList.remove('hidden');
-    loadHuts();
+    // show app
+    document.getElementById('app-root').classList.remove('opacity-50');
+    document.querySelector('#login')?.classList?.add('hidden');
+    document.querySelector('#home').classList.remove('hidden');
+    // set greetings
+    document.getElementById('greeting').textContent = `Willkommen, ${user.displayName || user.email}!`;
+    document.getElementById('profileName').textContent = user.displayName || '';
+    document.getElementById('profileEmail').textContent = user.email || '';
+    document.getElementById('profilePic').src = user.photoURL || '';
+    document.getElementById('userAvatarMobile').src = user.photoURL || '';
+    // initialize content
+    loadMyHuts();
+    loadTickets();
   } else {
-    dashboard.classList.add('hidden');
-    loginPage.classList.remove('hidden');
+    // show login screen
+    document.querySelector('#login')?.classList?.remove('hidden');
+    showSection('home');
   }
 });
 
-/* === Wizard Navigation === */
-function showStep(i){
-  steps.forEach((s,idx)=>s.classList.toggle('hidden', idx!==i));
-  progressBar.style.width = ((i)/(steps.length-1))*100 + '%';
-  prevBtn.style.visibility = i===0 ? 'hidden':'visible';
-  nextBtn.textContent = i===steps.length-1 ? 'Speichern' : 'Weiter';
-  if(i===steps.length-1) buildSummary();
+// login button on the main page (if clicked)
+document.getElementById('greeting').addEventListener('click', ()=> {
+  if (!currentUser) auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+});
+document.getElementById('startWizardBtn').addEventListener('click', ()=> { if (!currentUser) auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); });
+
+/* ===== Embedded short wizard (on Home) ===== */
+function renderEmbeddedStep() {
+  const container = document.getElementById('embeddedSteps');
+  const num = embeddedStepIndex+1;
+  document.getElementById('stepNumber').textContent = num;
+  document.getElementById('stepTotal').textContent = EMBEDDED_STEPS_COUNT;
+  document.getElementById('embeddedProgress').style.width = `${(num/EMBEDDED_STEPS_COUNT)*100}%`;
+
+  // simple steps content with illustrations
+  const stepsContent = [
+    ` <div class="grid lg:grid-cols-2 gap-4 items-center">
+         <div><input id="e_name" placeholder="Name der Hütte" class="w-full border p-3 rounded-lg" /></div>
+         <div><img src="https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=1000&auto=format&fit=crop" class="rounded-lg h-36 w-full object-cover"/></div>
+       </div>`,
+    `<div class="grid lg:grid-cols-2 gap-4 items-center">
+         <div><label class="block"><b>Sitzplätze</b><select id="e_sitz" class="w-full border p-2 rounded mt-1"><option>Ja</option><option>Nein</option></select></label>
+         <label class="block mt-3"><b>Strom</b><select id="e_strom" class="w-full border p-2 rounded mt-1"><option>Ja</option><option>Nein</option></select></label></div>
+         <div><img src="https://images.unsplash.com/photo-1506806732259-39c2d0268443?q=80&w=1000&auto=format&fit=crop" class="rounded-lg h-36 w-full object-cover"/></div>
+       </div>`,
+    `<div class="grid lg:grid-cols-2 gap-4">
+         <div><label>Öffnungszeiten (z.B. 08:00–20:00)</label><input id="e_times" class="w-full border p-2 rounded mt-1" /></div>
+         <div><img src="https://images.unsplash.com/photo-1504222490345-0b6a005b9a8d?q=80&w=1000&auto=format&fit=crop" class="rounded-lg h-36 w-full object-cover"/></div>
+       </div>`,
+    `<div class="grid lg:grid-cols-2 gap-4 items-center">
+         <div id="e_map_wrap"><div id="e_map" class="h-48 rounded-lg border"></div></div>
+         <div><p class="text-gray-600">Ziehe den Marker, um die Position zu setzen.</p></div>
+       </div>`,
+    `<div>
+         <label class="block">Fotos (Vorschau)</label>
+         <input id="e_photos" type="file" multiple accept="image/*" class="mt-2" />
+         <div id="e_preview" class="grid grid-cols-3 gap-2 mt-3"></div>
+       </div>`,
+    `<div>
+         <p class="font-bold">Zusammenfassung</p>
+         <div id="e_summary" class="mt-3"></div>
+       </div>`
+  ];
+
+  container.innerHTML = stepsContent[embeddedStepIndex];
+
+  // after render hooks
+  if (embeddedStepIndex === 3) {
+    setTimeout(()=> {
+      if (window.e_map) { window.e_map.invalidateSize(); return; }
+      window.e_map = L.map('e_map').setView([51.1657,10.4515],6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(window.e_map);
+      window.e_marker = L.marker([51.1657,10.4515], {draggable:true}).addTo(window.e_map);
+      window.e_marker.on('dragend', ()=> {
+        const p = window.e_marker.getLatLng();
+        wizardData.location = new firebase.firestore.GeoPoint(p.lat, p.lng);
+      });
+      navigator.geolocation.getCurrentPosition(p=>{
+        window.e_map.setView([p.coords.latitude,p.coords.longitude],13);
+        window.e_marker.setLatLng([p.coords.latitude,p.coords.longitude]);
+        wizardData.location = new firebase.firestore.GeoPoint(p.coords.latitude, p.coords.longitude);
+      }, ()=>{});
+    }, 200);
+  }
+  if (embeddedStepIndex === 4) {
+    const inp = document.getElementById('e_photos');
+    if (inp) {
+      inp.addEventListener('change', (ev)=> {
+        const preview = document.getElementById('e_preview');
+        preview.innerHTML = '';
+        const files = [...ev.target.files];
+        files.forEach(f=>{
+          const r = new FileReader();
+          r.onload = ()=> preview.innerHTML += `<img src="${r.result}" class="w-full h-24 object-cover rounded">`;
+          r.readAsDataURL(f);
+        });
+      });
+    }
+  }
+  if (embeddedStepIndex === 5) {
+    const target = document.getElementById('e_summary');
+    const n = document.getElementById('e_name')?.value || '(leer)';
+    const s = document.getElementById('e_sitz')?.value || '-';
+    const st = document.getElementById('e_strom')?.value || '-';
+    const t = document.getElementById('e_times')?.value || '-';
+    target.innerHTML = `<p><b>Name:</b> ${n}</p><p><b>Sitzplätze:</b> ${s}</p><p><b>Strom:</b> ${st}</p><p><b>Öffnungszeiten:</b> ${t}</p>`;
+  }
 }
-prevBtn.onclick = ()=>{ if(currentStep>0){ currentStep--; showStep(currentStep);} };
-nextBtn.onclick = async ()=>{
-  if(currentStep<steps.length-1){ currentStep++; showStep(currentStep);}
-  else { await saveHut(); }
-};
-showStep(0);
+document.getElementById('embeddedNext').addEventListener('click', ()=>{
+  if (embeddedStepIndex < EMBEDDED_STEPS_COUNT-1) embeddedStepIndex++;
+  renderEmbeddedStep();
+});
+document.getElementById('embeddedPrev').addEventListener('click', ()=>{
+  if (embeddedStepIndex > 0) embeddedStepIndex--;
+  renderEmbeddedStep();
+});
+renderEmbeddedStep();
 
-/* === Kategorie-Auswahl === */
-document.querySelectorAll('#catOptions .option').forEach(opt=>{
-  opt.addEventListener('click',()=>{
-    document.querySelectorAll('#catOptions .option')
-      .forEach(o=>o.classList.remove('ring','ring-green-500'));
-    opt.classList.add('ring','ring-green-500');
-    category = opt.innerText.trim();
-  });
+/* ===== WIZARD (vollständig) implementation ===== */
+function startWizard() {
+  // build steps
+  wizardIndex = 0;
+  wizardData = { name:'', description:'', sitz:'Nein', strom:'Nein', tags:[], oeffnungszeiten:[], location:null, fotosFiles:[] };
+  renderWizard();
+  showSection('wizard');
+}
+function renderWizard() {
+  const container = document.getElementById('wizardSteps');
+  const total = 6;
+  document.getElementById('wizardProgressText').textContent = `${wizardIndex+1} / ${total}`;
+  document.getElementById('wizardProgress').style.width = `${((wizardIndex+1)/total)*100}%`;
+  // step templates
+  const templates = [
+    // 0: Name & Description
+    `<div class="wizard-step ${wizardIndex===0?'active':''}">
+      <div class="grid lg:grid-cols-2 gap-6">
+        <div>
+          <input id="w_name" placeholder="Name der Hütte" class="w-full border p-3 rounded-lg" value="${escapeHtml(wizardData.name)}" />
+          <textarea id="w_desc" rows="5" class="w-full border p-3 rounded-lg mt-3" placeholder="Kurzbeschreibung">${escapeHtml(wizardData.description)}</textarea>
+        </div>
+        <div>
+          <img src="https://images.unsplash.com/photo-1526772662000-3f88f10405ff?q=80&w=1000&auto=format&fit=crop" class="rounded-lg h-48 w-full object-cover shadow-lg"/>
+          <p class="mt-3 text-gray-600">Beschreibe kurz, worum es bei deiner Hütte geht. Das Bild hilft, das Angebot zu visualisieren.</p>
+        </div>
+      </div>
+    </div>`,
+
+    // 1: Features: Sitz / Strom / Tags
+    `<div class="wizard-step ${wizardIndex===1?'active':''}">
+      <div class="grid lg:grid-cols-2 gap-6">
+        <div>
+          <label class="block"><b>Sitzplätze</b>
+            <select id="w_sitz" class="w-full border p-2 rounded mt-1">
+              <option ${wizardData.sitz==='Ja'?'selected':''}>Ja</option>
+              <option ${wizardData.sitz==='Nein'?'selected':''}>Nein</option>
+            </select>
+          </label>
+          <label class="block mt-4"><b>Strom</b>
+            <select id="w_strom" class="w-full border p-2 rounded mt-1">
+              <option ${wizardData.strom==='Ja'?'selected':''}>Ja</option>
+              <option ${wizardData.strom==='Nein'?'selected':''}>Nein</option>
+            </select>
+          </label>
+
+          <label class="block mt-4"><b>Tags (Komma getrennt)</b>
+            <input id="w_tags" class="w-full border p-2 rounded mt-1" placeholder="z.B. Frühstück, Getränke" value="${(wizardData.tags||[]).join(', ')}"/>
+          </label>
+        </div>
+        <div>
+          <img src="https://images.unsplash.com/photo-1519710164239-da123dc03ef4?q=80&w=1000&auto=format&fit=crop" class="rounded-lg h-48 w-full object-cover shadow-lg"/>
+          <p class="mt-3 text-gray-600">Gib hier besondere Merkmale an — Besucher sehen das später im Profil.</p>
+        </div>
+      </div>
+    </div>`,
+
+    // 2: Öffnungszeiten (vereinfachte Eingabe)
+    `<div class="wizard-step ${wizardIndex===2?'active':''}">
+      <div class="grid lg:grid-cols-2 gap-6">
+        <div>
+          <label class="block"><b>Öffnungszeiten</b>
+            <input id="w_times" placeholder="z.B. Mo–Fr 09:00–18:00; Sa–So 10:00–16:00" class="w-full border p-2 rounded mt-1" value="${escapeHtml((wizardData.oeffnungszeiten||'').toString())}"/>
+          </label>
+          <p class="mt-3 text-sm text-gray-500">Du kannst mehrere Einträge per Semikolon trennen.</p>
+        </div>
+        <div>
+          <img src="https://images.unsplash.com/photo-1496307042754-b4aa456c4a2d?q=80&w=1000&auto=format&fit=crop" class="rounded-lg h-48 w-full object-cover shadow-lg"/>
+        </div>
+      </div>
+    </div>`,
+
+    // 3: Standort (Leaflet)
+    `<div class="wizard-step ${wizardIndex===3?'active':''}">
+      <div id="wizard_map" class="h-64 rounded-lg border"></div>
+      <p class="text-sm text-gray-500 mt-3">Marker ziehen oder Karte anklicken, um den genauen Standort zu setzen.</p>
+    </div>`,
+
+    // 4: Fotos upload + preview
+    `<div class="wizard-step ${wizardIndex===4?'active':''}">
+      <div class="grid lg:grid-cols-2 gap-6">
+        <div>
+          <label class="block"><b>Bilder hochladen</b></label>
+          <input id="w_files" type="file" accept="image/*" multiple class="mt-3" />
+          <div id="w_preview" class="grid grid-cols-3 gap-3 mt-4"></div>
+        </div>
+        <div>
+          <img src="https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=1000&auto=format&fit=crop" class="rounded-lg h-48 w-full object-cover shadow-lg"/>
+          <p class="mt-3 text-gray-600">Große Bilder verbessern die Sichtbarkeit deines Eintrags. JPG/PNG empfohlen.</p>
+        </div>
+      </div>
+    </div>`,
+
+    // 5: Zusammenfassung vor Einreichung
+    `<div class="wizard-step ${wizardIndex===5?'active':''}">
+      <div id="reviewArea" class="space-y-4"></div>
+      <p class="text-sm text-gray-500 mt-2">Überprüfe noch einmal alle Angaben. Danach kannst du die Hütte einreichen.</p>
+    </div>`
+  ];
+
+  container.innerHTML = templates[wizardIndex];
+
+  // when the map step is rendered, create map
+  if (wizardIndex === 3) {
+    setTimeout(()=> {
+      // initialize map only once per wizard session
+      if (!window.wizardMap) {
+        window.wizardMap = L.map('wizard_map').setView([51.1657, 10.4515],6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(window.wizardMap);
+        window.wizardMarker = L.marker([51.1657,10.4515], { draggable:true }).addTo(window.wizardMap);
+        window.wizardMap.on('click', function(e){
+          window.wizardMarker.setLatLng(e.latlng);
+          wizardData.location = new firebase.firestore.GeoPoint(e.latlng.lat, e.latlng.lng);
+        });
+        window.wizardMarker.on('dragend', ()=> {
+          const p = window.wizardMarker.getLatLng();
+          wizardData.location = new firebase.firestore.GeoPoint(p.lat, p.lng);
+        });
+        navigator.geolocation.getCurrentPosition(pos=>{
+          window.wizardMap.setView([pos.coords.latitude,pos.coords.longitude],13);
+          window.wizardMarker.setLatLng([pos.coords.latitude,pos.coords.longitude]);
+          wizardData.location = new firebase.firestore.GeoPoint(pos.coords.latitude, pos.coords.longitude);
+        }, ()=>{});
+      } else {
+        setTimeout(()=> window.wizardMap.invalidateSize(),200);
+      }
+    }, 200);
+  }
+
+  // files preview
+  if (wizardIndex === 4) {
+    const input = document.getElementById('w_files');
+    input.addEventListener('change', (ev)=>{
+      wizardData.fotosFiles = [...ev.target.files];
+      const preview = document.getElementById('w_preview');
+      preview.innerHTML = '';
+      wizardData.fotosFiles.forEach(file => {
+        const fr = new FileReader();
+        fr.onload = ()=> preview.innerHTML += `<img src="${fr.result}" class="rounded-lg h-32 w-full object-cover">`;
+        fr.readAsDataURL(file);
+      });
+    });
+  }
+
+  // summary step
+  if (wizardIndex === 5) {
+    const review = document.getElementById('reviewArea');
+    const imgs = (wizardData.fotosFiles||[]).map(f=>`<img src="${URL.createObjectURL(f)}" class="h-40 rounded-lg object-cover mr-2">`).join('');
+    const coordsText = wizardData.location ? `${wizardData.location.latitude.toFixed(5)}, ${wizardData.location.longitude.toFixed(5)}` : 'nicht gesetzt';
+    review.innerHTML = `
+      <div class="bg-gray-50 p-4 rounded-lg">
+        <h3 class="font-bold text-lg mb-2">${escapeHtml(wizardData.name)}</h3>
+        <p class="text-gray-700">${escapeHtml(wizardData.description)}</p>
+        <div class="mt-3"><strong>Tags:</strong> ${(wizardData.tags||[]).join(', ')}</div>
+        <div class="mt-2"><strong>Öffnungszeiten:</strong> ${escapeHtml(wizardData.oeffnungszeiten || '')}</div>
+        <div class="mt-2"><strong>Standort:</strong> ${coordsText}</div>
+        <div class="mt-4 flex gap-2">${imgs || '<div class="text-gray-400">Keine Bilder ausgewählt</div>'}</div>
+      </div>
+    `;
+  }
+}
+
+/* wizard controls */
+document.getElementById('wizardNext').addEventListener('click', ()=> {
+  // read inputs from current step
+  if (wizardIndex === 0) {
+    wizardData.name = document.getElementById('w_name').value.trim();
+    wizardData.description = document.getElementById('w_desc').value.trim();
+    if (!wizardData.name) { showToast('Bitte Namen eingeben'); return; }
+  }
+  if (wizardIndex === 1) {
+    wizardData.sitz = document.getElementById('w_sitz').value;
+    wizardData.strom = document.getElementById('w_strom').value;
+    wizardData.tags = (document.getElementById('w_tags').value || '').split(',').map(s=>s.trim()).filter(Boolean);
+  }
+  if (wizardIndex === 2) {
+    wizardData.oeffnungszeiten = document.getElementById('w_times').value;
+  }
+  if (wizardIndex === 4) {
+    // files already in wizardData.fotosFiles via change handler
+  }
+
+  if (wizardIndex < 5) {
+    wizardIndex++;
+    renderWizard();
+  } else {
+    // final step -> open preview modal
+    openSummaryModal();
+  }
+});
+document.getElementById('wizardPrev').addEventListener('click', ()=> {
+  if (wizardIndex > 0) { wizardIndex--; renderWizard(); }
+});
+document.getElementById('wizardCancel').addEventListener('click', ()=> {
+  if (confirm('Abbrechen? Alle Eingaben gehen verloren.')) { showSection('home'); }
 });
 
-/* === Karte === */
-const map = L.map('map').setView([51,10],6);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-map.on('click', e=>{
-  if (!marker) marker = L.marker(e.latlng,{draggable:true}).addTo(map);
-  marker.setLatLng(e.latlng);
-});
-
-/* === Foto Vorschau === */
-hutPhotos.addEventListener('change', e=>{
-  const preview = document.getElementById('photoPreview');
-  preview.innerHTML = '';
-  [...e.target.files].forEach(f=>{
-    const r = new FileReader();
-    r.onload = () => preview.innerHTML +=
-      `<img src="${r.result}" class="w-full h-24 object-cover rounded">`;
-    r.readAsDataURL(f);
-  });
-});
-
-/* === Zusammenfassung === */
-function buildSummary(){
-  summary.innerHTML = `
-    <p><b>Kategorie:</b> ${category || '-'}</p>
-    <p><b>Name:</b> ${hutName.value}</p>
-    <p><b>Beschreibung:</b> ${hutDesc.value}</p>
-    <p><b>Öffnungszeiten:</b> ${hutTimes.value}</p>
-    <p><b>Standort:</b> ${marker ? marker.getLatLng().lat.toFixed(5)+', '+marker.getLatLng().lng.toFixed(5) : 'nicht gesetzt'}</p>
-    <p><b>Bilder:</b> ${hutPhotos.files.length}</p>
+/* Summary modal */
+function openSummaryModal() {
+  const modal = document.getElementById('summaryModal');
+  const content = document.getElementById('summaryContent');
+  const coordsText = wizardData.location ? `${wizardData.location.latitude.toFixed(5)}, ${wizardData.location.longitude.toFixed(5)}` : 'nicht gesetzt';
+  const imgHtml = (wizardData.fotosFiles||[]).map(f => `<img src="${URL.createObjectURL(f)}" class="h-40 rounded-lg object-cover mr-2">`).join('');
+  content.innerHTML = `
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div>
+        <h4 class="font-bold">${escapeHtml(wizardData.name)}</h4>
+        <p class="text-gray-700 mt-2">${escapeHtml(wizardData.description)}</p>
+        <p class="mt-3"><b>Tags:</b> ${(wizardData.tags||[]).join(', ')}</p>
+        <p class="mt-1"><b>Öffnungszeiten:</b> ${escapeHtml(wizardData.oeffnungszeiten||'-')}</p>
+        <p class="mt-1"><b>Standort:</b> ${coordsText}</p>
+      </div>
+      <div>
+        <div class="flex gap-2">${imgHtml || '<div class="text-gray-400">Keine Bilder</div>'}</div>
+      </div>
+    </div>
   `;
+  modal.classList.remove('hidden');
+}
+document.getElementById('closeSummary').addEventListener('click', ()=> document.getElementById('summaryModal').classList.add('hidden'));
+document.getElementById('editBeforeSubmit').addEventListener('click', ()=> { document.getElementById('summaryModal').classList.add('hidden'); showSection('wizard'); });
+document.getElementById('confirmSubmit').addEventListener('click', submitHut);
+
+/* Submit: upload images to Firebase Storage, create Firestore doc */
+async function submitHut() {
+  document.getElementById('confirmSubmit').disabled = true;
+  showToast('Eintrag wird hochgeladen…', 6000);
+
+  try {
+    // upload images
+    const uploadedUrls = [];
+    const files = wizardData.fotosFiles || [];
+    for (let i=0;i<files.length;i++){
+      const file = files[i];
+      const path = `huts/${currentUser.uid}/${Date.now()}_${file.name}`;
+      const ref = storage.ref(path);
+      const task = ref.put(file);
+
+      // progress indicator (optional)
+      await new Promise((res, rej) => {
+        task.on('state_changed', snap => {
+          const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+          showToast(`Upload ${i+1}/${files.length}: ${pct}%`, 800);
+        }, err => rej(err), async ()=> {
+          const url = await task.snapshot.ref.getDownloadURL();
+          uploadedUrls.push(url);
+          res();
+        });
+      });
+    }
+
+    // create doc
+    const doc = {
+      userId: currentUser.uid,
+      name: wizardData.name,
+      beschreibung: wizardData.description,
+      sitzplaetze: wizardData.sitz,
+      strom: wizardData.strom,
+      tags: wizardData.tags || [],
+      oeffnungszeiten: wizardData.oeffnungszeiten || '',
+      location: wizardData.location || null,
+      fotos: uploadedUrls,
+      status: 'offen',
+      erstelltAm: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    await db.collection('eierhuetten').add(doc);
+
+    showToast('✅ Eintrag erfolgreich gespeichert', 4000);
+    document.getElementById('summaryModal').classList.add('hidden');
+    // reset wizard & go to list
+    wizardData = { name:'', description:'', sitz:'Nein', strom:'Nein', tags:[], oeffnungszeiten:'', location:null, fotosFiles:[] };
+    wizardIndex = 0;
+    renderWizard();
+    showSection('list');
+    loadMyHuts();
+  } catch (err) {
+    console.error(err);
+    alert('Fehler beim Speichern: ' + err.message);
+  } finally {
+    document.getElementById('confirmSubmit').disabled = false;
+  }
 }
 
-/* === Speichern === */
-async function saveHut(){
-  const user = auth.currentUser;
-  if(!user) return alert('Bitte anmelden.');
-  const data = {
-    userId: user.uid,
-    category,
-    name: hutName.value,
-    desc: hutDesc.value,
-    times: hutTimes.value,
-    created: firebase.firestore.FieldValue.serverTimestamp()
-  };
-  if(marker){
-    const p = marker.getLatLng();
-    data.location = new firebase.firestore.GeoPoint(p.lat,p.lng);
+/* ===== Load My Huts ===== */
+async function loadMyHuts() {
+  if (!currentUser) return;
+  const box = document.getElementById('myHuts');
+  box.innerHTML = '<div class="col-span-2 text-gray-500">Lade Einträge…</div>';
+  try {
+    const snap = await db.collection('eierhuetten').where('userId','==',currentUser.uid).orderBy('erstelltAm','desc').get();
+    if (snap.empty) { box.innerHTML = '<div class="text-gray-500">Keine Einträge gefunden</div>'; return; }
+    box.innerHTML = '';
+    snap.forEach(doc => {
+      const d = doc.data();
+      const firstImg = (d.fotos && d.fotos[0]) ? d.fotos[0] : '';
+      const html = document.createElement('div');
+      html.className = 'bg-white rounded-2xl shadow overflow-hidden';
+      html.innerHTML = `
+        <div class="h-56 bg-gray-200 ${firstImg?'':'flex items-center justify-center text-gray-400'}">
+          ${ firstImg ? `<img src="${firstImg}" class="w-full h-56 object-cover">` : '<span class="text-lg">Kein Bild</span>' }
+        </div>
+        <div class="p-4">
+          <div class="flex items-start justify-between">
+            <div>
+              <h3 class="text-xl font-bold">${escapeHtml(d.name)}</h3>
+              <p class="text-gray-600 mt-1">${escapeHtml(d.beschreibung||'')}</p>
+              <div class="mt-2 text-sm text-gray-500">Status: <span class="font-medium">${d.status||'offen'}</span></div>
+            </div>
+            <div class="text-right">
+              <button class="bg-yellow-400 text-white px-3 py-1 rounded-md mr-2" onclick="openEditDialog('${doc.id}')">Bearbeiten</button>
+              <button class="bg-red-500 text-white px-3 py-1 rounded-md" onclick="deleteHut('${doc.id}')">Löschen</button>
+            </div>
+          </div>
+        </div>`;
+      box.appendChild(html);
+    });
+  } catch (err) {
+    console.error(err);
+    box.innerHTML = '<div class="text-red-500">Fehler beim Laden der Einträge</div>';
   }
-  const urls = [];
-  for(const f of hutPhotos.files){
-    const ref = storage.ref(`huts/${user.uid}/${Date.now()}_${f.name}`);
-    await ref.put(f);
-    urls.push(await ref.getDownloadURL());
-  }
-  data.photos = urls;
-  await db.collection('huts').add(data);
-  alert('✅ Eintrag gespeichert!');
-  hutName.value = hutDesc.value = hutTimes.value = '';
-  hutPhotos.value = '';
-  category = "";
-  currentStep = 0;
-  showStep(0);
-  loadHuts();
 }
 
-/* === Eigene Hütten laden === */
-async function loadHuts(){
-  const list = document.getElementById('hutList');
-  list.innerHTML = 'Lädt…';
-  const snap = await db.collection('huts')
-    .where('userId','==',auth.currentUser.uid)
-    .orderBy('created','desc').get();
-  list.innerHTML = '';
-  snap.forEach(doc=>{
+/* small edit dialog (simple prompt) */
+async function openEditDialog(hutId) {
+  const docRef = db.collection('eierhuetten').doc(hutId);
+  const snap = await docRef.get();
+  if (!snap.exists) return alert('Nicht gefunden');
+  const d = snap.data();
+  const newName = prompt('Name bearbeiten', d.name || '');
+  if (newName === null) return;
+  await docRef.update({ name: newName });
+  await docRef.collection('log').add({ action:'edit', field:'name', value:newName, by:currentUser.email, at:new Date()});
+  loadMyHuts();
+}
+
+/* delete */
+async function deleteHut(id) {
+  if (!confirm('Hütte wirklich löschen?')) return;
+  await db.collection('eierhuetten').doc(id).delete();
+  showToast('Hütte gelöscht', 2000);
+  loadMyHuts();
+}
+
+/* ===== Support ===== */
+document.getElementById('sendSupport').addEventListener('click', async ()=>{
+  const text = document.getElementById('supportText').value.trim();
+  if (!text) return alert('Bitte Nachricht eingeben');
+  await db.collection('support').add({ userId: currentUser.uid, text, status:'offen', created: firebase.firestore.FieldValue.serverTimestamp() });
+  document.getElementById('supportText').value = '';
+  loadTickets();
+  showToast('Support-Ticket gesendet', 2000);
+});
+async function loadTickets() {
+  if (!currentUser) return;
+  const box = document.getElementById('myTickets');
+  box.innerHTML = '…';
+  const snap = await db.collection('support').where('userId','==',currentUser.uid).orderBy('created','desc').get();
+  if (snap.empty) { box.innerHTML = '<div class="text-gray-500">Keine Tickets</div>'; return; }
+  box.innerHTML = '';
+  snap.forEach(doc => {
     const d = doc.data();
-    const img = d.photos?.[0] || 'https://via.placeholder.com/300x200?text=Kein+Bild';
-    list.innerHTML += `
-      <div class="bg-white p-4 rounded shadow">
-        <img src="${img}" class="w-full h-40 object-cover rounded mb-2">
-        <h3 class="font-bold">${d.category || ''} – ${d.name}</h3>
-        <p class="text-sm text-gray-600">${d.desc}</p>
-      </div>`;
+    const el = document.createElement('div');
+    el.className = 'bg-gray-50 p-3 rounded';
+    el.innerHTML = `<div class="text-sm text-gray-700">${escapeHtml(d.text)}</div><div class="text-xs text-gray-400 mt-2">${(d.status||'offen')}</div>`;
+    box.appendChild(el);
   });
 }
+
+/* ===== helpers ===== */
+function escapeHtml(s) { if(!s) return ''; return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+/* init: sign-in if pressing header greeting */
+document.addEventListener('DOMContentLoaded', ()=> {
+  // initial section
+  showSection('home');
+
+  // nav click handlers for mobile top buttons
+  document.getElementById('nav-home').addEventListener('click', ()=> showSection('home'));
+  document.getElementById('nav-wizard').addEventListener('click', ()=> { showSection('wizard'); startWizard(); });
+  document.getElementById('nav-list').addEventListener('click', ()=> { showSection('list'); loadMyHuts(); });
+  document.getElementById('nav-support').addEventListener('click', ()=> showSection('support'));
+  document.getElementById('nav-profile').addEventListener('click', ()=> showSection('profile'));
+});
+
+/* small utility: sign-in when clicking login area if not logged in */
+document.querySelectorAll('#login, #startWizardBtn').forEach(el => {
+  el.addEventListener('click', ()=> {
+    if (!currentUser) auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+  });
+});
 </script>
 </body>
 </html>
