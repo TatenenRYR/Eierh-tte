@@ -1,109 +1,241 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Wizard Demo</title>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Eierhütten One-Page</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+<style>
+  .active-tab { background:#34d399; color:white; }
+  .wizard-step { display:none; }
+  .wizard-step.active { display:block; }
+</style>
 </head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+<body class="bg-gray-100">
 
-<div id="wizard" class="bg-white w-full max-w-md p-6 rounded-xl shadow-lg">
-  <!-- Fortschrittsbalken -->
-  <div class="w-full bg-gray-200 rounded-full h-2 mb-6">
-    <div id="progress-bar" class="bg-green-500 h-2 rounded-full" style="width:0%"></div>
+<!-- ✅ LOGIN -->
+<section id="login" class="flex items-center justify-center min-h-screen">
+  <div class="bg-white p-6 rounded-xl shadow w-full max-w-sm text-center space-y-4">
+    <h1 class="text-2xl font-bold">🐣 Eierhütten</h1>
+    <p class="text-gray-500">Mit Google anmelden</p>
+    <button id="googleLogin"
+      class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded w-full">
+      Google Login
+    </button>
   </div>
+</section>
 
-  <!-- Step-Inhalt -->
-  <div id="step-content" class="space-y-4"></div>
+<!-- ✅ HAUPTAPP -->
+<section id="app" class="hidden max-w-4xl mx-auto p-4">
+  <!-- Topbar -->
+  <div class="flex justify-between items-center mb-4">
+    <h1 class="text-2xl font-bold text-green-700">Eierhütten</h1>
+    <div>
+      <span id="userName" class="mr-4 font-semibold"></span>
+      <button id="logout" class="bg-red-500 text-white px-3 py-1 rounded">Logout</button>
+    </div>
+  </div>
 
   <!-- Navigation -->
-  <div class="flex justify-between mt-6">
-    <button id="prev-btn"
-      class="px-4 py-2 bg-gray-300 rounded disabled:opacity-40">Zurück</button>
-    <button id="next-btn"
-      class="px-4 py-2 bg-green-600 text-white rounded">Weiter</button>
+  <div class="flex gap-2 mb-6">
+    <button class="tab active-tab" data-target="dashboard">🏠 Dashboard</button>
+    <button class="tab" data-target="wizard">➕ Neue Hütte</button>
+    <button class="tab" data-target="support">💬 Support</button>
   </div>
-</div>
+
+  <!-- DASHBOARD -->
+  <div id="dashboard" class="tab-content">
+    <h2 class="text-xl font-bold mb-3">Meine Einträge</h2>
+    <div id="entries" class="space-y-3"></div>
+  </div>
+
+  <!-- WIZARD -->
+  <div id="wizard" class="tab-content hidden">
+    <div class="bg-white p-4 rounded-xl shadow">
+      <div class="w-full bg-gray-200 h-2 rounded-full mb-4">
+        <div id="progress" class="bg-green-500 h-2 rounded-full" style="width:0%"></div>
+      </div>
+
+      <div id="steps">
+        <!-- Step 1 -->
+        <div class="wizard-step active">
+          <h3 class="text-lg font-bold mb-2">🏷️ Name der Hütte</h3>
+          <input id="step-name" class="w-full border p-2 rounded" placeholder="z.B. Almhütte"/>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="wizard-step">
+          <h3 class="text-lg font-bold mb-2">🪑 Sitzplätze vorhanden?</h3>
+          <div class="grid grid-cols-2 gap-2">
+            <button class="opt" data-field="sitz" data-val="Ja">Ja</button>
+            <button class="opt" data-field="sitz" data-val="Nein">Nein</button>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="wizard-step">
+          <h3 class="text-lg font-bold mb-2">✨ Extras</h3>
+          <textarea id="step-extras" class="w-full border p-2 rounded" rows="3"
+            placeholder="z.B. Getränke, Werkzeug"></textarea>
+        </div>
+
+        <!-- Step 4 -->
+        <div class="wizard-step">
+          <h3 class="text-lg font-bold mb-2">📷 Illustration</h3>
+          <p class="text-sm text-gray-500 mb-2">Du kannst später Fotos hochladen.</p>
+          <img src="https://placekitten.com/400/200" class="rounded-xl shadow"/>
+        </div>
+      </div>
+
+      <div class="flex justify-between mt-4">
+        <button id="prevStep" class="bg-gray-300 px-4 py-2 rounded">Zurück</button>
+        <button id="nextStep" class="bg-green-600 text-white px-4 py-2 rounded">Weiter</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUPPORT -->
+  <div id="support" class="tab-content hidden">
+    <h2 class="text-xl font-bold mb-3">Support Tickets</h2>
+    <div id="tickets" class="space-y-2 mb-4"></div>
+    <textarea id="ticketText" class="w-full border p-2 rounded mb-2"
+      placeholder="Deine Nachricht..."></textarea>
+    <button id="sendTicket" class="bg-green-600 text-white px-4 py-2 rounded">Absenden</button>
+  </div>
+</section>
 
 <script>
-const steps = [
-  {
-    title: "Name der Hütte",
-    render: data => `
-      <input id="name" value="${data.name||''}"
-        class="w-full border p-2 rounded"
-        placeholder="z.B. Almhütte" />
-    `
-  },
-  {
-    title: "Sitzplätze vorhanden?",
-    render: data => `
-      <div class="grid grid-cols-2 gap-2">
-        ${['Ja','Nein'].map(opt =>
-          `<button data-value="${opt}"
-             class="option px-4 py-2 border rounded
-                    ${data.sitz===opt?'bg-green-100 border-green-500':''}">
-             ${opt}
-           </button>`).join('')}
-      </div>`
-  },
-  {
-    title: "Extras",
-    render: data => `
-      <textarea id="extras" rows="3"
-        class="w-full border p-2 rounded"
-        placeholder="z.B. Getränke, Werkzeug">${data.extras||''}</textarea>
-    `
+// ----- Firebase Setup -----
+const firebaseConfig = {
+      apiKey: "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
+      authDomain: "eierhuettentour.firebaseapp.com",
+      projectId: "eierhuettentour"
+    };
+    
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+// ----- UI Elemente -----
+const loginSec = document.getElementById('login');
+const appSec   = document.getElementById('app');
+const userName = document.getElementById('userName');
+
+// Login
+document.getElementById('googleLogin').onclick = () =>
+  auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+
+// Logout
+document.getElementById('logout').onclick = () => auth.signOut();
+
+// Auth Listener
+auth.onAuthStateChanged(u=>{
+  if(u){
+    loginSec.classList.add('hidden');
+    appSec.classList.remove('hidden');
+    userName.textContent = u.displayName;
+    loadEntries();
+    loadTickets();
+  } else {
+    appSec.classList.add('hidden');
+    loginSec.classList.remove('hidden');
   }
-];
+});
 
-let current = 0;
-const formData = {};  // hier sammeln wir die Antworten
+// ----- Tabs -----
+document.querySelectorAll('.tab').forEach(btn=>{
+  btn.onclick = ()=>{
+    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active-tab'));
+    btn.classList.add('active-tab');
+    document.querySelectorAll('.tab-content').forEach(c=>c.classList.add('hidden'));
+    document.getElementById(btn.dataset.target).classList.remove('hidden');
+  };
+});
 
-function render() {
-  const step = steps[current];
-  document.getElementById('step-content').innerHTML =
-    `<h2 class="text-xl font-bold mb-2">${step.title}</h2>${step.render(formData)}`;
-
-  // Fortschrittsbalken aktualisieren
-  document.getElementById('progress-bar').style.width =
-    ((current+1)/steps.length*100) + "%";
-
-  // Buttons anpassen
-  document.getElementById('prev-btn').disabled = current === 0;
-  document.getElementById('next-btn').textContent =
-    current === steps.length-1 ? "Fertig" : "Weiter";
-
-  // Klicks auf Optionsbuttons abfangen
-  document.querySelectorAll('.option').forEach(btn=>{
-    btn.addEventListener('click', e=>{
-      formData.sitz = e.target.dataset.value;
-      render();
-    });
+// ----- Dashboard -----
+async function loadEntries(){
+  const uid = auth.currentUser.uid;
+  const snap = await db.collection('eierhuetten').where('userId','==',uid).get();
+  const box = document.getElementById('entries');
+  box.innerHTML = snap.empty ? "<p class='text-gray-500'>Keine Einträge</p>" : "";
+  snap.forEach(doc=>{
+    const d = doc.data();
+    box.innerHTML += `<div class="p-3 bg-white rounded shadow flex justify-between">
+      <div>
+        <div class="font-bold">${d.name||'Ohne Namen'}</div>
+        <div class="text-sm text-gray-500">${d.sitz||''}</div>
+      </div>
+      <span class="text-xs text-gray-400">Status: ${d.status||'offen'}</span>
+    </div>`;
   });
 }
 
-function nextStep() {
-  // Werte des aktuellen Steps lesen
-  if (current===0) formData.name = document.getElementById('name').value.trim();
-  if (current===2) formData.extras = document.getElementById('extras').value.trim();
-
-  if (current < steps.length-1) {
-    current++;
-    render();
-  } else {
-    // >>> hier könntest du Firestore saveField() aufrufen <<<
-    alert("Fertig! Gespeicherte Daten:\n" + JSON.stringify(formData,null,2));
-  }
+// ----- Support -----
+async function loadTickets(){
+  const uid = auth.currentUser.uid;
+  const snap = await db.collection('support').where('userId','==',uid).get();
+  const box = document.getElementById('tickets');
+  box.innerHTML = snap.empty ? "<p class='text-gray-500'>Keine Tickets</p>" : "";
+  snap.forEach(doc=>{
+    const d = doc.data();
+    box.innerHTML += `<div class="bg-white p-2 rounded shadow">
+      <div class="font-semibold">${d.text}</div>
+      <div class="text-xs text-gray-400">${d.status||'offen'}</div>
+    </div>`;
+  });
 }
+document.getElementById('sendTicket').onclick = async ()=>{
+  const text = document.getElementById('ticketText').value.trim();
+  if(!text) return;
+  await db.collection('support').add({
+    userId: auth.currentUser.uid,
+    text, status:'offen', created: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  document.getElementById('ticketText').value='';
+  loadTickets();
+};
 
-document.getElementById('next-btn').addEventListener('click', nextStep);
-document.getElementById('prev-btn').addEventListener('click', () => {
-  if (current>0) { current--; render(); }
+// ----- Wizard -----
+let step = 0;
+const steps = document.querySelectorAll('.wizard-step');
+function showStep(){
+  steps.forEach((s,i)=>s.classList.toggle('active',i===step));
+  document.getElementById('progress').style.width = ((step+1)/steps.length*100)+"%";
+  document.getElementById('prevStep').disabled = step===0;
+  document.getElementById('nextStep').textContent = step===steps.length-1?"Fertig":"Weiter";
+}
+document.getElementById('prevStep').onclick = ()=>{ if(step>0){step--;showStep();} };
+document.getElementById('nextStep').onclick = async ()=>{
+  if(step<steps.length-1){ step++; showStep(); }
+  else{
+    // Daten sammeln
+    const data = {
+      userId: auth.currentUser.uid,
+      name: document.getElementById('step-name').value,
+      sitz: wizardData.sitz||'',
+      extras: document.getElementById('step-extras').value,
+      status: 'offen',
+      created: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    await db.collection('eierhuetten').add(data);
+    alert("✅ Hütte gespeichert!");
+    loadEntries();
+    // zurück zum Dashboard
+    document.querySelector('[data-target="dashboard"]').click();
+  }
+};
+const wizardData = {};
+document.querySelectorAll('.opt').forEach(btn=>{
+  btn.onclick = ()=>{
+    wizardData[btn.dataset.field] = btn.dataset.val;
+    document.querySelectorAll('.opt').forEach(b=>b.classList.remove('bg-green-200'));
+    btn.classList.add('bg-green-200');
+  };
 });
-
-render();
+showStep();
 </script>
 </body>
 </html>
