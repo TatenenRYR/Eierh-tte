@@ -963,10 +963,7 @@ function escapeHtml(text) {
       addQuestionWithHelp("📝 Bitte beschreibe deine Hütte kurz.", "Zum Beispiel: 'Kleine Schutzhütte mit Bank und Tisch.'");
       return;
     }
-if (txt.length > 300) {   // z. B. max 300 Zeichen
-  addMessage("⚠️ Bitte beschränke die Beschreibung auf 300 Zeichen.", "bot");
-  return;
-}
+
     editingData.beschreibung = txt;
     await saveField("beschreibung", txt);
 
@@ -1308,8 +1305,8 @@ if (step === "address_input") {
       if (!v || !b) { alert('Bitte alle Zeiten ausfüllen oder Zeile entfernen.'); return; }
 
       // Mindestdauer prüfen (siehe Punkt 6)
-    //  const diff = (new Date(`1970-01-01T${b}`) - new Date(`1970-01-01T${v}`))/3600000;
-     // if (diff < 2) { alert('Jeder Zeitraum muss mindestens 2 Stunden dauern.'); return; }
+      const diff = (new Date(`1970-01-01T${b}`) - new Date(`1970-01-01T${v}`))/3600000;
+      if (diff < 2) { alert('Jeder Zeitraum muss mindestens 2 Stunden dauern.'); return; }
 
       entries.push({ tag: day, von: v, bis: b });
     }
@@ -2449,38 +2446,6 @@ async function resumeHut(id) {
       return; // früh raus, Rest nicht rendern
     } 
 
-  //  const { typ, data } = parseOeffnungszeiten(d.oeffnungszeiten);
-
-let oeffHTML = "";
-
-const parsed = parseOeffnungszeiten(d.oeffnungszeiten);
-let oeffHTML = "";
-
-if (parsed.type === "always") {
-  oeffHTML = `
-    <label>
-      <input type="checkbox" class="always-open" checked />
-      Immer geöffnet
-    </label>
-  `;
-} else if (parsed.type === "array") {
-  oeffHTML = `
-    <div class="oeffzeiten-container">
-      ${parsed.entries.map(e => `
-        <div class="flex gap-2 mt-1">
-          <span class="w-12">${e.tag}</span>
-          <input type="time" value="${e.von || ""}" class="von border rounded px-1" />
-          <input type="time" value="${e.bis || ""}" class="bis border rounded px-1" />
-        </div>
-      `).join("")}
-    </div>
-  `;
-} else if (parsed.type === "text") {
-  oeffHTML = `<div>${parsed.value}</div>`;
-} else {
-  oeffHTML = `<div class="text-gray-500 italic">Keine Öffnungszeiten</div>`;
-}
-
 
     
     const div = document.createElement('div');
@@ -2542,8 +2507,30 @@ if (parsed.type === "always") {
             <input type='text' data-id='${id}' class='edit-tags w-full border px-2 py-1 rounded' value='${(d.tags || []).join(", ")}' placeholder="max. 5, Komma getrennt"/>
           </label><br>
 
-          
-<div><strong>🕒 Öffnungszeiten:</strong> ${oeffHTML}</div>
+          <label class="block mb-2">🕒 Öffnungszeiten:</label>
+
+<div class="oeffnungszeiten-container space-y-2" data-id="${id}">
+  ${["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"].map(tag => {
+  const times = (typeof d.oeffnungszeiten === "object" && !d.oeffnungszeiten.immer)
+    ? (d.oeffnungszeiten?.[tag] || {})
+    : {};
+  return `
+    <div class="flex items-center gap-2">
+      <span class="w-24">${tag}</span>
+      <input type="time" class="oeff-anfang border rounded px-2 py-1" data-id="${id}" data-tag="${tag}" value="${times.start || ''}" />
+      <span>-</span>
+      <input type="time" class="oeff-ende border rounded px-2 py-1" data-id="${id}" data-tag="${tag}" value="${times.ende || ''}" />
+    </div>
+  `;
+}).join("")}
+</div>
+
+<div class="mt-2">
+  <label class="inline-flex items-center">
+    <input type="checkbox" class="oeff-immer mr-2" data-id="${id}" ${(typeof d.oeffnungszeiten === "object" && d.oeffnungszeiten.immer) ? 'checked' : ''}>
+    Immer geöffnet
+  </label>
+</div>
 
           <label>📍 Adresse:<br>
             <input type='text' id='address-input-${id}' 
@@ -2790,56 +2777,6 @@ document.addEventListener('click', (e) => {
   // DEBUG: prüfe ob Klick ankommt
   console.log('Tiere für', hutId, '=>', current);
 });
-// Hilfsfunktion oben im Skript einfügen
-function parseOeffnungszeiten(raw) {
-  if (!raw) return { type: "none" };
-
-  if (typeof raw === "string") {
-    return raw.toLowerCase().includes("immer")
-      ? { type: "always" }
-      : { type: "text", value: raw };
-  }
-
-  if (Array.isArray(raw)) {
-    return { type: "array", entries: raw };
-  }
-
-  if (typeof raw === "object") {
-    const entries = Object.entries(raw).map(([tag, zeiten]) => ({
-      tag,
-      von: zeiten.start || zeiten.von,
-      bis: zeiten.ende || zeiten.bis,
-    }));
-    return { type: "array", entries };
-  }
-
-  return { type: "none" };
-    }
-  // Array -> Map (für Inputs)
-function mapOeffnungszeiten(oeffArray = []) {
-  const result = {};
-  oeffArray.forEach(e => {
-    result[e.tag] = { start: e.von, ende: e.bis };
-  });
-  return result;
-}
-
-// Inputs -> Array (für Firestore)
-function collectOeffnungszeiten(container) {
-  const rows = container.querySelectorAll(".oeffnungszeiten-container .flex.items-center");
-  const result = [];
-
-  rows.forEach(row => {
-    const tag = row.querySelector("span").textContent.slice(0,2); // "Mo", "Di", ...
-    const start = row.querySelector(".oeff-anfang").value;
-    const ende = row.querySelector(".oeff-ende").value;
-    if (start && ende) {
-      result.push({ tag, von: start, bis: ende });
-    }
-  });
-
-  return result;
-}
   async function saveEdit(id, beschreibungHTML) {
   try {
     const nameEl = document.querySelector(`.edit-name[data-id="${id}"]`);
@@ -2874,41 +2811,26 @@ function collectOeffnungszeiten(container) {
         : [];
     }
 
-    // 🕒 Öffnungszeiten -> Array wie beim Anlegen
+    // 🕒 Öffnungszeiten -> Struktur wie bei Erstellung
     const immerEl = document.querySelector(`.oeff-immer[data-id="${id}"]`);
     if (immerEl && immerEl.checked) {
-      payload.oeffnungszeiten = "Immer geöffnet";
+      payload.oeffnungszeiten = { immer: true };
     } else {
       const tage = [
-        { lang: "Montag", kurz: "Mo" },
-        { lang: "Dienstag", kurz: "Di" },
-        { lang: "Mittwoch", kurz: "Mi" },
-        { lang: "Donnerstag", kurz: "Do" },
-        { lang: "Freitag", kurz: "Fr" },
-        { lang: "Samstag", kurz: "Sa" },
-        { lang: "Sonntag", kurz: "So" }
+        "Montag","Dienstag","Mittwoch",
+        "Donnerstag","Freitag","Samstag","Sonntag"
       ];
-
-      const zeiten = [];
-
-      tage.forEach(t => {
-        const startEl = document.querySelector(
-          `.oeff-anfang[data-id="${id}"][data-tag="${t.lang}"]`
-        );
-        const endeEl = document.querySelector(
-          `.oeff-ende[data-id="${id}"][data-tag="${t.lang}"]`
-        );
-
+      payload.oeffnungszeiten = {};
+      tage.forEach(tag => {
+        const startEl = document.querySelector(`.oeff-anfang[data-id="${id}"][data-tag="${tag}"]`);
+        const endeEl  = document.querySelector(`.oeff-ende[data-id="${id}"][data-tag="${tag}"]`);
         if (startEl && endeEl && (startEl.value || endeEl.value)) {
-          zeiten.push({
-            tag: t.kurz,
-            von: startEl.value || "",
-            bis: endeEl.value || ""
-          });
+          payload.oeffnungszeiten[tag] = {
+            start: startEl.value || "",
+            ende: endeEl.value || ""
+          };
         }
       });
-
-      payload.oeffnungszeiten = zeiten;
     }
 
     if (addrEl) payload.address = addrEl.value.trim();
