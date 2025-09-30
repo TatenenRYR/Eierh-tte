@@ -1,200 +1,835 @@
-<!DOCTYPE html><html lang="de">
+<!DOCTYPE html>
+<html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hütten Assistent – Debug Version</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Hütten Assistent – Komplett</title>
+
+  <!-- Firebase (compat, wie in deinem Projekt) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
+
+  <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <!-- Leaflet (Karten) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Quill (WYSIWYG für Beschreibung) -->
+  <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+  <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+
   <style>
-    body { font-family: sans-serif; }
-    .sidebar-btn:hover { background-color: #10b981; color:white; }
-    .card-option { transition: transform 0.2s, box-shadow 0.2s; }
-    .card-option:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-    .selected { border:2px solid #10b981; background-color:#ecfdf5; }
+    body { font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; }
+    .card-option { transition: transform .16s, box-shadow .16s; }
+    .card-option:hover { transform: translateY(-4px); box-shadow: 0 8px 20px rgba(0,0,0,.08); }
+    .selected { border: 2px solid #10b981; background-color: #ecfdf5; }
+    .minimap { height: 160px; }
+    /* Small helper for fixed bottom nav on small screens */
+    @media (max-width: 767px) {
+      #question-area { padding-bottom: 92px; } /* space for fixed nav */
+    }
+    @media (min-width: 768px) {
+      #question-area { padding-bottom: 92px; }
+    }
   </style>
 </head>
 <body class="bg-gray-100">
-<div class="flex min-h-screen">  <!-- Sidebar (mobile toggle) -->  <div id="sidebar" class="fixed md:static inset-y-0 left-0 w-60 bg-white border-r p-4 flex flex-col gap-3 transform -translate-x-full md:translate-x-0 transition-transform z-50">
-    <div class="text-2xl font-bold text-green-700 mb-6">🌿 Assistent</div>
-    <button class="sidebar-btn flex items-center gap-2 p-2 rounded" onclick="showMyEntries()">📋 Meine Eintragungen</button>
-    <button class="sidebar-btn flex items-center gap-2 p-2 rounded" onclick="startNewEntry()">➕ Neue Eintragung</button>
-    <button class="sidebar-btn flex items-center gap-2 p-2 rounded" onclick="openSupport()">💬 Support</button>
-    <div class="mt-auto text-xs text-gray-400">v0.5 Debug</div>
-  </div>  <!-- Main Content -->  <div class="flex-1 flex flex-col">
-    <!-- Topbar for mobile -->
-    <div class="md:hidden flex items-center justify-between bg-white border-b p-3">
-      <div class="font-bold text-green-700">Assistent</div>
-      <button onclick="toggleSidebar()" class="p-2 bg-green-600 text-white rounded">☰</button>
-    </div><!-- Progressbar -->
-<div class="w-full h-2 bg-gray-200">
-  <div id="progress" class="h-2 bg-green-500 w-0 transition-all"></div>
-</div>
+  <div class="flex min-h-screen">
 
-<!-- Question Area -->
-<div id="question-area" class="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto pb-24">
-</div>
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed md:static inset-y-0 left-0 w-64 bg-white border-r p-4 transform -translate-x-full md:translate-x-0 transition-transform z-50">
+      <div class="text-2xl font-bold text-green-700 mb-6">🌿 Assistent</div>
+      <button class="w-full text-left px-3 py-2 rounded hover:bg-green-50" onclick="showMyEntries()">📋 Meine Eintragungen</button>
+      <button class="w-full text-left px-3 py-2 rounded hover:bg-green-50" onclick="startNewEntry()">➕ Neue Eintragung</button>
+      <button class="w-full text-left px-3 py-2 rounded hover:bg-green-50" onclick="openSupport()">💬 Support</button>
+      <div class="mt-auto text-xs text-gray-400">v1.0 – Komplett</div>
+    </aside>
 
-<!-- Navigation Buttons fixed bottom -->
-<div class="fixed bottom-0 left-0 md:left-60 right-0 flex justify-between p-4 border-t bg-white">
-  <button id="backBtn" class="px-4 py-2 bg-gray-200 rounded" onclick="prevStep()">⬅️ Zurück</button>
-  <button id="nextBtn" class="px-4 py-2 bg-green-600 text-white rounded" onclick="nextStep()">Weiter ➡️</button>
-</div>
+    <!-- Main -->
+    <main class="flex-1 flex flex-col">
+      <!-- topbar mobile -->
+      <div class="md:hidden flex items-center justify-between bg-white border-b p-3">
+        <div class="font-bold text-green-700">Assistent</div>
+        <button class="p-2 bg-green-600 text-white rounded" onclick="toggleSidebar()">☰</button>
+      </div>
 
+      <!-- progressbar -->
+      <div class="w-full h-2 bg-gray-200">
+        <div id="progress" class="h-2 bg-green-500 w-0 transition-all"></div>
+      </div>
+
+      <!-- question area -->
+      <section id="question-area" class="flex-1 p-6 overflow-y-auto">
+        <!-- dynamic content -->
+      </section>
+
+      <!-- fixed bottom nav -->
+      <div id="navBottom" class="fixed bottom-0 left-0 md:left-64 right-0 flex justify-between p-4 border-t bg-white z-40">
+        <button id="prevBtn" class="px-4 py-2 bg-gray-200 rounded" onclick="prevStep()">⬅️ Zurück</button>
+        <button id="nextBtn" class="px-4 py-2 bg-green-600 text-white rounded" onclick="nextStep()">Weiter ➡️</button>
+      </div>
+    </main>
   </div>
-</div><script>
-// ⚠️ Firebase Config prüfen
-const firebaseConfig = {
-  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-  authDomain: "eierhuettentour.firebaseapp.com",
-  projectId: "eierhuettentour",
-  storageBucket: "eierhuettentour.appspot.com",
-  messagingSenderId: "348272135205",
-  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
-};
 
-if(!firebaseConfig.apiKey){
-  alert("❌ FirebaseConfig fehlt – bitte eintragen!");
-}
+  <!-- Notification area -->
+  <div id="toast" class="fixed top-6 right-6 hidden p-3 rounded shadow bg-blue-600 text-white z-50"></div>
 
-let app, db;
-try {
-  app = firebase.initializeApp(firebaseConfig);
-  db = firebase.firestore();
-} catch(e){
-  console.error("Firebase Init Error", e);
-  document.getElementById("question-area").innerHTML = `<div class='bg-red-100 p-4 rounded'>❌ Firebase konnte nicht initialisiert werden.<br>${e}</div>`;
-}
+  <script>
+  /***********************
+   * Config & Init
+   ***********************/
+  // Firebase config (aus deinem Admin-File)
+  const firebaseConfig = {
+    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+    authDomain: "eierhuettentour.firebaseapp.com",
+    projectId: "eierhuettentour",
+    storageBucket: "eierhuettentour.appspot.com",
+    messagingSenderId: "348272135205",
+    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+  };
 
-let currentUser = { uid: "demo" };
-let editingData = {};
-let step = 0;
-const totalSteps = 10;
+  // imgbb API key (wie in Admin-Code verwendet)
+  const IMGBB_KEY = "5df04de9bfd2776f101329be4193e44c";
 
-function saveField(field, value) {
-  editingData[field] = value;
-  editingData.step = step;
-  console.log("💾 gespeichert:", field, value);
-}
-
-function updateProgress() {
-  const percent = ((step) / (totalSteps-1)) * 100;
-  document.getElementById("progress").style.width = percent + "%";
-  console.log("📊 Progress", step, "/", totalSteps);
-}
-
-function renderQuestion() {
-  const qa = document.getElementById("question-area");
-  qa.innerHTML = `<div class='text-gray-400'>⏳ Lade Frage ${step}...</div>`;
-  console.log("🔄 renderQuestion step", step);
-
+  // Init firebase
+  let app, db;
   try {
-    switch(step) {
-      case 0:
-        qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-          <h2 class="text-xl font-bold mb-4">🛡️ Datenschutzerklärung</h2>
-          <p class="mb-4">Bitte bestätige, dass du die Datenschutzerklärung akzeptierst.</p>
-          <label class="flex items-center gap-2">
-            <input type="checkbox" id="dsCheck" /> Ich akzeptiere
-          </label></div>`;
-        break;
-      case 1:
-        qa.innerHTML = `<h2 class='text-xl font-bold mb-6'>Was möchtest du eintragen?</h2>`;
-        const opts = ["🥚 Eierhütte","🏪 Hofladen","🤖 Selbstbedienungshäuschen","🛝 Spielplatz","🌄 Abenteuerhof"];
-        const wrap = document.createElement("div");
-        wrap.className = "grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl";
-        opts.forEach(opt => {
-          const card = document.createElement("div");
-          card.className = "card-option bg-white p-6 rounded-xl shadow cursor-pointer text-center";
-          card.innerHTML = `<div class='text-3xl mb-2'>${opt.split(" ")[0]}</div><div class='font-semibold'>${opt.substring(2)}</div>`;
+    app = firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+  } catch (e) {
+    console.error("Firebase init error", e);
+    document.getElementById('question-area').innerHTML = `<div class="bg-red-100 p-4 rounded">❌ Firebase konnte nicht initialisiert werden. Prüfe die Konfiguration in der Datei.</div>`;
+  }
+
+  // Demo user: in deinem Produktivbetrieb sollte hier auth.onAuthStateChanged triggern
+  let currentUser = { uid: "demo", email: "demo@example.com", displayName: "Demo" };
+
+  /***********************
+   * State & steps
+   ***********************/
+  let editingData = {};
+  let step = 0;
+  const stepsCount = 10; // 0..9
+
+  function showToast(text, time = 3000) {
+    const t = document.getElementById('toast');
+    t.textContent = text;
+    t.classList.remove('hidden');
+    setTimeout(()=>{ t.classList.add('hidden'); }, time);
+  }
+
+  function updateProgress() {
+    const pct = (step / (stepsCount - 1)) * 100;
+    document.getElementById('progress').style.width = pct + '%';
+  }
+
+  /***********************
+   * Render Flow (Questions)
+   ***********************/
+  function renderQuestion() {
+    const qa = document.getElementById('question-area');
+    qa.innerHTML = ''; // reset
+    updateProgress();
+
+    try {
+      if (step === 0) {
+        qa.innerHTML = `
+          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+            <h2 class="text-xl font-bold mb-3">🛡️ Datenschutzerklärung</h2>
+            <p class="mb-4">Bitte bestätige, dass du die Datenschutzerklärung gelesen hast.</p>
+            <label class="inline-flex items-center gap-2">
+              <input id="dsCheck" type="checkbox" class="form-checkbox" /> Ich akzeptiere die Datenschutzerklärung
+            </label>
+          </div>`;
+        return;
+      }
+
+      if (step === 1) {
+        // Typ-Auswahl
+        const opts = [
+          { emoji: '🥚', label: 'Eierhütte', key: 'Eierhütte' },
+          { emoji: '🏪', label: 'Hofladen', key: 'Hofladen' },
+          { emoji: '🏠', label: 'Selbstbedienungshäuschen', key: 'Selbstbedienung' },
+          { emoji: '🛝', label: 'Spielplatz', key: 'Spielplatz' },
+          { emoji: '🌄', label: 'Abenteuerhof', key: 'Abenteuerhof' }
+        ];
+        const wrap = document.createElement('div');
+        wrap.className = 'grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto';
+        opts.forEach(o => {
+          const card = document.createElement('div');
+          card.className = 'bg-white p-6 rounded-xl shadow card-option text-center cursor-pointer';
+          card.innerHTML = `<div class="text-3xl">${o.emoji}</div><div class="font-semibold mt-2">${o.label}</div>`;
           card.onclick = () => {
-            document.querySelectorAll(".card-option").forEach(c=>c.classList.remove("selected"));
-            card.classList.add("selected");
-            editingData.typ = opt.substring(2);
-            console.log("➡️ Typ gewählt:", editingData.typ);
+            document.querySelectorAll('.card-option').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            editingData.typ = o.key;
           };
           wrap.appendChild(card);
         });
         qa.appendChild(wrap);
-        break;
-      default:
-        qa.innerHTML = `<div class='bg-white p-6 rounded-xl shadow'>Step ${step} (Demo-Ausgabe)</div>`;
-        break;
+        return;
+      }
+
+      if (step === 2) {
+        qa.innerHTML = `
+          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+            <h2 class="text-lg font-bold mb-2">🏷️ Name der Hütte</h2>
+            <input id="nameInput" class="w-full border p-2 rounded" placeholder="Name eingeben" value="${editingData.name || ''}">
+          </div>`;
+        return;
+      }
+
+      if (step === 3) {
+        qa.innerHTML = `
+          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+            <h2 class="text-lg font-bold mb-2">🪑 Hat deine Hütte Sitzplätze?</h2>
+            <div class="flex gap-4">
+              <button class="flex-1 p-3 border rounded" onclick="selectOption('sitzplaetze','Ja',this)">✅ Ja</button>
+              <button class="flex-1 p-3 border rounded" onclick="selectOption('sitzplaetze','Nein',this)">❌ Nein</button>
+            </div>
+          </div>`;
+        return;
+      }
+
+      if (step === 4) {
+        qa.innerHTML = `
+          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+            <h2 class="text-lg font-bold mb-2">🔌 Gibt es Strom?</h2>
+            <div class="flex gap-4">
+              <button class="flex-1 p-3 border rounded" onclick="selectOption('strom','Ja',this)">⚡ Ja</button>
+              <button class="flex-1 p-3 border rounded" onclick="selectOption('strom','Nein',this)">❌ Nein</button>
+            </div>
+          </div>`;
+        return;
+      }
+
+      if (step === 5) {
+        qa.innerHTML = `
+          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+            <h2 class="text-lg font-bold mb-2">✨ Extras (optional)</h2>
+            <input id="extrasInput" class="w-full border p-2 rounded" placeholder="z.B. Getränke, Kühlschrank" value="${editingData.extras || ''}">
+          </div>`;
+        return;
+      }
+
+      if (step === 6) {
+        // Tiere toggle buttons (markieren, don't auto-next)
+        const animals = ["🐐 Ziege","🐄 Kuh","🐓 Huhn","🐕 Hund","🐇 Hase","🐈 Katze","Keine Tiere"];
+        const grid = document.createElement('div');
+        grid.className = 'bg-white p-6 rounded-xl shadow max-w-2xl mx-auto';
+        grid.innerHTML = `<h2 class="text-lg font-bold mb-3">🐾 Welche Tiere gibt es?</h2><div id="tiereGrid" class="grid grid-cols-3 gap-2"></div>`;
+        qa.appendChild(grid);
+        const holder = document.getElementById('tiereGrid');
+        editingData.tiere = editingData.tiere || [];
+        animals.forEach(t => {
+          const btn = document.createElement('button');
+          const isSel = editingData.tiere.includes(t);
+          btn.className = `p-2 border rounded text-sm ${isSel ? 'selected' : ''}`;
+          btn.textContent = t;
+          btn.onclick = () => {
+            // toggle
+            if (t === 'Keine Tiere') {
+              editingData.tiere = ['Keine Tiere'];
+              // remove selected from others
+              holder.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+              btn.classList.add('selected');
+              return;
+            }
+            // if 'Keine Tiere' present -> remove it
+            editingData.tiere = (editingData.tiere || []).filter(x => x !== 'Keine Tiere');
+            const idx = (editingData.tiere || []).indexOf(t);
+            if (idx >= 0) {
+              editingData.tiere.splice(idx, 1);
+              btn.classList.remove('selected');
+            } else {
+              editingData.tiere.push(t);
+              btn.classList.add('selected');
+            }
+          };
+          holder.appendChild(btn);
+        });
+        return;
+      }
+
+      if (step === 7) {
+        qa.innerHTML = `
+          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+            <h2 class="text-lg font-bold mb-2">📝 Beschreibung</h2>
+            <div id="quillContainer" class="bg-white"></div>
+          </div>`;
+        setTimeout(() => {
+          // initialize quill and set content if exists
+          const quill = new Quill('#quillContainer', { theme: 'snow' });
+          if (editingData.beschreibung) quill.root.innerHTML = editingData.beschreibung;
+          // store on change
+          quill.on('text-change', () => { editingData.beschreibung = quill.root.innerHTML; });
+        }, 120);
+        return;
+      }
+
+      if (step === 8) {
+        qa.innerHTML = `
+          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+            <h2 class="text-lg font-bold mb-2">🏷️ Schlagwörter (Komma getrennt)</h2>
+            <input id="tagsInput" class="w-full border p-2 rounded" placeholder="z.B. Frühstück,Schattig" value="${(editingData.tags||[]).join(', ')}">
+          </div>`;
+        return;
+      }
+
+      if (step === 9) {
+        // Overview + Leaflet map + submit
+        qa.innerHTML = `
+          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+            <h2 class="text-xl font-bold mb-3">📋 Übersicht</h2>
+            <ul class="mb-4 space-y-2 text-sm text-gray-700">
+              <li><b>Typ:</b> ${editingData.typ || '-'}</li>
+              <li><b>Name:</b> ${editingData.name || '-'}</li>
+              <li><b>Sitzplätze:</b> ${editingData.sitzplaetze || '-'}</li>
+              <li><b>Strom:</b> ${editingData.strom || '-'}</li>
+              <li><b>Extras:</b> ${editingData.extras || '-'}</li>
+              <li><b>Tiere:</b> ${(editingData.tiere || []).join(', ') || '-'}</li>
+              <li><b>Beschreibung:</b> ${editingData.beschreibung ? '' : '-'}</li>
+              <li><b>Tags:</b> ${(editingData.tags || []).join(', ') || '-'}</li>
+            </ul>
+            <div id="overview-map" class="h-64 rounded border mb-4"></div>
+            <div class="flex gap-2">
+              <button id="submitBtn" class="px-4 py-2 bg-green-600 text-white rounded" onclick="submitEntry()">✅ Einreichen</button>
+              <button class="px-4 py-2 bg-gray-200 rounded" onclick="startNewEntry()">✖ Abbrechen</button>
+            </div>
+            <p class="text-xs text-gray-500 mt-3">Deine Eintragung wird vom Admin überprüft und erst nach Freigabe sichtbar.</p>
+          </div>`;
+        setTimeout(() => {
+          // init map (click to set position)
+          try {
+            const map = L.map('overview-map').setView([51.3, 9.5], 6);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+            let marker;
+            if (editingData.location && editingData.location.lat && editingData.location.lng) {
+              marker = L.marker([editingData.location.lat, editingData.location.lng]).addTo(map);
+              map.setView([editingData.location.lat, editingData.location.lng], 12);
+            }
+            map.on('click', e => {
+              if (marker) marker.remove();
+              marker = L.marker(e.latlng).addTo(map);
+              editingData.location = { lat: e.latlng.lat, lng: e.latlng.lng };
+            });
+          } catch (err) {
+            console.warn("Leaflet init failed", err);
+          }
+        }, 200);
+        return;
+      }
+
+    } catch (err) {
+      console.error("renderQuestion error", err);
+      document.getElementById('question-area').innerHTML = `<div class="bg-red-100 p-4 rounded">Fehler: ${err.message}</div>`;
     }
-  } catch(e){
-    console.error("Render Error", e);
-    qa.innerHTML = `<div class='bg-red-100 p-4 rounded'>❌ Fehler beim Rendern: ${e}</div>`;
   }
 
-  updateProgress();
-}
+  function selectOption(field, value, el) {
+    // deselect siblings
+    if (el && el.parentNode) {
+      el.parentNode.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+      el.classList.add('selected');
+    }
+    editingData[field] = value;
+  }
 
-function nextStep(){
-  if(step<totalSteps-1) step++;
-  renderQuestion();
-}
+  function nextStep() {
+    // validation for some steps
+    if (step === 0) {
+      const ok = document.getElementById('dsCheck') && document.getElementById('dsCheck').checked;
+      if (!ok) { alert('Bitte Datenschutzerklärung akzeptieren'); return; }
+      editingData.datenschutz = true;
+    }
+    if (step === 2) {
+      const v = document.getElementById('nameInput')?.value?.trim();
+      if (!v) { alert('Bitte Namen eingeben'); return; }
+      editingData.name = v;
+    }
+    if (step === 5) {
+      editingData.extras = document.getElementById('extrasInput')?.value?.trim();
+    }
+    if (step === 7) {
+      // description already captured via quill on change
+    }
+    if (step === 8) {
+      const raw = document.getElementById('tagsInput')?.value || '';
+      editingData.tags = raw.split(',').map(s=>s.trim()).filter(Boolean).slice(0, 10);
+    }
 
-function prevStep(){
-  if(step>0) step--;
-  renderQuestion();
-}
+    if (step < stepsCount - 1) step++;
+    renderQuestion();
+    updateProgress();
+  }
 
-function toggleSidebar(){
-  document.getElementById("sidebar").classList.toggle("-translate-x-full");
-}
+  function prevStep() {
+    if (step > 0) step--;
+    renderQuestion();
+    updateProgress();
+  }
 
-function showMyEntries(){
-  if(!db){ alert("❌ Firestore nicht verfügbar"); return; }
-  db.collection('eierhuetten')
-    .where('userId','==',currentUser.uid)
-    .get()
-    .then(snap=>{
-      let list="";
-      snap.forEach(doc=>{
-        let d = doc.data();
-        if(d.status==="archiviert") return; // Archivierte ausblenden
-        let badgeColor = "bg-gray-300";
-        if(d.status==="offen") badgeColor="bg-yellow-300";
-        if(d.status==="angenommen") badgeColor="bg-green-300";
-        if(d.status==="abgelehnt") badgeColor="bg-red-300";
-        list += `
-          <div class="border rounded p-4 mb-3 bg-white shadow">
-            <div class="flex justify-between items-center">
-              <h3 class="font-bold text-lg">${d.name||'Unbenannt'}</h3>
-              <span class="px-2 py-1 text-xs rounded ${badgeColor}">${d.status}</span>
-            </div>
-            <p class="text-sm text-gray-600 mt-1">${d.beschreibung||''}</p>
-            <p class="text-xs text-gray-500 mt-1">Extras: ${d.extras||'-'} | Strom: ${d.strom||'-'} | Sitzplätze: ${d.sitzplaetze||'-'}</p>
-            <p class="text-xs text-gray-500">Tiere: ${(d.tiere||[]).join(', ')}</p>
-          </div>
-        `;
+  function startNewEntry() {
+    editingData = {};
+    step = 0;
+    renderQuestion();
+    toggleSidebar();
+    updateProgress();
+  }
+
+  async function submitEntry() {
+    // ensure required fields
+    if (!editingData.name || !editingData.typ) {
+      alert('Bitte Typ und Name ausfüllen.');
+      return;
+    }
+    // prepare object for firestore: follow existing structure & set status 'offen'
+    const payload = {
+      userId: currentUser.uid,
+      name: editingData.name,
+      typ: editingData.typ,
+      sitzplaetze: editingData.sitzplaetze || 'Nein',
+      strom: editingData.strom || 'Nein',
+      extras: editingData.extras || '',
+      tiere: editingData.tiere || [],
+      beschreibung: editingData.beschreibung || '',
+      tags: editingData.tags || [],
+      status: 'offen',
+      erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+      datenschutzZustimmung: {
+        bestaetigtAm: firebase.firestore.FieldValue.serverTimestamp(),
+        durch: currentUser.email || null
+      }
+    };
+    if (editingData.location && editingData.location.lat && editingData.location.lng) {
+      payload.location = new firebase.firestore.GeoPoint(editingData.location.lat, editingData.location.lng);
+    }
+    try {
+      await db.collection('eierhuetten').add(payload);
+      showToast('✅ Eintragung gesendet. Wird geprüft.');
+      startNewEntry();
+    } catch (err) {
+      console.error('submitEntry error', err);
+      alert('Fehler beim Senden: ' + (err.message || err));
+    }
+  }
+
+  /***********************
+   * Sidebar actions: Meine Eintragungen (mit Bearbeitung)
+   ***********************/
+  async function showMyEntries() {
+    if (!db) { document.getElementById('question-area').innerHTML = '<div class="bg-red-100 p-4 rounded">Firestore nicht verfügbar.</div>'; return; }
+    const qa = document.getElementById('question-area');
+    qa.innerHTML = '<div class="text-gray-500">⏳ Lade Eintragungen…</div>';
+    try {
+      const snapshot = await db.collection('eierhuetten').where('userId', '==', currentUser.uid).orderBy('erstelltAm','desc').get();
+      const docs = snapshot.docs.filter(doc => {
+        const st = doc.data().status;
+        return st !== 'archiviert' && st !== 'deleted';
       });
-      document.getElementById("question-area").innerHTML =
-        `<div class='w-full max-w-2xl'><h2 class='text-xl mb-4 font-bold'>📋 Meine Eintragungen</h2>${list || '<p class="text-gray-500">Keine Eintragungen vorhanden</p>'}</div>`;
-    })
-    .catch(e=>{
-      console.error("Firestore Error", e);
-      alert("❌ Firestore Fehler: "+e);
+
+      if (docs.length === 0) {
+        qa.innerHTML = `<div class="bg-white p-6 rounded shadow max-w-2xl mx-auto">Du hast noch keine Hütten.</div>`;
+        toggleSidebar();
+        return;
+      }
+
+      // stats
+      let total = 0, angenommen = 0, offen = 0;
+      docs.forEach(d => { total++; if (d.data().status === 'angenommen') angenommen++; if (d.data().status === 'offen') offen++; });
+
+      qa.innerHTML = '';
+      const statsBar = document.createElement('div');
+      statsBar.className = 'flex justify-around items-center text-sm bg-green-100 text-green-900 py-2 px-4 rounded mb-3 shadow-sm border border-green-300 max-w-2xl mx-auto';
+      statsBar.innerHTML = `<div>🥚 <strong>${total}</strong></div><div>✅ <strong>${angenommen}</strong></div><div>⏳ <strong>${offen}</strong></div>`;
+      qa.appendChild(statsBar);
+
+      // render each hut card with edit controls
+      for (const doc of docs) {
+        const d = doc.data();
+        const id = doc.id;
+        const card = document.createElement('div');
+        card.className = 'bg-white p-4 rounded shadow mb-4 max-w-2xl mx-auto';
+        // badge color
+        const badgeColor = d.status === 'accepted' || d.status === 'angenommen' ? 'bg-green-100 text-green-800' : (d.status === 'offen' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-700');
+        card.innerHTML = `
+          <div class="flex justify-between items-start gap-3">
+            <div>
+              <div class="font-bold text-lg">🏡 ${escapeHtml(d.name || 'Unbenannt')}</div>
+              <div class="text-xs text-gray-500 mt-1">${escapeHtml(d.beschreibung || '')}</div>
+              <div class="text-xs text-gray-500 mt-1">Extras: ${escapeHtml(d.extras || '-') } • Strom: ${escapeHtml(d.strom || '-') } • Sitzplätze: ${escapeHtml(d.sitzplaetze || '-') }</div>
+              <div class="text-xs text-gray-500 mt-1">Tiere: ${(Array.isArray(d.tiere)?d.tiere.join(', '):'-')}</div>
+            </div>
+            <div>
+              <span class="px-2 py-1 rounded text-xs ${badgeColor}">${escapeHtml(d.status || '')}</span>
+            </div>
+          </div>
+
+          <div class="mt-3 text-sm">
+            <!-- editable fields (only active for accepted entries) -->
+            ${d.status === 'angenommen' || d.status === 'accepted' ? `
+              <label class="block mt-2">Name:<br>
+                <input data-id="${id}" class="edit-name w-full border px-2 py-1 rounded" value="${escapeAttr(d.name||'')}" />
+              </label>
+
+              <label class="block mt-2">Sitzplätze:
+                <select data-id="${id}" class="edit-sitz border rounded px-2 py-1">
+                  <option ${d.sitzplaetze==='Ja'?'selected':''}>Ja</option>
+                  <option ${d.sitzplaetze==='Nein'?'selected':''}>Nein</option>
+                </select>
+              </label>
+
+              <label class="block mt-2">Strom:
+                <select data-id="${id}" class="edit-strom border rounded px-2 py-1">
+                  <option ${d.strom==='Ja'?'selected':''}>Ja</option>
+                  <option ${d.strom==='Nein'?'selected':''}>Nein</option>
+                </select>
+              </label>
+
+              <label class="block mt-2">Extras:<br>
+                <input data-id="${id}" class="edit-extras w-full border px-2 py-1 rounded" value="${escapeAttr(d.extras||'')}" />
+              </label>
+
+              <label class="block mt-2">Tiere:<br>
+                <div class="tiere-buttons flex flex-wrap gap-1 mt-1" data-id="${id}">
+                  ${["🐐 Ziege","🐓 Huhn","🐄 Kuh","🐇 Hase","🐕 Hund","🐈 Katze","Keine Tiere"].map(t => {
+                    const isSelected = Array.isArray(d.tiere) && d.tiere.includes(t);
+                    return `<button type="button" class="tiere-btn px-2 py-1 text-xs border rounded ${isSelected?'bg-green-200 border-green-400':'bg-gray-100 border-gray-300'}" data-tiere="${t}">${t}</button>`;
+                  }).join('')}
+                </div>
+                <input type="hidden" data-id="${id}" class="edit-tiere-hidden" value='${Array.isArray(d.tiere)?escapeAttr(d.tiere.join(',')):""}' />
+              </label>
+
+              <label class="block mt-2">Beschreibung:<br>
+                <div id="editor-${id}" class="quill-editor border rounded">${d.beschreibung || ''}</div>
+              </label>
+
+              <label class="block mt-2">Tags:<br>
+                <input data-id="${id}" class="edit-tags w-full border px-2 py-1 rounded" value="${Array.isArray(d.tags)?escapeAttr(d.tags.join(', ')) : ''}" placeholder="Komma getrennt" />
+              </label>
+
+              <div class="mt-3">
+                <button data-id="${id}" class="save-edit px-3 py-1 bg-green-600 text-white rounded">💾 Speichern</button>
+                <button data-id="${id}" class="delete-hut px-3 py-1 bg-red-600 text-white rounded ml-2">🗑️ Löschen</button>
+              </div>
+            ` : `
+              <div class="text-sm text-gray-500 italic mt-2">⛔ Nach Freigabe bearbeitbar.</div>
+              <div class="mt-2">
+                <button data-id="${id}" class="delete-hut px-3 py-1 bg-red-600 text-white rounded">🗑️ Löschen</button>
+              </div>
+            `}
+          </div>
+
+          <!-- Fotos -->
+          ${Array.isArray(d.fotos) && d.fotos.length ? `
+            <div class="mt-3 grid grid-cols-3 gap-2">
+              ${d.fotos.map((img, idx) => {
+                const obj = (typeof img === 'string') ? { url: img, status: 'freigegeben' } : img;
+                const pending = obj.status === 'wartet';
+                return `<div class="relative rounded overflow-hidden border p-1 bg-gray-50">
+                  <img src="${escapeAttr(obj.url)}" class="object-cover w-full h-24 rounded" />
+                  ${!pending ? `<button data-id="${id}" data-url="${escapeAttr(obj.url)}" class="delete-image absolute top-0 right-0 bg-red-600 text-white text-xs rounded-bl px-2">✕</button>` : `<div class="absolute inset-0 flex items-center justify-center text-xs text-white bg-black/50">⏳ wartet</div>`}
+                </div>`;
+              }).join('')}
+            </div>` : ''}
+
+          <!-- upload -->
+          <label class="block mt-3 text-sm">📷 Neues Bild:
+            <input type="file" data-id="${id}" class="upload-image mt-1" accept="image/*">
+          </label>
+          <div id="progress-${id}" class="h-2 bg-gray-200 rounded hidden mt-2"><div class="h-2 bg-green-500 rounded" style="width:0%"></div></div>
+          <div id="progress-label-${id}" class="text-xs text-gray-600 mt-1">0%</div>
+
+          <!-- mini-map -->
+          <div id="minimap-${id}" class="minimap mt-3 rounded border"></div>
+        `;
+        qa.appendChild(card);
+
+        // after append: init quill editor, mini-map, attach events
+        setTimeout(() => {
+          // Quill
+          const editorEl = document.getElementById(`editor-${id}`);
+          if (editorEl) {
+            const q = new Quill(`#editor-${id}`, { theme: 'snow' });
+            if (d.beschreibung) q.root.innerHTML = d.beschreibung;
+            // replace the save handler below to read from this quill
+          }
+
+          // map
+          if (d.location && d.location.latitude && d.location.longitude) {
+            try {
+              const m = L.map(`minimap-${id}`, { zoomControl: true }).setView([d.location.latitude, d.location.longitude], 13);
+              L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
+              const marker = L.marker([d.location.latitude, d.location.longitude], { draggable: (d.status==='angenommen') }).addTo(m);
+              if (d.status === 'angenommen') {
+                marker.on('dragend', async e => {
+                  const pos = e.target.getLatLng();
+                  await db.collection('eierhuetten').doc(id).update({ location: new firebase.firestore.GeoPoint(pos.lat, pos.lng) });
+                  showToast('📍 Standort aktualisiert');
+                });
+              }
+            } catch (err) { console.warn('map error', err); }
+          }
+
+        }, 300);
+      } // end for
+
+      // attach event delegation: Tiere buttons, save-edit, delete, upload
+      setupMyEntriesDelegation();
+
+      toggleSidebar();
+    } catch (err) {
+      console.error('showMyEntries error', err);
+      document.getElementById('question-area').innerHTML = `<div class="bg-red-100 p-4 rounded">Fehler beim Laden: ${err.message}</div>`;
+    }
+  }
+
+  /***********************
+   * Delegation & Helpers for Editing UI
+   ***********************/
+  function setupMyEntriesDelegation() {
+    // Tiere buttons (delegated)
+    document.querySelectorAll('.tiere-buttons').forEach(container => {
+      container.querySelectorAll('.tiere-btn').forEach(btn => {
+        btn.onclick = () => {
+          const t = btn.getAttribute('data-tiere');
+          const parent = container;
+          const hidden = parent.nextElementSibling; // edit-tiere-hidden
+          let arr = hidden.value ? hidden.value.split(',').map(s=>s.trim()).filter(Boolean) : [];
+          const idx = arr.indexOf(t);
+          if (idx >= 0) {
+            arr.splice(idx,1); btn.classList.remove('bg-green-200','border-green-400'); btn.classList.add('bg-gray-100','border-gray-300');
+          } else {
+            if (t === 'Keine Tiere') { arr = ['Keine Tiere']; parent.querySelectorAll('.tiere-btn').forEach(b=>b.classList.remove('bg-green-200','border-green-400')); btn.classList.add('bg-green-200','border-green-400'); }
+            else {
+              arr = arr.filter(x => x !== 'Keine Tiere');
+              btn.classList.add('bg-green-200','border-green-400');
+            }
+          }
+          hidden.value = arr.join(',');
+        };
+      });
     });
-  toggleSidebar();
-}
-function openSupport(){
-  document.getElementById("question-area").innerHTML=`<div class='bg-white p-6 rounded-xl shadow w-full max-w-lg'>
-    <h2 class='text-xl mb-4'>Support</h2>
-    <input id='supName' class='border p-2 w-full mb-2 rounded' placeholder='Dein Name'>
-    <input id='supMail' class='border p-2 w-full mb-2 rounded' placeholder='Deine E-Mail'>
-    <textarea id='supMsg' class='border p-2 w-full mb-2 rounded' rows='3' placeholder='Nachricht'></textarea><button class='px-4 py-2 bg-green-600 text-white rounded mt-2' onclick='sendSupport()'>Absenden</button></div>`;
 
-toggleSidebar(); }
+    // save edit buttons
+    document.querySelectorAll('.save-edit').forEach(btn => {
+      btn.onclick = async () => {
+        const id = btn.getAttribute('data-id');
+        await saveEditFromUI(id);
+      };
+    });
 
-function sendSupport(){ if(!db){ alert("❌ Firestore nicht verfügbar"); return; } const sup={name:document.getElementById('supName').value,mail:document.getElementById('supMail').value,msg:document.getElementById('supMsg').value,time:new Date()}; db.collection('support').add(sup).then(()=>{alert('✅ Nachricht gesendet'); startNewEntry();}).catch(e=>{console.error(e);alert('❌ Fehler: '+e)}); }
+    // delete hut
+    document.querySelectorAll('.delete-hut').forEach(btn => {
+      btn.onclick = async () => {
+        const id = btn.getAttribute('data-id');
+        if (!confirm('Hütte wirklich löschen?')) return;
+        try { await db.collection('eierhuetten').doc(id).update({ status: 'archiviert' }); showToast('Hütte archiviert'); showMyEntries(); }
+        catch (e) { console.error(e); alert('Fehler: '+e.message); }
+      };
+    });
 
-function startNewEntry(){ step=0; editingData={}; renderQuestion(); }
+    // image upload inputs
+    document.querySelectorAll('.upload-image').forEach(input => {
+      input.onchange = async (ev) => {
+        const id = input.getAttribute('data-id');
+        await uploadImagesForHut(input.files, id);
+      };
+    });
 
-// Init renderQuestion(); </script>
+    // delete image buttons
+    document.querySelectorAll('.delete-image').forEach(btn => {
+      btn.onclick = async (ev) => {
+        const id = btn.getAttribute('data-id');
+        const url = btn.getAttribute('data-url');
+        if (!confirm('Dieses Bild löschen?')) return;
+        try {
+          // remove from array
+          const docRef = db.collection('eierhuetten').doc(id);
+          const snap = await docRef.get();
+          const fotos = Array.isArray(snap.data().fotos) ? [...snap.data().fotos] : [];
+          const newFotos = fotos.filter(f => (typeof f === 'string' ? f : f.url) !== url);
+          await docRef.update({ fotos: newFotos });
+          showToast('Bild entfernt');
+          showMyEntries();
+        } catch (e) { console.error(e); alert('Fehler: '+e.message); }
+      };
+    });
+  }
 
+  async function saveEditFromUI(id) {
+    try {
+      const nameEl = document.querySelector(`.edit-name[data-id="${id}"]`);
+      const sitzEl = document.querySelector(`.edit-sitz[data-id="${id}"]`);
+      const stromEl = document.querySelector(`.edit-strom[data-id="${id}"]`);
+      const extrasEl = document.querySelector(`.edit-extras[data-id="${id}"]`);
+      const tiereHidden = document.querySelector(`.edit-tiere-hidden[data-id="${id}"]`);
+      const tagsEl = document.querySelector(`.edit-tags[data-id="${id}"]`);
+      const editorEl = document.getElementById(`editor-${id}`);
+
+      const payload = {};
+      if (nameEl) payload.name = nameEl.value.trim();
+      if (sitzEl) payload.sitzplaetze = sitzEl.value;
+      if (stromEl) payload.strom = stromEl.value;
+      if (extrasEl) payload.extras = extrasEl.value.trim();
+      if (tagsEl) payload.tags = tagsEl.value ? tagsEl.value.split(',').map(s=>s.trim()).filter(Boolean).slice(0,10) : [];
+      if (tiereHidden) payload.tiere = tiereHidden.value ? tiereHidden.value.split(',').map(s=>s.trim()).filter(Boolean) : [];
+      if (editorEl) {
+        // get quill contents
+        try {
+          const q = Quill.find(editorEl);
+          if (q) payload.beschreibung = q.root.innerHTML;
+        } catch (e) { console.warn('quill not found', e); }
+      }
+
+      // update firestore
+      await db.collection('eierhuetten').doc(id).update(payload);
+      // log
+      await db.collection('eierhuetten').doc(id).collection('log').add({ admin: currentUser.email || currentUser.displayName || 'web', feld: 'edit', wert: JSON.stringify(payload), zeitpunkt: new Date() });
+      showToast('✅ Änderungen gespeichert');
+      // refresh list
+      await showMyEntries();
+    } catch (e) {
+      console.error('saveEditFromUI error', e);
+      alert('Fehler beim Speichern: ' + (e.message || e));
+    }
+  }
+
+  /***********************
+   * Image upload (immediate upload to imgbb + push to Firestore)
+   ***********************/
+  async function uploadImagesForHut(fileList, hutId) {
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList);
+    const progressBar = document.getElementById(`progress-${hutId}`);
+    const progressLabel = document.getElementById(`progress-label-${hutId}`);
+    progressBar.classList.remove('hidden');
+    let uploaded = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      progressLabel.textContent = `Lade ${i+1}/${files.length} ...`;
+      try {
+        const base64 = await fileToBase64(file);
+        const fd = new FormData();
+        fd.append('key', IMGBB_KEY);
+        fd.append('image', base64);
+        const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: fd });
+        const json = await res.json();
+        if (json && json.data && json.data.url) {
+          uploaded.push({ url: json.data.url, delete_url: json.data.delete_url || null, status: 'wartet' });
+        } else {
+          console.warn('imgbb response invalid', json);
+        }
+        const pct = Math.round(((i+1)/files.length)*100);
+        progressBar.querySelector('div').style.width = pct + '%';
+      } catch (e) {
+        console.error('upload error', e);
+        showToast('Fehler beim Hochladen', 4000);
+      }
+    }
+
+    // write to firestore
+    if (uploaded.length > 0) {
+      try {
+        const ref = db.collection('eierhuetten').doc(hutId);
+        await ref.update({ fotos: firebase.firestore.FieldValue.arrayUnion(...uploaded) });
+        showToast('Bilder hochgeladen (warten auf Freigabe)');
+      } catch (e) {
+        console.error('write fotos error', e);
+        alert('Fehler beim Speichern der Bild-Daten: ' + e.message);
+      }
+    }
+    progressLabel.textContent = 'Fertig';
+    setTimeout(()=>{ progressBar.classList.add('hidden'); progressLabel.textContent = '0%'; }, 1200);
+    // refresh
+    showMyEntries();
+  }
+
+  function fileToBase64(file) {
+    return new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        const base64 = dataUrl.split(',')[1];
+        res(base64);
+      };
+      reader.onerror = err => rej(err);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /***********************
+   * Support form
+   ***********************/
+  function openSupport() {
+    const qa = document.getElementById('question-area');
+    qa.innerHTML = `
+      <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+        <h2 class="text-xl font-bold mb-3">📨 Support</h2>
+        <input id="supName" class="w-full border p-2 rounded mb-2" placeholder="Dein Name" />
+        <input id="supMail" class="w-full border p-2 rounded mb-2" placeholder="E-Mail" />
+        <textarea id="supMsg" class="w-full border p-2 rounded mb-2" rows="5" placeholder="Nachricht"></textarea>
+        <div class="flex gap-2">
+          <button class="px-4 py-2 bg-green-600 text-white rounded" onclick="sendSupport()">Absenden</button>
+          <button class="px-4 py-2 bg-gray-200 rounded" onclick="startNewEntry()">Abbrechen</button>
+        </div>
+      </div>`;
+    toggleSidebar();
+  }
+
+  async function sendSupport() {
+    const name = document.getElementById('supName').value.trim();
+    const mail = document.getElementById('supMail').value.trim();
+    const msg = document.getElementById('supMsg').value.trim();
+    if (!msg || !mail) { alert('Bitte Nachricht und E-Mail ausfüllen'); return; }
+    try {
+      await db.collection('support').add({ name, mail, msg, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+      showToast('✅ Nachricht gesendet');
+      startNewEntry();
+    } catch (e) {
+      console.error('sendSupport error', e);
+      alert('Fehler: ' + e.message);
+    }
+  }
+
+  /***********************
+   * Utility, escape helpers
+   ***********************/
+  function escapeHtml(s) {
+    if (!s && s !== 0) return '';
+    return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+  function escapeAttr(s) {
+    if (!s && s !== 0) return '';
+    return String(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  /***********************
+   * Sidebar toggle + init
+   ***********************/
+  function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('-translate-x-full');
+  }
+
+  // initial render
+  renderQuestion();
+  updateProgress();
+
+  // Expose helpful functions to window for inline handlers
+  window.selectOption = selectOption;
+  window.nextStep = nextStep;
+  window.prevStep = prevStep;
+  window.startNewEntry = startNewEntry;
+  window.showMyEntries = showMyEntries;
+  window.openSupport = openSupport;
+  window.toggleSidebar = toggleSidebar;
+  window.submitEntry = submitEntry;
+
+  </script>
 </body>
 </html>
