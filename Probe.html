@@ -14,6 +14,7 @@
     .sidebar-btn:hover { background-color: #10b981; color:white; }
     .card-option { transition: transform 0.2s, box-shadow 0.2s; }
     .card-option:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .selected { border:2px solid #10b981; background-color:#ecfdf5; }
   </style>
 </head>
 <body class="bg-gray-100">
@@ -22,7 +23,7 @@
     <button class="sidebar-btn flex items-center gap-2 p-2 rounded" onclick="showMyEntries()">📋 Meine Eintragungen</button>
     <button class="sidebar-btn flex items-center gap-2 p-2 rounded" onclick="startNewEntry()">➕ Neue Eintragung</button>
     <button class="sidebar-btn flex items-center gap-2 p-2 rounded" onclick="openSupport()">💬 Support</button>
-    <div class="mt-auto text-xs text-gray-400">v0.2 Prototype</div>
+    <div class="mt-auto text-xs text-gray-400">v0.3 Prototype</div>
   </div>  <!-- Main Content -->  <div class="flex-1 flex flex-col">
     <!-- Topbar for mobile -->
     <div class="md:hidden flex items-center justify-between bg-white border-b p-3">
@@ -35,38 +36,28 @@
 
 <!-- Question Area -->
 <div id="question-area" class="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
-  <!-- Dynamic question cards will be rendered here -->
 </div>
 
-<!-- Navigation Buttons -->
-<div class="flex justify-between p-4 border-t bg-white">
+<!-- Navigation Buttons fixed bottom -->
+<div class="fixed bottom-0 left-60 md:left-60 right-0 flex justify-between p-4 border-t bg-white">
   <button id="backBtn" class="px-4 py-2 bg-gray-200 rounded" onclick="prevStep()">⬅️ Zurück</button>
   <button id="nextBtn" class="px-4 py-2 bg-green-600 text-white rounded" onclick="nextStep()">Weiter ➡️</button>
 </div>
 
   </div>
 </div><script>
-// Firebase Config
-const firebaseConfig = {
-  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-  authDomain: "eierhuettentour.firebaseapp.com",
-  projectId: "eierhuettentour",
-  storageBucket: "eierhuettentour.appspot.com",
-  messagingSenderId: "348272135205",
-  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
-};
+const firebaseConfig = { /* dein Firebase Config */ };
 const app = firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-let currentUser = { uid: "demo" }; // TODO: Google-Login einbauen
+let currentUser = { uid: "demo" };
 let editingData = {};
 let step = 0;
-const totalSteps = 9; // Datenschutz + Typ + 7 Fragen
+const totalSteps = 9;
 
 function saveField(field, value) {
   editingData[field] = value;
   editingData.step = step;
-  console.log("💾 gespeichert:", field, value);
 }
 
 function updateProgress() {
@@ -80,16 +71,13 @@ function renderQuestion() {
 
   switch(step) {
     case 0:
-      qa.innerHTML = `
-        <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-          <h2 class="text-xl font-bold mb-4">🛡️ Datenschutzerklärung</h2>
-          <p class="mb-4">Bitte bestätige, dass du die <a href='/datenschutz.html' target='_blank' class='text-blue-600 underline'>Datenschutzerklärung</a> akzeptierst.</p>
-          <label class="flex items-center gap-2">
-            <input type="checkbox" id="dsCheck" /> Ich akzeptiere
-          </label>
-        </div>`;
+      qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+        <h2 class="text-xl font-bold mb-4">🛡️ Datenschutzerklärung</h2>
+        <p class="mb-4">Bitte bestätige, dass du die Datenschutzerklärung akzeptierst.</p>
+        <label class="flex items-center gap-2">
+          <input type="checkbox" id="dsCheck" /> Ich akzeptiere
+        </label></div>`;
       break;
-
     case 1:
       qa.innerHTML = `<h2 class='text-xl font-bold mb-6'>Was möchtest du eintragen?</h2>`;
       const opts = ["🥚 Eierhütte","🏪 Hofladen","🤖 Selbstbedienungshäuschen","🛝 Spielplatz","🌄 Abenteuerhof"];
@@ -99,56 +87,45 @@ function renderQuestion() {
         const card = document.createElement("div");
         card.className = "card-option bg-white p-6 rounded-xl shadow cursor-pointer text-center";
         card.innerHTML = `<div class='text-3xl mb-2'>${opt.split(" ")[0]}</div><div class='font-semibold'>${opt.substring(2)}</div>`;
-        card.onclick = () => { saveField("typ", opt.substring(2)); nextStep(); };
+        card.onclick = () => {
+          document.querySelectorAll(".card-option").forEach(c=>c.classList.remove("selected"));
+          card.classList.add("selected");
+          editingData.typ = opt.substring(2);
+        };
         wrap.appendChild(card);
       });
       qa.appendChild(wrap);
       break;
-
     case 2:
-      qa.innerHTML = `
-        <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-          <h2 class="text-xl font-bold mb-4">🏷️ Wie heißt deine Hütte?</h2>
-          <input id="nameInput" type="text" class="w-full border p-2 rounded" placeholder="Name eingeben..." />
-        </div>`;
+      qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+        <h2 class="text-xl font-bold mb-4">🏷️ Wie heißt deine Hütte?</h2>
+        <input id="nameInput" type="text" class="w-full border p-2 rounded" placeholder="Name eingeben..." /></div>`;
       break;
-
     case 3:
-      qa.innerHTML = `
-        <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-          <h2 class="text-xl font-bold mb-4">🪑 Hat deine Hütte Sitzplätze?</h2>
-          <div class="flex gap-4">
-            <button class="flex-1 bg-green-100 p-4 rounded" onclick="saveField('sitzplaetze','Ja'); nextStep();">✅ Ja</button>
-            <button class="flex-1 bg-red-100 p-4 rounded" onclick="saveField('sitzplaetze','Nein'); nextStep();">❌ Nein</button>
-          </div>
-        </div>`;
+      qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+        <h2 class="text-xl font-bold mb-4">🪑 Hat deine Hütte Sitzplätze?</h2>
+        <div class="flex gap-4">
+          <button class="flex-1 p-4 border rounded" onclick="selectOption('sitzplaetze','Ja',this)">✅ Ja</button>
+          <button class="flex-1 p-4 border rounded" onclick="selectOption('sitzplaetze','Nein',this)">❌ Nein</button>
+        </div></div>`;
       break;
-
     case 4:
-      qa.innerHTML = `
-        <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-          <h2 class="text-xl font-bold mb-4">🔌 Gibt es Strom?</h2>
-          <div class="flex gap-4">
-            <button class="flex-1 bg-green-100 p-4 rounded" onclick="saveField('strom','Ja'); nextStep();">⚡ Ja</button>
-            <button class="flex-1 bg-red-100 p-4 rounded" onclick="saveField('strom','Nein'); nextStep();">❌ Nein</button>
-          </div>
-        </div>`;
+      qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+        <h2 class="text-xl font-bold mb-4">🔌 Gibt es Strom?</h2>
+        <div class="flex gap-4">
+          <button class="flex-1 p-4 border rounded" onclick="selectOption('strom','Ja',this)">⚡ Ja</button>
+          <button class="flex-1 p-4 border rounded" onclick="selectOption('strom','Nein',this)">❌ Nein</button>
+        </div></div>`;
       break;
-
     case 5:
-      qa.innerHTML = `
-        <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-          <h2 class="text-xl font-bold mb-4">✨ Extras?</h2>
-          <input id="extrasInput" type="text" class="w-full border p-2 rounded" placeholder="z.B. Getränke, Kühlschrank" />
-        </div>`;
+      qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+        <h2 class="text-xl font-bold mb-4">✨ Extras?</h2>
+        <input id="extrasInput" type="text" class="w-full border p-2 rounded" placeholder="z.B. Getränke, Kühlschrank" /></div>`;
       break;
-
     case 6:
-      qa.innerHTML = `
-        <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-          <h2 class="text-xl font-bold mb-4">🐾 Welche Tiere gibt es?</h2>
-          <div class="grid grid-cols-3 gap-2" id="tiereGrid"></div>
-        </div>`;
+      qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+        <h2 class="text-xl font-bold mb-4">🐾 Welche Tiere gibt es?</h2>
+        <div class="grid grid-cols-3 gap-2" id="tiereGrid"></div></div>`;
       const tiere = ["🐐 Ziege","🐄 Kuh","🐓 Huhn","🐕 Hund","🐇 Hase","🚫 Keine"];
       const grid = qa.querySelector("#tiereGrid");
       editingData.tiere = editingData.tiere || [];
@@ -157,48 +134,66 @@ function renderQuestion() {
         btn.className = "p-2 border rounded";
         btn.textContent = t;
         btn.onclick = () => {
-          if (t === "🚫 Keine") editingData.tiere = [];
-          else {
-            if (!editingData.tiere.includes(t)) editingData.tiere.push(t);
+          if (btn.classList.contains("selected")) {
+            btn.classList.remove("selected");
+            editingData.tiere = editingData.tiere.filter(x=>x!==t);
+          } else {
+            btn.classList.add("selected");
+            if (t === "🚫 Keine") editingData.tiere = [];
+            else editingData.tiere.push(t);
           }
-          saveField("tiere", editingData.tiere);
         };
         grid.appendChild(btn);
       });
       break;
-
     case 7:
-      qa.innerHTML = `
-        <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-          <h2 class="text-xl font-bold mb-4">📝 Bitte beschreibe deine Hütte kurz</h2>
-          <textarea id="descInput" class="w-full border p-2 rounded" rows="3"></textarea></div>`;
-  break;
-
+      qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+        <h2 class="text-xl font-bold mb-4">📝 Bitte beschreibe deine Hütte kurz</h2>
+        <textarea id="descInput" class="w-full border p-2 rounded" rows="3"></textarea></div>`;break;
 case 8:
-  qa.innerHTML = `
-    <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-      <h2 class="text-xl font-bold mb-4">🏷️ Schlagwörter</h2>
-      <input id="tagsInput" type="text" class="w-full border p-2 rounded" placeholder="z.B. Frühstück, Getränke, schattig" />
-    </div>`;
+  qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+    <h2 class="text-xl font-bold mb-4">🏷️ Schlagwörter</h2>
+    <input id="tagsInput" type="text" class="w-full border p-2 rounded" placeholder="z.B. Frühstück, Getränke, schattig" /></div>`;
   break;
-
 case 9:
-  qa.innerHTML = `<div class='bg-white p-6 rounded-xl shadow'>✅ Fertig! Hier könnte eine Zusammenfassung mit Karte und Einreichen-Button folgen.</div>`;
+  qa.innerHTML = `<div class='bg-white p-6 rounded-xl shadow w-full max-w-2xl'>
+    <h2 class='text-xl font-bold mb-4'>📋 Übersicht</h2>
+    <pre class='bg-gray-100 p-2 rounded mb-4'>${JSON.stringify(editingData,null,2)}</pre>
+    <div id="map" class="w-full h-64 mb-4"></div>
+    <button class="px-4 py-2 bg-green-600 text-white rounded" onclick="submitEntry()">✅ Einreichen</button>
+    <p class="text-sm text-gray-500 mt-2">Deine Eintragung wird vom Admin überprüft und nach erfolgreicher Prüfung freigegeben.</p>
+  </div>`;
+  const map = L.map("map").setView([51.3,9.5], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(map);
+  let marker;
+  map.on('click', e => {
+    if (marker) map.removeLayer(marker);
+    marker = L.marker(e.latlng).addTo(map);
+    editingData.location = e.latlng;
+  });
   break;
 
 }
 
 updateProgress(); }
 
-function nextStep() { if (step === 0) { if (!document.getElementById("dsCheck").checked) { alert("Bitte Datenschutzerklärung akzeptieren"); return; } saveField("datenschutz", true); } if (step === 2) { const val = document.getElementById("nameInput").value.trim(); if (!val) { alert("Bitte Namen eingeben"); return; } saveField("name", val); } if (step === 5) { const val = document.getElementById("extrasInput").value.trim(); saveField("extras", val); } if (step === 7) { const val = document.getElementById("descInput").value.trim(); saveField("beschreibung", val); } if (step === 8) { const tags = document.getElementById("tagsInput").value.split(",").map(t=>t.trim()).filter(t=>t); saveField("tags", tags); } step++; renderQuestion(); }
+function selectOption(field,value,el){ el.parentNode.querySelectorAll("button").forEach(b=>b.classList.remove("selected")); el.classList.add("selected"); editingData[field] = value; }
 
-function prevStep() { if (step > 0) step--; renderQuestion(); }
+function nextStep(){ if (step===0){ if(!document.getElementById("dsCheck").checked){ alert("Bitte Datenschutzerklärung akzeptieren"); return;} editingData.datenschutz=true; } if (step===2){ const val=document.getElementById("nameInput").value.trim(); if(!val){alert("Bitte Namen eingeben");return;} editingData.name=val; } if (step===5){ editingData.extras=document.getElementById("extrasInput").value.trim(); } if (step===7){ editingData.beschreibung=document.getElementById("descInput").value.trim(); } if (step===8){ editingData.tags=document.getElementById("tagsInput").value.split(",").map(t=>t.trim()).filter(t=>t); } step++; renderQuestion(); }
 
-function toggleSidebar(){ const sb = document.getElementById("sidebar"); sb.classList.toggle("-translate-x-full"); }
+function prevStep(){ if(step>0) step--; renderQuestion(); }
 
-// Sidebar functions function showMyEntries(){ alert("📋 Meine Eintragungen (Demo)"); } function startNewEntry(){ step=0; editingData={}; renderQuestion(); toggleSidebar(); } function openSupport(){ alert("💬 Support anfragen (Demo)"); toggleSidebar(); }
+function submitEntry(){ editingData.status="offen"; db.collection("eierhuetten").add(editingData).then(()=>{ alert("✅ Eingereicht! Wird vom Admin geprüft."); startNewEntry(); }); }
 
-// Init renderQuestion(); </script>
+function toggleSidebar(){ document.getElementById("sidebar").classList.toggle("-translate-x-full"); }
+
+function showMyEntries(){ db.collection('eierhuetten').where('userId','==',currentUser.uid).get().then(snap=>{ let list=""; snap.forEach(doc=>{ let d=doc.data(); list+=<li>${d.name||'Unbenannt'} – ${d.status}</li>; }); document.getElementById("question-area").innerHTML=<div class='bg-white p-6 rounded-xl shadow w-full max-w-lg'><h2 class='text-xl mb-4'>Meine Eintragungen</h2><ul>${list||'<li>Keine</li>'}</ul></div>; }); toggleSidebar(); }
+
+function openSupport(){ document.getElementById("question-area").innerHTML=<div class='bg-white p-6 rounded-xl shadow w-full max-w-lg'> <h2 class='text-xl mb-4'>Support</h2> <input id='supName' class='border p-2 w-full mb-2 rounded' placeholder='Dein Name'> <input id='supMail' class='border p-2 w-full mb-2 rounded' placeholder='Deine E-Mail'> <textarea id='supMsg' class='border p-2 w-full mb-2 rounded' rows='3' placeholder='Nachricht'></textarea> <button class='px-4 py-2 bg-green-600 text-white rounded mt-2' onclick='sendSupport()'>Absenden</button></div>; toggleSidebar(); }
+
+function sendSupport(){ const sup={name:document.getElementById('supName').value,mail:document.getElementById('supMail').value,msg:document.getElementById('supMsg').value,time:new Date()}; db.collection('support').add(sup).then(()=>{alert('✅ Nachricht gesendet'); startNewEntry();}); }
+
+renderQuestion(); </script>
 
 </body>
 </html>
