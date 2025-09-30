@@ -17,18 +17,24 @@
   </style>
 </head>
 <body class="bg-gray-100">
-<div class="flex min-h-screen">  <!-- Sidebar -->  <div class="w-60 bg-white border-r p-4 flex flex-col gap-3">
+<div class="flex min-h-screen">  <!-- Sidebar (mobile toggle) -->  <div id="sidebar" class="fixed md:static inset-y-0 left-0 w-60 bg-white border-r p-4 flex flex-col gap-3 transform -translate-x-full md:translate-x-0 transition-transform z-50">
     <div class="text-2xl font-bold text-green-700 mb-6">🌿 Assistent</div>
     <button class="sidebar-btn flex items-center gap-2 p-2 rounded" onclick="showMyEntries()">📋 Meine Eintragungen</button>
     <button class="sidebar-btn flex items-center gap-2 p-2 rounded" onclick="startNewEntry()">➕ Neue Eintragung</button>
     <button class="sidebar-btn flex items-center gap-2 p-2 rounded" onclick="openSupport()">💬 Support</button>
-    <div class="mt-auto text-xs text-gray-400">v0.1 Prototype</div>
+    <div class="mt-auto text-xs text-gray-400">v0.2 Prototype</div>
   </div>  <!-- Main Content -->  <div class="flex-1 flex flex-col">
-    <!-- Progressbar -->
-    <div class="w-full h-2 bg-gray-200">
-      <div id="progress" class="h-2 bg-green-500 w-0 transition-all"></div>
-    </div><!-- Question Area -->
-<div id="question-area" class="flex-1 flex flex-col items-center justify-center p-6">
+    <!-- Topbar for mobile -->
+    <div class="md:hidden flex items-center justify-between bg-white border-b p-3">
+      <div class="font-bold text-green-700">Assistent</div>
+      <button onclick="toggleSidebar()" class="p-2 bg-green-600 text-white rounded">☰</button>
+    </div><!-- Progressbar -->
+<div class="w-full h-2 bg-gray-200">
+  <div id="progress" class="h-2 bg-green-500 w-0 transition-all"></div>
+</div>
+
+<!-- Question Area -->
+<div id="question-area" class="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
   <!-- Dynamic question cards will be rendered here -->
 </div>
 
@@ -55,13 +61,12 @@ const db = firebase.firestore();
 let currentUser = { uid: "demo" }; // TODO: Google-Login einbauen
 let editingData = {};
 let step = 0;
-const totalSteps = 8; // Anzahl Schritte (Datenschutz + Typ + Fragen)
+const totalSteps = 9; // Datenschutz + Typ + 7 Fragen
 
 function saveField(field, value) {
   editingData[field] = value;
   editingData.step = step;
   console.log("💾 gespeichert:", field, value);
-  // Firestore: db.collection("eierhuetten").doc(editingData.id).set(editingData, { merge:true })
 }
 
 function updateProgress() {
@@ -73,72 +78,127 @@ function renderQuestion() {
   const qa = document.getElementById("question-area");
   qa.innerHTML = "";
 
-  if (step === 0) {
-    qa.innerHTML = `
-      <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-        <h2 class="text-xl font-bold mb-4">🛡️ Datenschutzerklärung</h2>
-        <p class="mb-4">Bitte bestätige, dass du die <a href='/datenschutz.html' target='_blank' class='text-blue-600 underline'>Datenschutzerklärung</a> akzeptierst.</p>
-        <label class="flex items-center gap-2">
-          <input type="checkbox" id="dsCheck" /> Ich akzeptiere
-        </label>
-      </div>`;
-  }
-  else if (step === 1) {
-    qa.innerHTML = `<h2 class='text-xl font-bold mb-6'>Was möchtest du eintragen?</h2>`;
-    const opts = ["🥚 Eierhütte","🏪 Hofladen","🤖 Selbstbedienungshäuschen","🛝 Spielplatz","🌄 Abenteuerhof"];
-    const wrap = document.createElement("div");
-    wrap.className = "grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl";
-    opts.forEach(opt => {
-      const card = document.createElement("div");
-      card.className = "card-option bg-white p-6 rounded-xl shadow cursor-pointer text-center";
-      card.innerHTML = `<div class='text-3xl mb-2'>${opt.split(" ")[0]}</div><div class='font-semibold'>${opt.substring(2)}</div>`;
-      card.onclick = () => { saveField("typ", opt.substring(2)); nextStep(); };
-      wrap.appendChild(card);
-    });
-    qa.appendChild(wrap);
-  }
-  else if (step === 2) {
-    qa.innerHTML = `
-      <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-        <h2 class="text-xl font-bold mb-4">🏷️ Wie heißt deine Hütte?</h2>
-        <input id="nameInput" type="text" class="w-full border p-2 rounded" placeholder="Name eingeben..." />
-      </div>`;
-  }
-  else {
-    qa.innerHTML = `<div class='bg-white p-6 rounded-xl shadow'>✅ Demo fertig – hier würden die weiteren Fragen folgen.</div>`;
-  }
+  switch(step) {
+    case 0:
+      qa.innerHTML = `
+        <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+          <h2 class="text-xl font-bold mb-4">🛡️ Datenschutzerklärung</h2>
+          <p class="mb-4">Bitte bestätige, dass du die <a href='/datenschutz.html' target='_blank' class='text-blue-600 underline'>Datenschutzerklärung</a> akzeptierst.</p>
+          <label class="flex items-center gap-2">
+            <input type="checkbox" id="dsCheck" /> Ich akzeptiere
+          </label>
+        </div>`;
+      break;
 
-  updateProgress();
+    case 1:
+      qa.innerHTML = `<h2 class='text-xl font-bold mb-6'>Was möchtest du eintragen?</h2>`;
+      const opts = ["🥚 Eierhütte","🏪 Hofladen","🤖 Selbstbedienungshäuschen","🛝 Spielplatz","🌄 Abenteuerhof"];
+      const wrap = document.createElement("div");
+      wrap.className = "grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl";
+      opts.forEach(opt => {
+        const card = document.createElement("div");
+        card.className = "card-option bg-white p-6 rounded-xl shadow cursor-pointer text-center";
+        card.innerHTML = `<div class='text-3xl mb-2'>${opt.split(" ")[0]}</div><div class='font-semibold'>${opt.substring(2)}</div>`;
+        card.onclick = () => { saveField("typ", opt.substring(2)); nextStep(); };
+        wrap.appendChild(card);
+      });
+      qa.appendChild(wrap);
+      break;
+
+    case 2:
+      qa.innerHTML = `
+        <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+          <h2 class="text-xl font-bold mb-4">🏷️ Wie heißt deine Hütte?</h2>
+          <input id="nameInput" type="text" class="w-full border p-2 rounded" placeholder="Name eingeben..." />
+        </div>`;
+      break;
+
+    case 3:
+      qa.innerHTML = `
+        <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+          <h2 class="text-xl font-bold mb-4">🪑 Hat deine Hütte Sitzplätze?</h2>
+          <div class="flex gap-4">
+            <button class="flex-1 bg-green-100 p-4 rounded" onclick="saveField('sitzplaetze','Ja'); nextStep();">✅ Ja</button>
+            <button class="flex-1 bg-red-100 p-4 rounded" onclick="saveField('sitzplaetze','Nein'); nextStep();">❌ Nein</button>
+          </div>
+        </div>`;
+      break;
+
+    case 4:
+      qa.innerHTML = `
+        <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+          <h2 class="text-xl font-bold mb-4">🔌 Gibt es Strom?</h2>
+          <div class="flex gap-4">
+            <button class="flex-1 bg-green-100 p-4 rounded" onclick="saveField('strom','Ja'); nextStep();">⚡ Ja</button>
+            <button class="flex-1 bg-red-100 p-4 rounded" onclick="saveField('strom','Nein'); nextStep();">❌ Nein</button>
+          </div>
+        </div>`;
+      break;
+
+    case 5:
+      qa.innerHTML = `
+        <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+          <h2 class="text-xl font-bold mb-4">✨ Extras?</h2>
+          <input id="extrasInput" type="text" class="w-full border p-2 rounded" placeholder="z.B. Getränke, Kühlschrank" />
+        </div>`;
+      break;
+
+    case 6:
+      qa.innerHTML = `
+        <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+          <h2 class="text-xl font-bold mb-4">🐾 Welche Tiere gibt es?</h2>
+          <div class="grid grid-cols-3 gap-2" id="tiereGrid"></div>
+        </div>`;
+      const tiere = ["🐐 Ziege","🐄 Kuh","🐓 Huhn","🐕 Hund","🐇 Hase","🚫 Keine"];
+      const grid = qa.querySelector("#tiereGrid");
+      editingData.tiere = editingData.tiere || [];
+      tiere.forEach(t => {
+        const btn = document.createElement("button");
+        btn.className = "p-2 border rounded";
+        btn.textContent = t;
+        btn.onclick = () => {
+          if (t === "🚫 Keine") editingData.tiere = [];
+          else {
+            if (!editingData.tiere.includes(t)) editingData.tiere.push(t);
+          }
+          saveField("tiere", editingData.tiere);
+        };
+        grid.appendChild(btn);
+      });
+      break;
+
+    case 7:
+      qa.innerHTML = `
+        <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+          <h2 class="text-xl font-bold mb-4">📝 Bitte beschreibe deine Hütte kurz</h2>
+          <textarea id="descInput" class="w-full border p-2 rounded" rows="3"></textarea></div>`;
+  break;
+
+case 8:
+  qa.innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+      <h2 class="text-xl font-bold mb-4">🏷️ Schlagwörter</h2>
+      <input id="tagsInput" type="text" class="w-full border p-2 rounded" placeholder="z.B. Frühstück, Getränke, schattig" />
+    </div>`;
+  break;
+
+case 9:
+  qa.innerHTML = `<div class='bg-white p-6 rounded-xl shadow'>✅ Fertig! Hier könnte eine Zusammenfassung mit Karte und Einreichen-Button folgen.</div>`;
+  break;
+
 }
 
-function nextStep() {
-  if (step === 0) {
-    if (!document.getElementById("dsCheck").checked) {
-      alert("Bitte Datenschutzerklärung akzeptieren");
-      return;
-    }
-    saveField("datenschutz", true);
-  }
-  if (step === 2) {
-    const val = document.getElementById("nameInput").value.trim();
-    if (!val) { alert("Bitte Namen eingeben"); return; }
-    saveField("name", val);
-  }
-  step++;
-  renderQuestion();
-}
+updateProgress(); }
 
-function prevStep() {
-  if (step > 0) step--;
-  renderQuestion();
-}
+function nextStep() { if (step === 0) { if (!document.getElementById("dsCheck").checked) { alert("Bitte Datenschutzerklärung akzeptieren"); return; } saveField("datenschutz", true); } if (step === 2) { const val = document.getElementById("nameInput").value.trim(); if (!val) { alert("Bitte Namen eingeben"); return; } saveField("name", val); } if (step === 5) { const val = document.getElementById("extrasInput").value.trim(); saveField("extras", val); } if (step === 7) { const val = document.getElementById("descInput").value.trim(); saveField("beschreibung", val); } if (step === 8) { const tags = document.getElementById("tagsInput").value.split(",").map(t=>t.trim()).filter(t=>t); saveField("tags", tags); } step++; renderQuestion(); }
 
-// Sidebar functions
-function showMyEntries(){ alert("📋 Meine Eintragungen (Demo)"); }
-function startNewEntry(){ step=0; editingData={}; renderQuestion(); }
-function openSupport(){ alert("💬 Support anfragen (Demo)"); }
+function prevStep() { if (step > 0) step--; renderQuestion(); }
 
-// Init
-renderQuestion();
-</script></body>
+function toggleSidebar(){ const sb = document.getElementById("sidebar"); sb.classList.toggle("-translate-x-full"); }
+
+// Sidebar functions function showMyEntries(){ alert("📋 Meine Eintragungen (Demo)"); } function startNewEntry(){ step=0; editingData={}; renderQuestion(); toggleSidebar(); } function openSupport(){ alert("💬 Support anfragen (Demo)"); toggleSidebar(); }
+
+// Init renderQuestion(); </script>
+
+</body>
 </html>
