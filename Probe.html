@@ -47,10 +47,16 @@
   <div class="flex min-h-screen">
 
     <!-- Sidebar -->
+    
     <aside id="sidebar" class="fixed md:static inset-y-0 left-0 w-64 bg-white border-r p-4 transform -translate-x-full md:translate-x-0 transition-transform z-50">
+      <div class="mt-6 border-t pt-3 text-sm">
+  Angemeldet als: <span id="accountMail">-</span><br>
+  <button class="mt-2 px-3 py-1 bg-red-600 text-white rounded" onclick="logout()">Logout</button>
+      </div>
       <div class="text-2xl font-bold text-green-700 mb-6">🌿 Assistent</div>
       <button class="w-full text-left px-3 py-2 rounded hover:bg-green-50" onclick="showMyEntries()">📋 Meine Eintragungen</button>
       <button class="w-full text-left px-3 py-2 rounded hover:bg-green-50" onclick="startNewEntry()">➕ Neue Eintragung</button>
+      <button class="w-full text-left px-3 py-2 rounded hover:bg-green-50" onclick="showSupportTickets()">📨 Meine Support-Tickets</button>
       <button class="w-full text-left px-3 py-2 rounded hover:bg-green-50" onclick="openSupport()">💬 Support</button>
       <div class="mt-auto text-xs text-gray-400">v1.0 – Komplett</div>
     </aside>
@@ -113,7 +119,16 @@
 
   // Demo user: in deinem Produktivbetrieb sollte hier auth.onAuthStateChanged triggern
   let currentUser = { uid: "demo", email: "demo@example.com", displayName: "Demo" };
+firebase.auth().onAuthStateChanged(u => {
+  if (u) {
+    currentUser = u;
+    document.getElementById("accountMail").textContent = u.email;
+  }
+});
 
+function logout() {
+  firebase.auth().signOut();
+}
   /***********************
    * State & steps
    ***********************/
@@ -144,13 +159,16 @@
     try {
       if (step === 0) {
         qa.innerHTML = `
-          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-            <h2 class="text-xl font-bold mb-3">🛡️ Datenschutzerklärung</h2>
-            <p class="mb-4">Bitte bestätige, dass du die Datenschutzerklärung gelesen hast.</p>
-            <label class="inline-flex items-center gap-2">
-              <input id="dsCheck" type="checkbox" class="form-checkbox" /> Ich akzeptiere die Datenschutzerklärung
-            </label>
-          </div>`;
+  <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+    <h2 class="text-xl font-bold mb-3">🛡️ Datenschutzerklärung</h2>
+    <div class="h-40 overflow-y-auto border p-2 mb-3 text-sm bg-gray-50 rounded">
+      <p>Hier steht deine vollständige Datenschutzerklärung ...</p>
+      <p>...</p>
+    </div>
+    <label class="inline-flex items-center gap-2">
+      <input id="dsCheck" type="checkbox" /> Ich akzeptiere die Datenschutzerklärung
+    </label>
+  </div>`;
         return;
       }
 
@@ -494,17 +512,18 @@ async function locateGPS() {
         const card = document.createElement('div');
         card.className = 'bg-white p-4 rounded shadow mb-4 max-w-2xl mx-auto';
         // badge color
+        const statusTxt = d.status === "offen" ? "Wartet auf die Freigabe" : d.status;
         const badgeColor = d.status === 'accepted' || d.status === 'angenommen' ? 'bg-green-100 text-green-800' : (d.status === 'offen' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-700');
         card.innerHTML = `
           <div class="flex justify-between items-start gap-3">
             <div>
               <div class="font-bold text-lg">🏡 ${escapeHtml(d.name || 'Unbenannt')}</div>
-              <div class="text-xs text-gray-500 mt-1">${escapeHtml(d.beschreibung || '')}</div>
+              <div class="text-xs text-gray-500 mt-1">${stripHtml(d.beschreibung || '')}</div>
               <div class="text-xs text-gray-500 mt-1">Extras: ${escapeHtml(d.extras || '-') } • Strom: ${escapeHtml(d.strom || '-') } • Sitzplätze: ${escapeHtml(d.sitzplaetze || '-') }</div>
               <div class="text-xs text-gray-500 mt-1">Tiere: ${(Array.isArray(d.tiere)?d.tiere.join(', '):'-')}</div>
             </div>
             <div>
-              <span class="px-2 py-1 rounded text-xs ${badgeColor}">${escapeHtml(d.status || '')}</span>
+              <span class="px-2 py-1 rounded text-xs ${badgeColor}">${escapeHtml(statusTxt || '')}</span>
             </div>
           </div>
 
@@ -570,9 +589,9 @@ async function locateGPS() {
                 const obj = (typeof img === 'string') ? { url: img, status: 'freigegeben' } : img;
                 const pending = obj.status === 'wartet';
                 return `<div class="relative rounded overflow-hidden border p-1 bg-gray-50">
-                  <img src="${escapeAttr(obj.url)}" class="object-cover w-full h-24 rounded" />
-                  ${!pending ? `<button data-id="${id}" data-url="${escapeAttr(obj.url)}" class="delete-image absolute top-0 right-0 bg-red-600 text-white text-xs rounded-bl px-2">✕</button>` : `<div class="absolute inset-0 flex items-center justify-center text-xs text-white bg-black/50">⏳ wartet</div>`}
-                </div>`;
+  <img src="${escapeAttr(obj.url)}" class="object-cover w-full h-24 rounded ${pending?'opacity-60':''}" />
+  <button data-id="${id}" data-url="${escapeAttr(obj.url)}" class="delete-image absolute top-0 right-0 bg-red-600 text-white text-xs rounded-bl px-2">✕</button>
+</div>`;
               }).join('')}
             </div>` : ''}
 
@@ -847,14 +866,42 @@ async function locateGPS() {
     if (!s && s !== 0) return '';
     return String(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
-
+function stripHtml(html) {
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+  return tmp.textContent || tmp.innerText || "";
+}
   /***********************
    * Sidebar toggle + init
    ***********************/
   function toggleSidebar() {
     document.getElementById('sidebar').classList.toggle('-translate-x-full');
   }
+async function showSupportTickets() {
+  const qa = document.getElementById("question-area");
+  qa.innerHTML = "⏳ Lade Support-Tickets…";
+  const snap = await db.collection("support").where("mail","==",currentUser.email).orderBy("createdAt","desc").get();
+  if (snap.empty) { qa.innerHTML = "<p>Keine Support-Anfragen gefunden.</p>"; return; }
+  qa.innerHTML = "";
+  snap.forEach(doc=>{
+    const d = doc.data();
+    qa.innerHTML += `
+      <div class="bg-white p-4 rounded shadow mb-2">
+        <div class="font-bold">📨 ${d.msg}</div>
+        <div class="text-xs text-gray-500">Gesendet: ${d.createdAt?.toDate?.().toLocaleString?.() || '-'}</div>
+        <div class="text-xs">Status: ${d.status || "offen"}</div>
+        <button class="delete-support px-2 py-1 text-xs bg-red-600 text-white rounded mt-1" onclick="deleteSupport('${doc.id}')">Löschen</button>
+      </div>`;
+  });
+  toggleSidebar();
+}
 
+async function deleteSupport(id) {
+  if (!confirm("Ticket wirklich löschen?")) return;
+  await db.collection("support").doc(id).delete();
+  showToast("Support-Ticket gelöscht");
+  showSupportTickets();
+}
   // initial render
   renderQuestion();
   updateProgress();
