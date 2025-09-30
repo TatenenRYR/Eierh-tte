@@ -23,7 +23,7 @@
     <button class="sidebar-btn flex items-center gap-2 p-2 rounded" onclick="showMyEntries()">📋 Meine Eintragungen</button>
     <button class="sidebar-btn flex items-center gap-2 p-2 rounded" onclick="startNewEntry()">➕ Neue Eintragung</button>
     <button class="sidebar-btn flex items-center gap-2 p-2 rounded" onclick="openSupport()">💬 Support</button>
-    <div class="mt-auto text-xs text-gray-400">v0.3 Prototype</div>
+    <div class="mt-auto text-xs text-gray-400">v0.4 Prototype</div>
   </div>  <!-- Main Content -->  <div class="flex-1 flex flex-col">
     <!-- Topbar for mobile -->
     <div class="md:hidden flex items-center justify-between bg-white border-b p-3">
@@ -35,25 +35,34 @@
 </div>
 
 <!-- Question Area -->
-<div id="question-area" class="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
+<div id="question-area" class="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto pb-24">
 </div>
 
 <!-- Navigation Buttons fixed bottom -->
-<div class="fixed bottom-0 left-60 md:left-60 right-0 flex justify-between p-4 border-t bg-white">
+<div class="fixed bottom-0 left-0 md:left-60 right-0 flex justify-between p-4 border-t bg-white">
   <button id="backBtn" class="px-4 py-2 bg-gray-200 rounded" onclick="prevStep()">⬅️ Zurück</button>
   <button id="nextBtn" class="px-4 py-2 bg-green-600 text-white rounded" onclick="nextStep()">Weiter ➡️</button>
 </div>
 
   </div>
 </div><script>
-const firebaseConfig = { /* dein Firebase Config */ };
-const app = firebase.initializeApp(firebaseConfig);
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+  authDomain: "eierhuettentour.firebaseapp.com",
+  projectId: "eierhuettentour",
+  storageBucket: "eierhuettentour.firebasestorage.app",
+  messagingSenderId: "348272135205",
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
+  measurementId: "G-16V6K5GXDT"
+};
+  const app = firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
 let currentUser = { uid: "demo" };
 let editingData = {};
 let step = 0;
-const totalSteps = 9;
+const totalSteps = 10; // 0–9 Schritte
 
 function saveField(field, value) {
   editingData[field] = value;
@@ -61,7 +70,7 @@ function saveField(field, value) {
 }
 
 function updateProgress() {
-  const percent = ((step) / totalSteps) * 100;
+  const percent = ((step) / (totalSteps-1)) * 100;
   document.getElementById("progress").style.width = percent + "%";
 }
 
@@ -133,14 +142,15 @@ function renderQuestion() {
         const btn = document.createElement("button");
         btn.className = "p-2 border rounded";
         btn.textContent = t;
+        if(editingData.tiere.includes(t)) btn.classList.add("selected");
         btn.onclick = () => {
           if (btn.classList.contains("selected")) {
             btn.classList.remove("selected");
             editingData.tiere = editingData.tiere.filter(x=>x!==t);
           } else {
-            btn.classList.add("selected");
-            if (t === "🚫 Keine") editingData.tiere = [];
+            if (t === "🚫 Keine") { editingData.tiere = []; document.querySelectorAll('#tiereGrid button').forEach(b=>b.classList.remove('selected')); }
             else editingData.tiere.push(t);
+            btn.classList.add("selected");
           }
         };
         grid.appendChild(btn);
@@ -149,16 +159,25 @@ function renderQuestion() {
     case 7:
       qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
         <h2 class="text-xl font-bold mb-4">📝 Bitte beschreibe deine Hütte kurz</h2>
-        <textarea id="descInput" class="w-full border p-2 rounded" rows="3"></textarea></div>`;break;
+        <textarea id="descInput" class="w-full border p-2 rounded" rows="3">${editingData.beschreibung||''}</textarea></div>`;break;
 case 8:
   qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
     <h2 class="text-xl font-bold mb-4">🏷️ Schlagwörter</h2>
-    <input id="tagsInput" type="text" class="w-full border p-2 rounded" placeholder="z.B. Frühstück, Getränke, schattig" /></div>`;
+    <input id="tagsInput" type="text" class="w-full border p-2 rounded" placeholder="z.B. Frühstück, Getränke, schattig" value="${editingData.tags?editingData.tags.join(', '):''}" /></div>`;
   break;
 case 9:
   qa.innerHTML = `<div class='bg-white p-6 rounded-xl shadow w-full max-w-2xl'>
     <h2 class='text-xl font-bold mb-4'>📋 Übersicht</h2>
-    <pre class='bg-gray-100 p-2 rounded mb-4'>${JSON.stringify(editingData,null,2)}</pre>
+    <ul class='mb-4 space-y-2'>
+      <li><b>Typ:</b> ${editingData.typ||''}</li>
+      <li><b>Name:</b> ${editingData.name||''}</li>
+      <li><b>Sitzplätze:</b> ${editingData.sitzplaetze||''}</li>
+      <li><b>Strom:</b> ${editingData.strom||''}</li>
+      <li><b>Extras:</b> ${editingData.extras||''}</li>
+      <li><b>Tiere:</b> ${(editingData.tiere||[]).join(', ')}</li>
+      <li><b>Beschreibung:</b> ${editingData.beschreibung||''}</li>
+      <li><b>Tags:</b> ${(editingData.tags||[]).join(', ')}</li>
+    </ul>
     <div id="map" class="w-full h-64 mb-4"></div>
     <button class="px-4 py-2 bg-green-600 text-white rounded" onclick="submitEntry()">✅ Einreichen</button>
     <p class="text-sm text-gray-500 mt-2">Deine Eintragung wird vom Admin überprüft und nach erfolgreicher Prüfung freigegeben.</p>
@@ -173,13 +192,11 @@ case 9:
   });
   break;
 
-}
-
-updateProgress(); }
+} updateProgress(); }
 
 function selectOption(field,value,el){ el.parentNode.querySelectorAll("button").forEach(b=>b.classList.remove("selected")); el.classList.add("selected"); editingData[field] = value; }
 
-function nextStep(){ if (step===0){ if(!document.getElementById("dsCheck").checked){ alert("Bitte Datenschutzerklärung akzeptieren"); return;} editingData.datenschutz=true; } if (step===2){ const val=document.getElementById("nameInput").value.trim(); if(!val){alert("Bitte Namen eingeben");return;} editingData.name=val; } if (step===5){ editingData.extras=document.getElementById("extrasInput").value.trim(); } if (step===7){ editingData.beschreibung=document.getElementById("descInput").value.trim(); } if (step===8){ editingData.tags=document.getElementById("tagsInput").value.split(",").map(t=>t.trim()).filter(t=>t); } step++; renderQuestion(); }
+function nextStep(){ if (step===0){ if(!document.getElementById("dsCheck").checked){ alert("Bitte Datenschutzerklärung akzeptieren"); return;} editingData.datenschutz=true; } if (step===2){ const val=document.getElementById("nameInput").value.trim(); if(!val){alert("Bitte Namen eingeben");return;} editingData.name=val; } if (step===5){ editingData.extras=document.getElementById("extrasInput").value.trim(); } if (step===7){ editingData.beschreibung=document.getElementById("descInput").value.trim(); } if (step===8){ editingData.tags=document.getElementById("tagsInput").value.split(",").map(t=>t.trim()).filter(t=>t); } if(step<totalSteps-1) step++; renderQuestion(); }
 
 function prevStep(){ if(step>0) step--; renderQuestion(); }
 
@@ -187,7 +204,7 @@ function submitEntry(){ editingData.status="offen"; db.collection("eierhuetten")
 
 function toggleSidebar(){ document.getElementById("sidebar").classList.toggle("-translate-x-full"); }
 
-function showMyEntries(){ db.collection('eierhuetten').where('userId','==',currentUser.uid).get().then(snap=>{ let list=""; snap.forEach(doc=>{ let d=doc.data(); list+=<li>${d.name||'Unbenannt'} – ${d.status}</li>; }); document.getElementById("question-area").innerHTML=<div class='bg-white p-6 rounded-xl shadow w-full max-w-lg'><h2 class='text-xl mb-4'>Meine Eintragungen</h2><ul>${list||'<li>Keine</li>'}</ul></div>; }); toggleSidebar(); }
+function showMyEntries(){ db.collection('eierhuetten').where('userId','==',currentUser.uid).get().then(snap=>{ let list=""; snap.forEach(doc=>{ let d=doc.data(); list+=<li>${d.name||'Unbenannt'} – ${d.status}</li>; }); document.getElementById("question-area").innerHTML=<div class='bg-white p-6 rounded-xl shadow w-full max-w-lg'><h2 class='text-xl mb-4'>Meine Eintragungen</h2><ul class='list-disc ml-4'>${list||'<li>Keine</li>'}</ul></div>; }); toggleSidebar(); }
 
 function openSupport(){ document.getElementById("question-area").innerHTML=<div class='bg-white p-6 rounded-xl shadow w-full max-w-lg'> <h2 class='text-xl mb-4'>Support</h2> <input id='supName' class='border p-2 w-full mb-2 rounded' placeholder='Dein Name'> <input id='supMail' class='border p-2 w-full mb-2 rounded' placeholder='Deine E-Mail'> <textarea id='supMsg' class='border p-2 w-full mb-2 rounded' rows='3' placeholder='Nachricht'></textarea> <button class='px-4 py-2 bg-green-600 text-white rounded mt-2' onclick='sendSupport()'>Absenden</button></div>; toggleSidebar(); }
 
