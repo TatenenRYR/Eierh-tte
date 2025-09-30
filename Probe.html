@@ -108,6 +108,7 @@
   const IMGBB_KEY = "5df04de9bfd2776f101329be4193e44c";
 
   // Init firebase
+    
   let app, db;
   try {
     app = firebase.initializeApp(firebaseConfig);
@@ -129,6 +130,7 @@ firebase.auth().onAuthStateChanged(u => {
 function logout() {
   firebase.auth().signOut();
 }
+    let mode = "entry"; // "entry" oder "list"
   /***********************
    * State & steps
    ***********************/
@@ -365,9 +367,9 @@ function logout() {
   }, 200);
       return;
       }
-      document.getElementById("navBottom").style.display = 
-  (locationViewMode === "entry") ? "flex" : "none";
-
+      document.getElementById("navBottom").style.display =
+  (mode === "entry") ? "flex" : "none";
+      
     } catch (err) {
       console.error("renderQuestion error", err);
       document.getElementById('question-area').innerHTML = `<div class="bg-red-100 p-4 rounded">Fehler: ${err.message}</div>`;
@@ -420,6 +422,7 @@ function logout() {
   function startNewEntry() {
     editingData = {};
     step = 0;
+    mode = "entry";
     renderQuestion();
     toggleSidebar();
     updateProgress();
@@ -480,6 +483,7 @@ async function locateGPS() {
    ***********************/
   async function showMyEntries() {
     if (!db) { document.getElementById('question-area').innerHTML = '<div class="bg-red-100 p-4 rounded">Firestore nicht verfügbar.</div>'; return; }
+   mode = "list";
     const qa = document.getElementById('question-area');
     qa.innerHTML = '<div class="text-gray-500">⏳ Lade Eintragungen…</div>';
     try {
@@ -588,8 +592,9 @@ async function locateGPS() {
               ${d.fotos.map((img, idx) => {
                 const obj = (typeof img === 'string') ? { url: img, status: 'freigegeben' } : img;
                 const pending = obj.status === 'wartet';
-                return `<div class="relative rounded overflow-hidden border p-1 bg-gray-50">
+return `<div class="relative rounded overflow-hidden border p-1 bg-gray-50">
   <img src="${escapeAttr(obj.url)}" class="object-cover w-full h-24 rounded ${pending?'opacity-60':''}" />
+  ${pending ? `<span class="absolute bottom-0 left-0 bg-yellow-500 text-white text-xs px-1">Wartet</span>` : ""}
   <button data-id="${id}" data-url="${escapeAttr(obj.url)}" class="delete-image absolute top-0 right-0 bg-red-600 text-white text-xs rounded-bl px-2">✕</button>
 </div>`;
               }).join('')}
@@ -604,9 +609,18 @@ async function locateGPS() {
 
           <!-- mini-map -->
           <div id="minimap-${id}" class="minimap mt-3 rounded border"></div>
+       
+        <div class="mt-3">
+  <h4 class="font-bold text-sm mb-1">💬 Nachrichten</h4>
+  <div id="msgs-${id}" class="space-y-1 text-sm text-gray-700"></div>
+  <input id="msgInput-${id}" class="w-full border p-1 rounded mt-1" placeholder="Neue Nachricht..." />
+  <button onclick="sendMsg('${id}')" class="mt-1 px-2 py-1 bg-green-600 text-white rounded text-xs">Senden</button>
+</div>
+        
         `;
         qa.appendChild(card);
 
+        loadMessages(id);
         // after append: init quill editor, mini-map, attach events
         setTimeout(() => {
           // Quill
@@ -718,7 +732,39 @@ async function locateGPS() {
       };
     });
   }
+function loadMessages(hutId) {
+  const wrap = document.getElementById("msgs-" + hutId);
+  if (!wrap) return;
 
+  // Live-Listener
+  db.collection("eierhuetten").doc(hutId)
+    .collection("messages").orderBy("createdAt", "desc")
+    .onSnapshot(snap => {
+      wrap.innerHTML = "";
+      snap.forEach(doc => {
+        const d = doc.data();
+        wrap.innerHTML += `<div class="bg-gray-100 rounded px-2 py-1">
+          <div>${escapeHtml(d.text)}</div>
+          <div class="text-xs text-gray-500">
+            ${d.sender || "-"} · ${d.createdAt?.toDate?.().toLocaleString?.() || ""}
+          </div>
+        </div>`;
+      });
+    });
+}
+
+async function sendMsg(hutId) {
+  const inp = document.getElementById("msgInput-"+hutId);
+  const text = inp.value.trim();
+  if (!text) return;
+  await db.collection("eierhuetten").doc(hutId).collection("messages").add({
+    text,
+    sender: currentUser.email,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  inp.value = "";
+  loadMessages(hutId);
+}
   async function saveEditFromUI(id) {
     try {
       const nameEl = document.querySelector(`.edit-name[data-id="${id}"]`);
@@ -825,6 +871,7 @@ async function locateGPS() {
    * Support form
    ***********************/
   function openSupport() {
+    mode = "list";
     const qa = document.getElementById('question-area');
     qa.innerHTML = `
       <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
@@ -878,6 +925,7 @@ function stripHtml(html) {
     document.getElementById('sidebar').classList.toggle('-translate-x-full');
   }
 async function showSupportTickets() {
+  mode = "list";
   const qa = document.getElementById("question-area");
   qa.innerHTML = "⏳ Lade Support-Tickets…";
   const snap = await db.collection("support").where("mail","==",currentUser.email).orderBy("createdAt","desc").get();
