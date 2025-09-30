@@ -2,7 +2,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hütten Assistent – Neue Oberfläche</title>
+  <title>Hütten Assistent – Debug Version</title>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
@@ -23,7 +23,7 @@
     <button class="sidebar-btn flex items-center gap-2 p-2 rounded" onclick="showMyEntries()">📋 Meine Eintragungen</button>
     <button class="sidebar-btn flex items-center gap-2 p-2 rounded" onclick="startNewEntry()">➕ Neue Eintragung</button>
     <button class="sidebar-btn flex items-center gap-2 p-2 rounded" onclick="openSupport()">💬 Support</button>
-    <div class="mt-auto text-xs text-gray-400">v0.4 Prototype</div>
+    <div class="mt-auto text-xs text-gray-400">v0.5 Debug</div>
   </div>  <!-- Main Content -->  <div class="flex-1 flex flex-col">
     <!-- Topbar for mobile -->
     <div class="md:hidden flex items-center justify-between bg-white border-b p-3">
@@ -46,171 +46,133 @@
 
   </div>
 </div><script>
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+// ⚠️ Firebase Config prüfen
 const firebaseConfig = {
   apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
   authDomain: "eierhuettentour.firebaseapp.com",
   projectId: "eierhuettentour",
-  storageBucket: "eierhuettentour.firebasestorage.app",
+  storageBucket: "eierhuettentour.appspot.com",
   messagingSenderId: "348272135205",
-  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc",
-  measurementId: "G-16V6K5GXDT"
+  appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
 };
-  const app = firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+
+if(!firebaseConfig.apiKey){
+  alert("❌ FirebaseConfig fehlt – bitte eintragen!");
+}
+
+let app, db;
+try {
+  app = firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+} catch(e){
+  console.error("Firebase Init Error", e);
+  document.getElementById("question-area").innerHTML = `<div class='bg-red-100 p-4 rounded'>❌ Firebase konnte nicht initialisiert werden.<br>${e}</div>`;
+}
 
 let currentUser = { uid: "demo" };
 let editingData = {};
 let step = 0;
-const totalSteps = 10; // 0–9 Schritte
+const totalSteps = 10;
 
 function saveField(field, value) {
   editingData[field] = value;
   editingData.step = step;
+  console.log("💾 gespeichert:", field, value);
 }
 
 function updateProgress() {
   const percent = ((step) / (totalSteps-1)) * 100;
   document.getElementById("progress").style.width = percent + "%";
+  console.log("📊 Progress", step, "/", totalSteps);
 }
 
 function renderQuestion() {
   const qa = document.getElementById("question-area");
-  qa.innerHTML = "";
+  qa.innerHTML = `<div class='text-gray-400'>⏳ Lade Frage ${step}...</div>`;
+  console.log("🔄 renderQuestion step", step);
 
-  switch(step) {
-    case 0:
-      qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-        <h2 class="text-xl font-bold mb-4">🛡️ Datenschutzerklärung</h2>
-        <p class="mb-4">Bitte bestätige, dass du die Datenschutzerklärung akzeptierst.</p>
-        <label class="flex items-center gap-2">
-          <input type="checkbox" id="dsCheck" /> Ich akzeptiere
-        </label></div>`;
-      break;
-    case 1:
-      qa.innerHTML = `<h2 class='text-xl font-bold mb-6'>Was möchtest du eintragen?</h2>`;
-      const opts = ["🥚 Eierhütte","🏪 Hofladen","🤖 Selbstbedienungshäuschen","🛝 Spielplatz","🌄 Abenteuerhof"];
-      const wrap = document.createElement("div");
-      wrap.className = "grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl";
-      opts.forEach(opt => {
-        const card = document.createElement("div");
-        card.className = "card-option bg-white p-6 rounded-xl shadow cursor-pointer text-center";
-        card.innerHTML = `<div class='text-3xl mb-2'>${opt.split(" ")[0]}</div><div class='font-semibold'>${opt.substring(2)}</div>`;
-        card.onclick = () => {
-          document.querySelectorAll(".card-option").forEach(c=>c.classList.remove("selected"));
-          card.classList.add("selected");
-          editingData.typ = opt.substring(2);
-        };
-        wrap.appendChild(card);
-      });
-      qa.appendChild(wrap);
-      break;
-    case 2:
-      qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-        <h2 class="text-xl font-bold mb-4">🏷️ Wie heißt deine Hütte?</h2>
-        <input id="nameInput" type="text" class="w-full border p-2 rounded" placeholder="Name eingeben..." /></div>`;
-      break;
-    case 3:
-      qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-        <h2 class="text-xl font-bold mb-4">🪑 Hat deine Hütte Sitzplätze?</h2>
-        <div class="flex gap-4">
-          <button class="flex-1 p-4 border rounded" onclick="selectOption('sitzplaetze','Ja',this)">✅ Ja</button>
-          <button class="flex-1 p-4 border rounded" onclick="selectOption('sitzplaetze','Nein',this)">❌ Nein</button>
-        </div></div>`;
-      break;
-    case 4:
-      qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-        <h2 class="text-xl font-bold mb-4">🔌 Gibt es Strom?</h2>
-        <div class="flex gap-4">
-          <button class="flex-1 p-4 border rounded" onclick="selectOption('strom','Ja',this)">⚡ Ja</button>
-          <button class="flex-1 p-4 border rounded" onclick="selectOption('strom','Nein',this)">❌ Nein</button>
-        </div></div>`;
-      break;
-    case 5:
-      qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-        <h2 class="text-xl font-bold mb-4">✨ Extras?</h2>
-        <input id="extrasInput" type="text" class="w-full border p-2 rounded" placeholder="z.B. Getränke, Kühlschrank" /></div>`;
-      break;
-    case 6:
-      qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-        <h2 class="text-xl font-bold mb-4">🐾 Welche Tiere gibt es?</h2>
-        <div class="grid grid-cols-3 gap-2" id="tiereGrid"></div></div>`;
-      const tiere = ["🐐 Ziege","🐄 Kuh","🐓 Huhn","🐕 Hund","🐇 Hase","🚫 Keine"];
-      const grid = qa.querySelector("#tiereGrid");
-      editingData.tiere = editingData.tiere || [];
-      tiere.forEach(t => {
-        const btn = document.createElement("button");
-        btn.className = "p-2 border rounded";
-        btn.textContent = t;
-        if(editingData.tiere.includes(t)) btn.classList.add("selected");
-        btn.onclick = () => {
-          if (btn.classList.contains("selected")) {
-            btn.classList.remove("selected");
-            editingData.tiere = editingData.tiere.filter(x=>x!==t);
-          } else {
-            if (t === "🚫 Keine") { editingData.tiere = []; document.querySelectorAll('#tiereGrid button').forEach(b=>b.classList.remove('selected')); }
-            else editingData.tiere.push(t);
-            btn.classList.add("selected");
-          }
-        };
-        grid.appendChild(btn);
-      });
-      break;
-    case 7:
-      qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-        <h2 class="text-xl font-bold mb-4">📝 Bitte beschreibe deine Hütte kurz</h2>
-        <textarea id="descInput" class="w-full border p-2 rounded" rows="3">${editingData.beschreibung||''}</textarea></div>`;break;
-case 8:
-  qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
-    <h2 class="text-xl font-bold mb-4">🏷️ Schlagwörter</h2>
-    <input id="tagsInput" type="text" class="w-full border p-2 rounded" placeholder="z.B. Frühstück, Getränke, schattig" value="${editingData.tags?editingData.tags.join(', '):''}" /></div>`;
-  break;
-case 9:
-  qa.innerHTML = `<div class='bg-white p-6 rounded-xl shadow w-full max-w-2xl'>
-    <h2 class='text-xl font-bold mb-4'>📋 Übersicht</h2>
-    <ul class='mb-4 space-y-2'>
-      <li><b>Typ:</b> ${editingData.typ||''}</li>
-      <li><b>Name:</b> ${editingData.name||''}</li>
-      <li><b>Sitzplätze:</b> ${editingData.sitzplaetze||''}</li>
-      <li><b>Strom:</b> ${editingData.strom||''}</li>
-      <li><b>Extras:</b> ${editingData.extras||''}</li>
-      <li><b>Tiere:</b> ${(editingData.tiere||[]).join(', ')}</li>
-      <li><b>Beschreibung:</b> ${editingData.beschreibung||''}</li>
-      <li><b>Tags:</b> ${(editingData.tags||[]).join(', ')}</li>
-    </ul>
-    <div id="map" class="w-full h-64 mb-4"></div>
-    <button class="px-4 py-2 bg-green-600 text-white rounded" onclick="submitEntry()">✅ Einreichen</button>
-    <p class="text-sm text-gray-500 mt-2">Deine Eintragung wird vom Admin überprüft und nach erfolgreicher Prüfung freigegeben.</p>
-  </div>`;
-  const map = L.map("map").setView([51.3,9.5], 6);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(map);
-  let marker;
-  map.on('click', e => {
-    if (marker) map.removeLayer(marker);
-    marker = L.marker(e.latlng).addTo(map);
-    editingData.location = e.latlng;
+  try {
+    switch(step) {
+      case 0:
+        qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-lg w-full">
+          <h2 class="text-xl font-bold mb-4">🛡️ Datenschutzerklärung</h2>
+          <p class="mb-4">Bitte bestätige, dass du die Datenschutzerklärung akzeptierst.</p>
+          <label class="flex items-center gap-2">
+            <input type="checkbox" id="dsCheck" /> Ich akzeptiere
+          </label></div>`;
+        break;
+      case 1:
+        qa.innerHTML = `<h2 class='text-xl font-bold mb-6'>Was möchtest du eintragen?</h2>`;
+        const opts = ["🥚 Eierhütte","🏪 Hofladen","🤖 Selbstbedienungshäuschen","🛝 Spielplatz","🌄 Abenteuerhof"];
+        const wrap = document.createElement("div");
+        wrap.className = "grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl";
+        opts.forEach(opt => {
+          const card = document.createElement("div");
+          card.className = "card-option bg-white p-6 rounded-xl shadow cursor-pointer text-center";
+          card.innerHTML = `<div class='text-3xl mb-2'>${opt.split(" ")[0]}</div><div class='font-semibold'>${opt.substring(2)}</div>`;
+          card.onclick = () => {
+            document.querySelectorAll(".card-option").forEach(c=>c.classList.remove("selected"));
+            card.classList.add("selected");
+            editingData.typ = opt.substring(2);
+            console.log("➡️ Typ gewählt:", editingData.typ);
+          };
+          wrap.appendChild(card);
+        });
+        qa.appendChild(wrap);
+        break;
+      default:
+        qa.innerHTML = `<div class='bg-white p-6 rounded-xl shadow'>Step ${step} (Demo-Ausgabe)</div>`;
+        break;
+    }
+  } catch(e){
+    console.error("Render Error", e);
+    qa.innerHTML = `<div class='bg-red-100 p-4 rounded'>❌ Fehler beim Rendern: ${e}</div>`;
+  }
+
+  updateProgress();
+}
+
+function nextStep(){
+  if(step<totalSteps-1) step++;
+  renderQuestion();
+}
+
+function prevStep(){
+  if(step>0) step--;
+  renderQuestion();
+}
+
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.toggle("-translate-x-full");
+}
+
+function showMyEntries(){
+  if(!db){ alert("❌ Firestore nicht verfügbar"); return; }
+  db.collection('eierhuetten').where('userId','==',currentUser.uid).get().then(snap=>{
+    let list="";
+    snap.forEach(doc=>{ let d=doc.data(); list+=`<li>${d.name||'Unbenannt'} – ${d.status}</li>`; });
+    document.getElementById("question-area").innerHTML=`<div class='bg-white p-6 rounded-xl shadow w-full max-w-lg'><h2 class='text-xl mb-4'>Meine Eintragungen</h2><ul class='list-disc ml-4'>${list||'<li>Keine</li>'}</ul></div>`;
+  }).catch(e=>{
+    console.error("Firestore Error", e);
+    alert("❌ Firestore Fehler: "+e);
   });
-  break;
+  toggleSidebar();
+}
 
-} updateProgress(); }
+function openSupport(){
+  document.getElementById("question-area").innerHTML=`<div class='bg-white p-6 rounded-xl shadow w-full max-w-lg'>
+    <h2 class='text-xl mb-4'>Support</h2>
+    <input id='supName' class='border p-2 w-full mb-2 rounded' placeholder='Dein Name'>
+    <input id='supMail' class='border p-2 w-full mb-2 rounded' placeholder='Deine E-Mail'>
+    <textarea id='supMsg' class='border p-2 w-full mb-2 rounded' rows='3' placeholder='Nachricht'></textarea><button class='px-4 py-2 bg-green-600 text-white rounded mt-2' onclick='sendSupport()'>Absenden</button></div>`;
 
-function selectOption(field,value,el){ el.parentNode.querySelectorAll("button").forEach(b=>b.classList.remove("selected")); el.classList.add("selected"); editingData[field] = value; }
+toggleSidebar(); }
 
-function nextStep(){ if (step===0){ if(!document.getElementById("dsCheck").checked){ alert("Bitte Datenschutzerklärung akzeptieren"); return;} editingData.datenschutz=true; } if (step===2){ const val=document.getElementById("nameInput").value.trim(); if(!val){alert("Bitte Namen eingeben");return;} editingData.name=val; } if (step===5){ editingData.extras=document.getElementById("extrasInput").value.trim(); } if (step===7){ editingData.beschreibung=document.getElementById("descInput").value.trim(); } if (step===8){ editingData.tags=document.getElementById("tagsInput").value.split(",").map(t=>t.trim()).filter(t=>t); } if(step<totalSteps-1) step++; renderQuestion(); }
+function sendSupport(){ if(!db){ alert("❌ Firestore nicht verfügbar"); return; } const sup={name:document.getElementById('supName').value,mail:document.getElementById('supMail').value,msg:document.getElementById('supMsg').value,time:new Date()}; db.collection('support').add(sup).then(()=>{alert('✅ Nachricht gesendet'); startNewEntry();}).catch(e=>{console.error(e);alert('❌ Fehler: '+e)}); }
 
-function prevStep(){ if(step>0) step--; renderQuestion(); }
+function startNewEntry(){ step=0; editingData={}; renderQuestion(); }
 
-function submitEntry(){ editingData.status="offen"; db.collection("eierhuetten").add(editingData).then(()=>{ alert("✅ Eingereicht! Wird vom Admin geprüft."); startNewEntry(); }); }
-
-function toggleSidebar(){ document.getElementById("sidebar").classList.toggle("-translate-x-full"); }
-
-function showMyEntries(){ db.collection('eierhuetten').where('userId','==',currentUser.uid).get().then(snap=>{ let list=""; snap.forEach(doc=>{ let d=doc.data(); list+=<li>${d.name||'Unbenannt'} – ${d.status}</li>; }); document.getElementById("question-area").innerHTML=<div class='bg-white p-6 rounded-xl shadow w-full max-w-lg'><h2 class='text-xl mb-4'>Meine Eintragungen</h2><ul class='list-disc ml-4'>${list||'<li>Keine</li>'}</ul></div>; }); toggleSidebar(); }
-
-function openSupport(){ document.getElementById("question-area").innerHTML=<div class='bg-white p-6 rounded-xl shadow w-full max-w-lg'> <h2 class='text-xl mb-4'>Support</h2> <input id='supName' class='border p-2 w-full mb-2 rounded' placeholder='Dein Name'> <input id='supMail' class='border p-2 w-full mb-2 rounded' placeholder='Deine E-Mail'> <textarea id='supMsg' class='border p-2 w-full mb-2 rounded' rows='3' placeholder='Nachricht'></textarea> <button class='px-4 py-2 bg-green-600 text-white rounded mt-2' onclick='sendSupport()'>Absenden</button></div>; toggleSidebar(); }
-
-function sendSupport(){ const sup={name:document.getElementById('supName').value,mail:document.getElementById('supMail').value,msg:document.getElementById('supMsg').value,time:new Date()}; db.collection('support').add(sup).then(()=>{alert('✅ Nachricht gesendet'); startNewEntry();}); }
-
-renderQuestion(); </script>
+// Init renderQuestion(); </script>
 
 </body>
 </html>
