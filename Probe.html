@@ -1271,11 +1271,9 @@ async function loadSupportTickets() {
   try {
     let query = db.collection("support").where("mail", "==", currentUser.email);
     let snap;
-
     try {
       snap = await query.orderBy("createdAt", "desc").get();
-    } catch (errOrderBy) {
-      console.warn("OrderBy failed, fallback without orderBy:", errOrderBy);
+    } catch {
       snap = await query.get();
     }
 
@@ -1290,35 +1288,41 @@ async function loadSupportTickets() {
       const id = doc.id;
 
       let createdStr = "-";
-      try {
-        if (d.createdAt && typeof d.createdAt.toDate === "function") {
-          createdStr = d.createdAt.toDate().toLocaleString();
-        } else if (d.createdAt) {
-          createdStr = new Date(d.createdAt).toLocaleString();
-        }
-      } catch (e) { createdStr = "-"; }
+      if (d.createdAt?.toDate) createdStr = d.createdAt.toDate().toLocaleString();
 
       list.innerHTML += `
-  <div class="bg-gray-100 p-3 rounded mb-3">
-    <div class="font-semibold">📨 Support Ticket</div>
-    <div class="text-xs text-gray-500">Gesendet: ${escapeHtml(createdStr)}</div>
-    <div class="text-xs">Status: ${escapeHtml(d.status || "offen")}</div>
+        <div class="bg-gray-100 p-3 rounded mb-3">
+          <div class="font-semibold">📨 Support Ticket</div>
+          <div class="text-xs text-gray-500">Gesendet: ${escapeHtml(createdStr)}</div>
+          <div class="text-xs">Status: ${escapeHtml(d.status || "offen")}</div>
 
-    <!-- Nachrichten -->
-    <div id="msgs-${id}" class="space-y-2 my-2 text-sm">⏳ Lade Nachrichten…</div>
+          <!-- Nachrichten -->
+          <div id="msgs-${id}" class="space-y-2 my-2 text-sm">⏳ Lade Nachrichten…</div>
 
-    <!-- Eingabe -->
-    ${d.status !== "geschlossen" ? `
-    <div class="flex gap-2 mt-2">
-      <input id="msgInput-${id}" class="flex-1 border p-2 rounded text-sm" placeholder="Antwort schreiben..." />
-      <button onclick="replySupport('${id}')" class="px-3 py-2 bg-green-600 text-white rounded text-sm">Senden</button>
-    </div>
-    <button onclick="closeSupportTicket('${id}')" class="mt-2 px-3 py-2 bg-gray-600 text-white rounded text-sm">✅ Ticket schließen</button>
-    ` : `<div class="text-sm text-red-600 mt-2">Ticket ist geschlossen</div>`}
-  </div>
-`;
-      // Nachrichten-Listener starten
-      loadSupportMessages(id);
+          <!-- Eingabe -->
+          ${d.status !== "geschlossen" ? `
+          <div class="flex flex-col gap-1 mt-2">
+            <input id="msgInput-${id}" maxlength="250" class="flex-1 border p-2 rounded text-sm" placeholder="Antwort schreiben (max 250 Zeichen)..." />
+            <div class="text-xs text-gray-500" id="msgCounter-${id}">250 Zeichen übrig</div>
+            <button onclick="replySupport('${id}')" class="px-3 py-2 bg-green-600 text-white rounded text-sm">Senden</button>
+            <button onclick="closeSupportTicket('${id}')" class="px-3 py-2 bg-gray-600 text-white rounded text-sm">✅ Ticket schließen</button>
+          </div>
+          ` : `<div class="text-sm text-red-600 mt-2">Ticket ist geschlossen</div>`}
+        </div>
+      `;
+
+      // Nachrichten laden (inkl. fallback: erste msg im Ticket)
+      loadSupportMessages(id, d.msg, d.mail, d.createdAt);
+
+      // Counter aktivieren
+      const inp = document.getElementById("msgInput-" + id);
+      const counter = document.getElementById("msgCounter-" + id);
+      if (inp && counter) {
+        inp.addEventListener("input", () => {
+          const left = 250 - inp.value.length;
+          counter.textContent = `${left} Zeichen übrig`;
+        });
+      }
     });
 
   } catch (err) {
@@ -1326,8 +1330,7 @@ async function loadSupportTickets() {
     list.innerHTML = `<div class="text-red-600">❌ Fehler beim Laden: ${escapeHtml(err.message || String(err))}</div>`;
   }
 }
-
-    function loadSupportMessages(ticketId) {
+    function loadSupportMessages(ticketId, firstMsg = null, firstSender = null, firstCreatedAt = null) {
   const wrap = document.getElementById("msgs-" + ticketId);
   if (!wrap) return;
 
@@ -1335,6 +1338,19 @@ async function loadSupportTickets() {
     .orderBy("createdAt", "asc")
     .onSnapshot(snap => {
       wrap.innerHTML = "";
+
+      // Fallback: erste Nachricht aus dem Hauptdokument anzeigen
+      if (firstMsg) {
+        const time = firstCreatedAt?.toDate?.().toLocaleString?.() || "-";
+        wrap.innerHTML += `
+          <div class="bg-white border rounded p-2">
+            <div class="text-sm">${escapeHtml(firstMsg)}</div>
+            <div class="text-xs text-gray-500">${escapeHtml(firstSender || "-")} · ${time}</div>
+          </div>
+        `;
+      }
+
+      // Subcollection-Nachrichten
       snap.forEach(doc => {
         const d = doc.data();
         const time = d.createdAt?.toDate?.().toLocaleString?.() || "-";
@@ -1346,8 +1362,7 @@ async function loadSupportTickets() {
         `;
       });
     });
-}
-
+    }
 async function replySupport(ticketId) {
   const inp = document.getElementById("msgInput-" + ticketId);
   if (!inp) return;
@@ -1361,6 +1376,8 @@ async function replySupport(ticketId) {
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     inp.value = "";
+    const counter = document.getElementById("msgCounter-" + ticketId);
+    if (counter) counter.textContent = "250 Zeichen übrig";
   } catch (err) {
     console.error("replySupport error", err);
     alert("Fehler beim Antworten: " + err.message);
