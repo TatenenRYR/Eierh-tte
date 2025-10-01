@@ -447,53 +447,55 @@ document.getElementById("navBottom").style.display =
 
   // Jetzt nur noch Map initialisieren
   setTimeout(() => {
-    initOverviewMap();
+  initOverviewMap();
 
-    // GPS-Button
-    const gpsBtn = document.getElementById("gpsBtn");
-    if (gpsBtn) gpsBtn.addEventListener("click", locateGPS);
+  // GPS-Button aktivieren
+  const gpsBtn = document.getElementById("gpsBtn");
+  if (gpsBtn) gpsBtn.addEventListener("click", locateGPS);
 
-    // Adresse suchen
-    const addr = document.getElementById("addressSearch");
-    if (addr) {
-      addr.addEventListener("input", async e => {
-        const query = e.target.value.trim();
-        const suggestionBox = document.getElementById("addressSuggestions");
-        if (query.length < 3) {
-          suggestionBox.innerHTML = "";
-          suggestionBox.classList.add("hidden");
+  // Adress-Suche mit Vorschlägen
+  const addr = document.getElementById("addressSearch");
+  const suggestionBox = document.getElementById("addressSuggestions");
+  if (addr) {
+    addr.addEventListener("input", async e => {
+      const query = e.target.value.trim();
+      if (query.length < 3) {
+        suggestionBox.innerHTML = "";
+        suggestionBox.classList.add("hidden");
+        return;
+      }
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (!data.length) {
+          suggestionBox.innerHTML = "<div class='p-2 text-gray-500'>Keine Treffer</div>";
+          suggestionBox.classList.remove("hidden");
           return;
         }
-        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`;
-        try {
-          const res = await fetch(url);
-          const data = await res.json();
-          if (!data.length) {
-            suggestionBox.innerHTML = "<div class='p-2 text-gray-500'>Keine Treffer</div>";
-            suggestionBox.classList.remove("hidden");
-            return;
-          }
-          suggestionBox.innerHTML = data.map(item => `
-            <div class="p-2 hover:bg-gray-100 cursor-pointer" data-lat="${item.lat}" data-lon="${item.lon}">
-              ${item.display_name}
-            </div>`).join("");
-          suggestionBox.classList.remove("hidden");
 
-          suggestionBox.querySelectorAll("div").forEach(div => {
-            div.addEventListener("click", () => {
-              const lat = parseFloat(div.dataset.lat);
-              const lon = parseFloat(div.dataset.lon);
-              addr.value = div.textContent;
-              suggestionBox.classList.add("hidden");
-              initOverviewMap(lat, lon, 15);
-            });
+        suggestionBox.innerHTML = data.map(item => `
+          <div class="p-2 hover:bg-gray-100 cursor-pointer" data-lat="${item.lat}" data-lon="${item.lon}">
+            ${item.display_name}
+          </div>`).join("");
+        suggestionBox.classList.remove("hidden");
+
+        suggestionBox.querySelectorAll("div").forEach(div => {
+          div.addEventListener("click", () => {
+            const lat = parseFloat(div.dataset.lat);
+            const lon = parseFloat(div.dataset.lon);
+            addr.value = div.textContent;
+            suggestionBox.classList.add("hidden");
+            initOverviewMap(lat, lon, 15);
           });
-        } catch (err) {
-          console.error("Fehler bei Nominatim:", err);
-        }
-      });
-    }
-  }, 200);
+        });
+      } catch (err) {
+        console.error("Fehler bei Nominatim:", err);
+      }
+    });
+  }
+}, 200);
   return;
       }
       
@@ -640,7 +642,42 @@ function showTutorial() {
   }
 
 
+let overviewMap;
+let overviewMarker;
 
+function initOverviewMap(lat = 51.1657, lng = 10.4515, zoom = 6) {
+  if (!overviewMap) {
+    overviewMap = L.map("overview-map").setView([lat, lng], zoom);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(overviewMap);
+  } else {
+    overviewMap.setView([lat, lng], zoom);
+  }
+
+  if (!overviewMarker) {
+    overviewMarker = L.marker([lat, lng], { draggable: true }).addTo(overviewMap);
+    overviewMarker.on("dragend", ev => {
+      const p = ev.target.getLatLng();
+      editingData.location = { lat: p.lat, lng: p.lng };
+    });
+  } else {
+    overviewMarker.setLatLng([lat, lng]);
+  }
+
+  editingData.location = { lat, lng };
+}
+
+function locateGPS() {
+  if (!navigator.geolocation) return alert("❌ GPS nicht verfügbar");
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const { latitude, longitude } = pos.coords;
+      initOverviewMap(latitude, longitude, 15);
+    },
+    err => {
+      alert("❌ GPS-Fehler: " + err.message);
+    }
+  );
+}
 
 
     const stepInfos = {
