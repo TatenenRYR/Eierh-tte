@@ -425,24 +425,26 @@ document.getElementById("navBottom").style.display =
       }
 
       if (step === 9) {
-  qa.innerHTML = `
-    <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-      <h2 class="text-xl font-bold mb-3">📋 Übersicht</h2>
-      <!-- ... deine Übersichtsliste ... -->
+ qa.innerHTML = `
+  <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+    <h2 class="text-xl font-bold mb-3">📋 Übersicht</h2>
+    <!-- ... hier deine Übersichtsliste ... -->
 
-      <h3 class="text-lg font-bold mt-4 mb-2">📍 Standort</h3>
-      <div class="flex gap-2 mb-2">
-        <input id="addressSearch" class="flex-1 border p-2 rounded" placeholder="Adresse suchen…" />
-        <button class="px-3 py-2 bg-blue-600 text-white rounded" onclick="locateGPS()">📡 Mein Standort</button>
-      </div>
-      <div id="overview-map" class="h-64 rounded border mb-4"></div>
+    <h3 class="text-lg font-bold mt-4 mb-2">📍 Standort</h3>
+    <div class="relative mb-2">
+      <input id="addressSearch" class="w-full border p-2 rounded" placeholder="Adresse suchen…" />
+      <div id="addressSuggestions" class="absolute left-0 right-0 bg-white border rounded mt-1 hidden z-50 max-h-48 overflow-y-auto"></div>
+    </div>
+    <button id="gpsBtn" class="px-3 py-2 mb-3 bg-blue-600 text-white rounded">📡 Mein Standort</button>
 
-      <div class="flex gap-2">
-        <button id="submitBtn" class="px-4 py-2 bg-green-600 text-white rounded" onclick="submitEntry()">✅ Einreichen</button>
-        <button class="px-4 py-2 bg-gray-200 rounded" onclick="startNewEntry()">✖ Abbrechen</button>
-      </div>
-      <p class="text-xs text-gray-500 mt-3">Deine Eintragung wird geprüft und erst nach Freigabe sichtbar.</p>
-    </div>`;
+    <div id="overview-map" class="h-64 rounded border mb-4"></div>
+
+    <div class="flex gap-2">
+      <button id="submitBtn" class="px-4 py-2 bg-green-600 text-white rounded" onclick="submitEntry()">✅ Einreichen</button>
+      <button class="px-4 py-2 bg-gray-200 rounded" onclick="startNewEntry()">✖ Abbrechen</button>
+    </div>
+    <p class="text-xs text-gray-500 mt-3">Deine Eintragung wird geprüft und erst nach Freigabe sichtbar.</p>
+  </div>`;
 
   setTimeout(() => {
     const map = L.map('overview-map').setView([51.3, 9.5], 6);
@@ -627,21 +629,97 @@ function showTutorial() {
       alert('Fehler beim Senden: ' + (err.message || err));
     }
   }
-async function locateGPS() {
-  if (!navigator.geolocation) return alert("GPS nicht verfügbar");
-  navigator.geolocation.getCurrentPosition(pos => {
-    const { latitude, longitude } = pos.coords;
-    editingData.location = { lat: latitude, lng: longitude };
-    const map = L.map('overview-map').setView([latitude, longitude], 14);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    const marker = L.marker([latitude, longitude], { draggable: true }).addTo(map);
-    marker.on("dragend", ev => {
+
+let overviewMap;
+let overviewMarker;
+
+function initOverviewMap(lat = 51.1657, lng = 10.4515, zoom = 6) {
+  if (!overviewMap) {
+    overviewMap = L.map("overview-map").setView([lat, lng], zoom);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(overviewMap);
+  } else {
+    overviewMap.setView([lat, lng], zoom);
+  }
+
+  if (!overviewMarker) {
+    overviewMarker = L.marker([lat, lng], { draggable: true }).addTo(overviewMap);
+    overviewMarker.on("dragend", ev => {
       const p = ev.target.getLatLng();
       editingData.location = { lat: p.lat, lng: p.lng };
     });
-  });
-        }
+  } else {
+    overviewMarker.setLatLng([lat, lng]);
+  }
 
+  editingData.location = { lat, lng };
+}
+
+// GPS sofort nutzen
+function locateGPS() {
+  if (!navigator.geolocation) return alert("❌ GPS nicht verfügbar");
+
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const { latitude, longitude } = pos.coords;
+      initOverviewMap(latitude, longitude, 15);
+    },
+    err => {
+      alert("❌ GPS-Fehler: " + err.message);
+    }
+  );
+}
+
+// Button verbinden
+document.getElementById("gpsBtn").addEventListener("click", locateGPS);
+
+// Adress-Suche
+document.getElementById("addressSearch").addEventListener("input", async e => {
+  const query = e.target.value.trim();
+  const suggestionBox = document.getElementById("addressSuggestions");
+
+  if (query.length < 3) {
+    suggestionBox.innerHTML = "";
+    suggestionBox.classList.add("hidden");
+    return;
+  }
+
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`;
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!data.length) {
+      suggestionBox.innerHTML = "<div class='p-2 text-gray-500'>Keine Treffer</div>";
+      suggestionBox.classList.remove("hidden");
+      return;
+    }
+
+    suggestionBox.innerHTML = data.map(item => `
+      <div class="p-2 hover:bg-gray-100 cursor-pointer" data-lat="${item.lat}" data-lon="${item.lon}">
+        ${item.display_name}
+      </div>
+    `).join("");
+    suggestionBox.classList.remove("hidden");
+
+    // Klick-Events für Vorschläge
+    suggestionBox.querySelectorAll("div").forEach(div => {
+      div.addEventListener("click", () => {
+        const lat = parseFloat(div.dataset.lat);
+        const lon = parseFloat(div.dataset.lon);
+        document.getElementById("addressSearch").value = div.textContent;
+        suggestionBox.classList.add("hidden");
+        initOverviewMap(lat, lon, 15);
+      });
+    });
+  } catch (err) {
+    console.error("Fehler bei Nominatim:", err);
+  }
+});
+
+// Karte beim Laden des Schrittes initialisieren
+setTimeout(() => {
+  initOverviewMap();
+}, 200);
 
     const stepInfos = {
   0: {
