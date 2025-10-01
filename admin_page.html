@@ -2498,18 +2498,21 @@ async function ladeSupportTickets() {
     const email = ticket.email || '-';
     const status = ticket.status || 'offen';
 
-    // Table Row für Ticket Grunddaten
     const row = document.createElement('tr');
+    row.className = "align-top";
+
     row.innerHTML = `
       <td class="px-4 py-2 text-xs text-gray-600">${datum}</td>
-      <td class="px-4 py-2 text-xs">${email}</td>
-      <td class="px-4 py-2">
-        <div id="msgs-${id}" class="space-y-1 text-sm text-gray-800">⏳ Lade Nachrichten…</div>
-        <div class="mt-2 flex gap-2">
+      <td class="px-4 py-2 text-xs">
+        <div>${email}</div>
+        <div class="text-[10px] text-gray-400">ID: ${id}</div>
+      </td>
+      <td class="px-4 py-2 text-sm">
+        <div id="msgs-${id}" class="space-y-1 text-xs text-gray-800">⏳ Lade Nachrichten…</div>
+        <div class="mt-2 flex gap-1">
           <input id="reply-${id}" maxlength="250" placeholder="Antwort schreiben…" class="flex-1 border p-1 rounded text-xs" />
-          <button onclick="adminReplySupport('${id}', '${email}')" class="bg-green-600 text-white text-xs px-2 py-1 rounded">Antworten</button>
+          <button onclick="adminReplySupport('${id}')" class="bg-green-600 text-white text-xs px-2 py-1 rounded">Antworten</button>
         </div>
-        <div class="text-xs text-gray-500">ID: ${id}</div>
       </td>
       <td class="px-4 py-2">
         <select onchange="updateSupportStatus('${id}', this.value)" class="border rounded px-2 py-1 text-xs">
@@ -2522,13 +2525,15 @@ async function ladeSupportTickets() {
         <button onclick="loescheSupportTicket('${id}')" class="bg-red-600 text-white text-xs px-2 py-1 rounded">Löschen</button>
       </td>
     `;
+
     body.appendChild(row);
 
     // Nachrichten laden
     ladeSupportNachrichten(id);
   });
 }
-  function ladeSupportNachrichten(ticketId) {
+
+function ladeSupportNachrichten(ticketId) {
   const wrap = document.getElementById("msgs-" + ticketId);
   if (!wrap) return;
 
@@ -2537,7 +2542,7 @@ async function ladeSupportTickets() {
     .onSnapshot(snap => {
       wrap.innerHTML = "";
       if (snap.empty) {
-        wrap.innerHTML = "<div class='text-xs text-gray-500'>(keine Nachrichten)</div>";
+        wrap.innerHTML = "<div class='text-gray-500'>(keine Nachrichten)</div>";
         return;
       }
       snap.forEach(mdoc => {
@@ -2546,38 +2551,45 @@ async function ladeSupportTickets() {
         const sender = d.sender || "unbekannt";
         const text = d.text || "";
         wrap.innerHTML += `
-          <div class="border rounded p-1 mb-1 bg-white">
+          <div class="border rounded p-1 bg-white">
             <div class="text-xs">${text}</div>
             <div class="text-[10px] text-gray-500">${sender} · ${zeit}</div>
           </div>
         `;
       });
     });
-  }
-  async function adminReplySupport(ticketId, email) {
+}
+
+async function adminReplySupport(ticketId) {
   const inp = document.getElementById("reply-" + ticketId);
   if (!inp) return;
   const text = inp.value.trim();
   if (!text) return;
 
   try {
+    // Neue Nachricht speichern
     await db.collection("supportTickets").doc(ticketId).collection("messages").add({
       text,
       sender: "Admin",
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+
+    // Ticket-Status auf "bearbeitet" setzen
+    await db.collection("supportTickets").doc(ticketId).update({
+      status: "bearbeitet"
+    });
+
     inp.value = "";
-    showNotification("✅ Antwort gesendet");
+    showNotification("✅ Antwort gesendet (Status: bearbeitet)");
+    // Optional: Tabelle neu laden, damit der Status im Dropdown sofort sichtbar ist
+    ladeSupportTickets();
+
   } catch (err) {
     console.error("adminReplySupport error", err);
     showNotification("❌ Fehler beim Antworten");
   }
-  }
-  function mailtoSupport(email, message) {
-  const subject = 'Supportanfrage zu Eierhütten-Tour';
-  const body = `Hallo,\n\nzu deiner Supportanfrage:\n\n"${message}"\n\nAntwort:\n\n[Hier deine Antwort einfügen]`;
-  window.open(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
 }
+
 async function updateSupportStatus(id, neuerStatus) {
   await db.collection('supportTickets').doc(id).update({ status: neuerStatus });
   showNotification('✅ Status aktualisiert');
