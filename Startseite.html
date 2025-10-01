@@ -496,9 +496,10 @@ const noImgArray = [
   "img/noimg/4.jpg"
 ];
 
-// Hütten laden (3 neueste)
+// Hütten laden (3 neueste, nur angenommene)
 const container = document.getElementById("huts-container");
 db.collection("eierhuetten")
+  .where("status", "==", "angenommen")   // ✅ nur fertige/angenommene
   .orderBy("erstelltAm", "desc")
   .limit(3)
   .onSnapshot(snap => {
@@ -508,23 +509,20 @@ db.collection("eierhuetten")
     snap.forEach(doc => {
       const d = doc.data();
 
-      // ❌ Überspringen, wenn nicht freigegeben
-      if (d.status !== "angenommen") return;
-
-      // ❌ Pflichtfelder prüfen (Name + Location)
+      // Pflichtfelder (Name + Location) checken
       if (!d.name || !d.location?.latitude || !d.location?.longitude) {
         console.warn("Übersprungen (unvollständig):", doc.id);
         return;
       }
 
-      // ✅ Bilder (eigenes oder Fallback)
+      // Bilder (Fallback)
       const bilderUrls = (d.fotos || [])
         .map(f => (typeof f === "string" ? f : f.url))
         .filter(Boolean);
       const erstesBild =
         bilderUrls[0] || noImgArray[Math.floor(Math.random() * noImgArray.length)];
 
-      // ✅ Öffnungszeiten (Fallback für Array oder Map)
+      // Öffnungszeiten (Map oder Array möglich)
       let oeffnungszeitenHTML = "-";
       if (d.immerGeoeffnet === true) {
         oeffnungszeitenHTML = "Immer geöffnet ✅";
@@ -545,36 +543,29 @@ db.collection("eierhuetten")
         }
       }
 
-      // ✅ Tiere
-      const tiereHTML =
-        Array.isArray(d.tiere) && d.tiere.length > 0
-          ? `<div class="tiere">🐾 ${d.tiere.join(" ")}</div>`
-          : "";
+      // Tiere
+      const tiereHTML = Array.isArray(d.tiere) && d.tiere.length > 0
+        ? `<div class="tiere">🐾 ${d.tiere.join(" ")}</div>` : "";
 
-      // ✅ Tags
-      const tagsHTML =
-        Array.isArray(d.tags) && d.tags.length > 0
-          ? `<div class="tags">${d.tags
-              .map(t => `<span class="tag">#${t}</span>`)
-              .join(" ")}</div>`
-          : "";
+      // Tags
+      const tagsHTML = Array.isArray(d.tags) && d.tags.length > 0
+        ? `<div class="tags">${d.tags.map(t => `<span class="tag">#${t}</span>`).join(" ")}</div>` : "";
 
-      // ✅ Beschreibung (max. 120 Zeichen, optional)
+      // Beschreibung
       const beschr = d.beschreibung
         ? `<p class="beschreibung">${
             d.beschreibung.length > 120
               ? d.beschreibung.substring(0, 120) + "..."
               : d.beschreibung
-          }</p>`
-        : "";
+          }</p>` : "";
 
-      // ✅ Karte-Card bauen
+      // Karte-Card
       const card = document.createElement("div");
       card.className = "card";
       card.innerHTML = `
         <img src="${erstesBild}" loading="lazy" style="width:100%; height:180px; object-fit:cover;">
         <div class="info">
-          <h3>${index}. ${d.name || "Unbenannt"}</h3>
+          <h3>${index}. ${d.name}</h3>
           ${beschr}
           ${tiereHTML}
           ${tagsHTML}
@@ -592,7 +583,7 @@ db.collection("eierhuetten")
       container.appendChild(card);
       index++;
 
-      // 🌍 Leaflet-Karte initialisieren
+      // Leaflet-Karte
       setTimeout(() => {
         const map = L.map(`map-${doc.id}`, {
           zoomControl: false,
