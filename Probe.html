@@ -1208,28 +1208,68 @@ function setActive(buttonId) {
    * Support form
    ***********************/
   function openSupport() {
-    if (!currentUser || !currentUser.uid) {
-  showToast("Bitte zuerst einloggen");
-  return;
-}
-    mode = "list";
-    document.getElementById("navBottom").style.display =
-  (mode === "entry") ? "flex" : "none";
-     
-    const qa = document.getElementById('question-area');
-    qa.innerHTML = `
-      <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-        <h2 class="text-xl font-bold mb-3">📨 Support</h2>
-        <input id="supName" class="w-full border p-2 rounded mb-2" placeholder="Dein Name" />
-        <input id="supMail" class="w-full border p-2 rounded mb-2" placeholder="E-Mail" />
-        <textarea id="supMsg" class="w-full border p-2 rounded mb-2" rows="5" placeholder="Nachricht"></textarea>
-        <div class="flex gap-2">
-          <button class="px-4 py-2 bg-green-600 text-white rounded" onclick="sendSupport()">Absenden</button>
-          <button class="px-4 py-2 bg-gray-200 rounded" onclick="startNewEntry()">Abbrechen</button>
-        </div>
-      </div>`;
-    toggleSidebar();
+  if (!currentUser || !currentUser.uid) {
+    showToast("Bitte zuerst einloggen");
+    return;
   }
+  mode = "support";
+  document.getElementById("navBottom").style.display =
+    (mode === "entry") ? "flex" : "none";
+
+  const qa = document.getElementById('question-area');
+  qa.innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+      <h2 class="text-xl font-bold mb-3">📨 Support</h2>
+      <input id="supName" class="w-full border p-2 rounded mb-2" placeholder="Dein Name" />
+      <input id="supMail" class="w-full border p-2 rounded mb-2" placeholder="E-Mail" value="${currentUser.email || ''}" />
+      <textarea id="supMsg" class="w-full border p-2 rounded mb-2" rows="5" placeholder="Nachricht"></textarea>
+      <div class="flex gap-2 mb-4">
+        <button class="px-4 py-2 bg-green-600 text-white rounded" onclick="sendSupport()">Absenden</button>
+      </div>
+      <hr class="my-4">
+      <h3 class="text-lg font-bold mb-2">📂 Deine bisherigen Support-Tickets</h3>
+      <div id="supportList" class="space-y-2 text-sm text-gray-700">⏳ Lade Support-Tickets…</div>
+    </div>`;
+
+  // Tickets laden
+  loadSupportTickets();
+
+  toggleSidebar();
+  updateInfoBox();
+}
+
+async function loadSupportTickets() {
+  const list = document.getElementById("supportList");
+  if (!list) return;
+  try {
+    const snap = await db.collection("support")
+      .where("mail","==",currentUser.email)
+      .orderBy("createdAt","desc")
+      .get();
+
+    if (snap.empty) {
+      list.innerHTML = "<p class='text-gray-500'>Keine Support-Anfragen gefunden.</p>";
+      return;
+    }
+
+    list.innerHTML = "";
+    snap.forEach(doc => {
+      const d = doc.data();
+      list.innerHTML += `
+        <div class="bg-gray-100 p-3 rounded">
+          <div class="font-semibold">📨 ${escapeHtml(d.msg)}</div>
+          <div class="text-xs text-gray-500">
+            ${d.createdAt?.toDate?.().toLocaleString?.() || "-"}
+          </div>
+          <div class="text-xs">Status: ${d.status || "offen"}</div>
+          <button class="mt-1 px-2 py-1 text-xs bg-red-600 text-white rounded" onclick="deleteSupport('${doc.id}')">🗑️ Löschen</button>
+        </div>`;
+    });
+  } catch (err) {
+    console.error("loadSupportTickets error", err);
+    list.innerHTML = "<p class='text-red-600'>❌ Fehler beim Laden</p>";
+  }
+}
 
   async function sendSupport() {
     const name = document.getElementById('supName').value.trim();
