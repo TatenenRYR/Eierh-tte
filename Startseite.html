@@ -504,20 +504,28 @@ db.collection("eierhuetten")
   .onSnapshot(snap => {
     container.innerHTML = "";
     let index = 1;
+
     snap.forEach(doc => {
       const d = doc.data();
+
+      // ❌ Überspringen, wenn nicht freigegeben
       if (d.status !== "angenommen") return;
 
-      // Bilder: eigenes Bild oder zufälliges aus noImgArray
+      // ❌ Pflichtfelder prüfen (Name + Location)
+      if (!d.name || !d.location?.latitude || !d.location?.longitude) {
+        console.warn("Übersprungen (unvollständig):", doc.id);
+        return;
+      }
+
+      // ✅ Bilder (eigenes oder Fallback)
       const bilderUrls = (d.fotos || [])
         .map(f => (typeof f === "string" ? f : f.url))
         .filter(Boolean);
       const erstesBild =
-        bilderUrls[0] ||
-        noImgArray[Math.floor(Math.random() * noImgArray.length)];
+        bilderUrls[0] || noImgArray[Math.floor(Math.random() * noImgArray.length)];
 
-      // Öffnungszeiten formatieren
-      let oeffnungszeitenHTML = d.oeffnungszeiten;
+      // ✅ Öffnungszeiten (Fallback für Array oder Map)
+      let oeffnungszeitenHTML = "-";
       if (d.immerGeoeffnet === true) {
         oeffnungszeitenHTML = "Immer geöffnet ✅";
       } else if (Array.isArray(d.oeffnungszeiten) && d.oeffnungszeiten.length > 0) {
@@ -526,15 +534,24 @@ db.collection("eierhuetten")
             .map(e => `<li>${e.tag}: ${e.von} - ${e.bis}</li>`)
             .join("") +
           "</ul>";
+      } else if (typeof d.oeffnungszeiten === "object" && d.oeffnungszeiten !== null) {
+        const tage = Object.entries(d.oeffnungszeiten);
+        if (tage.length > 0) {
+          oeffnungszeitenHTML = "<ul class='oeffnungszeiten-list'>" +
+            tage.map(([tag, val]) =>
+              `<li>${tag}: ${(val.start || "–")} - ${(val.ende || "–")}</li>`
+            ).join("") +
+            "</ul>";
+        }
       }
 
-      // Tiere (falls vorhanden)
+      // ✅ Tiere
       const tiereHTML =
         Array.isArray(d.tiere) && d.tiere.length > 0
           ? `<div class="tiere">🐾 ${d.tiere.join(" ")}</div>`
           : "";
 
-      // Tags (falls vorhanden)
+      // ✅ Tags
       const tagsHTML =
         Array.isArray(d.tags) && d.tags.length > 0
           ? `<div class="tags">${d.tags
@@ -542,7 +559,7 @@ db.collection("eierhuetten")
               .join(" ")}</div>`
           : "";
 
-      // Beschreibung (max. 120 Zeichen)
+      // ✅ Beschreibung (max. 120 Zeichen, optional)
       const beschr = d.beschreibung
         ? `<p class="beschreibung">${
             d.beschreibung.length > 120
@@ -551,7 +568,7 @@ db.collection("eierhuetten")
           }</p>`
         : "";
 
-      // Karte-Card bauen
+      // ✅ Karte-Card bauen
       const card = document.createElement("div");
       card.className = "card";
       card.innerHTML = `
@@ -567,7 +584,7 @@ db.collection("eierhuetten")
             <b>Sitzplätze:</b> ${d.sitzplaetze === "Ja" ? "✅ Ja" : "❌ Nein"}<br>
             <b>Extras:</b> ${d.extras || "–"}<br>
             <p>📅 <b>Eingetragen:</b> ${d.datenschutzZustimmung?.bestätigtAm?.toDate?.().toLocaleDateString("de-DE") || "-"}</p>
-           </div>
+          </div>
           <div class="map-preview" id="map-${doc.id}"></div>
         </div>
       `;
@@ -575,25 +592,23 @@ db.collection("eierhuetten")
       container.appendChild(card);
       index++;
 
-      // 🌍 Leaflet-Karte initialisieren (wenn Standort vorhanden)
-      if (d.location?.latitude && d.location?.longitude) {
-        setTimeout(() => {
-          const map = L.map(`map-${doc.id}`, {
-            zoomControl: false,
-            attributionControl: false,
-            dragging: false,
-            scrollWheelZoom: false,
-            doubleClickZoom: false,
-            boxZoom: false,
-            keyboard: false,
-          }).setView([d.location.latitude, d.location.longitude], 14);
+      // 🌍 Leaflet-Karte initialisieren
+      setTimeout(() => {
+        const map = L.map(`map-${doc.id}`, {
+          zoomControl: false,
+          attributionControl: false,
+          dragging: false,
+          scrollWheelZoom: false,
+          doubleClickZoom: false,
+          boxZoom: false,
+          keyboard: false,
+        }).setView([d.location.latitude, d.location.longitude], 14);
 
-          L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
-          L.marker([d.location.latitude, d.location.longitude]).addTo(map);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+        L.marker([d.location.latitude, d.location.longitude]).addTo(map);
 
-          setTimeout(() => map.invalidateSize(), 200);
-        }, 300);
-      }
+        setTimeout(() => map.invalidateSize(), 200);
+      }, 300);
     });
   });
 // Popup Funktionen
