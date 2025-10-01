@@ -1299,22 +1299,24 @@ async function loadSupportTickets() {
       } catch (e) { createdStr = "-"; }
 
       list.innerHTML += `
-        <div class="bg-gray-100 p-3 rounded mb-3">
-          <div class="font-semibold">📨 Support Ticket</div>
-          <div class="text-xs text-gray-500">Gesendet: ${escapeHtml(createdStr)}</div>
-          <div class="text-xs">Status: ${escapeHtml(d.status || "offen")}</div>
+  <div class="bg-gray-100 p-3 rounded mb-3">
+    <div class="font-semibold">📨 Support Ticket</div>
+    <div class="text-xs text-gray-500">Gesendet: ${escapeHtml(createdStr)}</div>
+    <div class="text-xs">Status: ${escapeHtml(d.status || "offen")}</div>
 
-          <!-- Nachrichten -->
-          <div id="msgs-${id}" class="space-y-2 my-2 text-sm">⏳ Lade Nachrichten…</div>
+    <!-- Nachrichten -->
+    <div id="msgs-${id}" class="space-y-2 my-2 text-sm">⏳ Lade Nachrichten…</div>
 
-          <!-- Eingabe -->
-          <div class="flex gap-2 mt-2">
-            <input id="msgInput-${id}" class="flex-1 border p-2 rounded text-sm" placeholder="Antwort schreiben..." />
-            <button onclick="replySupport('${id}')" class="px-3 py-2 bg-green-600 text-white rounded text-sm">Senden</button>
-          </div>
-        </div>
-      `;
-
+    <!-- Eingabe -->
+    ${d.status !== "geschlossen" ? `
+    <div class="flex gap-2 mt-2">
+      <input id="msgInput-${id}" class="flex-1 border p-2 rounded text-sm" placeholder="Antwort schreiben..." />
+      <button onclick="replySupport('${id}')" class="px-3 py-2 bg-green-600 text-white rounded text-sm">Senden</button>
+    </div>
+    <button onclick="closeSupportTicket('${id}')" class="mt-2 px-3 py-2 bg-gray-600 text-white rounded text-sm">✅ Ticket schließen</button>
+    ` : `<div class="text-sm text-red-600 mt-2">Ticket ist geschlossen</div>`}
+  </div>
+`;
       // Nachrichten-Listener starten
       loadSupportMessages(id);
     });
@@ -1374,24 +1376,40 @@ async function sendSupport() {
   if (!msg || !mail) { alert('Bitte Nachricht und E-Mail ausfüllen'); return; }
 
   try {
-    await db.collection('support').add({
+    // Ticket anlegen
+    const ticketRef = await db.collection('support').add({
       name,
       mail,
-      msg,
       status: 'offen',
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    showToast('✅ Nachricht gesendet');
-    // Formular zurücksetzen
+
+    // Erste Nachricht direkt in Subcollection speichern
+    await ticketRef.collection("messages").add({
+      text: msg,
+      sender: mail,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    showToast('✅ Ticket erstellt');
     document.getElementById('supMsg').value = '';
-    // Liste aktualisieren
-    loadSupportTickets();
+    loadSupportTickets(); // neu laden
   } catch (err) {
     console.error('sendSupport error', err);
     alert('Fehler: ' + (err.message || err));
   }
 }
-
+async function closeSupportTicket(ticketId) {
+  if (!confirm("Ticket wirklich schließen?")) return;
+  try {
+    await db.collection("support").doc(ticketId).update({ status: "geschlossen" });
+    showToast("Ticket geschlossen");
+    loadSupportTickets();
+  } catch (err) {
+    console.error("closeSupportTicket error", err);
+    alert("Fehler beim Schließen: " + err.message);
+  }
+}
 /**
  * Löschen von Support-Ticket: danach Liste aktualisieren
  */
