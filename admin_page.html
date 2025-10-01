@@ -101,24 +101,38 @@
         <div id="pagination" class="mt-4 flex flex-wrap justify-center gap-2"></div>
       </section>
 
-      <section id="support" class="dash-section hidden">
-        <h2 class="section-title">📨 Support-Tickets</h2>
-        <div class="overflow-auto bg-white rounded shadow">
-          <table class="min-w-full text-sm">
-            <thead class="bg-blue-100 text-left">
-              <tr>
-                <th class="px-4 py-2">Datum</th>
-                <th class="px-4 py-2">User</th>
-                <th class="px-4 py-2">Nachricht</th>
-                <th class="px-4 py-2">Status</th>
-                <th class="px-4 py-2">Aktionen</th>
-              </tr>
-            </thead>
-            <tbody id="support-tickets-body" class="divide-y divide-gray-200"></tbody>
-          </table>
-        </div>
-      </section>
+      <!-- Admin Support-Tickets -->
+<section id="support" class="dash-section hidden">
+  <h2 class="section-title">📨 Support-Tickets</h2>
+  <div class="overflow-auto bg-white rounded shadow">
+    <table class="min-w-full text-sm">
+      <thead class="bg-blue-100 text-left">
+        <tr>
+          <th class="px-4 py-2">Datum</th>
+          <th class="px-4 py-2">User</th>
+          <th class="px-4 py-2">Nachrichten</th>
+          <th class="px-4 py-2">Status</th>
+          <th class="px-4 py-2">Aktionen</th>
+        </tr>
+      </thead>
+      <tbody id="support-tickets-body" class="divide-y divide-gray-200"></tbody>
+    </table>
+  </div>
+</section>
 
+<!-- Popup für Antwort -->
+<div id="support-reply-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+  <div class="bg-white p-4 rounded shadow max-w-lg w-full">
+    <h3 class="text-lg font-bold mb-2">Antwort auf Ticket</h3>
+    <div id="modal-ticket-info" class="text-xs text-gray-500 mb-2"></div>
+    <textarea id="modal-reply-text" class="w-full border p-2 rounded mb-2" rows="5" maxlength="500"></textarea>
+    <div class="text-xs text-gray-500 mb-3" id="modal-reply-counter">500 Zeichen übrig</div>
+    <div class="flex justify-end gap-2">
+      <button onclick="closeReplyModal()" class="px-3 py-1 bg-gray-300 rounded">Abbrechen</button>
+      <button onclick="sendReply()" class="px-3 py-1 bg-green-600 text-white rounded">Antworten & schließen</button>
+    </div>
+  </div>
+</div>
       <section id="profiles" class="dash-section hidden">
         <h2 class="section-title">👤 Profile Verwaltung</h2>
         <!-- Profile Verwaltung -->
@@ -2486,6 +2500,9 @@ function goToMainPage() {
 function refresh() {
  location.reload(); // ⬅️ Das lädt die gesamte Seite neu
 }
+let currentReplyTicketId = null;
+let currentReplyEmail = null;
+
 async function ladeSupportTickets() {
   const snapshot = await db.collection('support').orderBy('createdAt', 'desc').get();
   const body = document.getElementById('support-tickets-body');
@@ -2495,40 +2512,33 @@ async function ladeSupportTickets() {
     const ticket = doc.data();
     const id = doc.id;
     const datum = ticket.createdAt?.toDate().toLocaleString('de-DE') || '-';
-    const email = ticket.email || '-';
+    const email = ticket.mail || '-';
     const status = ticket.status || 'offen';
 
     const row = document.createElement('tr');
     row.className = "align-top";
-
     row.innerHTML = `
       <td class="px-4 py-2 text-xs text-gray-600">${datum}</td>
       <td class="px-4 py-2 text-xs">
-        <div>${email}</div>
-        <div class="text-[10px] text-gray-400">ID: ${id}</div>
+        ${email}<br><span class="text-[10px] text-gray-400">ID: ${id}</span>
       </td>
-      <td class="px-4 py-2 text-sm">
-        <div id="msgs-${id}" class="space-y-1 text-xs text-gray-800">⏳ Lade Nachrichten…</div>
-        <div class="mt-2 flex gap-1">
-          <input id="reply-${id}" maxlength="250" placeholder="Antwort schreiben…" class="flex-1 border p-1 rounded text-xs" />
-          <button onclick="adminReplySupport('${id}')" class="bg-green-600 text-white text-xs px-2 py-1 rounded">Antworten</button>
-        </div>
+      <td class="px-4 py-2 text-xs">
+        <div id="msgs-${id}" class="space-y-1">⏳ Lade Nachrichten…</div>
       </td>
       <td class="px-4 py-2">
         <select onchange="updateSupportStatus('${id}', this.value)" class="border rounded px-2 py-1 text-xs">
-          ${['offen', 'bearbeitet', 'archiviert'].map(opt => `
+          ${['offen', 'bearbeitet', 'geschlossen', 'archiviert'].map(opt => `
             <option value="${opt}" ${opt === status ? 'selected' : ''}>${opt}</option>
           `).join('')}
         </select>
       </td>
       <td class="px-4 py-2 space-x-1">
+        <button onclick="openReplyModal('${id}','${email}')" class="bg-green-600 text-white text-xs px-2 py-1 rounded">Antworten</button>
         <button onclick="loescheSupportTicket('${id}')" class="bg-red-600 text-white text-xs px-2 py-1 rounded">Löschen</button>
       </td>
     `;
-
     body.appendChild(row);
 
-    // Nachrichten laden
     ladeSupportNachrichten(id);
   });
 }
@@ -2548,18 +2558,73 @@ function ladeSupportNachrichten(ticketId) {
       snap.forEach(mdoc => {
         const d = mdoc.data();
         const zeit = d.createdAt?.toDate?.().toLocaleString('de-DE') || "-";
-        const sender = d.sender || "unbekannt";
-        const text = d.text || "";
         wrap.innerHTML += `
-          <div class="border rounded p-1 bg-white">
-            <div class="text-xs">${text}</div>
-            <div class="text-[10px] text-gray-500">${sender} · ${zeit}</div>
+          <div class="border rounded p-1 bg-white mb-1">
+            <div class="text-xs">${d.text || ''}</div>
+            <div class="text-[10px] text-gray-500">${d.sender || '-'} · ${zeit}</div>
           </div>
         `;
       });
     });
 }
 
+function openReplyModal(ticketId, email) {
+  currentReplyTicketId = ticketId;
+  currentReplyEmail = email;
+  document.getElementById("modal-ticket-info").innerText = `Ticket-ID: ${ticketId} · User: ${email}`;
+  document.getElementById("modal-reply-text").value = "";
+  document.getElementById("modal-reply-counter").innerText = "500 Zeichen übrig";
+  document.getElementById("support-reply-modal").classList.remove("hidden");
+  document.getElementById("support-reply-modal").classList.add("flex");
+}
+
+function closeReplyModal() {
+  document.getElementById("support-reply-modal").classList.add("hidden");
+  document.getElementById("support-reply-modal").classList.remove("flex");
+  currentReplyTicketId = null;
+  currentReplyEmail = null;
+}
+
+async function sendReply() {
+  const text = document.getElementById("modal-reply-text").value.trim();
+  if (!text || !currentReplyTicketId) return;
+
+  try {
+    await db.collection("support").doc(currentReplyTicketId).collection("messages").add({
+      text,
+      sender: "Admin",
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await db.collection("support").doc(currentReplyTicketId).update({
+      status: "geschlossen"
+    });
+
+    showNotification("✅ Antwort gesendet & Ticket geschlossen");
+    closeReplyModal();
+    ladeSupportTickets();
+  } catch (err) {
+    console.error("sendReply error", err);
+    alert("Fehler: " + err.message);
+  }
+}
+
+async function updateSupportStatus(id, neuerStatus) {
+  await db.collection('support').doc(id).update({ status: neuerStatus });
+  showNotification('✅ Status aktualisiert');
+}
+
+async function loescheSupportTicket(id) {
+  if (!confirm('Dieses Support-Ticket wirklich löschen?')) return;
+  await db.collection('support').doc(id).delete();
+  showNotification('🗑️ Ticket gelöscht');
+  ladeSupportTickets();
+}
+
+// Counter im Modal aktualisieren
+document.getElementById("modal-reply-text").addEventListener("input", e => {
+  const left = 500 - e.target.value.length;
+  document.getElementById("modal-reply-counter").innerText = `${left} Zeichen übrig`;
+});
 async function adminReplySupport(ticketId) {
   const inp = document.getElementById("reply-" + ticketId);
   if (!inp) return;
@@ -2590,17 +2655,6 @@ async function adminReplySupport(ticketId) {
   }
 }
 
-async function updateSupportStatus(id, neuerStatus) {
-  await db.collection('supportTickets').doc(id).update({ status: neuerStatus });
-  showNotification('✅ Status aktualisiert');
-}
-
-async function loescheSupportTicket(id) {
-  if (!confirm('Dieses Support-Ticket wirklich löschen?')) return;
-  await db.collection('supportTickets').doc(id).delete();
-  showNotification('🗑️ Support-Ticket gelöscht');
-  ladeSupportTickets();
-}
 
  /* async function ladeSupportAnfragen() {
   const snapshot = await db.collection('supportTickets').orderBy('zeitpunkt', 'desc').limit(100).get();
