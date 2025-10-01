@@ -1269,14 +1269,12 @@ async function loadSupportTickets() {
 
   list.innerHTML = "⏳ Lade Support-Tickets…";
   try {
-    // Primäre Query: filter nach Mail + sortiere nach createdAt
     let query = db.collection("support").where("mail", "==", currentUser.email);
     let snap;
 
     try {
       snap = await query.orderBy("createdAt", "desc").get();
     } catch (errOrderBy) {
-      // Falls Firestore "requires an index" wirft, fallback ohne orderBy
       console.warn("OrderBy failed, fallback without orderBy:", errOrderBy);
       snap = await query.get();
     }
@@ -1286,11 +1284,11 @@ async function loadSupportTickets() {
       return;
     }
 
-    // Erfolgreich: liste rendern
     list.innerHTML = "";
     snap.forEach(doc => {
       const d = doc.data();
-      // createdAt kann ein Firestore Timestamp sein
+      const id = doc.id;
+
       let createdStr = "-";
       try {
         if (d.createdAt && typeof d.createdAt.toDate === "function") {
@@ -1301,27 +1299,71 @@ async function loadSupportTickets() {
       } catch (e) { createdStr = "-"; }
 
       list.innerHTML += `
-        <div class="bg-gray-100 p-3 rounded">
-          <div class="font-semibold">📨 ${escapeHtml(d.msg || '(keine Nachricht)')}</div>
-          <div class="text-xs text-gray-500 mt-1">Gesendet: ${escapeHtml(createdStr)}</div>
-          <div class="text-xs">E-Mail: ${escapeHtml(d.mail || '-')}</div>
-          <div class="text-xs">Status: ${escapeHtml(d.status || 'offen')}</div>
-          <div class="mt-2 flex gap-2">
-            <button class="px-2 py-1 text-xs bg-red-600 text-white rounded" onclick="deleteSupport('${doc.id}')">🗑️ Löschen</button>
-            <button class="px-2 py-1 text-xs bg-gray-200 rounded" onclick="console.log('Doc path: support/${doc.id}')">Pfad anzeigen</button>
+        <div class="bg-gray-100 p-3 rounded mb-3">
+          <div class="font-semibold">📨 Support Ticket</div>
+          <div class="text-xs text-gray-500">Gesendet: ${escapeHtml(createdStr)}</div>
+          <div class="text-xs">Status: ${escapeHtml(d.status || "offen")}</div>
+
+          <!-- Nachrichten -->
+          <div id="msgs-${id}" class="space-y-2 my-2 text-sm">⏳ Lade Nachrichten…</div>
+
+          <!-- Eingabe -->
+          <div class="flex gap-2 mt-2">
+            <input id="msgInput-${id}" class="flex-1 border p-2 rounded text-sm" placeholder="Antwort schreiben..." />
+            <button onclick="replySupport('${id}')" class="px-3 py-2 bg-green-600 text-white rounded text-sm">Senden</button>
           </div>
-          <div class="text-xs text-gray-400 mt-1">Gespeichert in: <code>support/${doc.id}</code></div>
         </div>
       `;
+
+      // Nachrichten-Listener starten
+      loadSupportMessages(id);
     });
 
   } catch (err) {
     console.error("loadSupportTickets error:", err);
-    // genaue Fehlermeldung im UI zeigen (hilfreich beim Debugging)
     list.innerHTML = `<div class="text-red-600">❌ Fehler beim Laden: ${escapeHtml(err.message || String(err))}</div>`;
   }
 }
 
+    function loadSupportMessages(ticketId) {
+  const wrap = document.getElementById("msgs-" + ticketId);
+  if (!wrap) return;
+
+  db.collection("support").doc(ticketId).collection("messages")
+    .orderBy("createdAt", "asc")
+    .onSnapshot(snap => {
+      wrap.innerHTML = "";
+      snap.forEach(doc => {
+        const d = doc.data();
+        const time = d.createdAt?.toDate?.().toLocaleString?.() || "-";
+        wrap.innerHTML += `
+          <div class="bg-white border rounded p-2">
+            <div class="text-sm">${escapeHtml(d.text)}</div>
+            <div class="text-xs text-gray-500">${escapeHtml(d.sender || "-")} · ${time}</div>
+          </div>
+        `;
+      });
+    });
+}
+
+async function replySupport(ticketId) {
+  const inp = document.getElementById("msgInput-" + ticketId);
+  if (!inp) return;
+  const text = inp.value.trim();
+  if (!text) return;
+
+  try {
+    await db.collection("support").doc(ticketId).collection("messages").add({
+      text,
+      sender: currentUser.email,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    inp.value = "";
+  } catch (err) {
+    console.error("replySupport error", err);
+    alert("Fehler beim Antworten: " + err.message);
+  }
+}
 /**
  * sendSupport: sendet ein neues Ticket und updated die Liste danach
  */
