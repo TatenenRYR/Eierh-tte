@@ -1207,84 +1207,189 @@ function setActive(buttonId) {
   /***********************
    * Support form
    ***********************/
-  function openSupport() {
+
+    // ------- Support: Formular + Laden der Tickets -------
+function openSupport() {
   if (!currentUser || !currentUser.uid) {
     showToast("Bitte zuerst einloggen");
     return;
   }
+
   mode = "support";
-  document.getElementById("navBottom").style.display =
-    (mode === "entry") ? "flex" : "none";
+  document.getElementById("navBottom").style.display = (mode === "entry") ? "flex" : "none";
 
   const qa = document.getElementById('question-area');
   qa.innerHTML = `
     <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
       <h2 class="text-xl font-bold mb-3">📨 Support</h2>
-      <input id="supName" class="w-full border p-2 rounded mb-2" placeholder="Dein Name" />
-      <input id="supMail" class="w-full border p-2 rounded mb-2" placeholder="E-Mail" value="${currentUser.email || ''}" />
-      <textarea id="supMsg" class="w-full border p-2 rounded mb-2" rows="5" placeholder="Nachricht"></textarea>
+
+      <label class="block mb-2">
+        <div class="text-sm text-gray-600">Name</div>
+        <input id="supName" class="w-full border p-2 rounded" placeholder="Dein Name" value="${escapeAttr(currentUser.displayName || '')}" />
+      </label>
+
+      <label class="block mb-2">
+        <div class="text-sm text-gray-600">E-Mail</div>
+        <input id="supMail" class="w-full border p-2 rounded" placeholder="E-Mail" value="${escapeAttr(currentUser.email || '')}" />
+      </label>
+
+      <label class="block mb-4">
+        <div class="text-sm text-gray-600">Nachricht</div>
+        <textarea id="supMsg" class="w-full border p-2 rounded" rows="4" placeholder="Nachricht..."></textarea>
+      </label>
+
       <div class="flex gap-2 mb-4">
         <button class="px-4 py-2 bg-green-600 text-white rounded" onclick="sendSupport()">Absenden</button>
+        <button class="px-4 py-2 bg-gray-200 rounded" onclick="startNewEntry()">Abbrechen</button>
       </div>
-      <hr class="my-4">
+
+      <hr class="my-4" />
+
       <h3 class="text-lg font-bold mb-2">📂 Deine bisherigen Support-Tickets</h3>
       <div id="supportList" class="space-y-2 text-sm text-gray-700">⏳ Lade Support-Tickets…</div>
-    </div>`;
+    </div>
+  `;
 
-  // Tickets laden
-  loadSupportTickets();
-
-  toggleSidebar();
   updateInfoBox();
+  loadSupportTickets(); // befüllt #supportList
+  toggleSidebar();
 }
 
+/**
+ * Lädt Support-Tickets des aktuellen Users in #supportList
+ * macht Fallback, falls Firestore einen Index verlangt (zeigt Fehler an).
+ */
 async function loadSupportTickets() {
   const list = document.getElementById("supportList");
   if (!list) return;
-  try {
-    const snap = await db.collection("support")
-      .where("mail","==",currentUser.email)
-      .orderBy("createdAt","desc")
-      .get();
+  if (!currentUser || !currentUser.email) {
+    list.innerHTML = "<div class='text-gray-500'>Bitte anmelden, um deine Tickets zu sehen.</div>";
+    return;
+  }
 
-    if (snap.empty) {
-      list.innerHTML = "<p class='text-gray-500'>Keine Support-Anfragen gefunden.</p>";
+  list.innerHTML = "⏳ Lade Support-Tickets…";
+  try {
+    // Primäre Query: filter nach Mail + sortiere nach createdAt
+    let query = db.collection("support").where("mail", "==", currentUser.email);
+    let snap;
+
+    try {
+      snap = await query.orderBy("createdAt", "desc").get();
+    } catch (errOrderBy) {
+      // Falls Firestore "requires an index" wirft, fallback ohne orderBy
+      console.warn("OrderBy failed, fallback without orderBy:", errOrderBy);
+      snap = await query.get();
+    }
+
+    if (!snap || snap.empty) {
+      list.innerHTML = "<div class='text-gray-500'>Keine Support-Anfragen gefunden.</div>";
       return;
     }
 
+    // Erfolgreich: liste rendern
     list.innerHTML = "";
     snap.forEach(doc => {
       const d = doc.data();
+      // createdAt kann ein Firestore Timestamp sein
+      let createdStr = "-";
+      try {
+        if (d.createdAt && typeof d.createdAt.toDate === "function") {
+          createdStr = d.createdAt.toDate().toLocaleString();
+        } else if (d.createdAt) {
+          createdStr = new Date(d.createdAt).toLocaleString();
+        }
+      } catch (e) { createdStr = "-"; }
+
       list.innerHTML += `
         <div class="bg-gray-100 p-3 rounded">
-          <div class="font-semibold">📨 ${escapeHtml(d.msg)}</div>
-          <div class="text-xs text-gray-500">
-            ${d.createdAt?.toDate?.().toLocaleString?.() || "-"}
+          <div class="font-semibold">📨 ${escapeHtml(d.msg || '(keine Nachricht)')}</div>
+          <div class="text-xs text-gray-500 mt-1">Gesendet: ${escapeHtml(createdStr)}</div>
+          <div class="text-xs">E-Mail: ${escapeHtml(d.mail || '-')}</div>
+          <div class="text-xs">Status: ${escapeHtml(d.status || 'offen')}</div>
+          <div class="mt-2 flex gap-2">
+            <button class="px-2 py-1 text-xs bg-red-600 text-white rounded" onclick="deleteSupport('${doc.id}')">🗑️ Löschen</button>
+            <button class="px-2 py-1 text-xs bg-gray-200 rounded" onclick="console.log('Doc path: support/${doc.id}')">Pfad anzeigen</button>
           </div>
-          <div class="text-xs">Status: ${d.status || "offen"}</div>
-          <button class="mt-1 px-2 py-1 text-xs bg-red-600 text-white rounded" onclick="deleteSupport('${doc.id}')">🗑️ Löschen</button>
-        </div>`;
+          <div class="text-xs text-gray-400 mt-1">Gespeichert in: <code>support/${doc.id}</code></div>
+        </div>
+      `;
     });
+
   } catch (err) {
-    console.error("loadSupportTickets error", err);
-    list.innerHTML = "<p class='text-red-600'>❌ Fehler beim Laden</p>";
+    console.error("loadSupportTickets error:", err);
+    // genaue Fehlermeldung im UI zeigen (hilfreich beim Debugging)
+    list.innerHTML = `<div class="text-red-600">❌ Fehler beim Laden: ${escapeHtml(err.message || String(err))}</div>`;
   }
 }
 
-  async function sendSupport() {
-    const name = document.getElementById('supName').value.trim();
-    const mail = document.getElementById('supMail').value.trim();
-    const msg = document.getElementById('supMsg').value.trim();
-    if (!msg || !mail) { alert('Bitte Nachricht und E-Mail ausfüllen'); return; }
-    try {
-      await db.collection('support').add({ name, mail, msg, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
-      showToast('✅ Nachricht gesendet');
-      startNewEntry();
-    } catch (e) {
-      console.error('sendSupport error', e);
-      alert('Fehler: ' + e.message);
-    }
+/**
+ * sendSupport: sendet ein neues Ticket und updated die Liste danach
+ */
+async function sendSupport() {
+  const name = document.getElementById('supName')?.value.trim() || '';
+  const mail = document.getElementById('supMail')?.value.trim() || (currentUser?.email || '');
+  const msg = document.getElementById('supMsg')?.value.trim() || '';
+  if (!msg || !mail) { alert('Bitte Nachricht und E-Mail ausfüllen'); return; }
+
+  try {
+    await db.collection('support').add({
+      name,
+      mail,
+      msg,
+      status: 'offen',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    showToast('✅ Nachricht gesendet');
+    // Formular zurücksetzen
+    document.getElementById('supMsg').value = '';
+    // Liste aktualisieren
+    loadSupportTickets();
+  } catch (err) {
+    console.error('sendSupport error', err);
+    alert('Fehler: ' + (err.message || err));
   }
+}
+
+/**
+ * Löschen von Support-Ticket: danach Liste aktualisieren
+ */
+async function deleteSupport(id) {
+  if (!confirm("Ticket wirklich löschen?")) return;
+  try {
+    await db.collection("support").doc(id).delete();
+    showToast("Support-Ticket gelöscht");
+    // wenn wir gerade die Support-Ansicht sehen -> neu laden
+    if (mode === "support" && document.getElementById("supportList")) {
+      loadSupportTickets();
+    } else {
+      // sonst bestehende Funktion nutzen (falls vorhanden)
+      if (typeof showSupportTickets === "function") showSupportTickets();
+    }
+  } catch (err) {
+    console.error("deleteSupport error", err);
+    alert("Fehler beim Löschen: " + (err.message || err));
+  }
+}
+
+/**
+ * Optional: showSupportTickets() belassen oder neu anpassen, damit
+ * sie die Liste (ohne Formular) zeigt. Beispiel:
+ */
+async function showSupportTickets() {
+  if (!currentUser || !currentUser.uid) { showToast("Bitte zuerst einloggen"); return; }
+  mode = "list";
+  document.getElementById("navBottom").style.display = (mode === "entry") ? "flex" : "none";
+  const qa = document.getElementById("question-area");
+  qa.innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+      <h2 class="text-xl font-bold mb-3">📂 Meine Support-Tickets</h2>
+      <div id="supportList" class="space-y-2 text-sm text-gray-700">⏳ Lade Support-Tickets…</div>
+    </div>
+  `;
+  updateInfoBox();
+  loadSupportTickets();
+  toggleSidebar();
+}
 
   /***********************
    * Utility, escape helpers
