@@ -1255,201 +1255,9 @@ function openSupport() {
   toggleSidebar();
 }
 
-/**
- * Lädt Support-Tickets des aktuellen Users in #supportList
- * macht Fallback, falls Firestore einen Index verlangt (zeigt Fehler an).
- */
-async function loadSupportTickets() {
-  const list = document.getElementById("supportList");
-  if (!list) return;
-  if (!currentUser || !currentUser.email) {
-    list.innerHTML = "<div class='text-gray-500'>Bitte anmelden, um deine Tickets zu sehen.</div>";
-    return;
-  }
 
-  list.innerHTML = "⏳ Lade Support-Tickets…";
-  try {
-    let query = db.collection("support").where("mail", "==", currentUser.email);
-    let snap;
-    try {
-      snap = await query.orderBy("createdAt", "desc").get();
-    } catch {
-      snap = await query.get();
-    }
 
-    if (!snap || snap.empty) {
-      list.innerHTML = "<div class='text-gray-500'>Keine Support-Anfragen gefunden.</div>";
-      return;
-    }
-
-    list.innerHTML = "";
-    snap.forEach(doc => {
-      const d = doc.data();
-      const id = doc.id;
-
-      let createdStr = "-";
-      if (d.createdAt?.toDate) createdStr = d.createdAt.toDate().toLocaleString();
-
-      list.innerHTML += `
-        <div class="bg-gray-100 p-3 rounded mb-3">
-          <div class="font-semibold">📨 Support Ticket #${id}</div>
-          <div class="text-xs text-gray-500">Gesendet: ${escapeHtml(createdStr)}</div>
-          <div class="text-xs">Status: ${escapeHtml(d.status || "offen")}</div>
-
-          <!-- Nachrichten-Container -->
-          <div id="msgs-${id}" class="space-y-2 my-2 text-sm">⏳ Lade Nachrichten…</div>
-
-          ${d.status !== "geschlossen" ? `
-          <div class="flex flex-col gap-1 mt-2">
-            <input id="msgInput-${id}" maxlength="250" class="flex-1 border p-2 rounded text-sm" placeholder="Antwort schreiben (max 250 Zeichen)..." />
-            <div id="msgCounter-${id}" class="text-xs text-gray-500">250 Zeichen übrig</div>
-            <button onclick="replySupport('${id}')" class="px-3 py-2 bg-green-600 text-white rounded text-sm">Senden</button>
-            <button onclick="closeSupportTicket('${id}')" class="px-3 py-2 bg-gray-600 text-white rounded text-sm">✅ Ticket schließen</button>
-          </div>
-          ` : `<div class="text-sm text-red-600 mt-2">Ticket ist geschlossen</div>`}
-        </div>
-      `;
-
-      // Nachrichten-Listener starten
-      loadSupportMessages(id, d.msg, d.mail, d.createdAt);
-
-      // Counter-Logik nur, wenn Eingabe da ist
-      const inp = document.getElementById("msgInput-" + id);
-      const counter = document.getElementById("msgCounter-" + id);
-      if (inp && counter) {
-        counter.textContent = `${250 - inp.value.length} Zeichen übrig`;
-        inp.addEventListener("input", () => {
-          const left = 250 - inp.value.length;
-          counter.textContent = `${left} Zeichen übrig`;
-        });
-      }
-    });
-
-  } catch (err) {
-    console.error("loadSupportTickets error:", err);
-    list.innerHTML = `<div class="text-red-600">❌ Fehler beim Laden: ${escapeHtml(err.message || String(err))}</div>`;
-  }
-}
-    function loadSupportMessages(ticketId, firstMsg = null, firstSender = null, firstCreatedAt = null) {
-  const wrap = document.getElementById("msgs-" + ticketId);
-  if (!wrap) return;
-
-  db.collection("support").doc(ticketId).collection("messages")
-    .orderBy("createdAt", "asc")
-    .onSnapshot(snap => {
-      let html = "";
-
-      // Subcollection Nachrichten
-      snap.forEach(doc => {
-        const d = doc.data();
-        const time = d.createdAt?.toDate?.().toLocaleString?.() || "-";
-        html += `
-          <div class="bg-white border rounded p-2">
-            <div class="text-sm">${escapeHtml(d.text)}</div>
-            <div class="text-xs text-gray-500">${escapeHtml(d.sender || "-")} · ${time}</div>
-          </div>
-        `;
-      });
-
-      // Fallback: wenn leer und es gibt noch d.msg im Ticket
-      if (snap.empty && firstMsg) {
-        const time = firstCreatedAt?.toDate?.().toLocaleString?.() || "-";
-        html += `
-          <div class="bg-white border rounded p-2">
-            <div class="text-sm">${escapeHtml(firstMsg)}</div>
-            <div class="text-xs text-gray-500">${escapeHtml(firstSender || "-")} · ${time}</div>
-          </div>
-        `;
-      }
-
-      wrap.innerHTML = html || "<div class='text-gray-500'>Keine Nachrichten</div>";
-    });
-    }
-async function replySupport(ticketId) {
-  const inp = document.getElementById("msgInput-" + ticketId);
-  if (!inp) return;
-  const text = inp.value.trim();
-  if (!text) return;
-
-  try {
-    await db.collection("support").doc(ticketId).collection("messages").add({
-      text,
-      sender: currentUser.email,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    inp.value = "";
-    const counter = document.getElementById("msgCounter-" + ticketId);
-    if (counter) counter.textContent = "250 Zeichen übrig";
-  } catch (err) {
-    console.error("replySupport error", err);
-    alert("Fehler beim Antworten: " + err.message);
-  }
-}
-/**
- * sendSupport: sendet ein neues Ticket und updated die Liste danach
- */
-async function sendSupport() {
-  const name = document.getElementById('supName')?.value.trim() || '';
-  const mail = document.getElementById('supMail')?.value.trim() || (currentUser?.email || '');
-  const msg = document.getElementById('supMsg')?.value.trim() || '';
-  if (!msg || !mail) { alert('Bitte Nachricht und E-Mail ausfüllen'); return; }
-
-  try {
-    // Ticket anlegen
-    const ticketRef = await db.collection('support').add({
-      name,
-      mail,
-      status: 'offen',
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-
-    // Erste Nachricht direkt in Subcollection speichern
-    await ticketRef.collection("messages").add({
-      text: msg,
-      sender: mail,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-
-    showToast('✅ Ticket erstellt');
-    document.getElementById('supMsg').value = '';
-    loadSupportTickets(); // neu laden
-  } catch (err) {
-    console.error('sendSupport error', err);
-    alert('Fehler: ' + (err.message || err));
-  }
-}
-async function closeSupportTicket(ticketId) {
-  if (!confirm("Ticket wirklich schließen?")) return;
-  try {
-    await db.collection("support").doc(ticketId).update({ status: "geschlossen" });
-    showToast("Ticket geschlossen");
-    loadSupportTickets();
-  } catch (err) {
-    console.error("closeSupportTicket error", err);
-    alert("Fehler beim Schließen: " + err.message);
-  }
-}
-/**
- * Löschen von Support-Ticket: danach Liste aktualisieren
- */
-async function deleteSupport(id) {
-  if (!confirm("Ticket wirklich löschen?")) return;
-  try {
-    await db.collection("support").doc(id).delete();
-    showToast("Support-Ticket gelöscht");
-    // wenn wir gerade die Support-Ansicht sehen -> neu laden
-    if (mode === "support" && document.getElementById("supportList")) {
-      loadSupportTickets();
-    } else {
-      // sonst bestehende Funktion nutzen (falls vorhanden)
-      if (typeof showSupportTickets === "function") showSupportTickets();
-    }
-  } catch (err) {
-    console.error("deleteSupport error", err);
-    alert("Fehler beim Löschen: " + (err.message || err));
-  }
-}
-
+  
 /**
  * Optional: showSupportTickets() belassen oder neu anpassen, damit
  * sie die Liste (ohne Formular) zeigt. Beispiel:
@@ -1469,7 +1277,319 @@ async function showSupportTickets() {
   loadSupportTickets();
   toggleSidebar();
 }
+/* -------------------------
+   Robuste Support-Implementierung
+   - zeigt support id an
+   - individuelle message-listener pro ticket (mit unsubscribe map)
+   - fallback: erste Nachricht aus ticket doc (wenn messages empty)
+   - Zeichenbegrenzung + Counter pro Eingabefeld
+   - sichere DOM-Erstellung (keine großen innerHTML-Klumpen)
+   ------------------------- */
 
+const SUPPORT_MSG_MAX = 250;
+// Map ticketId -> unsubscribe function for messages onSnapshot
+const _supportUnsubs = new Map();
+
+async function loadSupportTickets() {
+  const list = document.getElementById("supportList");
+  if (!list) return;
+  if (!currentUser || !currentUser.email) {
+    list.innerHTML = "<div class='text-gray-500'>Bitte anmelden, um deine Tickets zu sehen.</div>";
+    return;
+  }
+
+  // unsubscribe all previous listeners to avoid duplicates
+  _supportUnsubs.forEach(u => { try { u(); } catch(e){} });
+  _supportUnsubs.clear();
+
+  list.innerHTML = "⏳ Lade Support-Tickets…";
+
+  try {
+    let query = db.collection("support").where("mail", "==", currentUser.email);
+    let snap;
+    try {
+      snap = await query.orderBy("createdAt", "desc").get();
+    } catch (errOrder) {
+      console.warn("OrderBy failed (maybe index required) - fallback without orderBy:", errOrder);
+      snap = await query.get();
+    }
+
+    if (!snap || snap.empty) {
+      list.innerHTML = "<div class='text-gray-500'>Keine Support-Anfragen gefunden.</div>";
+      return;
+    }
+
+    // build DOM with document fragment for performance
+    const frag = document.createDocumentFragment();
+    snap.forEach(doc => {
+      const d = doc.data();
+      const id = doc.id;
+
+      // outer card
+      const card = document.createElement("div");
+      card.className = "bg-gray-100 p-3 rounded mb-3";
+
+      // header row: title + support id
+      const hdr = document.createElement("div");
+      hdr.className = "flex justify-between items-start gap-2";
+      const title = document.createElement("div");
+      title.className = "font-semibold";
+      title.textContent = "📨 Support Ticket";
+      const idEl = document.createElement("div");
+      idEl.className = "text-xs text-gray-500";
+      idEl.innerHTML = `<span class="font-mono">ID: ${escapeHtml(id)}</span>`; // safe: id is escaped
+      hdr.appendChild(title);
+      hdr.appendChild(idEl);
+      card.appendChild(hdr);
+
+      // meta: created + status
+      const created = document.createElement("div");
+      created.className = "text-xs text-gray-500 mt-1";
+      let createdStr = "-";
+      try {
+        if (d.createdAt && typeof d.createdAt.toDate === "function") createdStr = d.createdAt.toDate().toLocaleString();
+        else if (d.createdAt) createdStr = new Date(d.createdAt).toLocaleString();
+      } catch(e){}
+      created.innerHTML = `Gesendet: ${escapeHtml(createdStr)}<br>Status: ${escapeHtml(d.status || "offen")}`;
+      card.appendChild(created);
+
+      // messages container
+      const msgsWrap = document.createElement("div");
+      msgsWrap.id = `msgs-${id}`;
+      msgsWrap.className = "space-y-2 my-2 text-sm";
+      msgsWrap.textContent = "⏳ Lade Nachrichten…";
+      card.appendChild(msgsWrap);
+
+      // controls container
+      const controls = document.createElement("div");
+      controls.className = "mt-2";
+
+      if (d.status !== "geschlossen") {
+        // input
+        const input = document.createElement("input");
+        input.type = "text";
+        input.id = `msgInput-${id}`;
+        input.maxLength = SUPPORT_MSG_MAX;
+        input.placeholder = `Antwort schreiben (max ${SUPPORT_MSG_MAX} Zeichen)...`;
+        input.className = "w-full border p-2 rounded text-sm mb-1";
+
+        // counter
+        const counter = document.createElement("div");
+        counter.id = `msgCounter-${id}`;
+        counter.className = "text-xs text-gray-500 mb-2";
+        counter.textContent = `${SUPPORT_MSG_MAX} Zeichen übrig`;
+
+        // buttons row
+        const btnRow = document.createElement("div");
+        btnRow.className = "flex gap-2";
+
+        const sendBtn = document.createElement("button");
+        sendBtn.className = "px-3 py-2 bg-green-600 text-white rounded text-sm flex-1";
+        sendBtn.textContent = "Senden";
+
+        const closeBtn = document.createElement("button");
+        closeBtn.className = "px-3 py-2 bg-gray-600 text-white rounded text-sm";
+        closeBtn.textContent = "✅ Ticket schließen";
+
+        btnRow.appendChild(sendBtn);
+        btnRow.appendChild(closeBtn);
+
+        controls.appendChild(input);
+        controls.appendChild(counter);
+        controls.appendChild(btnRow);
+
+        // attach event listeners (closure captures id)
+        input.addEventListener("input", () => {
+          const left = SUPPORT_MSG_MAX - input.value.length;
+          counter.textContent = `${left} Zeichen übrig`;
+        });
+        sendBtn.addEventListener("click", () => replySupport(id));
+        closeBtn.addEventListener("click", () => closeSupportTicket(id));
+
+      } else {
+        // closed ticket -> show notice and allow delete only
+        const closedNotice = document.createElement("div");
+        closedNotice.className = "text-sm text-red-600";
+        closedNotice.textContent = "Ticket ist geschlossen";
+        controls.appendChild(closedNotice);
+      }
+
+      // small action row: show path + delete button
+      const actionRow = document.createElement("div");
+      actionRow.className = "mt-2 flex items-center justify-between gap-2";
+      const pathInfo = document.createElement("div");
+      pathInfo.className = "text-xs text-gray-400";
+      pathInfo.innerHTML = `Gespeichert in: <code>support/${escapeHtml(id)}</code>`;
+      const delBtn = document.createElement("button");
+      delBtn.className = "px-2 py-1 text-xs bg-red-600 text-white rounded";
+      delBtn.textContent = "🗑️ Löschen";
+      delBtn.addEventListener("click", () => deleteSupport(id));
+      actionRow.appendChild(pathInfo);
+      actionRow.appendChild(delBtn);
+
+      card.appendChild(controls);
+      card.appendChild(actionRow);
+
+      frag.appendChild(card);
+
+      // start messages listener for this ticket (store unsubscribe)
+      const ticketDocMsg = d.msg ?? null; // first msg stored in doc field (legacy)
+      const ticketDocMail = d.mail ?? null;
+      const ticketDocCreatedAt = d.createdAt ?? null;
+
+      // create onSnapshot listener and store unsubscribe
+      const unsub = db.collection("support").doc(id).collection("messages")
+        .orderBy("createdAt", "asc")
+        .onSnapshot((msnap) => {
+          // render messages for this ticket
+          const wrap = document.getElementById(`msgs-${id}`);
+          if (!wrap) return;
+          // build html
+          let html = "";
+          if (!msnap.empty) {
+            msnap.forEach(mdoc => {
+              const md = mdoc.data();
+              let time = "-";
+              try { if (md.createdAt && md.createdAt.toDate) time = md.createdAt.toDate().toLocaleString(); } catch(e){}
+              html += `
+                <div class="bg-white border rounded p-2">
+                  <div class="text-sm">${escapeHtml(md.text)}</div>
+                  <div class="text-xs text-gray-500">${escapeHtml(md.sender || "-")} · ${escapeHtml(time)}</div>
+                </div>`;
+            });
+          } else if (ticketDocMsg) {
+            // fallback: show doc.msg if no subcollection messages
+            let t = "-";
+            try { if (ticketDocCreatedAt && ticketDocCreatedAt.toDate) t = ticketDocCreatedAt.toDate().toLocaleString(); } catch(e){}
+            html += `
+              <div class="bg-white border rounded p-2">
+                <div class="text-sm">${escapeHtml(ticketDocMsg)}</div>
+                <div class="text-xs text-gray-500">${escapeHtml(ticketDocMail || "-")} · ${escapeHtml(t)}</div>
+              </div>`;
+          } else {
+            html = "<div class='text-gray-500'>Keine Nachrichten</div>";
+          }
+          wrap.innerHTML = html;
+        }, err => {
+          console.error("messages onSnapshot error for", id, err);
+          const wrap = document.getElementById(`msgs-${id}`);
+          if (wrap) wrap.innerHTML = `<div class="text-red-600">Fehler beim Laden der Nachrichten: ${escapeHtml(err.message || String(err))}</div>`;
+        });
+
+      // store unsubscribe
+      _supportUnsubs.set(id, unsub);
+    });
+
+    // replace list content
+    list.innerHTML = "";
+    list.appendChild(frag);
+
+  } catch (err) {
+    console.error("loadSupportTickets error:", err);
+    list.innerHTML = `<div class="text-red-600">❌ Fehler beim Laden: ${escapeHtml(err.message || String(err))}</div>`;
+  }
+}
+
+// Antwort schreiben (replies gehen in support/{id}/messages)
+async function replySupport(ticketId) {
+  // read input for this ticket
+  const inp = document.getElementById(`msgInput-${ticketId}`);
+  if (!inp) return;
+  const text = inp.value.trim();
+  if (!text) return;
+
+  // check ticket status before sending (optional read)
+  try {
+    const doc = await db.collection("support").doc(ticketId).get();
+    const data = doc.exists ? doc.data() : null;
+    if (data && data.status === "geschlossen") {
+      alert("Dieses Ticket ist geschlossen. Keine Antworten möglich.");
+      return;
+    }
+  } catch (err) {
+    console.warn("Could not read ticket status:", err);
+  }
+
+  try {
+    await db.collection("support").doc(ticketId).collection("messages").add({
+      text,
+      sender: currentUser.email || currentUser.uid || "web",
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    inp.value = "";
+    const counter = document.getElementById(`msgCounter-${ticketId}`);
+    if (counter) counter.textContent = `${SUPPORT_MSG_MAX} Zeichen übrig`;
+  } catch (err) {
+    console.error("replySupport error:", err);
+    alert("Fehler beim Senden: " + (err.message || String(err)));
+  }
+}
+
+// Ticket erstellen + erste Nachricht in subcollection schreiben
+async function sendSupport() {
+  const name = document.getElementById('supName')?.value.trim() || '';
+  const mail = document.getElementById('supMail')?.value.trim() || (currentUser?.email || '');
+  const msg = document.getElementById('supMsg')?.value.trim() || '';
+  if (!msg || !mail) { alert('Bitte Nachricht und E-Mail ausfüllen'); return; }
+
+  try {
+    // create ticket doc first (without msg field or keep legacy)
+    const ticketRef = await db.collection('support').add({
+      name,
+      mail,
+      status: 'offen',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    // add first message in subcollection
+    await ticketRef.collection('messages').add({
+      text: msg,
+      sender: mail,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    showToast('✅ Ticket erstellt');
+    // clear form
+    if (document.getElementById('supMsg')) document.getElementById('supMsg').value = '';
+    // reload tickets
+    await loadSupportTickets();
+  } catch (err) {
+    console.error("sendSupport error:", err);
+    alert("Fehler: " + (err.message || String(err)));
+  }
+}
+
+// Ticket schließen
+async function closeSupportTicket(ticketId) {
+  if (!confirm("Ticket wirklich schließen?")) return;
+  try {
+    await db.collection('support').doc(ticketId).update({ status: "geschlossen" });
+    showToast("Ticket geschlossen");
+    // reload tickets (will unsubscribe and re-subscribe)
+    await loadSupportTickets();
+  } catch (err) {
+    console.error("closeSupportTicket error:", err);
+    alert("Fehler beim Schließen: " + (err.message || String(err)));
+  }
+}
+
+// Ticket löschen
+async function deleteSupport(ticketId) {
+  if (!confirm("Ticket wirklich löschen?")) return;
+  try {
+    // unsubscribe listener if present
+    const unsub = _supportUnsubs.get(ticketId);
+    if (unsub) { try { unsub(); } catch(e){}; _supportUnsubs.delete(ticketId); }
+
+    await db.collection('support').doc(ticketId).delete();
+    showToast("Support-Ticket gelöscht");
+    // reload list
+    await loadSupportTickets();
+  } catch (err) {
+    console.error("deleteSupport error:", err);
+    alert("Fehler beim Löschen: " + (err.message || String(err)));
+  }
+}
   /***********************
    * Utility, escape helpers
    ***********************/
