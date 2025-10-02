@@ -239,6 +239,7 @@ document.getElementById("navBottom").style.display =
   try {
     await firebase.auth().signInWithPopup(provider);
     showToast("✅ Eingeloggt mit Google");
+    initHutMessagesBadge();
   } catch (e) {
     console.error("Google Login error", e);
     alert("Fehler beim Google-Login: " + e.message);
@@ -325,7 +326,8 @@ document.getElementById("navBottom").style.display =
           { emoji: '🏪', label: 'Hofladen', key: 'Hofladen' },
           { emoji: '🏠', label: 'Selbstbedienungshäuschen', key: 'Selbstbedienung' },
           { emoji: '🛝', label: 'Spielplatz', key: 'Spielplatz' },
-          { emoji: '🌄', label: 'Abenteuerhof', key: 'Abenteuerhof' }
+          { emoji: '🌄', label: 'Abenteuerhof', key: 'Abenteuerhof' },
+          { emoji: '🍶', label: 'Automat', key: 'Automat' }
         ];
         const wrap = document.createElement('div');
         wrap.className = 'grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto';
@@ -344,14 +346,52 @@ document.getElementById("navBottom").style.display =
         return;
       }
 
-      if (step === 2) {
-        qa.innerHTML = `
-          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-            <h2 class="text-lg font-bold mb-2">🏷️ Name der Hütte</h2>
-            <input id="nameInput" class="w-full border p-2 rounded" placeholder="Name eingeben" value="${editingData.name || ''}">
-          </div>`;
-        return;
-      }
+      // Texte für Step 2 je nach Typ
+const typeTexts = {
+  Eierhütte: {
+    title: "🏷️ Name der Eierhütte",
+    question: "Wie soll deine Eierhütte heißen?"
+  },
+  Hofladen: {
+    title: "🏷️ Name des Hofladens",
+    question: "Wie soll dein Hofladen heißen?"
+  },
+  Selbstbedienung: {
+    title: "🏷️ Name des Selbstbedienungshäuschens",
+    question: "Wie soll dein Selbstbedienungshäuschen heißen?"
+  },
+  Spielplatz: {
+    title: "🏷️ Name des Spielplatzes",
+    question: "Wie soll dein Spielplatz heißen?"
+  },
+  Abenteuerhof: {
+    title: "🏷️ Name des Abenteuerhofs",
+    question: "Wie soll dein Abenteuerhof heißen?"
+  },
+  Automat: {
+    title: "🏷️ Name des Automaten",
+    question: "Wie soll dein Automat heißen?"
+  }
+};
+
+if (step === 2) {
+  const currentType = eintragung.type; // z. B. "Selbstbedienung"
+  const { title, question } = typeTexts[currentType] || {
+    title: "🏷️ Name",
+    question: "Wie soll dein Eintrag heißen?"
+  };
+
+  qa.innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+      <h2 class="text-lg font-bold mb-2">${title}</h2>
+      <p class="text-sm text-gray-600 mb-2">${question}</p>
+      <input id="nameInput"
+             class="w-full border p-2 rounded"
+             placeholder="Name eingeben"
+             value="${editingData.name || ''}">
+    </div>`;
+  return;
+}
 
       if (step === 3) {
         qa.innerHTML = `
@@ -598,7 +638,45 @@ mode = "tutorial";
 
 
 let hutMessagesUnsub = null;
+let hutMessagesBadgeUnsub = null;
 
+async function initHutMessagesBadge() {
+  // alten Listener beenden
+  if (hutMessagesBadgeUnsub) { hutMessagesBadgeUnsub(); hutMessagesBadgeUnsub = null; }
+
+  // Eigene Hütten laden
+  const huettenSnap = await db.collection("eierhuetten")
+    .where("ownerId", "==", currentUser.uid)
+    .get();
+
+  if (huettenSnap.empty) {
+    const counter = document.getElementById("hutMessagesCount");
+    if (counter) counter.classList.add("hidden");
+    return;
+  }
+
+  const hutIds = huettenSnap.docs.map(d => d.id);
+
+  hutMessagesBadgeUnsub = db.collection("hutMessages")
+    .where("hutId", "in", hutIds.slice(0, 10))
+    .onSnapshot(snap => {
+      let neuCount = 0;
+      snap.forEach(doc => {
+        const d = doc.data();
+        if (d.answered === false) neuCount++;
+      });
+
+      const counter = document.getElementById("hutMessagesCount");
+      if (counter) {
+        if (neuCount > 0) {
+          counter.textContent = neuCount;
+          counter.classList.remove("hidden");
+        } else {
+          counter.classList.add("hidden");
+        }
+      }
+    });
+}
 async function ladeHutMessagesLive() {
   const list = document.getElementById("hutMessagesList");
   const counter = document.getElementById("hutMessagesCount");
@@ -878,6 +956,17 @@ function locateGPS() {
       <p>Stelle hier deine Fragen oder melde Probleme.<br>
       Deine Tickets werden gespeichert und können später eingesehen oder gelöscht werden.</p>
     `;
+  } else if (mode === "hutMessages") {
+  html = `
+    <h4 class="font-semibold">🏡 Hütten-Nachrichten</h4>
+    <p>
+      Hier siehst du alle Nachrichten, die Besucher zu deinen Hütten geschickt haben.<br>
+      Diese Übersicht aktualisiert sich automatisch, sobald neue Nachrichten eintreffen.
+    </p>
+    <p class="mt-1 text-sm text-gray-500">
+      Tipp: Neue Nachrichten erkennst du am roten 🔔 Badge in der Seitenleiste.
+    </p>
+  `;
   } else {
     html = "<p>ℹ️ Wähle links eine Funktion aus.</p>";
   }
