@@ -720,43 +720,67 @@ async function ladeHutMessagesLive() {
 
   const hutIds = huettenSnap.docs.map(d => d.id);
 
-  // wieder in Batches splitten
+  // split into batches
   const batches = [];
   for (let i = 0; i < hutIds.length; i += 10) {
-    const batchIds = hutIds.slice(i, i + 10);
     batches.push(
       db.collection("hutMessages")
-        .where("hutId", "in", batchIds)
+        .where("hutId", "in", hutIds.slice(i, i + 10))
         .orderBy("createdAt", "desc")
     );
   }
 
-  // combine snapshot listeners
   const unsubs = [];
   hutMessagesUnsub = () => unsubs.forEach(u => u());
 
   list.innerHTML = "⏳ Lade Nachrichten...";
+
+  // wir sammeln alle Messages aus allen Batches
   batches.forEach(query => {
     const unsub = query.onSnapshot(snap => {
-      if (snap.empty) {
-        list.innerHTML = `<div class="p-4 text-gray-500">Keine Nachrichten vorhanden.</div>`;
-        return;
-      }
+      const allMessages = [];
 
-      list.innerHTML = "";
-      snap.forEach(doc => {
-        const d = doc.data();
-        const datum = d.createdAt?.toDate?.().toLocaleString("de-DE") || "-";
-        list.innerHTML += `
-          <div class="p-4 border-b">
-            <div class="text-xs text-gray-500">${datum}</div>
-            <div class="font-semibold">${d.hutName || "-"}</div>
-            <div class="mt-1">${d.message || ""}</div>
-            <div class="text-xs text-gray-400 mt-1">von ${d.senderName || "Gast"}</div>
-          </div>
-        `;
+      // alle Batches abfragen
+      Promise.all(batches.map(b => b.get())).then(results => {
+        results.forEach(batchSnap => {
+          batchSnap.forEach(doc => {
+            allMessages.push({ id: doc.id, ...doc.data() });
+          });
+        });
+
+        // sortieren nach Datum
+        allMessages.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
+
+        // rendern
+        if (allMessages.length === 0) {
+          list.innerHTML = `<div class="p-4 text-gray-500">Keine Nachrichten vorhanden.</div>`;
+          if (counter) counter.classList.add("hidden");
+          return;
+        }
+
+        let neuCount = 0;
+        list.innerHTML = "";
+        allMessages.forEach(d => {
+          if (d.answered === false) neuCount++;
+          const datum = d.createdAt?.toDate?.().toLocaleString("de-DE") || "-";
+          list.innerHTML += `
+            <div class="p-4 border-b">
+              <div class="text-xs text-gray-500">${datum}</div>
+              <div class="font-semibold">${d.hutName || "-"}</div>
+              <div class="mt-1">${d.message || ""}</div>
+              <div class="text-xs text-gray-400 mt-1">von ${d.senderName || "Gast"}</div>
+            </div>
+          `;
+        });
+
+        // Badge aktualisieren
+        if (counter) {
+          counter.textContent = `${neuCount}/${allMessages.length}`;
+          counter.classList.remove("hidden");
+        }
       });
     });
+
     unsubs.push(unsub);
   });
 }
