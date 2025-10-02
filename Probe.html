@@ -1081,43 +1081,102 @@ async function sendMsg(hutId) {
   inp.value = "";
   loadMessages(hutId);
 }
-  async function saveEditFromUI(id) {
-    try {
-      const nameEl = document.querySelector(`.edit-name[data-id="${id}"]`);
-      const sitzEl = document.querySelector(`.edit-sitz[data-id="${id}"]`);
-      const stromEl = document.querySelector(`.edit-strom[data-id="${id}"]`);
-      const extrasEl = document.querySelector(`.edit-extras[data-id="${id}"]`);
-      const tiereHidden = document.querySelector(`.edit-tiere-hidden[data-id="${id}"]`);
-      const tagsEl = document.querySelector(`.edit-tags[data-id="${id}"]`);
-      const editorEl = document.getElementById(`editor-${id}`);
+  let pendingEdit = null; // Zwischenspeicher für aktuelle Änderungen
 
-      const payload = {};
-      if (nameEl) payload.name = nameEl.value.trim();
-      if (sitzEl) payload.sitzplaetze = sitzEl.value;
-      if (stromEl) payload.strom = stromEl.value;
-      if (extrasEl) payload.extras = extrasEl.value.trim();
-      if (tagsEl) payload.tags = tagsEl.value ? tagsEl.value.split(',').map(s=>s.trim()).filter(Boolean).slice(0,10) : [];
-      if (tiereHidden) payload.tiere = tiereHidden.value ? tiereHidden.value.split(',').map(s=>s.trim()).filter(Boolean) : [];
-      if (editorEl) {
-        // get quill contents
-        try {
-          const q = Quill.find(editorEl);
-          if (q) payload.beschreibung = q.root.innerHTML;
-        } catch (e) { console.warn('quill not found', e); }
-      }
+async function saveEditFromUI(id) {
+  try {
+    const nameEl = document.querySelector(`.edit-name[data-id="${id}"]`);
+    const sitzEl = document.querySelector(`.edit-sitz[data-id="${id}"]`);
+    const stromEl = document.querySelector(`.edit-strom[data-id="${id}"]`);
+    const extrasEl = document.querySelector(`.edit-extras[data-id="${id}"]`);
+    const tiereHidden = document.querySelector(`.edit-tiere-hidden[data-id="${id}"]`);
+    const tagsEl = document.querySelector(`.edit-tags[data-id="${id}"]`);
+    const editorEl = document.getElementById(`editor-${id}`);
 
-      // update firestore
-      await db.collection('eierhuetten').doc(id).update(payload);
-      // log
-      await db.collection('eierhuetten').doc(id).collection('log').add({ admin: currentUser.email || currentUser.displayName || 'web', feld: 'edit', wert: JSON.stringify(payload), zeitpunkt: new Date() });
-      showToast('✅ Änderungen gespeichert');
-      // refresh list
-      await showMyEntries();
-    } catch (e) {
-      console.error('saveEditFromUI error', e);
-      alert('Fehler beim Speichern: ' + (e.message || e));
+    // neue Werte sammeln
+    const payload = {};
+    if (nameEl) payload.name = nameEl.value.trim();
+    if (sitzEl) payload.sitzplaetze = sitzEl.value;
+    if (stromEl) payload.strom = stromEl.value;
+    if (extrasEl) payload.extras = extrasEl.value.trim();
+    if (tagsEl) payload.tags = tagsEl.value ? tagsEl.value.split(',').map(s=>s.trim()).filter(Boolean).slice(0,10) : [];
+    if (tiereHidden) payload.tiere = tiereHidden.value ? tiereHidden.value.split(',').map(s=>s.trim()).filter(Boolean) : [];
+    if (editorEl) {
+      try {
+        const q = Quill.find(editorEl);
+        if (q) payload.beschreibung = q.root.innerHTML;
+      } catch (e) { console.warn('quill not found', e); }
     }
+
+    // alte Daten holen
+    const docSnap = await db.collection('eierhuetten').doc(id).get();
+    const alteDaten = docSnap.exists ? docSnap.data() : {};
+
+    // Änderungen als Liste zusammenstellen
+    let html = "";
+    Object.keys(payload).forEach(key => {
+      const alt = Array.isArray(alteDaten[key]) ? alteDaten[key].join(", ") : (alteDaten[key] || "");
+      const neu = Array.isArray(payload[key]) ? payload[key].join(", ") : (payload[key] || "");
+      if (alt !== neu) {
+        html += `<div class="mb-2">
+          <span class="font-semibold">${key}:</span><br>
+          <span class="text-gray-500 text-xs">alt:</span> ${escapeHtml(alt)}<br>
+          <span class="text-gray-500 text-xs">neu:</span> ${escapeHtml(neu)}
+        </div>`;
+      }
+    });
+    if (!html) {
+      showToast("ℹ️ Keine Änderungen erkannt");
+      return;
+    }
+
+    // Änderungen & IDs merken
+    pendingEdit = { id, payload, alteDaten };
+
+    // ins Modal einsetzen
+    document.getElementById("editChangesList").innerHTML = html;
+
+    // Modal anzeigen
+    document.getElementById("editConfirmModal").classList.remove("hidden");
+    document.getElementById("editConfirmModal").classList.add("flex");
+
+  } catch (e) {
+    console.error('saveEditFromUI error', e);
+    alert('Fehler beim Sammeln der Änderungen: ' + (e.message || e));
   }
+}
+
+function cancelEdit() {
+  // Modal schließen, nichts speichern
+  document.getElementById("editConfirmModal").classList.add("hidden");
+  document.getElementById("editConfirmModal").classList.remove("flex");
+  pendingEdit = null;
+  showToast("❌ Änderungen verworfen");
+}
+
+async function confirmEdit() {
+  if (!pendingEdit) return;
+  const { id, payload } = pendingEdit;
+  try {
+    await db.collection('eierhuetten').doc(id).update(payload);
+    await db.collection('eierhuetten').doc(id).collection('log').add({
+      admin: currentUser.email || currentUser.displayName || 'web',
+      feld: 'edit',
+      wert: JSON.stringify(payload),
+      zeitpunkt: new Date()
+    });
+    showToast('✅ Änderungen gespeichert');
+    await showMyEntries();
+  } catch (e) {
+    console.error("confirmEdit error", e);
+    alert("Fehler beim Speichern: " + (e.message || e));
+  }
+  // Modal schließen
+  document.getElementById("editConfirmModal").classList.add("hidden");
+  document.getElementById("editConfirmModal").classList.remove("flex");
+  pendingEdit = null;
+      }
+   
 function setActive(buttonId) {
     const buttons = document.querySelectorAll('.sidebar-btn');
     buttons.forEach(btn => btn.classList.remove('bg-green-100', 'font-semibold'));
@@ -1701,5 +1760,23 @@ async function deleteSupport(id) {
   window.submitEntry = submitEntry;
 
   </script>
+
+  <!-- Modal zur Bestätigung von Änderungen -->
+<div id="editConfirmModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+  <div class="bg-white rounded-xl shadow p-6 max-w-lg w-full">
+    <h3 class="text-lg font-bold mb-3">Änderungen bestätigen</h3>
+    <div id="editChangesList" class="text-sm bg-gray-50 border p-3 rounded mb-4 max-h-60 overflow-y-auto">
+      <!-- Änderungen werden hier dynamisch eingefügt -->
+    </div>
+    <div class="flex justify-end gap-2">
+      <button onclick="cancelEdit()" class="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400">
+        ❌ Abbrechen
+      </button>
+      <button onclick="confirmEdit()" class="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700">
+        ✅ Speichern
+      </button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
