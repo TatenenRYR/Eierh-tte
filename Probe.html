@@ -105,6 +105,10 @@
     <button id="btnEntries" class="sidebar-btn w-full text-left px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnEntries'); showMyEntries()">📋 Meine Eintragungen</button>
     <button id="btnNewEntry" class="sidebar-btn w-full text-left px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnNewEntry'); startNewEntry()">➕ Neue Eintragung</button>
       <button id="btnSupport" class="sidebar-btn w-full text-left px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnSupport'); openSupport()">💬 Support</button>
+     <button onclick="showHutMessages()" class="nav-btn flex items-center gap-2">
+    💬 Hütten-Nachrichten
+    <span id="hutMessagesCount" class="ml-2 hidden bg-red-600 text-white text-xs px-2 py-0.5 rounded-full">0</span>
+     </button>
   </nav>
 
   <!-- Footer -->
@@ -568,6 +572,101 @@ mode = "tutorial";
   qa.innerHTML = tutorialHTML;
   updateInfoBox();
 }
+    function showHutMessages() {
+  const qa = document.getElementById("question-area");
+  mode = "hutMessages";
+
+  const hutMessagesHTML = `
+    <section class="bg-white p-6 rounded-2xl shadow-lg max-w-3xl mx-auto animate-fadeIn">
+      <header class="mb-4 text-center">
+        <h2 class="text-2xl font-extrabold text-green-600 mb-2">🏡 Hütten-Nachrichten</h2>
+        <p class="text-gray-600 text-sm">Hier findest du Nachrichten, die Besucher zu deinen Hütten geschrieben haben.</p>
+      </header>
+      <div id="hutMessagesList" class="divide-y divide-gray-200 text-sm">
+        <div class="text-gray-400 p-4">⏳ Lade Nachrichten...</div>
+      </div>
+      <footer class="mt-4 text-center">
+        <div id="hutMessagesBadge" class="hidden text-red-600 font-semibold">🔔 Neue Nachrichten!</div>
+      </footer>
+    </section>
+  `;
+
+  qa.innerHTML = hutMessagesHTML;
+  ladeHutMessagesLive();
+  updateInfoBox();
+    }
+
+
+let hutMessagesUnsub = null;
+
+async function ladeHutMessagesLive() {
+  const list = document.getElementById("hutMessagesList");
+  const counter = document.getElementById("hutMessagesCount");
+
+  if (!list) return;
+
+  // alten Listener stoppen
+  if (hutMessagesUnsub) { hutMessagesUnsub(); hutMessagesUnsub = null; }
+
+  // Eigene Hütten holen
+  const huettenSnap = await db.collection("eierhuetten")
+    .where("ownerId", "==", currentUser.uid)
+    .get();
+
+  if (huettenSnap.empty) {
+    list.innerHTML = `<div class="p-4 text-gray-500">Keine eigenen Hütten gefunden.</div>`;
+    if (counter) counter.classList.add("hidden");
+    return;
+  }
+
+  const hutIds = huettenSnap.docs.map(d => d.id);
+
+  hutMessagesUnsub = db.collection("hutMessages")
+    .where("hutId", "in", hutIds.slice(0, 10))
+    .orderBy("createdAt", "desc")
+    .onSnapshot(snap => {
+      if (!list) return;
+
+      if (snap.empty) {
+        list.innerHTML = `<div class="p-4 text-gray-500">Keine Nachrichten vorhanden.</div>`;
+        if (counter) counter.classList.add("hidden");
+        return;
+      }
+
+      let neuCount = 0;
+      list.innerHTML = "";
+      snap.forEach(doc => {
+        const d = doc.data();
+        const datum = d.createdAt?.toDate?.().toLocaleString("de-DE") || "-";
+        if (d.answered === false) neuCount++;
+
+        list.innerHTML += `
+          <div class="p-4">
+            <div class="text-xs text-gray-500">${datum}</div>
+            <div class="font-semibold">${d.hutName || "-"}</div>
+            <div class="mt-1">${d.message || ""}</div>
+            <div class="text-xs text-gray-400 mt-1">von ${d.senderName || "Gast"}</div>
+          </div>
+        `;
+      });
+
+      // Counter in der Sidebar aktualisieren
+      if (counter) {
+        if (neuCount > 0) {
+          counter.textContent = neuCount;
+          counter.classList.remove("hidden");
+        } else {
+          counter.classList.add("hidden");
+        }
+      }
+    }, err => {
+      console.error("ladeHutMessagesLive error", err);
+      if (list) list.innerHTML = `<div class="p-4 text-red-600">❌ Fehler: ${err.message}</div>`;
+      if (counter) counter.classList.add("hidden");
+    });
+}
+
+    
   function selectOption(field, value, el) {
     // deselect siblings
     if (el && el.parentNode) {
