@@ -425,24 +425,31 @@ if (step === 2) {
         return;
       }
       if (step === 5) {
+  const immer = editingData.oeffnungszeiten === "Immer geöffnet";
+
   qa.innerHTML = `
     <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-      <h2 class="text-lg font-bold mb-2">🕒 Öffnungszeiten</h2>
+      <h2 class="text-lg font-bold mb-3">🕒 Öffnungszeiten</h2>
 
       <label class="flex items-center gap-2 mb-4">
-        <input type="checkbox" id="immerCheck" ${editingData.openingHours?.immer ? "checked" : ""}>
+        <input type="checkbox" id="immerCheck" ${immer ? "checked" : ""}>
         Immer geöffnet
       </label>
 
-      <div id="dayInputs" class="${editingData.openingHours?.immer ? "hidden" : ""}">
+      <div id="dayInputs" class="${immer ? "hidden" : ""}">
         ${["Mo","Di","Mi","Do","Fr","Sa","So"].map(day => {
-          const val = editingData.openingHours?.[day.toLowerCase()] || "";
+          // vorhandene Werte beim Bearbeiten einsetzen
+          let von = "", bis = "";
+          if (Array.isArray(editingData.oeffnungszeiten)) {
+            const found = editingData.oeffnungszeiten.find(x => x.tag === day);
+            if (found) { von = found.von; bis = found.bis; }
+          }
           return `
             <div class="flex items-center gap-2 mb-1">
               <span class="w-10">${day}</span>
-              <input class="border p-1 flex-1 rounded text-sm" 
-                     placeholder="z.B. 08:00-18:00 / geschlossen" 
-                     id="open-${day}" value="${val}">
+              <input id="open-${day}-von" type="time" value="${von}" class="border p-1 rounded text-sm">
+              <span>-</span>
+              <input id="open-${day}-bis" type="time" value="${bis}" class="border p-1 rounded text-sm">
             </div>
           `;
         }).join("")}
@@ -450,13 +457,13 @@ if (step === 2) {
     </div>
   `;
 
-  // Checkbox-Handler
-  const immerCheck = document.getElementById("immerCheck");
-  immerCheck.addEventListener("change", () => {
-    document.getElementById("dayInputs").classList.toggle("hidden", immerCheck.checked);
+  document.getElementById("immerCheck").addEventListener("change", (e) => {
+    document.getElementById("dayInputs").classList.toggle("hidden", e.target.checked);
   });
+
   return;
       }
+      
 
       if (step === 6) {
         qa.innerHTML = `
@@ -924,16 +931,37 @@ async function ladeHutMessagesLive() {
   }
 function collectOpeningHours() {
   const immer = document.getElementById("immerCheck")?.checked;
-  if (immer) return { immer: true };
+  if (immer) {
+    return "Immer geöffnet";
+  }
 
-  const days = ["mo","di","mi","do","fr","sa","so"];
-  const hours = { immer: false };
+  const days = ["Mo","Di","Mi","Do","Fr","Sa","So"];
+  const arr = [];
   days.forEach(d => {
-    const el = document.getElementById("open-" + d.charAt(0).toUpperCase() + d.slice(1));
-    hours[d] = el?.value.trim() || "geschlossen";
+    const vonEl = document.getElementById(`open-${d}-von`);
+    const bisEl = document.getElementById(`open-${d}-bis`);
+    const von = vonEl?.value.trim();
+    const bis = bisEl?.value.trim();
+
+    if (von && bis) {
+      arr.push({ tag: d, von, bis });
+    }
   });
-  return hours;
+  return arr;
 }
+    function renderOpeningHours(oeffnungszeiten) {
+  if (!oeffnungszeiten) return "–";
+
+  if (oeffnungszeiten === "Immer geöffnet") {
+    return "Immer geöffnet ✅";
+  }
+
+  if (Array.isArray(oeffnungszeiten)) {
+    return oeffnungszeiten.map(d => `${d.tag}: ${d.von} - ${d.bis}`).join("<br>");
+  }
+
+  return "–";
+    }
   async function submitEntry() {
     // ensure required fields
     if (!editingData.name || !editingData.typ) {
@@ -1206,6 +1234,10 @@ function locateGPS() {
               <label class="block mt-2">Beschreibung:<br>
                 <div id="editor-${id}" class="quill-editor border rounded">${d.beschreibung || ''}</div>
               </label>
+
+<div class="text-sm text-gray-700 mb-2">
+  🕒 Öffnungszeiten:<br>${renderOpeningHours(editingData.oeffnungszeiten)}
+</div>
 
               <label class="block mt-2">Tags:<br>
                 <input data-id="${id}" class="edit-tags w-full border px-2 py-1 rounded" value="${Array.isArray(d.tags)?escapeAttr(d.tags.join(', ')) : ''}" placeholder="Komma getrennt" />
