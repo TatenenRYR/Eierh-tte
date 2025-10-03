@@ -1203,6 +1203,22 @@ function locateGPS() {
         const id = doc.id;
         const card = document.createElement('div');
         card.className = 'bg-white p-4 rounded shadow mb-4 max-w-2xl mx-auto';
+
+        // Normalisieren
+  const normalized = normalizeOpeningHours(d.oeffnungszeiten);
+
+  // Wenn sich was geändert hat → zurückschreiben ins Firestore
+  if (JSON.stringify(d.oeffnungszeiten) !== JSON.stringify(normalized)) {
+    db.collection("eierhuetten").doc(id).update({
+      oeffnungszeiten: normalized
+    }).then(() => {
+      console.log(`oeffnungszeiten normalisiert für Hütte ${id}`);
+    }).catch(console.error);
+  }
+
+  // Danach für die Anzeige verwenden
+  d.oeffnungszeiten = normalized;
+
         // badge color
         const statusTxt = d.status === "offen" ? "Wartet auf die Freigabe" : d.status;
         const badgeColor = d.status === 'accepted' || d.status === 'angenommen' ? 'bg-green-100 text-green-800' : (d.status === 'offen' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-700');
@@ -1387,6 +1403,44 @@ function renderOpeningHoursEditor(id, oeffnungszeiten) {
     if (daysEl) daysEl.classList.toggle("hidden", e.target.checked);
   }
 });
+    function normalizeOpeningHours(oeff) {
+  if (!oeff) return "Immer geöffnet";
+
+  // Fall 1: String
+  if (typeof oeff === "string") {
+    if (oeff.toLowerCase().includes("immer")) {
+      return "Immer geöffnet";
+    }
+    // String wie "09:00 – 18:00" → als Array für jeden Tag
+    return ["Mo","Di","Mi","Do","Fr","Sa","So"].map(tag => ({
+      tag,
+      von: oeff.split("–")[0].trim(),
+      bis: oeff.split("–")[1].trim()
+    }));
+  }
+
+  // Fall 2: Map {immer:true}
+  if (typeof oeff === "object" && !Array.isArray(oeff)) {
+    if (oeff.immer === true) return "Immer geöffnet";
+    // Falls mal ein Objekt mit Tag->Zeiten drin war
+    return Object.keys(oeff).map(tag => ({
+      tag,
+      von: oeff[tag].split("–")[0].trim(),
+      bis: oeff[tag].split("–")[1].trim()
+    }));
+  }
+
+  // Fall 3: Array [{tag, von, bis}, …] → bereits korrekt
+  if (Array.isArray(oeff)) {
+    return oeff.map(d => ({
+      tag: d.tag,
+      von: d.von,
+      bis: d.bis
+    }));
+  }
+
+  return "Immer geöffnet";
+    }
     function collectOpeningHoursFromUI(id) {
   const immerCheck = document.querySelector(`.oeff-immer[data-id="${id}"]`);
   if (immerCheck?.checked) {
