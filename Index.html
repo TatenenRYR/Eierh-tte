@@ -3422,13 +3422,6 @@ function drop(ev) {
     }
   }
 }
-    function linkify(text) {
-  if (!text) return "";
-  return text.replace(
-    /(https?:\/\/[^\s]+)/g,
-    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-  );
-    }
 
 // Eine einzige, robuste Funktion für beide Typen:
 function toggleSelect(type, id) {
@@ -3757,198 +3750,7 @@ db.collection("spielplaetze").onSnapshot(snap => {
   });
 });
       //hütten
-      // -----------------------------
-// Robustere Version: eierhuetten mit docChanges, sichere Beschreibung + IDs
-// -----------------------------
-const huettenMarkers = new Map();
-
-db.collection("eierhuetten").onSnapshot(snap => {
-  try {
-    // iteriere nur Änderungen (skalierbarer)
-    snap.docChanges().forEach(change => {
-      const doc = change.doc;
-      const d = doc.data();
-      const id = doc.id;
-
-      // Entfernen / ignorieren, wenn keine Location oder nicht angenommen
-      if (!d || !d.location || d.status !== "angenommen") {
-        if (change.type === "removed" && huettenMarkers.has(id)) {
-          cluster.removeLayer(huettenMarkers.get(id));
-          huettenMarkers.delete(id);
-        }
-        return;
-      }
-
-      // Bilder
-      const freigegebeneBilder = Array.isArray(d.fotos) ? d.fotos.filter(f => typeof f === 'string' || f.status === 'freigegeben') : [];
-      const bilderUrls = freigegebeneBilder.map(f => typeof f === 'string' ? f : f.url);
-      const erstesBild = bilderUrls[0] || "";
-
-      // Tiere (Emoji map wie bei dir)
-      const tiereEmojiMap = {
-        Alpaka: "🦙", Kuh: "🐄", Schwein: "🐖", Ziege: "🐐",
-        Schaf: "🐑", Hund: "🐶", Katze: "🐱", Hase: "🐇",
-        Huhn: "🐔", Ente: "🦆", Pferd: "🐴", "Keine Tiere": "🚫"
-      };
-      const tiereAnzeige = Array.isArray(d.tiere) && d.tiere.length
-        ? d.tiere.map(t => tiereEmojiMap[t] || t).join(" ")
-        : "🚫";
-
-      // ---- Beschreibung sicher erzeugen (eindeutige IDs mit doc.id) ----
-      let beschreibungHTML = "";
-      if (d.beschreibung) {
-        const maxLength = 150;
-        const fullText = linkify(d.beschreibung).replace(/\n/g, "<br>");
-        const shortText = d.beschreibung.length > maxLength
-          ? linkify(d.beschreibung.substring(0, maxLength) + "…")
-          : fullText;
-
-        if (d.beschreibung.length > maxLength) {
-          const shortId = `popup-desc-short-${id}`;
-          const fullId  = `popup-desc-full-${id}`;
-          const btnId   = `popup-desc-btn-${id}`;
-          beschreibungHTML = `
-            <div>
-              <b>📝 Beschreibung:</b><br>
-              <span id="${shortId}">${shortText}</span>
-              <span id="${fullId}" style="display:none;">${fullText}</span>
-              <!-- data-attrs: wir binden später im 'popupopen' listener -->
-              <button class="desc-toggle-btn text-blue-600 underline text-xs" 
-                      data-short="${shortId}" data-full="${fullId}" id="${btnId}">
-                mehr anzeigen
-              </button>
-            </div>
-          `;
-        } else {
-          beschreibungHTML = `<div><b>📝 Beschreibung:</b><br>${fullText}</div>`;
-        }
-      }
-
-      // ---- sichere Datums-Ausgabe (optional chaining!) ----
-      const eingetragen = d.datenschutzZustimmung?.bestätigtAm?.toDate?.()?.toLocaleDateString("de-DE") || "-";
-
-      // ---- Popup-HTML (bindPopup) ----
-      const popupHtml = `
-        <div id="popup-${id}" class="popup-card" style="min-width:250px; font-size:14px; font-family:sans-serif;">
-          <div class="swiper popup-swiper rounded-lg overflow-hidden">
-            <div class="swiper-wrapper">
-              ${
-                bilderUrls.length > 0
-                  ? bilderUrls.map(url => `<div class="swiper-slide"><img src="${url}" class="w-full h-40 object-cover" /></div>`).join('')
-                  : `<div class="swiper-slide flex items-center justify-center w-full h-40 bg-gray-300 text-gray-700">Kein Bild</div>`
-              }
-            </div>
-            <div class="swiper-pagination"></div>
-            <div class="swiper-button-prev"></div>
-            <div class="swiper-button-next"></div>
-          </div>
-
-          <div class="mt-3 space-y-1 text-sm">
-            <h3 class="font-semibold text-base text-green-700">${(d.name||"Unbenannt")}</h3>
-            <p>⚡ <b>Strom:</b> ${d.strom === "Ja" ? "✅" : "❌"}</p>
-            <p>🪑 <b>Sitzplätze:</b> ${d.sitzplaetze === "Ja" ? "✅" : "❌"}</p>
-            <p>🐾 <b>Tiere:</b> ${tiereAnzeige}</p>
-            ${beschreibungHTML}
-            ${Array.isArray(d.tags) && d.tags.length ? `<div class="flex flex-wrap gap-1 mt-1">${d.tags.map(tag=>`<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">#${tag}</span>`).join("")}</div>` : ""}
-            <p>📅 <b>Eingetragen:</b> ${eingetragen}</p>
-          </div>
-
-          <hr class="my-2 border-gray-300"/>
-
-          <div class="flex flex-wrap gap-2 mt-2">
-            <button class="toggle-select-btn px-3 py-1 rounded-lg text-white ${isSelected ? 'bg-red-500' : 'bg-green-500'}" data-id="${id}">
-              ${isSelected ? "❌ Entfernen" : "✅ Hinzufügen"}
-            </button>
-            ${d.allowMessages ? `<button class="open-msg-btn px-3 py-1 rounded-lg bg-blue-500 text-white" data-id="${id}" data-name="${escapeHtml(d.name||'')}">📧 Nachricht</button>` : ""}
-          </div>
-        </div>
-      `;
-
-      // ---- Änderungen verarbeiten (added / modified / removed) ----
-      if (change.type === "removed") {
-        if (huettenMarkers.has(id)) {
-          cluster.removeLayer(huettenMarkers.get(id));
-          huettenMarkers.delete(id);
-        }
-        return;
-      }
-
-      // added / modified
-      let marker = huettenMarkers.get(id);
-      if (!marker) {
-        marker = L.marker([d.location.latitude, d.location.longitude], { icon: huettenIcon });
-
-        marker.bindPopup(popupHtml, { minWidth: 250 });
-
-        // popupopen: init swiper + binde toggle-Listener (nur für dieses Popup)
-        marker.on('popupopen', e => {
-          try {
-            const popupEl = e.popup.getElement(); // DOM element des Popups
-
-            // Swiper initialisieren nur wenn vorhanden
-            const swiperRoot = popupEl.querySelector('.popup-swiper');
-            if (swiperRoot && typeof Swiper === 'function') {
-              // wenn du mehrere Popups schnell öffnest, kann es sein, dass eine vorherige Instanz noch existiert
-              // wir erstellen eine neue Instanz auf dem element (Swiper nimmt auch element als Parameter)
-              new Swiper(swiperRoot, {
-                loop: true,
-                autoplay: { delay: 3000 },
-                pagination: { el: swiperRoot.querySelector('.swiper-pagination'), clickable: true },
-                navigation: { nextEl: swiperRoot.querySelector('.swiper-button-next'), prevEl: swiperRoot.querySelector('.swiper-button-prev') }
-              });
-            }
-
-            // Beschreibungs-Toggle (falls vorhanden)
-            const toggleBtn = popupEl.querySelector('.desc-toggle-btn');
-            if (toggleBtn) {
-              toggleBtn.addEventListener('click', function descToggleHandler() {
-                const shortEl = popupEl.querySelector(`#${this.dataset.short}`);
-                const fullEl  = popupEl.querySelector(`#${this.dataset.full}`);
-                if (!shortEl || !fullEl) return;
-                if (shortEl.style.display === 'none') {
-                  shortEl.style.display = 'inline';
-                  fullEl.style.display = 'none';
-                  this.innerText = 'mehr anzeigen';
-                } else {
-                  shortEl.style.display = 'none';
-                  fullEl.style.display = 'inline';
-                  this.innerText = 'weniger anzeigen';
-                }
-              }, { once: false });
-            }
-
-            // Buttons per delegation: toggle-select-btn
-            const toggleSelectBtn = popupEl.querySelector('.toggle-select-btn');
-            if (toggleSelectBtn) {
-              toggleSelectBtn.addEventListener('click', () => {
-                toggleSelect('hütte', toggleSelectBtn.dataset.id);
-              });
-            }
-
-            // open message
-            const openMsgBtn = popupEl.querySelector('.open-msg-btn');
-            if (openMsgBtn) {
-              openMsgBtn.addEventListener('click', () => openMessagePopup(openMsgBtn.dataset.id, openMsgBtn.dataset.name));
-            }
-
-          } catch (errPopup) {
-            console.warn("Fehler in popupopen handler:", errPopup);
-          }
-        });
-
-        huettenMarkers.set(id, marker);
-        cluster.addLayer(marker);
-      } else {
-        // update position & popup content
-        marker.setLatLng([d.location.latitude, d.location.longitude]);
-        marker.setPopupContent(popupHtml);
-      }
-    }); // docChanges loop
-  } catch (err) {
-    console.error("Fehler beim Verarbeiten der Hütten-Snapshot-Änderungen:", err);
-  }
-});
-     /* db.collection("eierhuetten").onSnapshot(snap => {
+      db.collection("eierhuetten").onSnapshot(snap => {
       cluster.clearLayers(); // ⬅️ verhindert Marker-Duplikate
         huts = [];
         
@@ -3998,43 +3800,41 @@ const tiereAnzeige = Array.isArray(d.tiere) && d.tiere.length
   ? d.tiere.map(t => tiereEmojiMap[t] || t).join(" ")
   : "🚫";
 
-// Beschreibung (max. 150 Zeichen + "mehr anzeigen")
 let beschreibungHTML = "";
 if (d.beschreibung) {
   const maxLength = 150;
-  const fullText = linkify(d.beschreibung).replace(/\n/g, "<br>");
-  const shortText = d.beschreibung.length > maxLength 
-    ? linkify(d.beschreibung.substring(0, maxLength) + "…") 
-    : fullText;
+  const fullText = d.beschreibung.replace(/\n/g, "<br>");
+  const shortText =
+    fullText.length > maxLength
+      ? fullText.substring(0, maxLength) + "…"
+      : fullText;
 
-  if (d.beschreibung.length > maxLength) {
-    beschreibungHTML = `
-      <div>
-        <b>📝 Beschreibung:</b><br>
-        <span id="popup-desc-short">${shortText}</span>
-        <span id="popup-desc-full" style="display:none;">${fullText}</span>
-        <button class="text-blue-600 underline text-xs" id="popup-desc-btn"
-          onclick="
-            const shortEl = document.getElementById('popup-desc-short');
-            const fullEl = document.getElementById('popup-desc-full');
-            const btn = document.getElementById('popup-desc-btn');
-            if (shortEl.style.display === 'none') {
-              shortEl.style.display = 'inline';
-              fullEl.style.display = 'none';
-              btn.innerText = 'mehr anzeigen';
-            } else {
-              shortEl.style.display = 'none';
-              fullEl.style.display = 'inline';
-              btn.innerText = 'weniger anzeigen';
-            }
-          ">mehr anzeigen</button>
-      </div>
-    `;
-  } else {
-    beschreibungHTML = `<div><b>📝 Beschreibung:</b><br>${fullText}</div>`;
-  }
+  beschreibungHTML = `
+    <!-- Normalansicht mit Kurzbeschreibung -->
+    <div class="popup-main" id="popup-main-${doc.id}">
+      <b>📝 Beschreibung:</b><br>
+      <span>${shortText}</span>
+      ${
+        fullText.length > maxLength
+          ? `<button class="text-blue-600 underline text-xs ml-1" 
+                     data-id="${doc.id}" 
+                     onclick="showFullDesc('${doc.id}')">
+                 mehr lesen
+             </button>`
+          : ""
+      }
+    </div>
+
+    <!-- Vollansicht mit gesamter Beschreibung -->
+    <div class="popup-full-desc hidden" id="popup-full-desc-${doc.id}" style="max-height:250px; overflow-y:auto;">
+      <p style="line-height:1.4;">${fullText}</p>
+      <button class="text-blue-600 underline text-xs mt-2" 
+              onclick="hideFullDesc('${doc.id}')">
+        ⬅️ zurück
+      </button>
+    </div>
+  `;
 }
-document.getElementById("popup-beschreibung").innerHTML = beschreibungHTML;
 
 const m = L.marker([h.lat, h.lng], { icon: huettenIcon }).bindPopup(`
   <div id="${popupId}" class="popup-card" style="min-width:250px; font-size:14px; font-family:sans-serif;">
@@ -4236,10 +4036,10 @@ m.on("popupclose", () => {
 });
           
           cluster.addLayer(m);
-        });*/
+        });
 
      
-      
+      });
 
     map.on("dragstart zoomstart", () => {
   if (follow) {
@@ -4262,7 +4062,15 @@ map.on('movestart', (e) => {
   }
 });
     }
+function showFullDesc(id) {
+  document.getElementById("popup-main-" + id).classList.add("hidden");
+  document.getElementById("popup-full-desc-" + id).classList.remove("hidden");
+}
 
+function hideFullDesc(id) {
+  document.getElementById("popup-full-desc-" + id).classList.add("hidden");
+  document.getElementById("popup-main-" + id).classList.remove("hidden");
+}
 
 function shortenName(name, max = 25) {
   return name.length > max ? name.slice(0, max) + "…" : name;
