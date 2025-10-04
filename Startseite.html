@@ -26,7 +26,7 @@
 }
 header {
   position: relative;
-  background: linear-gradient(to top, #7ec8f7, #cdefff); /* Himmel */
+  background: linear-gradient(to top, #ffccaa, #88ccee, #ddeeff);
   text-align: center;
   padding: 2rem 1rem 6rem;
   color: #0b3d02;
@@ -117,12 +117,15 @@ h2 { text-align: center; color: #0077b6; margin: 2rem 0 1rem; }
 /* Footer */
 
 footer {
-  background: linear-gradient(to right, #293040, #3a4a5a); /* moderner dunkelblau-grauer Verlauf */
-  color: #f5f5f5;
+  background: linear-gradient(to right, #ff8c00, #ffcc00); /* Orange-Gelb Verlauf */
+  color: #222;
   padding: 2rem 1rem;
   text-align: center;
-  position: relative;
-  overflow: hidden;
+  border-top: 5px solid #7B3F00; /* Retro-Braun */
+  font-family: "Courier New", monospace;
+}
+.footer-box p, .footer-links a {
+  color: #222;
 }
 
 .footer-box {
@@ -136,27 +139,6 @@ footer {
   color: #d1d5db; /* hellgrau */
 }
 
-
-/* Text in Box */
-.footer-box p {
-  margin: 0 0 0.3rem 0;
-  color: #333;
-  font-weight: bold;
-  font-family: 'Courier New', monospace;
-  font-size: 0.85rem;
-  text-align: center;
-}
-
-/* Links */
-.footer-links a {
-  color: #7B3F00; /* dunkles Holz-Braun */
-  text-decoration: none;
-  font-weight: bold;
-  margin: 0.2rem 0.3rem;
-  font-family: 'Courier New', monospace;
-  font-size: 0.8rem;
-  transition: transform 0.2s, color 0.2s;
-}
 
 .footer-links a:hover {
   color: #d9a066;
@@ -227,7 +209,18 @@ footer {
   text-align: right;
   display: block;
 }
-
+#popup-beschreibung {
+  font-size: 0.95rem;
+  line-height: 1.4;
+  color: #333;
+  margin: 0.5rem 0 1rem;
+  white-space: normal;
+  word-break: break-word;
+}
+#popup-beschreibung a {
+  color: #0077b6;
+  text-decoration: underline;
+}
 /* Mobile Anpassung Popup */
 @media (max-width: 768px) {
   #hut-popup-content {
@@ -703,17 +696,23 @@ function renderSlideshow(container, bilderUrls) {
   function updateImage() {
     container.innerHTML = `
       <img src="${bilderUrls[index]}" style="width:100%; border-radius:1rem; max-height:200px; object-fit:cover;">
-      ${bilderUrls.length > 1 ? `
-        <button class="left">←</button>
-        <button class="right">→</button>
-      ` : ""}
     `;
-    if (bilderUrls.length > 1) {
-      container.querySelector(".left").onclick = () => { index = (index - 1 + bilderUrls.length) % bilderUrls.length; updateImage(); };
-      container.querySelector(".right").onclick = () => { index = (index + 1) % bilderUrls.length; updateImage(); };
-    }
   }
   updateImage();
+  if (bilderUrls.length > 1) {
+    setInterval(() => {
+      index = (index + 1) % bilderUrls.length;
+      updateImage();
+    }, 4000); // alle 4 Sekunden wechseln
+  }
+}
+
+function linkify(text) {
+  if (!text) return "";
+  return text.replace(
+    /(https?:\/\/[^\s]+)/g,
+    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+  );
 }
 
 function openHutPopup(d, bilderUrls) {
@@ -722,21 +721,73 @@ function openHutPopup(d, bilderUrls) {
   popup.style.display = "flex";
   setTimeout(() => { content.style.transform = "translateY(0)"; }, 50);
 
-  // Name + Beschreibung
+  // Name
   document.getElementById("popup-name").textContent = d.name || "Unbenannt";
-  document.getElementById("popup-beschreibung").textContent = d.beschreibung || "";
+
+  // Beschreibung + Links + Umbrüche
+  const beschr = d.beschreibung || "";
+  document.getElementById("popup-beschreibung").innerHTML = linkify(beschr).replace(/\n/g, "<br>");
 
   // Öffnungszeiten
   let oeffnungszeitenHTML = "-";
-if (d.immerGeoeffnet === true) {
-  oeffnungszeitenHTML = "Immer geöffnet ✅";
-} else if (Array.isArray(d.oeffnungszeiten) && d.oeffnungszeiten.length > 0) {
-  oeffnungszeitenHTML = "<ul class='oeffnungszeiten-list'>" +
-    d.oeffnungszeiten
-      .map(e => `${e.tag}: ${e.von} - ${e.bis}`)
-      .join("") +
-    "</ul>";
-}
+  if (d.immerGeoeffnet === true) {
+    oeffnungszeitenHTML = "Immer geöffnet ✅";
+  } else if (Array.isArray(d.oeffnungszeiten) && d.oeffnungszeiten.length > 0) {
+    oeffnungszeitenHTML =
+      "<ul class='oeffnungszeiten-list'>" +
+      d.oeffnungszeiten.map(e => `<li>${e.tag}: ${e.von} - ${e.bis}</li>`).join("") +
+      "</ul>";
+  }
+  document.getElementById("popup-oeffnungszeiten").innerHTML = oeffnungszeitenHTML;
+
+  // Strom, Sitzplätze, Extras, Start
+  document.getElementById("popup-strom").textContent = d.strom === "Ja" ? "✅ Ja" : "❌ Nein";
+  document.getElementById("popup-sitzplaetze").textContent = d.sitzplaetze === "Ja" ? "✅ Ja" : "❌ Nein";
+  document.getElementById("popup-extras").textContent = d.extras || "–";
+  document.getElementById("popup-start").textContent =
+    d.aboStart?.toDate?.().toLocaleDateString("de-DE") || "-";
+
+  // Tiere
+  const tiereContainer = document.getElementById("popup-tiere");
+  if (Array.isArray(d.tiere) && d.tiere.length > 0) {
+    tiereContainer.innerHTML = "🐾 " + d.tiere.join(" ");
+  } else {
+    tiereContainer.innerHTML = "🐾 Keine Tiere";
+  }
+
+  // Tags
+  const tagsContainer = document.getElementById("popup-tags");
+  if (Array.isArray(d.tags) && d.tags.length > 0) {
+    tagsContainer.innerHTML = d.tags.map(t => `<span class="tag">#${t}</span>`).join(" ");
+  } else {
+    tagsContainer.innerHTML = "";
+  }
+
+  // Slideshow Bilder
+  renderSlideshow(document.getElementById("popup-images"), bilderUrls);
+
+  // Karte
+  const mapContainer = document.getElementById("popup-map");
+  mapContainer.innerHTML = "";
+  if (d.location?.latitude && d.location?.longitude) {
+    setTimeout(() => {
+      const map = L.map("popup-map", {
+        zoomControl: true,
+        attributionControl: true,
+        dragging: true,
+        scrollWheelZoom: true,
+        doubleClickZoom: true,
+        boxZoom: true,
+        keyboard: true
+      }).setView([d.location.latitude, d.location.longitude], 15);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+      L.marker([d.location.latitude, d.location.longitude]).addTo(map);
+
+      setTimeout(() => map.invalidateSize(), 200);
+    }, 200);
+  }
+    }
   document.getElementById("popup-oeffnungszeiten").innerHTML = oeffnungszeitenHTML;
 
   // Strom, Sitzplätze, Extras, Start
