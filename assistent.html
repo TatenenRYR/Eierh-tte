@@ -630,7 +630,11 @@ if (step === 2) {
       document.getElementById('question-area').innerHTML = `<div class="bg-red-100 p-4 rounded">Fehler: ${err.message}</div>`;
     }
   }
-    function showDashboard() {
+    
+const stripe = Stripe("pk_test_51SFLgEBghOTdsn6RBYuZr6x4R2BC6lhq4NFWmcKTtyNahatWHMVHAq3posYIhsXKRl598qHOzMzyymuV6DgKWYly006AaME4Wr");
+
+
+function showDashboard() {
   const qa = document.getElementById("question-area");
   qa.innerHTML = `
     <section class="bg-white p-6 rounded-xl shadow max-w-3xl mx-auto animate-fadeIn">
@@ -640,14 +644,13 @@ if (step === 2) {
     </section>
   `;
 
-  // 🔥 Aktuellen Benutzer abrufen
   const user = firebase.auth().currentUser;
   if (!user) {
     document.getElementById("statsArea").innerHTML = "Bitte zuerst einloggen.";
     return;
   }
 
-  // 🔥 Live-Statistik-Aktualisierung
+  // 📈 Live Statistik aus Firestore
   db.collection("eierhuetten")
     .where("ownerUid", "==", user.uid)
     .onSnapshot(snapshot => {
@@ -664,17 +667,17 @@ if (step === 2) {
         <div class="grid grid-cols-2 gap-4 mb-6">
           <div class="p-4 bg-green-50 rounded-lg shadow text-center">
             <h3 class="text-lg font-semibold">👁️ Aufrufe</h3>
-            <p id="statViews" class="text-3xl font-bold text-green-700 mt-2">${totalViews}</p>
+            <p class="text-3xl font-bold text-green-700 mt-2">${totalViews}</p>
           </div>
           <div class="p-4 bg-green-50 rounded-lg shadow text-center">
             <h3 class="text-lg font-semibold">📍 Routenstarts</h3>
-            <p id="statRoutes" class="text-3xl font-bold text-green-700 mt-2">${totalRoutes}</p>
+            <p class="text-3xl font-bold text-green-700 mt-2">${totalRoutes}</p>
           </div>
         </div>
       `;
     });
 
-  // 🔥 Premium-Status laden
+  // 🌟 Premium-Status
   db.collection("betreiber").doc(user.uid).get().then(doc => {
     const data = doc.data() || {};
     const premiumArea = document.getElementById("premiumArea");
@@ -696,9 +699,6 @@ if (step === 2) {
         </button>
       `;
     }
-  }).catch(err => {
-    console.error("Fehler beim Laden des Premiumstatus:", err);
-    document.getElementById("premiumArea").innerHTML = `<p class="text-red-600">Fehler beim Laden des Premiumstatus.</p>`;
   });
 }
 
@@ -707,13 +707,11 @@ function showPremiumUpgrade() {
   qa.innerHTML = `
     <section class="bg-white p-6 rounded-xl shadow max-w-xl mx-auto animate-fadeIn">
       <h2 class="text-2xl font-bold mb-4">🌟 Premium freischalten</h2>
-      <p class="text-gray-700 mb-4">
-        Mit RadlMap Premium erhältst du:
-      </p>
+      <p class="text-gray-700 mb-4">Mit RadlMap Premium erhältst du:</p>
       <ul class="list-disc list-inside mb-6 text-gray-700">
         <li>🔝 Hervorgehobene Anzeige auf der Karte</li>
         <li>📸 Bis zu 10 Fotos hochladen</li>
-        <li>📈 Statistiken zu deinen Besuchern</li>
+        <li>📈 Erweiterte Statistiken</li>
         <li>💬 Kontaktmöglichkeiten in deinem Eintrag</li>
       </ul>
 
@@ -735,28 +733,22 @@ function showPremiumUpgrade() {
     </section>
   `;
 }
-function activatePremium() {
+
+
+async function activatePremium() {
   const user = firebase.auth().currentUser;
   if (!user) return alert("Bitte einloggen.");
 
-  const today = new Date();
-  const nextMonth = new Date();
-  nextMonth.setMonth(today.getMonth() + 1);
+  const session = await fetch("/create-checkout-session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ uid: user.uid })
+  }).then(res => res.json());
 
-  db.collection("betreiber").doc(user.uid).set({
-    premium: true,
-    premium_until: nextMonth.toISOString().split("T")[0],
-    abo_preis: 2.00
-  }, { merge: true })
-  .then(() => {
-    alert("🌟 Premium wurde erfolgreich aktiviert!");
-    showDashboard();
-  })
-  .catch(err => {
-    console.error(err);
-    alert("Fehler beim Aktivieren des Premium-Abos.");
-  });
+  stripe.redirectToCheckout({ sessionId: session.id });
 }
+
+// ⏱️ Ablauf prüfen
 function checkPremiumExpiration() {
   const user = firebase.auth().currentUser;
   if (!user) return;
@@ -772,18 +764,7 @@ function checkPremiumExpiration() {
     }
   });
 }
-const stripe = Stripe("pk_live_51SFLg0PfD3BVBNRdvVxf0hegWHOzKrAF7OqCHeMRqZtGtzCTtvbIaVIf0ChrAZss5XJ4Mafdh9z4HUa90J4IacsU00FnIAB2xk");
-
-async function activatePremium() {
-  const session = await fetch("/create-checkout-session", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ uid: firebase.auth().currentUser.uid })
-  }).then(res => res.json());
-
-  stripe.redirectToCheckout({ sessionId: session.id });
-}
-
+    
 function showTutorial() {
   const qa = document.getElementById("question-area");
   mode = "tutorial";
