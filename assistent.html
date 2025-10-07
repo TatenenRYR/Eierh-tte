@@ -1550,6 +1550,9 @@ return `<div class="relative rounded overflow-hidden border p-1 bg-gray-50">
           <!-- upload -->
           <label class="block mt-3 text-sm">📷 Neues Bild:
             <input type="file" data-id="${id}" class="upload-image mt-1" accept="image/*">
+            <p id="upload-hint-{{hutId}}" class="text-xs text-gray-500 mt-1">
+  Kostenlos: 1 Foto • Premium: bis zu 10 Fotos
+</p>
           </label>
           <div id="progress-${id}" class="h-2 bg-gray-200 rounded hidden mt-2"><div class="h-2 bg-green-500 rounded" style="width:0%"></div></div>
           <div id="progress-label-${id}" class="text-xs text-gray-600 mt-1">0%</div>
@@ -2049,6 +2052,32 @@ function setActive(buttonId) {
   /***********************
    * Image upload (immediate upload to imgbb + push to Firestore)
    ***********************/
+    // Zeigt/versteckt Upload-Button basierend auf Limit
+async function updateUploadButton(hutId) {
+  const user = firebase.auth().currentUser;
+  if (!user) return;
+
+  const betreiberDoc = await db.collection("betreiber").doc(user.uid).get();
+  const isPremium = betreiberDoc.exists && betreiberDoc.data().premium;
+
+  const hutDoc = await db.collection("eierhuetten").doc(hutId).get();
+  const fotos = hutDoc.exists && hutDoc.data().fotos ? hutDoc.data().fotos : [];
+
+  const limit = isPremium ? 10 : 1;
+
+  const uploadInput = document.getElementById(`upload-${hutId}`);
+  const hintText = document.getElementById(`upload-hint-${hutId}`);
+
+  if (!uploadInput || !hintText) return;
+
+  if (fotos.length >= limit) {
+    uploadInput.classList.add("hidden");
+    hintText.textContent = `✅ Du hast das Limit von ${limit} Foto${limit>1?"s":""} erreicht.`;
+  } else {
+    uploadInput.classList.remove("hidden");
+    hintText.textContent = `Noch möglich: ${limit - fotos.length} Foto${(limit-fotos.length)>1?"s":""}.`;
+  }
+}
   async function uploadImagesForHut(fileList, hutId) {
   if (!fileList || fileList.length === 0) return;
   const files = Array.from(fileList);
@@ -2130,6 +2159,7 @@ function setActive(buttonId) {
 
   // Refresh Ansicht
   showMyEntries();
+    updateUploadButton(hutId);
   }
 
   function fileToBase64(file) {
