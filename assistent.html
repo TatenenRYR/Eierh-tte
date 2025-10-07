@@ -2050,51 +2050,86 @@ function setActive(buttonId) {
    * Image upload (immediate upload to imgbb + push to Firestore)
    ***********************/
   async function uploadImagesForHut(fileList, hutId) {
-    if (!fileList || fileList.length === 0) return;
-    const files = Array.from(fileList);
-    const progressBar = document.getElementById(`progress-${hutId}`);
-    const progressLabel = document.getElementById(`progress-label-${hutId}`);
-    progressBar.classList.remove('hidden');
-    let uploaded = [];
+  if (!fileList || fileList.length === 0) return;
+  const files = Array.from(fileList);
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      progressLabel.textContent = `Lade ${i+1}/${files.length} ...`;
-      try {
-        const base64 = await fileToBase64(file);
-        const fd = new FormData();
-        fd.append('key', IMGBB_KEY);
-        fd.append('image', base64);
-        const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: fd });
-        const json = await res.json();
-        if (json && json.data && json.data.url) {
-          uploaded.push({ url: json.data.url, delete_url: json.data.delete_url || null, status: 'wartet' });
-        } else {
-          console.warn('imgbb response invalid', json);
-        }
-        const pct = Math.round(((i+1)/files.length)*100);
-        progressBar.querySelector('div').style.width = pct + '%';
-      } catch (e) {
-        console.error('upload error', e);
-        showToast('Fehler beim Hochladen', 4000);
-      }
-    }
+  const user = firebase.auth().currentUser;
+  if (!user) return alert("Bitte einloggen.");
 
-    // write to firestore
-    if (uploaded.length > 0) {
-      try {
-        const ref = db.collection('eierhuetten').doc(hutId);
-        await ref.update({ fotos: firebase.firestore.FieldValue.arrayUnion(...uploaded) });
-        showToast('Bilder hochgeladen (warten auf Freigabe)');
-      } catch (e) {
-        console.error('write fotos error', e);
-        alert('Fehler beim Speichern der Bild-Daten: ' + e.message);
+  // 👉 Premium-Status prüfen
+  const betreiberDoc = await db.collection("betreiber").doc(user.uid).get();
+  const isPremium = betreiberDoc.exists && betreiberDoc.data().premium;
+
+  // 👉 Anzahl bereits vorhandener Fotos
+  const hutDoc = await db.collection("eierhuetten").doc(hutId).get();
+  const existingFotos = hutDoc.exists && hutDoc.data().fotos ? hutDoc.data().fotos : [];
+  const limit = isPremium ? 10 : 1;
+
+  // 👉 Prüfen ob Limit überschritten wird
+  if (existingFotos.length >= limit) {
+    alert(
+      `❌ Du kannst maximal ${limit} Foto${limit > 1 ? "s" : ""} hochladen.` +
+      (isPremium ? "" : "\n🌟 Mit Premium sind bis zu 10 möglich.")
+    );
+    return;
+  }
+  if (existingFotos.length + files.length > limit) {
+    alert(
+      `❌ Du kannst nur noch ${limit - existingFotos.length} weitere Foto${(limit - existingFotos.length) !== 1 ? "s" : ""} hochladen.` +
+      (isPremium ? "" : "\n🌟 Mit Premium sind bis zu 10 möglich.")
+    );
+    return;
+  }
+
+  // 👉 Upload starten
+  const progressBar = document.getElementById(`progress-${hutId}`);
+  const progressLabel = document.getElementById(`progress-label-${hutId}`);
+  progressBar.classList.remove('hidden');
+  let uploaded = [];
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    progressLabel.textContent = `Lade ${i+1}/${files.length} ...`;
+    try {
+      const base64 = await fileToBase64(file);
+      const fd = new FormData();
+      fd.append('key', IMGBB_KEY);
+      fd.append('image', base64);
+      const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: fd });
+      const json = await res.json();
+      if (json && json.data && json.data.url) {
+        uploaded.push({ url: json.data.url, delete_url: json.data.delete_url || null, status: 'wartet' });
+      } else {
+        console.warn('imgbb response invalid', json);
       }
+      const pct = Math.round(((i+1)/files.length)*100);
+      progressBar.querySelector('div').style.width = pct + '%';
+    } catch (e) {
+      console.error('upload error', e);
+      showToast('Fehler beim Hochladen', 4000);
     }
-    progressLabel.textContent = 'Fertig';
-    setTimeout(()=>{ progressBar.classList.add('hidden'); progressLabel.textContent = '0%'; }, 1200);
-    // refresh
-    showMyEntries();
+  }
+
+  // 👉 Firestore updaten
+  if (uploaded.length > 0) {
+    try {
+      const ref = db.collection('eierhuetten').doc(hutId);
+      await ref.update({ fotos: firebase.firestore.FieldValue.arrayUnion(...uploaded) });
+      showToast('Bilder hochgeladen (warten auf Freigabe)');
+    } catch (e) {
+      console.error('write fotos error', e);
+      alert('Fehler beim Speichern der Bild-Daten: ' + e.message);
+    }
+  }
+
+  progressLabel.textContent = 'Fertig';
+  setTimeout(() => { 
+    progressBar.classList.add('hidden'); 
+    progressLabel.textContent = '0%'; 
+  }, 1200);
+
+  // Refresh Ansicht
+  showMyEntries();
   }
 
   function fileToBase64(file) {
