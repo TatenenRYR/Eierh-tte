@@ -662,6 +662,11 @@ footer a:hover {
   padding: 8px;              /* etwas Abstand */
   box-sizing: border-box;
 }
+
+    /* Leuchtender Premium-Hüttenrahmen */
+.leaflet-marker-icon.premium-glow img {
+  filter: drop-shadow(0 0 5px gold) drop-shadow(0 0 10px rgba(255, 215, 0, 0.6));
+}
   </style>
 </head>
 <body>
@@ -3799,9 +3804,22 @@ if (d.beschreibung) {
   `;
 }
 
+// 🔍 Premiumstatus prüfen
+let isPremium = false;
+try {
+  const betrieberDoc = await db.collection("betreiber").doc(d.userId).get();
+  isPremium = betrieberDoc.exists && betrieberDoc.data().premium === true;
+} catch (err) {
+  console.warn("Fehler beim Prüfen des Premiumstatus:", err);
+}
+
+
+    // 🔆 Marker erstellen – behalte dein bestehendes Icon!
 const m = L.marker([h.lat, h.lng], { icon: huettenIcon }).bindPopup(`
-  <div id="${popupId}" class="popup-card" style="min-width:250px; font-size:14px; font-family:sans-serif;">
-    <!-- 📸 Bilder-Slideshow (halbe Höhe) -->
+  <div id="${popupId}" class="popup-card ${isPremium ? 'premium-popup' : ''}" 
+       style="min-width:250px; font-size:14px; font-family:sans-serif;">
+       
+       <!-- 📸 Bilder-Slideshow (halbe Höhe) -->
 <div class="swiper popup-swiper rounded-lg overflow-hidden w-full max-h-48">
   <div class="swiper-wrapper">
     ${
@@ -3822,7 +3840,10 @@ const m = L.marker([h.lat, h.lng], { icon: huettenIcon }).bindPopup(`
 
     <!-- 🏠 Infos -->
     <div class="mt-3 space-y-1 text-sm">
-      <h3 class="font-semibold text-base text-green-700">${d.name || "Unbenannt"}</h3>
+      <h3 class="font-semibold text-base text-green-700">
+  ${isPremium ? "🌟 " : ""}${d.name || "Unbenannt"}
+  ${isPremium ? '<span class="ml-1 text-xs text-yellow-600 font-semibold">(Premium)</span>' : ""}
+</h3>
 
 <!-- 🕓 Öffnungszeiten -->
 ${(
@@ -3966,12 +3987,17 @@ ${(
     </div>
   </div>
 `)
-.bindTooltip(shortenName(d.name || "Unbenannt"), {
-  permanent: true,
-  direction: 'bottom',
-  offset: [0, 10],
-  className: 'hutten-bubble'
-});
+.bindTooltip(
+  isPremium 
+    ? `🌟 ${shortenName(d.name || "Unbenannt")}` 
+    : shortenName(d.name || "Unbenannt"),
+  {
+    permanent: true,
+    direction: 'bottom',
+    offset: [0, 10],
+    className: isPremium ? 'hutten-bubble premium-bubble' : 'hutten-bubble'
+  }
+);
 
  map.on('popupopen', () => {
   new Swiper('.popup-swiper', {
@@ -4000,6 +4026,14 @@ m.on("popupclose", () => {
 });
           
           cluster.addLayer(m);
+
+          if (isPremium) {
+  // Warte kurz, bis Leaflet das DOM-Element erstellt hat:
+  setTimeout(() => {
+    const el = m.getElement();
+    if (el) el.classList.add("premium-glow");
+  }, 200);
+          }
         });
 
      
