@@ -4195,69 +4195,91 @@ db.collection("eierhuetten").onSnapshot(async (snap) => {
       : "";
 
     // 📍 Popup-HTML
-    const popupHTML = `
-      <div id="${popupId}" class="popup-card ${isPremium ? "premium-popup" : ""}">
-        <h3>
-          ${d.name || "Unbenannt"}
-          ${isPremium ? '<span class="premium-label">Premium</span>' : ""}
-        </h3>
+    
 
-        <!-- 📸 Slideshow -->
-        <div class="swiper popup-swiper rounded-lg overflow-hidden w-full max-h-48 mb-3">
-          <div class="swiper-wrapper">
-            ${
-              bilderUrls.length > 0
-                ? bilderUrls
-                    .map(
-                      (url) => `
-                      <div class="swiper-slide flex items-center justify-center bg-black">
-                        <img src="${url}" class="w-full h-48 object-contain" />
-                      </div>`
-                    )
-                    .join("")
-                : `<img src="${
-                    noImgArray[Math.floor(Math.random() * noImgArray.length)]
-                  }" style="width:100%; height:100%; object-fit:cover; border-radius:4px;">`
-            }
-          </div>
-          <div class="swiper-pagination"></div>
-          <div class="swiper-button-prev"></div>
-          <div class="swiper-button-next"></div>
-        </div>
+    // Swiper aktivieren, wenn Popup geöffnet wird
+    map.on("popupopen", () => {
+      new Swiper(".popup-swiper", {
+        loop: true,
+        autoplay: { delay: 4000 },
+        pagination: { el: ".swiper-pagination", clickable: true },
+        navigation: { nextEl: ".swiper-button-next", prevEl: ".swiper-button-prev" },
+      });
+      document.querySelectorAll(".popup-card").forEach(card => {
+  card.addEventListener("scroll", () => {
+    const atBottom = card.scrollTop + card.clientHeight >= card.scrollHeight - 10;
+    if (atBottom) card.classList.add("scrolled-end");
+    else card.classList.remove("scrolled-end");
+  });
+});
+    });
+const popupHTML = `
+  <div id="${popupId}" class="popup-card ${isPremium ? "premium-popup" : ""}">
+    <!-- Titel -->
+    <h3 class="popup-title">
+      ${isPremium ? "🌟 " : ""}${d.name || "Unbenannt"}
+      ${isPremium ? '<span class="premium-label">Premium</span>' : ""}
+    </h3>
 
-        <!-- Infos -->
-        <div class="space-y-2">
-          <p>🐾 <b>Tiere:</b> ${tiereAnzeige}</p>
-          <p>⚡ <b>Strom:</b> ${d.strom === "Ja" ? "✅" : "❌"}</p>
-          <p>🪑 <b>Sitzplätze:</b> ${d.sitzplaetze === "Ja" ? "✅" : "❌"}</p>
-          <p>🧾 <b>Extras:</b> ${d.extras || "–"}</p>
-          ${beschreibungHTML}
-          <p>📅 <b>Eingetragen:</b> ${
-            d.datenschutzZustimmung?.bestätigtAm?.toDate?.().toLocaleDateString("de-DE") ||
-            "-"
-          }</p>
-        </div>
-
-        <hr class="my-3 border-gray-300"/>
-
-        <!-- Buttons -->
-        <div class="flex flex-wrap gap-2 mt-2">
-          <button 
-            id="toggleBtn-${doc.id}" 
-            onclick="toggleSelect('hütte','${doc.id}')"
-            class="${isSelected ? "btn-remove" : "btn-add"}">
-            ${isSelected ? "❌ Entfernen" : "✅ Hinzufügen"}
-          </button>
-          ${
-            d.allowMessages
-              ? `<button class="btn-msg" onclick="openMessagePopup('${doc.id}', '${d.name}')">
-                  📧 Nachricht
-                </button>`
-              : ""
-          }
-        </div>
+    <!-- 📸 Slideshow -->
+    <div class="swiper popup-swiper rounded-lg overflow-hidden w-full max-h-48 mb-3">
+      <div class="swiper-wrapper">
+        ${
+          bilderUrls.length > 0
+            ? bilderUrls
+                .map(
+                  (url) => `
+                  <div class="swiper-slide flex items-center justify-center bg-black">
+                    <img src="${url}" class="w-full h-48 object-contain" />
+                  </div>`
+                )
+                .join("")
+            : `<img src="${noImgArray[Math.floor(Math.random() * noImgArray.length)]}"
+                     class="w-full h-48 object-cover rounded-lg opacity-90">`
+        }
       </div>
-    `;
+      <div class="swiper-pagination"></div>
+      <div class="swiper-button-prev"></div>
+      <div class="swiper-button-next"></div>
+    </div>
+
+    <!-- 🏠 Infos -->
+    <div class="space-y-2 popup-info">
+      ${d.tiere?.length ? `<p>🐾 <b>Tiere:</b> ${tiereAnzeige}</p>` : ""}
+      ${d.strom ? `<p>⚡ <b>Strom:</b> ${d.strom === "Ja" ? "✅" : "❌"}</p>` : ""}
+      ${d.sitzplaetze ? `<p>🪑 <b>Sitzplätze:</b> ${d.sitzplaetze === "Ja" ? "✅" : "❌"}</p>` : ""}
+      ${d.extras ? `<p>🧾 <b>Extras:</b> ${d.extras}</p>` : ""}
+      ${beschreibungHTML ? beschreibungHTML : ""}
+      ${
+        d.datenschutzZustimmung?.bestätigtAm
+          ? `<p>📅 <b>Eingetragen:</b> ${d.datenschutzZustimmung.bestätigtAm
+              .toDate()
+              .toLocaleDateString("de-DE")}</p>`
+          : ""
+      }
+    </div>
+
+    <hr class="my-3 border-gray-300"/>
+
+    <!-- 🟢 Buttons -->
+    <div class="flex flex-wrap gap-2 mt-2 popup-buttons">
+      <button 
+        id="toggleBtn-${doc.id}" 
+        onclick="toggleSelect('hütte','${doc.id}')"
+        class="${isSelected ? "btn-remove" : "btn-add"}">
+        ${isSelected ? "❌ Entfernen" : "✅ Hinzufügen"}
+      </button>
+
+      ${
+        d.allowMessages
+          ? `<button class="btn-msg" onclick="openMessagePopup('${doc.id}', '${d.name || "Unbenannt"}')">
+              📧 Nachricht
+            </button>`
+          : ""
+      }
+    </div>
+  </div>
+`;
 
     // 🔆 Marker erstellen
     const m = L.marker([d.location.latitude, d.location.longitude], { icon: huettenIcon })
@@ -4277,24 +4299,6 @@ db.collection("eierhuetten").onSnapshot(async (snap) => {
     if (isPremium) {
       setTimeout(() => m.getElement()?.classList.add("premium-glow"), 200);
     }
-
-    // Swiper aktivieren, wenn Popup geöffnet wird
-    map.on("popupopen", () => {
-      new Swiper(".popup-swiper", {
-        loop: true,
-        autoplay: { delay: 4000 },
-        pagination: { el: ".swiper-pagination", clickable: true },
-        navigation: { nextEl: ".swiper-button-next", prevEl: ".swiper-button-prev" },
-      });
-      document.querySelectorAll(".popup-card").forEach(card => {
-  card.addEventListener("scroll", () => {
-    const atBottom = card.scrollTop + card.clientHeight >= card.scrollHeight - 10;
-    if (atBottom) card.classList.add("scrolled-end");
-    else card.classList.remove("scrolled-end");
-  });
-});
-    });
-
     // Auto-Follow beim Schließen reaktivieren
     m.on("popupclose", () => {
       if (map._wasAutoFollow) {
