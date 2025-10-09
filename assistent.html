@@ -1547,6 +1547,8 @@ function locateGPS() {
   showToast("Bitte zuerst einloggen");
   return;
 }
+    const betreiberDoc = await db.collection("betreiber").doc(currentUser.uid).get();
+const isPremium = betreiberDoc.exists && betreiberDoc.data().premium === true;
     if (!db) { document.getElementById('question-area').innerHTML = '<div class="bg-red-100 p-4 rounded">Firestore nicht verfügbar.</div>'; return; }
    mode = "list";
     updateInfoBox();
@@ -1600,6 +1602,34 @@ function locateGPS() {
   // Danach für die Anzeige verwenden
   d.oeffnungszeiten = normalized;
 
+
+// Premium-Block als String
+const premiumBlock = (id, d) => `
+  <div class="border-t pt-2 mt-3">
+    <h4 class="font-semibold text-sm mb-2">🌟 Premium-Felder</h4>
+
+    <label class="block mt-2">Telefon:<br>
+      <input data-id="${id}" class="edit-telefon w-full border px-2 py-1 rounded" 
+             value="${escapeAttr(d.telefon || '')}" placeholder="+49 ..." />
+    </label>
+
+    <label class="block mt-2">Website:<br>
+      <input data-id="${id}" class="edit-website w-full border px-2 py-1 rounded" 
+             value="${escapeAttr(d.website || '')}" placeholder="https://..." />
+    </label>
+
+    <label class="block mt-2">Instagram:<br>
+      <input data-id="${id}" class="edit-insta w-full border px-2 py-1 rounded" 
+             value="${escapeAttr(d.insta || '')}" placeholder="https://instagram.com/..." />
+    </label>
+
+    <div class="mt-2 flex gap-3 text-sm">
+      <label><input type="checkbox" data-id="${id}" class="edit-wc" ${d.wc ? 'checked':''}/> WC</label>
+      <label><input type="checkbox" data-id="${id}" class="edit-ebike" ${d.ebike ? 'checked':''}/> E-Bike-Ladestation</label>
+    </div>
+  </div>
+`;
+        
         // badge color
         const statusTxt = d.status === "offen" ? "Wartet auf die Freigabe" : d.status;
         const badgeColor = d.status === 'accepted' || d.status === 'angenommen' ? 'bg-green-100 text-green-800' : (d.status === 'offen' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-700');
@@ -1690,6 +1720,11 @@ return `<div class="relative rounded overflow-hidden border p-1 bg-gray-50">
 </div>`;
               }).join('')}
             </div>` : ''}
+
+
+ <!-- Premium-Felder nur einblenden wenn Premium -->
+      ${isPremium ? premiumBlock(id, d) : ''}
+
 
           <!-- upload -->
           <label class="block mt-3 text-sm">📷 Neues Bild:
@@ -2023,12 +2058,13 @@ async function saveEditFromUI(id) {
     const stromEl = document.querySelector(`.edit-strom[data-id="${id}"]`);
     const extrasEl = document.querySelector(`.edit-extras[data-id="${id}"]`);
     const tiereHidden = document.querySelector(`.edit-tiere-hidden[data-id="${id}"]`);
-
     const tagsEl = document.querySelector(`.edit-tags[data-id="${id}"]`);
     const editorEl = document.getElementById(`editor-${id}`);
-// Öffnungszeiten hinzufügen
+
+    // Öffnungszeiten
     const oeffnungszeiten = collectOpeningHoursFromUI(id);
-        // neue Werte sammeln
+
+    // Payload vorbereiten
     const payload = {};
     if (nameEl) payload.name = nameEl.value.trim();
     if (sitzEl) payload.sitzplaetze = sitzEl.value;
@@ -2036,9 +2072,9 @@ async function saveEditFromUI(id) {
     if (extrasEl) payload.extras = extrasEl.value.trim();
     if (tagsEl) payload.tags = tagsEl.value ? tagsEl.value.split(',').map(s=>s.trim()).filter(Boolean).slice(0,10) : [];
     if (tiereHidden) {
-  payload.tiere = tiereHidden.value
-    ? tiereHidden.value.split(",").map(s => s.trim()).filter(Boolean)
-    : [];
+      payload.tiere = tiereHidden.value
+        ? tiereHidden.value.split(",").map(s => s.trim()).filter(Boolean)
+        : [];
     }
     if (oeffnungszeiten) payload.oeffnungszeiten = oeffnungszeiten;
 
@@ -2049,11 +2085,28 @@ async function saveEditFromUI(id) {
       } catch (e) { console.warn('quill not found', e); }
     }
 
-    // alte Daten holen
+    // Premium-Felder prüfen
+    const betreiberDoc = await db.collection("betreiber").doc(currentUser.uid).get();
+    const isPremium = betreiberDoc.exists && betreiberDoc.data().premium === true;
+    if (isPremium) {
+      const telEl = document.querySelector(`.edit-telefon[data-id="${id}"]`);
+      const webEl = document.querySelector(`.edit-website[data-id="${id}"]`);
+      const instaEl = document.querySelector(`.edit-insta[data-id="${id}"]`);
+      const wcEl = document.querySelector(`.edit-wc[data-id="${id}"]`);
+      const ebikeEl = document.querySelector(`.edit-ebike[data-id="${id}"]`);
+
+      if (telEl) payload.telefon = telEl.value.trim();
+      if (webEl) payload.website = webEl.value.trim();
+      if (instaEl) payload.insta = instaEl.value.trim();
+      if (wcEl) payload.wc = wcEl.checked;
+      if (ebikeEl) payload.ebike = ebikeEl.checked;
+    }
+
+    // Alte Daten holen
     const docSnap = await db.collection('eierhuetten').doc(id).get();
     const alteDaten = docSnap.exists ? docSnap.data() : {};
 
-    // Änderungen als Liste zusammenstellen
+    // Unterschiede anzeigen
     let html = "";
     Object.keys(payload).forEach(key => {
       const alt = Array.isArray(alteDaten[key]) ? alteDaten[key].join(", ") : (alteDaten[key] || "");
@@ -2071,13 +2124,11 @@ async function saveEditFromUI(id) {
       return;
     }
 
-    // Änderungen & IDs merken
+    // Änderungen merken
     pendingEdit = { id, payload, alteDaten };
 
     // ins Modal einsetzen
     document.getElementById("editChangesList").innerHTML = html;
-
-    // Modal anzeigen
     document.getElementById("editConfirmModal").classList.remove("hidden");
     document.getElementById("editConfirmModal").classList.add("flex");
 
