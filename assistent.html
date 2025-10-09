@@ -2051,90 +2051,159 @@ async function sendMsg(hutId) {
 }
   let pendingEdit = null; // Zwischenspeicher für aktuelle Änderungen
 
+// defensive escape fallback (falls in deinem Projekt noch nicht vorhanden)
+function escapeHtmlSafe(str) {
+  if (typeof str !== "string") return String(str || "");
+  return str
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+// Robustere, fehlertolerante Version
 async function saveEditFromUI(id) {
   try {
-    const nameEl = document.querySelector(`.edit-name[data-id="${id}"]`);
-    const sitzEl = document.querySelector(`.edit-sitz[data-id="${id}"]`);
-    const stromEl = document.querySelector(`.edit-strom[data-id="${id}"]`);
-    const extrasEl = document.querySelector(`.edit-extras[data-id="${id}"]`);
-    const tiereHidden = document.querySelector(`.edit-tiere-hidden[data-id="${id}"]`);
-    const tagsEl = document.querySelector(`.edit-tags[data-id="${id}"]`);
+    // --- Basic sanity checks ---
+    const user = (typeof currentUser !== "undefined" && currentUser && currentUser.uid)
+      ? currentUser
+      : firebase.auth().currentUser;
+    if (!user || !user.uid) throw new Error("Kein eingeloggter Nutzer (currentUser fehlt)");
+
+    if (typeof db === "undefined") throw new Error("Firestore (db) ist nicht initialisiert");
+
+    // helper: safe selector + value getter
+    const $ = (sel) => document.querySelector(sel) || null;
+    const getVal = (el) => {
+      if (!el) return undefined;
+      if (el.type === "checkbox") return el.checked;
+      if (el.tagName === "SELECT") return el.value;
+      return el.value;
+    };
+
+    // --- Elemente lesen ---
+    const nameEl = $(`.edit-name[data-id="${id}"]`);
+    const sitzEl = $(`.edit-sitz[data-id="${id}"]`);
+    const stromEl = $(`.edit-strom[data-id="${id}"]`);
+    const extrasEl = $(`.edit-extras[data-id="${id}"]`);
+    const tiereHidden = $(`.edit-tiere-hidden[data-id="${id}"]`);
+    const tagsEl = $(`.edit-tags[data-id="${id}"]`);
     const editorEl = document.getElementById(`editor-${id}`);
 
-    // Öffnungszeiten
-    const oeffnungszeiten = collectOpeningHoursFromUI(id);
-
-    // Payload vorbereiten
-    const payload = {};
-    if (nameEl) payload.name = nameEl.value.trim();
-    if (sitzEl) payload.sitzplaetze = sitzEl.value;
-    if (stromEl) payload.strom = stromEl.value;
-    if (extrasEl) payload.extras = extrasEl.value.trim();
-    if (tagsEl) payload.tags = tagsEl.value ? tagsEl.value.split(',').map(s=>s.trim()).filter(Boolean).slice(0,10) : [];
-    if (tiereHidden) {
-      payload.tiere = tiereHidden.value
-        ? tiereHidden.value.split(",").map(s => s.trim()).filter(Boolean)
-        : [];
+    // Öffnungszeiten: defensiv aufrufen (falls Funktion fehlt, nur warnen)
+    let oeffnungszeiten;
+    if (typeof collectOpeningHoursFromUI === "function") {
+      try { oeffnungszeiten = collectOpeningHoursFromUI(id); }
+      catch (e) { console.warn("collectOpeningHoursFromUI failed:", e); }
+    } else {
+      console.warn("collectOpeningHoursFromUI() nicht vorhanden — Öffnungszeiten werden nicht geprüft.");
     }
-    if (oeffnungszeiten) payload.oeffnungszeiten = oeffnungszeiten;
 
+    // --- Payload aufbauen ---
+    const payload = {};
+    if (nameEl && getVal(nameEl) != null) payload.name = getVal(nameEl).trim();
+    if (sitzEl && getVal(sitzEl) != null) payload.sitzplaetze = getVal(sitzEl);
+    if (stromEl && getVal(stromEl) != null) payload.strom = getVal(stromEl);
+    if (extrasEl && getVal(extrasEl) != null) payload.extras = getVal(extrasEl).trim();
+    if (tagsEl && getVal(tagsEl) != null) payload.tags = getVal(tagsEl) ? getVal(tagsEl).split(',').map(s=>s.trim()).filter(Boolean).slice(0,10) : [];
+    if (tiereHidden && getVal(tiereHidden) != null) payload.tiere = getVal(tiereHidden) ? getVal(tiereHidden).split(",").map(s=>s.trim()).filter(Boolean) : [];
+    if (typeof oeffnungszeiten !== "undefined" && oeffnungszeiten !== null) payload.oeffnungszeiten = oeffnungszeiten;
+
+    // Beschreibung: Quill oder fallback auf innerHTML
     if (editorEl) {
       try {
-        const q = Quill.find(editorEl);
-        if (q) payload.beschreibung = q.root.innerHTML;
-      } catch (e) { console.warn('quill not found', e); }
+        const q = Quill.find ? Quill.find(editorEl) : null;
+        if (q && q.root) {
+          payload.beschreibung = q.root.innerHTML;
+        } else {
+          // fallback: falls Quill.find nicht funktioniert
+          const qInner = editorEl.querySelector && editorEl.querySelector('.ql-editor');
+          payload.beschreibung = qInner ? qInner.innerHTML : editorEl.innerHTML;
+        }
+      } catch (err) {
+        console.warn("Fehler beim Auslesen von Quill:", err);
+        const qInner = editorEl.querySelector && editorEl.querySelector('.ql-editor');
+        if (qInner) payload.beschreibung = qInner.innerHTML;
+      }
     }
 
-    // Premium-Felder prüfen
-    const betreiberDoc = await db.collection("betreiber").doc(currentUser.uid).get();
-    const isPremium = betreiberDoc.exists && betreiberDoc.data().premium === true;
+    // --- Premium-Felder (nur wenn Betreiber Premium) ---
+    const betreiberDoc = await db.collection("betreiber").doc(user.uid).get();
+    const isPremium = betreiberDoc.exists && !!betreiberDoc.data().premium;
     if (isPremium) {
-      const telEl = document.querySelector(`.edit-telefon[data-id="${id}"]`);
-      const webEl = document.querySelector(`.edit-website[data-id="${id}"]`);
-      const instaEl = document.querySelector(`.edit-insta[data-id="${id}"]`);
-      const wcEl = document.querySelector(`.edit-wc[data-id="${id}"]`);
-      const ebikeEl = document.querySelector(`.edit-ebike[data-id="${id}"]`);
+      const telEl = $(`.edit-telefon[data-id="${id}"]`);
+      const webEl = $(`.edit-website[data-id="${id}"]`);
+      const instaEl = $(`.edit-insta[data-id="${id}"]`);
+      const wcEl = $(`.edit-wc[data-id="${id}"]`);
+      const ebikeEl = $(`.edit-ebike[data-id="${id}"]`);
 
-      if (telEl) payload.telefon = telEl.value.trim();
-      if (webEl) payload.website = webEl.value.trim();
-      if (instaEl) payload.insta = instaEl.value.trim();
-      if (wcEl) payload.wc = wcEl.checked;
-      if (ebikeEl) payload.ebike = ebikeEl.checked;
+      if (telEl && getVal(telEl) !== undefined) payload.telefon = getVal(telEl).trim();
+      if (webEl && getVal(webEl) !== undefined) payload.website = getVal(webEl).trim();
+      if (instaEl && getVal(instaEl) !== undefined) payload.insta = getVal(instaEl).trim();
+      if (wcEl) payload.wc = !!getVal(wcEl);
+      if (ebikeEl) payload.ebike = !!getVal(ebikeEl);
     }
 
-    // Alte Daten holen
+    console.log("DEBUG: payload assembled for saveEditFromUI:", payload, "isPremium:", isPremium);
+
+    // --- Alte Daten holen & Diff erzeugen ---
     const docSnap = await db.collection('eierhuetten').doc(id).get();
     const alteDaten = docSnap.exists ? docSnap.data() : {};
 
-    // Unterschiede anzeigen
-    let html = "";
+    const diffs = [];
     Object.keys(payload).forEach(key => {
-      const alt = Array.isArray(alteDaten[key]) ? alteDaten[key].join(", ") : (alteDaten[key] || "");
-      const neu = Array.isArray(payload[key]) ? payload[key].join(", ") : (payload[key] || "");
-      if (alt !== neu) {
-        html += `<div class="mb-2">
-          <span class="font-semibold">${key}:</span><br>
-          <span class="text-gray-500 text-xs">alt:</span> ${escapeHtml(alt)}<br>
-          <span class="text-gray-500 text-xs">neu:</span> ${escapeHtml(neu)}
-        </div>`;
+      const oldValRaw = typeof alteDaten[key] === "undefined" ? "" : alteDaten[key];
+      const newValRaw = typeof payload[key] === "undefined" ? "" : payload[key];
+
+      const oldVal = Array.isArray(oldValRaw) ? oldValRaw.join(", ") : String(oldValRaw || "");
+      const newVal = Array.isArray(newValRaw) ? newValRaw.join(", ") : String(newValRaw || "");
+
+      if (oldVal !== newVal) {
+        diffs.push({
+          key,
+          oldVal,
+          newVal
+        });
       }
     });
-    if (!html) {
+
+    if (diffs.length === 0) {
       showToast("ℹ️ Keine Änderungen erkannt");
       return;
     }
 
-    // Änderungen merken
+    // --- pendingEdit merken ---
     pendingEdit = { id, payload, alteDaten };
 
-    // ins Modal einsetzen
-    document.getElementById("editChangesList").innerHTML = html;
-    document.getElementById("editConfirmModal").classList.remove("hidden");
-    document.getElementById("editConfirmModal").classList.add("flex");
+    // --- Modal / Anzeige der Änderungen ---
+    const editChangesList = document.getElementById("editChangesList");
+    const editConfirmModal = document.getElementById("editConfirmModal");
 
-  } catch (e) {
-    console.error('saveEditFromUI error', e);
-    alert('Fehler beim Sammeln der Änderungen: ' + (e.message || e));
+    const html = diffs.map(d => `
+      <div class="mb-2">
+        <span class="font-semibold">${escapeHtmlSafe(d.key)}:</span><br>
+        <span class="text-gray-500 text-xs">alt:</span> ${escapeHtmlSafe(d.oldVal)}<br>
+        <span class="text-gray-500 text-xs">neu:</span> ${escapeHtmlSafe(d.newVal)}
+      </div>
+    `).join("");
+
+    if (editChangesList && editConfirmModal) {
+      editChangesList.innerHTML = html;
+      editConfirmModal.classList.remove("hidden");
+      editConfirmModal.classList.add("flex");
+    } else {
+      // Fallback: Modal nicht vorhanden -> direkt speichern (nützlich beim Test)
+      console.warn("Modal-Elemente fehlen (editChangesList / editConfirmModal). Speichere direkt.");
+      await db.collection('eierhuetten').doc(id).update(payload);
+      showToast("✅ Änderungen gespeichert (Modal fehlte zur Ansicht)");
+      // optional: neu laden
+      showMyEntries();
+    }
+
+  } catch (err) {
+    console.error('saveEditFromUI error', err);
+    alert('Fehler beim Sammeln der Änderungen: ' + (err.message || err));
   }
 }
 
