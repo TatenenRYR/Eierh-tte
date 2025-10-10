@@ -636,110 +636,190 @@ if (step === 2) {
 const stripe = Stripe("pk_test_51SFLgEBghOTdsn6RBYuZr6x4R2BC6lhq4NFWmcKTtyNahatWHMVHAq3posYIhsXKRl598qHOzMzyymuV6DgKWYly006AaME4Wr");
 
 
-function showDashboard() {
+async function showDashboard() {
   const qa = document.getElementById("question-area");
   qa.innerHTML = `
-    <section class="bg-gradient-to-br from-green-50 to-white p-6 rounded-2xl shadow-xl max-w-4xl mx-auto animate-fadeIn">
-      <div class="flex items-center justify-between mb-6">
-        <h2 class="text-2xl font-extrabold text-green-800">📊 Mein Dashboard</h2>
-        <span class="text-sm text-gray-500">RadlMap Betreiberbereich</span>
+    <section class="bg-gradient-to-br from-green-50 to-white p-6 rounded-2xl shadow-xl max-w-5xl mx-auto animate-fadeIn">
+      <h2 class="text-2xl font-extrabold text-green-800 mb-6">📊 Mein Dashboard</h2>
+
+      <!-- Statistik -->
+      <div id="statsArea" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        <div class="col-span-3 text-center text-gray-500">Lade Daten...</div>
       </div>
 
-      <!-- Statistik-Kacheln -->
-      <div id="statsArea" class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <div class="col-span-2 text-center text-gray-500">Lade Daten...</div>
-      </div>
+      <!-- Foto-Limit -->
+      <div id="limitsArea" class="mb-10"></div>
 
-      <!-- Premium-Bereich -->
-      <div id="premiumArea"></div>
+      <!-- Premium -->
+      <div id="premiumArea" class="mb-10"></div>
+
+      <!-- Events -->
+      <div id="eventsArea" class="mb-4"></div>
     </section>
   `;
 
   const user = firebase.auth().currentUser;
   if (!user) {
-    document.getElementById("statsArea").innerHTML = `
-      <div class="col-span-2 text-center text-red-600 font-semibold">
-        Bitte zuerst einloggen.
-      </div>`;
+    document.getElementById("statsArea").innerHTML =
+      `<div class="col-span-3 text-center text-red-600 font-semibold">Bitte zuerst einloggen.</div>`;
     return;
   }
 
-  // 📈 Statistik (Aufrufe / Routenstarts)
-  db.collection("eierhuetten")
-    .where("userId", "==", user.uid)
-    .onSnapshot(snapshot => {
-      let totalViews = 0;
-      let totalRoutes = 0;
-
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        totalViews += data.views || 0;
-        totalRoutes += data.routeStarts || 0;
-      });
-
-      document.getElementById("statsArea").innerHTML = `
-        <div class="bg-white p-6 rounded-xl shadow hover:shadow-md transition text-center">
-          <div class="text-4xl mb-2">👁️</div>
-          <h3 class="text-lg font-semibold text-gray-700">Aufrufe</h3>
-          <p class="text-3xl font-extrabold text-green-700 mt-1">${totalViews}</p>
-          <p class="text-xs text-gray-400 mt-1">Gesamt seit Erstellung</p>
-        </div>
-        <div class="bg-white p-6 rounded-xl shadow hover:shadow-md transition text-center">
-          <div class="text-4xl mb-2">📍</div>
-          <h3 class="text-lg font-semibold text-gray-700">Routenstarts</h3>
-          <p class="text-3xl font-extrabold text-green-700 mt-1">${totalRoutes}</p>
-          <p class="text-xs text-gray-400 mt-1">Nutzer haben die Navigation gestartet</p>
-        </div>
-      `;
+  // 📈 Statistik (Summe)
+  db.collection("eierhuetten").where("userId", "==", user.uid).onSnapshot(snapshot => {
+    let totalViews = 0, totalRoutes = 0;
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      totalViews += data.views || 0;
+      totalRoutes += data.routeStarts || 0;
     });
+    const avgPerDay = Math.round(totalViews / Math.max(1, snapshot.size));
 
-  // 🌟 Premium-Block
-  db.collection("betreiber").doc(user.uid).get().then(doc => {
-    const data = doc.data() || {};
-    const premiumArea = document.getElementById("premiumArea");
+    document.getElementById("statsArea").innerHTML = `
+      <div class="bg-white p-6 rounded-xl shadow text-center">
+        <div class="text-3xl mb-2">👁️</div>
+        <h3 class="font-semibold">Aufrufe</h3>
+        <p class="text-2xl font-bold text-green-700">${totalViews}</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl shadow text-center">
+        <div class="text-3xl mb-2">📍</div>
+        <h3 class="font-semibold">Routenstarts</h3>
+        <p class="text-2xl font-bold text-green-700">${totalRoutes}</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl shadow text-center">
+        <div class="text-3xl mb-2">📊</div>
+        <h3 class="font-semibold">Ø Aufrufe pro Hütte</h3>
+        <p class="text-2xl font-bold text-green-700">${avgPerDay}</p>
+      </div>
+    `;
+  });
 
-    if (data.premium) {
-      premiumArea.innerHTML = `
-  <div class="bg-green-100 p-6 rounded-xl shadow-inner text-center">
-    <h3 class="text-lg font-bold text-green-800 mb-2">🌟 Premium aktiv</h3>
-    <p class="text-gray-700 mb-4">
-      Deine Premium-Vorteile sind bis 
-      <b>${data.premium_until ? new Date(data.premium_until).toLocaleDateString("de-DE") : "unbekannt"}</b> aktiv.
-    </p>
-    <div class="flex gap-3 justify-center">
-      <span class="inline-block px-4 py-1 bg-green-600 text-white rounded-full text-sm">Premium Partner</span>
-      <button 
-        class="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-semibold hover:bg-red-600 transition"
-        onclick="cancelPremium()"
-      >
-        ❌ Premium kündigen
-      </button>
+  // 📸 Foto-Limit (Placeholder: du kannst showLimitsSection hier einfügen)
+  document.getElementById("limitsArea").innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow">
+      <h3 class="text-lg font-bold mb-2">📸 Foto-Limit</h3>
+      <p class="text-sm text-gray-600">Zeige hier, wie viele Fotos schon hochgeladen sind (Free: 1 / Premium: 10)</p>
     </div>
-  </div>
-`;
-      
-      // nur Premium: Diagramm & Limits
-      showPremiumStatsChart(user);
-      showLimitsSection(user, data.premium);
-    } else {
-      premiumArea.innerHTML = `
-        <div class="bg-white border border-dashed border-gray-300 p-6 rounded-xl text-center">
-          <h3 class="text-lg font-semibold text-gray-700 mb-2">🚀 Werde Premium!</h3>
-          <p class="text-sm text-gray-500 mb-4">
-            Erhalte erweiterte Statistiken, mehr Fotos und bessere Sichtbarkeit.
-          </p>
+  `;
+
+  // 🌟 Premium-Bereich
+  const betreiberDoc = await db.collection("betreiber").doc(user.uid).get();
+  const data = betreiberDoc.data() || {};
+  const premiumArea = document.getElementById("premiumArea");
+
+  if (data.premium) {
+    premiumArea.innerHTML = `
+      <div class="bg-green-100 p-6 rounded-xl shadow-inner text-center">
+        <h3 class="text-lg font-bold text-green-800 mb-2">🌟 Premium aktiv</h3>
+        <p class="text-gray-700 mb-3">
+          Gültig bis <b>${data.premium_until ? new Date(data.premium_until).toLocaleDateString("de-DE") : "unbekannt"}</b>
+        </p>
+        <div class="flex gap-3 justify-center">
+          <span class="px-4 py-1 bg-green-600 text-white rounded-full text-sm">Premium Partner</span>
           <button 
-            class="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold shadow hover:bg-green-700 transition"
-            onclick="showPremiumUpgrade()"
+            class="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-semibold hover:bg-red-600 transition"
+            onclick="cancelPremium()"
           >
-            🌟 Premium freischalten – nur 2 €/Monat
+            ❌ Premium kündigen
           </button>
         </div>
-      `;
-    }
+      </div>
+    `;
+    // Premium-only Features laden
+    showEventsSection(user); 
+  } else {
+    premiumArea.innerHTML = `
+      <div class="bg-white border border-dashed border-gray-300 p-6 rounded-xl text-center">
+        <h3 class="text-lg font-semibold mb-2">🚀 Werde Premium!</h3>
+        <p class="text-sm text-gray-500 mb-4">
+          Erhalte erweiterte Statistiken, mehr Fotos und Live-Events.
+        </p>
+        <button 
+          class="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold shadow hover:bg-green-700 transition"
+          onclick="showPremiumUpgrade()"
+        >
+          🌟 Premium freischalten – nur 2 €/Monat
+        </button>
+      </div>
+    `;
+  }
+}
+async function showEventsSection(user) {
+  const eventsArea = document.getElementById("eventsArea");
+  if (!eventsArea) return;
+
+  // Lade Hütten des Betreibers
+  const hutsSnapshot = await db.collection("eierhuetten").where("userId", "==", user.uid).get();
+  let options = "";
+  hutsSnapshot.forEach(doc => {
+    const hut = doc.data();
+    options += `<option value="${doc.id}">${hut.name}</option>`;
+  });
+
+  eventsArea.innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow">
+      <h3 class="text-lg font-bold mb-4">🗓️ Live-Event erstellen</h3>
+      <form id="eventForm" class="grid gap-3">
+        <label class="block">
+          <span class="text-sm text-gray-600">Hütte wählen</span>
+          <select id="eventHut" class="w-full p-2 border rounded">${options}</select>
+        </label>
+        <label class="block">
+          <span class="text-sm text-gray-600">Titel</span>
+          <input id="eventTitle" type="text" class="w-full p-2 border rounded" placeholder="z.B. Sommerfest" required>
+        </label>
+        <label class="block">
+          <span class="text-sm text-gray-600">Beschreibung</span>
+          <textarea id="eventDesc" class="w-full p-2 border rounded" rows="2"></textarea>
+        </label>
+        <label class="block">
+          <span class="text-sm text-gray-600">Dauer (Tage)</span>
+          <input id="eventDays" type="number" min="1" max="30" value="2" class="w-full p-2 border rounded">
+        </label>
+        <button class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">📌 Event speichern</button>
+      </form>
+      <div id="eventList" class="mt-6"></div>
+    </div>
+  `;
+
+  // Event speichern
+  document.getElementById("eventForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const hutId = document.getElementById("eventHut").value;
+    const title = document.getElementById("eventTitle").value;
+    const desc = document.getElementById("eventDesc").value;
+    const days = parseInt(document.getElementById("eventDays").value);
+
+    const until = new Date(Date.now() + days * 24*60*60*1000);
+
+    await db.collection("eierhuetten").doc(hutId).collection("events").add({
+      title,
+      desc,
+      createdAt: new Date(),
+      validUntil: until,
+      active: true
+    });
+
+    alert("✅ Event gespeichert!");
+    showEventsSection(user);
+  });
+
+  // Bestehende Events anzeigen
+  hutsSnapshot.forEach(async (doc) => {
+    const eventsSnap = await db.collection("eierhuetten").doc(doc.id).collection("events").get();
+    eventsSnap.forEach(evDoc => {
+      const ev = evDoc.data();
+      if (ev.active && ev.validUntil.toDate() > new Date()) {
+        document.getElementById("eventList").innerHTML += `
+          <div class="border p-3 rounded mb-2">
+            <b>${ev.title}</b> (bis ${ev.validUntil.toDate().toLocaleDateString("de-DE")})<br>
+            <span class="text-sm text-gray-600">${ev.desc}</span>
+          </div>
+        `;
+      }
+    });
   });
 }
-
 function showPremiumUpgrade() {
   const qa = document.getElementById("question-area");
   qa.innerHTML = `
