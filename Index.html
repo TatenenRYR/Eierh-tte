@@ -1099,6 +1099,34 @@ body.dark-mode .swiper-button-next {
   padding-bottom: 8px;
   border-top: 1px solid #eee;
 }
+    /* 🔵 Pulsierender Kreis für aktive Events */
+.leaflet-event-pulse {
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  left: -30px;
+  top: -30px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.35); /* grün-transparent */
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.6);
+  animation: pulseEvent 2.2s infinite ease-in-out;
+  pointer-events: none;
+}
+
+@keyframes pulseEvent {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.7;
+  }
+  70% {
+    transform: scale(1.4);
+    opacity: 0.1;
+  }
+  100% {
+    transform: scale(0.7);
+    opacity: 0.7;
+  }
+}
   </style>
 </head>
 <body>
@@ -4330,19 +4358,39 @@ const popupHTML = `
   </div>
 `;
     // 🔆 Marker erstellen
-    const m = L.marker([d.location.latitude, d.location.longitude], { icon: huettenIcon })
-      .bindPopup(popupHTML)
-      .bindTooltip(
-        isPremium ? `🌟 ${shortenName(d.name)}` : shortenName(d.name),
-        {
-          permanent: true,
-          direction: "bottom",
-          offset: [0, 10],
-          className: isPremium ? "hutten-bubble premium-bubble" : "hutten-bubble",
-        }
-      );
+const m = L.marker([d.location.latitude, d.location.longitude], { icon: huettenIcon })
+  .bindPopup(popupHTML)
+  .bindTooltip(
+    isPremium ? `🌟 ${shortenName(d.name)}` : shortenName(d.name),
+    {
+      permanent: true,
+      direction: "bottom",
+      offset: [0, 10],
+      className: isPremium ? "hutten-bubble premium-bubble" : "hutten-bubble",
+    }
+  );
 
-    cluster.addLayer(m);
+// ➕ Marker in Cluster einfügen
+cluster.addLayer(m);
+
+// 🔍 Prüfe auf aktive Events für diese Hütte
+try {
+  const eventsRef = db.collection("eierhuetten").doc(doc.id).collection("events");
+  const now = new Date();
+
+  eventsRef
+    .where("startDate", "<=", now)
+    .where("endDate", ">=", now)
+    .get()
+    .then(snapshot => {
+      if (!snapshot.empty) {
+        addEventPulse(m);
+      }
+    })
+    .catch(err => console.error("Event-Check Fehler:", err));
+} catch (e) {
+  console.error("Event-Daten konnten nicht geprüft werden:", e);
+}
 
     if (isPremium) {
       setTimeout(() => m.getElement()?.classList.add("premium-glow"), 200);
@@ -4383,6 +4431,29 @@ map.on('movestart', (e) => {
     showToast("📍 Folgen pausiert — tippe 📍 um wieder zu folgen");
   }
 });
+    }
+    function addEventPulse(marker, ev) {
+  const icon = marker._icon;
+  if (!icon) return;
+  if (icon.querySelector(".leaflet-event-pulse")) return;
+
+  const pulse = document.createElement("div");
+  pulse.classList.add("leaflet-event-pulse");
+
+  const now = new Date();
+  const start = ev.startDate.toDate();
+  const end = ev.endDate.toDate();
+  const progress = (now - start) / (end - start); // 0 → 1
+
+  if (progress < 0.6) {
+    pulse.style.background = "rgba(16, 185, 129, 0.35)"; // grün
+  } else if (progress < 0.9) {
+    pulse.style.background = "rgba(234, 179, 8, 0.35)"; // gelb
+  } else {
+    pulse.style.background = "rgba(239, 68, 68, 0.35)"; // rot
+  }
+
+  icon.appendChild(pulse);
     }
     function trackView(hutId) {
   const hutRef = db.collection("eierhuetten").doc(hutId);
