@@ -744,6 +744,34 @@ async function showDashboard() {
     `;
   }
 }
+    async function deleteEvent(hutId, eventId) {
+  await db.collection("eierhuetten").doc(hutId).collection("events").doc(eventId).delete();
+  showToast("🗑️ Event gelöscht", 3000);
+  showEventsSection(firebase.auth().currentUser);
+    }
+    async function editEvent(hutId, eventId) {
+  const evRef = await db.collection("eierhuetten").doc(hutId).collection("events").doc(eventId).get();
+  const ev = evRef.data();
+
+  document.getElementById("eventHut").value = hutId;
+  document.getElementById("eventTitle").value = ev.title;
+  document.getElementById("eventDesc").value = ev.desc || "";
+  document.getElementById("eventStart").value = ev.startDate.toDate().toISOString().slice(0,10);
+  document.getElementById("eventEnd").value = ev.endDate.toDate().toISOString().slice(0,10);
+
+  const form = document.getElementById("eventForm");
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    await db.collection("eierhuetten").doc(hutId).collection("events").doc(eventId).update({
+      title: document.getElementById("eventTitle").value,
+      desc: document.getElementById("eventDesc").value,
+      startDate: firebase.firestore.Timestamp.fromDate(new Date(document.getElementById("eventStart").value)),
+      endDate: firebase.firestore.Timestamp.fromDate(new Date(document.getElementById("eventEnd").value))
+    });
+    showToast("✅ Event aktualisiert", 3000);
+    showEventsSection(firebase.auth().currentUser);
+  };
+    }
 async function showEventsSection(user) {
   const eventsArea = document.getElementById("eventsArea");
   if (!eventsArea) return;
@@ -760,66 +788,93 @@ async function showEventsSection(user) {
     <div class="bg-white p-6 rounded-xl shadow">
       <h3 class="text-lg font-bold mb-4">🗓️ Live-Event erstellen</h3>
       <form id="eventForm" class="grid gap-3">
-        <label class="block">
+        <label>
           <span class="text-sm text-gray-600">Hütte wählen</span>
           <select id="eventHut" class="w-full p-2 border rounded">${options}</select>
         </label>
-        <label class="block">
+        <label>
           <span class="text-sm text-gray-600">Titel</span>
-          <input id="eventTitle" type="text" class="w-full p-2 border rounded" placeholder="z.B. Sommerfest" required>
+          <input id="eventTitle" type="text" class="w-full p-2 border rounded" required>
         </label>
-        <label class="block">
+        <label>
           <span class="text-sm text-gray-600">Beschreibung</span>
           <textarea id="eventDesc" class="w-full p-2 border rounded" rows="2"></textarea>
         </label>
-        <label class="block">
-          <span class="text-sm text-gray-600">Dauer (Tage)</span>
-          <input id="eventDays" type="number" min="1" max="30" value="2" class="w-full p-2 border rounded">
-        </label>
+        <div class="grid grid-cols-2 gap-3">
+          <label>
+            <span class="text-sm text-gray-600">Startdatum</span>
+            <input id="eventStart" type="date" class="w-full p-2 border rounded" required>
+          </label>
+          <label>
+            <span class="text-sm text-gray-600">Enddatum</span>
+            <input id="eventEnd" type="date" class="w-full p-2 border rounded" required>
+          </label>
+        </div>
         <button class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">📌 Event speichern</button>
       </form>
+
       <div id="eventList" class="mt-6"></div>
     </div>
   `;
 
-  // Event speichern
-  document.getElementById("eventForm").addEventListener("submit", async (e) => {
+  const form = document.getElementById("eventForm");
+  form.onsubmit = async (e) => {
     e.preventDefault();
     const hutId = document.getElementById("eventHut").value;
     const title = document.getElementById("eventTitle").value;
     const desc = document.getElementById("eventDesc").value;
-    const days = parseInt(document.getElementById("eventDays").value);
+    const start = new Date(document.getElementById("eventStart").value);
+    const end = new Date(document.getElementById("eventEnd").value);
 
-    const until = new Date(Date.now() + days * 24*60*60*1000);
+    if (end <= start) {
+      showToast("❌ Enddatum muss nach dem Startdatum liegen!", 3000);
+      return;
+    }
 
     await db.collection("eierhuetten").doc(hutId).collection("events").add({
       title,
       desc,
-      createdAt: new Date(),
-      validUntil: until,
-      active: true
+      startDate: firebase.firestore.Timestamp.fromDate(start),
+      endDate: firebase.firestore.Timestamp.fromDate(end),
+      createdAt: new Date()
     });
 
-    alert("✅ Event gespeichert!");
+    showToast("✅ Event gespeichert!", 3000);
     showEventsSection(user);
-  });
+  };
 
-  // Bestehende Events anzeigen
-  hutsSnapshot.forEach(async (doc) => {
+  // Events anzeigen
+  for (const doc of hutsSnapshot.docs) {
     const eventsSnap = await db.collection("eierhuetten").doc(doc.id).collection("events").get();
     eventsSnap.forEach(evDoc => {
       const ev = evDoc.data();
-      if (ev.active && ev.validUntil.toDate() > new Date()) {
-        document.getElementById("eventList").innerHTML += `
-          <div class="border p-3 rounded mb-2">
-            <b>${ev.title}</b> (bis ${ev.validUntil.toDate().toLocaleDateString("de-DE")})<br>
-            <span class="text-sm text-gray-600">${ev.desc}</span>
-          </div>
-        `;
+      const now = new Date();
+
+      let status = "";
+      if (ev.startDate.toDate() > now) {
+        status = `🔒 Geplant (ab ${ev.startDate.toDate().toLocaleDateString("de-DE")})`;
+      } else if (ev.endDate.toDate() < now) {
+        status = `⏹️ Abgelaufen (bis ${ev.endDate.toDate().toLocaleDateString("de-DE")})`;
+      } else {
+        status = `🟢 Aktiv (endet am ${ev.endDate.toDate().toLocaleDateString("de-DE")})`;
       }
+
+      document.getElementById("eventList").innerHTML += `
+        <div class="border p-3 rounded mb-2">
+          <b>${ev.title}</b><br>
+          <span class="text-sm text-gray-600">${ev.desc || ""}</span><br>
+          <span class="text-xs">${status}</span>
+          <div class="mt-2 flex gap-2">
+            <button class="px-2 py-1 bg-blue-500 text-white rounded text-xs" 
+              onclick="editEvent('${doc.id}','${evDoc.id}')">✏️ Bearbeiten</button>
+            <button class="px-2 py-1 bg-red-500 text-white rounded text-xs" 
+              onclick="deleteEvent('${doc.id}','${evDoc.id}')">🗑️ Löschen</button>
+          </div>
+        </div>
+      `;
     });
-  });
-}
+  }
+    }
 function showPremiumUpgrade() {
   const qa = document.getElementById("question-area");
   qa.innerHTML = `
