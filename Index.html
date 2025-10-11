@@ -4104,43 +4104,7 @@ function initGeolocation() {
 // ==========================
 let hutsListener = null;
 let hutsMap = new Map();
-function createCustomMarker(doc, d, isPremium, hasEvent) {
-  // Pulsierender Kreis für Events
-  const pulse = hasEvent ? `<div class="pulse-circle"></div>` : "";
 
-  // Marker-HTML mit Icon
-  const iconHTML = `
-    <div class="custom-marker ${isPremium ? "premium-glow" : ""}">
-      ${pulse}
-      <img src="/icons/hut.svg" class="hut-icon" alt="Hütte">
-    </div>
-  `;
-
-  const icon = L.divIcon({
-    html: iconHTML,
-    className: "marker-wrapper",
-    iconSize: [36, 36],
-    iconAnchor: [18, 36],
-    popupAnchor: [0, -30],
-  });
-
-  const marker = L.marker([d.location.latitude, d.location.longitude], { huettenIcon })
-    .bindPopup(createHutPopupHTML(doc, d, isPremium))
-    .bindTooltip(
-      isPremium ? `🌟 ${shortenName(d.name)}` : shortenName(d.name),
-      {
-        permanent: true,
-        direction: "bottom",
-        offset: [0, 10],
-        className: isPremium ? "hutten-bubble premium-bubble" : "hutten-bubble",
-      }
-    );
-
-  // Views zählen beim Öffnen
-  marker.on("popupopen", () => trackView(doc.id));
-
-  return marker;
-}
 async function initHuettenListener() {
   if (hutsListener) hutsListener();
 
@@ -4155,20 +4119,40 @@ async function initHuettenListener() {
         if (!d.location) continue;
         seenIds.add(doc.id);
 
-        // schon vorhanden → überspringen
+        // Überspringen, wenn Marker bereits existiert
         if (hutsMap.has(doc.id)) continue;
 
-        const [isPremium, hasEvent] = await Promise.all([
-          getPremiumStatus(d.userId),
-          hasActiveEvent(doc.id),
-        ]);
+        const isPremium = await getPremiumStatus(d.userId);
+        const popupHTML = createHutPopupHTML(doc, d, isPremium);
 
-        const marker = createCustomMarker(doc, d, isPremium, hasEvent);
-        cluster.addLayer(marker);
+        const marker = L.marker([d.location.latitude, d.location.longitude], { icon: huettenIcon })
+          .bindPopup(popupHTML)
+          .bindTooltip(
+            isPremium ? `🌟 ${shortenName(d.name)}` : shortenName(d.name),
+            {
+              permanent: true,
+              direction: "bottom",
+              offset: [0, 10],
+              className: isPremium ? "hutten-bubble premium-bubble" : "hutten-bubble",
+            }
+          );
+
         hutsMap.set(doc.id, marker);
+        cluster.addLayer(marker);
+
+        // Prüfe Events
+        checkAndAddEventPulse(doc.id, marker);
+
+        // Premium Glow
+        if (isPremium) {
+          setTimeout(() => marker.getElement()?.classList.add("premium-glow"), 200);
+        }
+
+        // Views zählen beim Öffnen
+        marker.on("popupopen", () => trackView(doc.id));
       }
 
-      // Entferne Marker, die nicht mehr da sind
+      // Entferne gelöschte Marker
       hutsMap.forEach((marker, id) => {
         if (!seenIds.has(id)) {
           cluster.removeLayer(marker);
@@ -4176,19 +4160,6 @@ async function initHuettenListener() {
         }
       });
     });
-}
-
-// Prüft auf aktive Events (puls)
-async function hasActiveEvent(hutId) {
-  const now = new Date();
-  const snap = await db.collection("eierhuetten")
-    .doc(hutId)
-    .collection("events")
-    .where("startDate", "<=", now)
-    .where("endDate", ">=", now)
-    .limit(1)
-    .get();
-  return !snap.empty;
 }
 
 // ==========================
@@ -4250,29 +4221,42 @@ function handleManualMapMove(e) {
 // 🧱 Popup-Inhalt komplett
 // ==========================
 function createHutPopupHTML(doc, d, isPremium) {
+  const popupId = `popup-${doc.id}`;
   const bilderUrls = Array.isArray(d.fotos)
     ? d.fotos.map(f => (typeof f === "string" ? f : f.url)).filter(Boolean)
     : [];
 
-  const tiere = Array.isArray(d.tiere) ? d.tiere.join(", ") : "Keine Tiere";
   const beschreibungHTML = d.beschreibung
-    ? `<p><b>📝 Beschreibung:</b><br>${sanitizeText(d.beschreibung)}</p>`
+    ? `<div class="beschreibung"><b>📝 Beschreibung:</b><br>${sanitizeText(d.beschreibung)}</div>`
     : "";
+
+  const tiere = Array.isArray(d.tiere) ? d.tiere.join(", ") : "Keine Tiere";
 
   const premiumHTML = isPremium ? `
     <div class="mt-3 border-t pt-2">
       ${d.telefon ? `<p>📞 <a href="tel:${d.telefon}" class="text-blue-600 underline">${d.telefon}</a></p>` : ""}
       ${d.website ? `<p>🌐 <a href="${d.website}" target="_blank" class="text-blue-600 underline">Website</a></p>` : ""}
       ${d.insta ? `<p>📸 <a href="${d.insta}" target="_blank" class="text-pink-600 underline">Instagram</a></p>` : ""}
+      ${(d.wc || d.ebike)
+        ? `<div class="flex gap-3 mt-1 text-sm">${d.wc ? "🚻 WC" : ""} ${d.ebike ? "🔌 E-Bike-Ladestation" : ""}</div>`
+        : ""}
     </div>` : "";
 
   return `
-  <div class="popup-card ${isPremium ? "premium-popup" : ""}">
-    <h3 class="font-bold text-lg mb-2">${d.name || "Unbenannt"}${isPremium ? " 🌟" : ""}</h3>
+  <div id="${popupId}" class="popup-card ${isPremium ? "premium-popup" : ""}">
+    <h3 class="font-bold text-lg mb-2">${d.name || "Unbenannt"} ${isPremium ? '<span class="premium-label">🌟 Premium</span>' : ""}</h3>
 
-    ${bilderUrls.length
-      ? `<img src="${bilderUrls[0]}" class="w-full h-32 object-cover rounded mb-2">`
-      : ""}
+    <!-- Slideshow -->
+    <div class="swiper popup-swiper rounded-lg overflow-hidden w-full max-h-48 mb-3">
+      <div class="swiper-wrapper">
+        ${bilderUrls.length
+          ? bilderUrls.map(url => `<div class="swiper-slide"><img src="${url}" class="w-full h-48 object-cover"></div>`).join("")
+          : `<div class="swiper-slide"><img src="fallback.jpg" class="w-full h-48 object-cover"></div>`}
+      </div>
+      <div class="swiper-pagination"></div>
+      <div class="swiper-button-prev"></div>
+      <div class="swiper-button-next"></div>
+    </div>
 
     <div class="popup-info text-sm text-gray-700">
       <p>🐾 <b>Tiere:</b> ${tiere}</p>
@@ -4286,6 +4270,7 @@ function createHutPopupHTML(doc, d, isPremium) {
     <div class="popup-buttons mt-3 flex gap-2">
       <button class="btn-add" onclick="toggleSelect('hütte','${doc.id}')">✅ Hinzufügen</button>
       ${d.allowMessages ? `<button class="btn-msg" onclick="openMessagePopup('${doc.id}', '${d.name}')">💬 Nachricht</button>` : ""}
+      <button class="btn-route" onclick="startRouteTo('${doc.id}')">📍 Route</button>
     </div>
   </div>`;
 }
