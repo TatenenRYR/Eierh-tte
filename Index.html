@@ -4165,41 +4165,49 @@ async function initHuettenListener() {
   if (!window._popupListenerAdded) {
     window._popupListenerAdded = true;
 
-    map.on("popupopen", async (e) => {
-  const content = e.popup._contentNode;
-  const hutId = e.popup._source?.options?.id || null;
+    map.on("popupopen", (e) => {
+      const content = e.popup._contentNode;
 
-  // 🟢 Laufschrift mit Events laden
-  const marquee = content.querySelector(".event-marquee");
-  if (marquee) {
-    try {
-      const eventsSnap = await db.collection("eierhuetten").doc(hutId).collection("events").get();
-      const now = new Date();
-      const active = [];
+      // 🟢 Toggle-Button (Hinzufügen / Entfernen)
+      content.querySelectorAll(".btn-toggle").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const id = btn.dataset.id;
+          const type = btn.dataset.type;
 
-      eventsSnap.forEach(ev => {
-        const data = ev.data();
-        const start = data.startDate?.toDate ? data.startDate.toDate() : new Date(data.startDate);
-        const end = data.endDate?.toDate ? data.endDate.toDate() : new Date(data.endDate);
-        if (start <= now && end >= now) {
-          active.push(data.title || data.name || "Aktives Event");
-        }
+          toggleSelect(type, id);
+
+          // Button-Text & Farbe sofort anpassen
+          const isNowSelected = selected.some((s) => s.id === id);
+          btn.textContent = isNowSelected ? "❌ Entfernen" : "✅ Hinzufügen";
+          btn.classList.toggle("btn-remove", isNowSelected);
+          btn.classList.toggle("btn-add", !isNowSelected);
+        });
       });
 
-      if (active.length > 0) {
-        marquee.innerHTML = `<marquee behavior="scroll" direction="left" scrollamount="5">🎉 ${active.join(" • ")} 🎉</marquee>`;
-      } else {
-        marquee.remove();
-      }
-    } catch (err) {
-      console.warn("Event-Laufschrift Fehler:", err);
-      marquee.remove();
-    }
-  }
+      // 🟢 Nachricht-Button
+      content.querySelectorAll(".btn-msg").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const id = btn.dataset.id;
+          const name = btn.dataset.name;
+          openMessagePopup(id, name);
+        });
+      });
 
-  // ⬇️ ... dein bisheriger Code (btn-toggle, btn-msg, Swiper) bleibt unverändert ...
-  });
-}
+      // 🟢 Swiper nur für das geöffnete Popup initialisieren
+      const swiperEl = content.querySelector(".popup-swiper");
+      if (swiperEl) {
+        new Swiper(swiperEl, {
+          loop: true,
+          pagination: { el: swiperEl.querySelector(".swiper-pagination") },
+          navigation: {
+            nextEl: swiperEl.querySelector(".swiper-button-next"),
+            prevEl: swiperEl.querySelector(".swiper-button-prev"),
+          },
+        });
+      }
+    });
+  }
+            }
     
 // ==========================
 // 🌟 Premium-Status prüfen
