@@ -4094,17 +4094,13 @@ function initGeolocation() {
 // ==========================
 let hutsListener = null;
 let hutsMap = new Map();
-huts = [];
-    cluster.clearLayers();
+
 async function initHuettenListener() {
-  if (hutsListener) hutsListener();
-hutsMap = new Map();
-  hutsListener = db
-    .collection("eierhuetten")
+  if (hutsListener) hutsListener(); // alten Listener beenden
+
+  hutsListener = db.collection("eierhuetten")
     .where("status", "==", "angenommen")
     .onSnapshot(async (snap) => {
-      
-      
 
       const seenIds = new Set();
 
@@ -4113,12 +4109,17 @@ hutsMap = new Map();
         if (!d.location) continue;
         seenIds.add(doc.id);
 
-        // Überspringen, wenn Marker bereits existiert
-        if (hutsMap.has(doc.id)) continue;
-
         const isPremium = await getPremiumStatus(d.userId);
         const popupHTML = createHutPopupHTML(doc, d, isPremium);
 
+        // 🟢 Falls Marker schon existiert → nur Popup aktualisieren
+        if (hutsMap.has(doc.id)) {
+          const existingMarker = hutsMap.get(doc.id);
+          existingMarker.setPopupContent(popupHTML);
+          continue;
+        }
+
+        // 🟢 Sonst neuen Marker anlegen
         const marker = L.marker([d.location.latitude, d.location.longitude], { icon: huettenIcon })
           .bindPopup(popupHTML)
           .bindTooltip(
@@ -4134,19 +4135,14 @@ hutsMap = new Map();
         hutsMap.set(doc.id, marker);
         cluster.addLayer(marker);
 
-        // Prüfe Events
+        // Premium + Event Animation
         checkAndAddEventPulse(doc.id, marker);
+        if (isPremium) setTimeout(() => marker.getElement()?.classList.add("premium-glow"), 200);
 
-        // Premium Glow
-        if (isPremium) {
-          setTimeout(() => marker.getElement()?.classList.add("premium-glow"), 200);
-        }
-
-        // Views zählen beim Öffnen
         marker.on("popupopen", () => trackView(doc.id));
       }
 
-      // Entferne gelöschte Marker
+      // 🧹 Entferne Marker, die nicht mehr existieren
       hutsMap.forEach((marker, id) => {
         if (!seenIds.has(id)) {
           cluster.removeLayer(marker);
@@ -4154,8 +4150,48 @@ hutsMap = new Map();
         }
       });
     });
-}
+            }
+    map.on("popupopen", (e) => {
+  const content = e.popup._contentNode;
 
+  // ✅ Toggle-Button (Hinzufügen/Entfernen)
+  content.querySelectorAll(".btn-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.id;
+      const type = btn.dataset.type;
+
+      toggleSelect(type, id);
+
+      // Sofort Text & Stil aktualisieren
+      const isNowSelected = selected.some((s) => s.id === id);
+      btn.textContent = isNowSelected ? "❌ Entfernen" : "✅ Hinzufügen";
+      btn.classList.toggle("btn-add", !isNowSelected);
+      btn.classList.toggle("btn-remove", isNowSelected);
+    });
+  });
+
+  // ✅ Nachricht-Button
+  content.querySelectorAll(".btn-msg").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.id;
+      const name = btn.dataset.name;
+      openMessagePopup(id, name);
+    });
+  });
+
+  // ✅ Swiper nur für dieses Popup initialisieren
+  const swiperEl = content.querySelector(".popup-swiper");
+  if (swiperEl) {
+    new Swiper(swiperEl, {
+      loop: true,
+      pagination: { el: swiperEl.querySelector(".swiper-pagination") },
+      navigation: {
+        nextEl: swiperEl.querySelector(".swiper-button-next"),
+        prevEl: swiperEl.querySelector(".swiper-button-prev"),
+      },
+    });
+  }
+});
 // ==========================
 // 🌟 Premium-Status prüfen
 // ==========================
@@ -4276,21 +4312,24 @@ function createHutPopupHTML(doc, d, isPremium) {
     
     <!-- Button-Bereich -->
     <div class="popup-buttons">
-      <button 
-        id="toggleBtn-${doc.id}" 
-        onclick="toggleSelect('hütte','${doc.id}')"
-        class="${isSelected ? "btn-remove" : "btn-add"}">
-        ${isSelected ? "❌ Entfernen" : "✅ Hinzufügen"}
-      </button>
+  <button 
+    class="btn-toggle ${isSelected ? "btn-remove" : "btn-add"}"
+    data-id="${doc.id}" 
+    data-type="hütte">
+    ${isSelected ? "❌ Entfernen" : "✅ Hinzufügen"}
+  </button>
 
-      ${
-        d.allowMessages
-          ? `<button class="btn-msg" onclick="openMessagePopup('${doc.id}', '${d.name || "Unbenannt"}')">
-              📧 Nachricht
-             </button>`
-          : ""
-      }
-    </div>
+  ${
+    d.allowMessages
+      ? `<button 
+          class="btn-msg" 
+          data-id="${doc.id}" 
+          data-name="${d.name || "Unbenannt"}">
+          📧 Nachricht
+        </button>`
+      : ""
+  }
+</div>
   </div>`;
 }
 
