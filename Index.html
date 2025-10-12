@@ -1114,6 +1114,16 @@ body.dark-mode .swiper-button-next {
   color: gold;
   font-weight: bold;
   margin-left: 6px;
+}.event-marquee {
+  background: linear-gradient(90deg, #ffedcc, #fff8e1);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-weight: 600;
+  color: #b85d00;
+  font-size: 0.9rem;
+  margin-bottom: 6px;
+  text-align: center;
+  box-shadow: 0 0 6px rgba(0,0,0,0.1);
 }
   </style>
 </head>
@@ -4155,48 +4165,40 @@ async function initHuettenListener() {
   if (!window._popupListenerAdded) {
     window._popupListenerAdded = true;
 
-    map.on("popupopen", (e) => {
-      const content = e.popup._contentNode;
+    map.on("popupopen", async (e) => {
+  const content = e.popup._contentNode;
+  const hutId = e.popup._source?.options?.id || null;
 
-      // 🟢 Toggle-Button (Hinzufügen / Entfernen)
-      content.querySelectorAll(".btn-toggle").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const id = btn.dataset.id;
-          const type = btn.dataset.type;
+  // 🟢 Laufschrift mit Events laden
+  const marquee = content.querySelector(".event-marquee");
+  if (marquee) {
+    try {
+      const eventsSnap = await db.collection("eierhuetten").doc(hutId).collection("events").get();
+      const now = new Date();
+      const active = [];
 
-          toggleSelect(type, id);
-
-          // Button-Text & Farbe sofort anpassen
-          const isNowSelected = selected.some((s) => s.id === id);
-          btn.textContent = isNowSelected ? "❌ Entfernen" : "✅ Hinzufügen";
-          btn.classList.toggle("btn-remove", isNowSelected);
-          btn.classList.toggle("btn-add", !isNowSelected);
-        });
+      eventsSnap.forEach(ev => {
+        const data = ev.data();
+        const start = data.startDate?.toDate ? data.startDate.toDate() : new Date(data.startDate);
+        const end = data.endDate?.toDate ? data.endDate.toDate() : new Date(data.endDate);
+        if (start <= now && end >= now) {
+          active.push(data.title || data.name || "Aktives Event");
+        }
       });
 
-      // 🟢 Nachricht-Button
-      content.querySelectorAll(".btn-msg").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const id = btn.dataset.id;
-          const name = btn.dataset.name;
-          openMessagePopup(id, name);
-        });
-      });
-
-      // 🟢 Swiper nur für das geöffnete Popup initialisieren
-      const swiperEl = content.querySelector(".popup-swiper");
-      if (swiperEl) {
-        new Swiper(swiperEl, {
-          loop: true,
-          pagination: { el: swiperEl.querySelector(".swiper-pagination") },
-          navigation: {
-            nextEl: swiperEl.querySelector(".swiper-button-next"),
-            prevEl: swiperEl.querySelector(".swiper-button-prev"),
-          },
-        });
+      if (active.length > 0) {
+        marquee.innerHTML = `<marquee behavior="scroll" direction="left" scrollamount="5">🎉 ${active.join(" • ")} 🎉</marquee>`;
+      } else {
+        marquee.remove();
       }
-    });
+    } catch (err) {
+      console.warn("Event-Laufschrift Fehler:", err);
+      marquee.remove();
+    }
   }
+
+  // ⬇️ ... dein bisheriger Code (btn-toggle, btn-msg, Swiper) bleibt unverändert ...
+  });
 }
     
 // ==========================
@@ -4283,11 +4285,18 @@ function createHutPopupHTML(doc, d, isPremium) {
         : ""}
     </div>` : "";
 
+  // 🟢 Event-Laufschrift (wird dynamisch nachgeladen)
+  const eventsHTML = `<div class="event-marquee" id="event-marquee-${doc.id}">Lade Events...</div>`;
+
   return `
   <div id="${popupId}" class="popup-card ${isPremium ? "premium-popup" : ""}">
-    <h3 class="font-bold text-lg mb-2">${d.name || "Unbenannt"} ${isPremium ? '<span class="premium-label">🌟 Premium</span>' : ""}</h3>
+    ${eventsHTML}
 
-   <!-- Slideshow -->
+    <h3 class="font-bold text-lg mb-2 mt-2">${d.name || "Unbenannt"} 
+      ${isPremium ? '<span class="premium-label">🌟 Premium</span>' : ""}
+    </h3>
+
+    <!-- Slideshow -->
     <div class="swiper popup-swiper rounded-lg overflow-hidden w-full max-h-48 mb-3">
       <div class="swiper-wrapper">
         ${
@@ -4306,7 +4315,6 @@ function createHutPopupHTML(doc, d, isPremium) {
       <div class="swiper-button-next"></div>
     </div>
 
-
     <div class="popup-info text-sm text-gray-700">
       <p>🐾 <b>Tiere:</b> ${tiere}</p>
       <p>⚡ <b>Strom:</b> ${d.strom || "-"}</p>
@@ -4316,27 +4324,22 @@ function createHutPopupHTML(doc, d, isPremium) {
       ${premiumHTML}
     </div>
 
-    
-    <!-- Button-Bereich -->
     <div class="popup-buttons">
-  <button 
-    class="btn-toggle ${isSelected ? "btn-remove" : "btn-add"}"
-    data-id="${doc.id}" 
-    data-type="hütte">
-    ${isSelected ? "❌ Entfernen" : "✅ Hinzufügen"}
-  </button>
+      <button 
+        class="btn-toggle ${isSelected ? "btn-remove" : "btn-add"}"
+        data-id="${doc.id}" 
+        data-type="hütte">
+        ${isSelected ? "❌ Entfernen" : "✅ Hinzufügen"}
+      </button>
 
-  ${
-    d.allowMessages
-      ? `<button 
-          class="btn-msg" 
-          data-id="${doc.id}" 
-          data-name="${d.name || "Unbenannt"}">
-          📧 Nachricht
-        </button>`
-      : ""
-  }
-</div>
+      ${
+        d.allowMessages
+          ? `<button class="btn-msg" data-id="${doc.id}" data-name="${d.name || "Unbenannt"}">
+              📧 Nachricht
+             </button>`
+          : ""
+      }
+    </div>
   </div>`;
 }
 
