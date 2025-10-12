@@ -4165,8 +4165,37 @@ async function initHuettenListener() {
   if (!window._popupListenerAdded) {
     window._popupListenerAdded = true;
 
-    map.on("popupopen", (e) => {
+    map.on("popupopen", async (e) => {
       const content = e.popup._contentNode;
+
+      // 🟡 Laufschrift für aktive Events
+      try {
+        const hutId = e.popup._source?.options?.id || null;
+        const marquee = content.querySelector(".event-marquee");
+
+        if (marquee && hutId) {
+          const eventsSnap = await db.collection("eierhuetten").doc(hutId).collection("events").get();
+          const now = new Date();
+          const active = [];
+
+          eventsSnap.forEach(ev => {
+            const data = ev.data();
+            const start = data.startDate?.toDate ? data.startDate.toDate() : new Date(data.startDate);
+            const end = data.endDate?.toDate ? data.endDate.toDate() : new Date(data.endDate);
+            if (start <= now && end >= now) {
+              active.push(data.title || data.name || "Aktives Event");
+            }
+          });
+
+          if (active.length > 0) {
+            marquee.innerHTML = `<marquee behavior="scroll" direction="left" scrollamount="5">🎉 ${active.join(" • ")} 🎉</marquee>`;
+          } else {
+            marquee.remove();
+          }
+        }
+      } catch (err) {
+        console.warn("Event-Laufschrift Fehler:", err);
+      }
 
       // 🟢 Toggle-Button (Hinzufügen / Entfernen)
       content.querySelectorAll(".btn-toggle").forEach((btn) => {
@@ -4207,7 +4236,7 @@ async function initHuettenListener() {
       }
     });
   }
-            }
+}
     
 // ==========================
 // 🌟 Premium-Status prüfen
