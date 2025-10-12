@@ -4096,12 +4096,11 @@ let hutsListener = null;
 let hutsMap = new Map();
 
 async function initHuettenListener() {
-  if (hutsListener) hutsListener(); // alten Listener beenden
+  if (hutsListener) hutsListener(); // alten Firestore-Listener beenden
 
   hutsListener = db.collection("eierhuetten")
     .where("status", "==", "angenommen")
     .onSnapshot(async (snap) => {
-
       const seenIds = new Set();
 
       for (const doc of snap.docs) {
@@ -4112,7 +4111,7 @@ async function initHuettenListener() {
         const isPremium = await getPremiumStatus(d.userId);
         const popupHTML = createHutPopupHTML(doc, d, isPremium);
 
-        // 🟢 Falls Marker schon existiert → nur Popup aktualisieren
+        // 🟢 Marker schon vorhanden → nur Popup aktualisieren
         if (hutsMap.has(doc.id)) {
           const existingMarker = hutsMap.get(doc.id);
           existingMarker.setPopupContent(popupHTML);
@@ -4139,10 +4138,11 @@ async function initHuettenListener() {
         checkAndAddEventPulse(doc.id, marker);
         if (isPremium) setTimeout(() => marker.getElement()?.classList.add("premium-glow"), 200);
 
+        // Aufruf-Tracking beim Öffnen
         marker.on("popupopen", () => trackView(doc.id));
       }
 
-      // 🧹 Entferne Marker, die nicht mehr existieren
+      // 🧹 Entferne Marker, die gelöscht wurden
       hutsMap.forEach((marker, id) => {
         if (!seenIds.has(id)) {
           cluster.removeLayer(marker);
@@ -4150,7 +4150,54 @@ async function initHuettenListener() {
         }
       });
     });
-            }
+
+  // ✅ Popup-Interaktionen nur EINMAL registrieren
+  if (!window._popupListenerAdded) {
+    window._popupListenerAdded = true;
+
+    map.on("popupopen", (e) => {
+      const content = e.popup._contentNode;
+
+      // 🟢 Toggle-Button (Hinzufügen / Entfernen)
+      content.querySelectorAll(".btn-toggle").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const id = btn.dataset.id;
+          const type = btn.dataset.type;
+
+          toggleSelect(type, id);
+
+          // Button-Text & Farbe sofort anpassen
+          const isNowSelected = selected.some((s) => s.id === id);
+          btn.textContent = isNowSelected ? "❌ Entfernen" : "✅ Hinzufügen";
+          btn.classList.toggle("btn-remove", isNowSelected);
+          btn.classList.toggle("btn-add", !isNowSelected);
+        });
+      });
+
+      // 🟢 Nachricht-Button
+      content.querySelectorAll(".btn-msg").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const id = btn.dataset.id;
+          const name = btn.dataset.name;
+          openMessagePopup(id, name);
+        });
+      });
+
+      // 🟢 Swiper nur für das geöffnete Popup initialisieren
+      const swiperEl = content.querySelector(".popup-swiper");
+      if (swiperEl) {
+        new Swiper(swiperEl, {
+          loop: true,
+          pagination: { el: swiperEl.querySelector(".swiper-pagination") },
+          navigation: {
+            nextEl: swiperEl.querySelector(".swiper-button-next"),
+            prevEl: swiperEl.querySelector(".swiper-button-prev"),
+          },
+        });
+      }
+    });
+  }
+}
     
 // ==========================
 // 🌟 Premium-Status prüfen
