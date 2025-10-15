@@ -2173,65 +2173,57 @@ async function openEditPage(id) {
     if (!docSnap.exists) { showToast('❌ Eintrag nicht gefunden'); return; }
     const d = docSnap.data();
 
-    // normalize opening hours if function exists
-    try {
-      if (typeof normalizeOpeningHours === 'function') {
-        const normalized = normalizeOpeningHours(d.oeffnungszeiten || []);
-        if (JSON.stringify(normalized) !== JSON.stringify(d.oeffnungszeiten || [])) {
-          docRef.update({ oeffnungszeiten: normalized }).catch(()=>{});
-        }
-        d.oeffnungszeiten = normalized;
-      }
-    } catch(e){ console.warn('normalizeOH error', e); }
-
     const container = document.getElementById('question-area');
     container.innerHTML = `
       <div class="max-w-4xl mx-auto">
         <button class="mb-4 text-sm text-blue-600 hover:underline" id="backToList">⬅️ Zurück zur Übersicht</button>
+
         <div class="flex flex-col md:flex-row gap-6">
-          <!-- Left: Statistik -->
+
+          <!-- Sidebar: Foto-Upload & Statistik -->
           <div class="w-full md:w-1/3">
-            <div class="bg-white rounded-xl p-4 shadow">
-              <h3 class="text-lg font-bold mb-3">${escapeAttr(d.name || 'Unbenannt')}</h3>
-              <div class="space-y-3 text-sm">
-                <div><strong>🔢 Aufrufe:</strong> ${d.views || 0}</div>
-                <div><strong>⭐ Bewertung:</strong> ${d.rating || 0}</div>
-                <div><strong>🗓️ Erstellt:</strong> ${d.createdAt?.toDate ? d.createdAt.toDate().toLocaleDateString('de-DE') : 'unbekannt'}</div>
-                <div><strong>📍 Status:</strong> ${escapeAttr(d.status || '–')}</div>
-                <div><strong>💚 Unterstützer:</strong> ${d.unterstuetzer ? 'Ja' : 'Nein'}</div>
+            <div class="bg-white rounded-xl p-4 shadow space-y-4">
+              <h3 class="text-lg font-bold">${escapeAttr(d.name || 'Unbenannt')}</h3>
+              <div class="text-sm space-y-1">
+                <div><b>Aufrufe:</b> ${d.views || 0}</div>
+                <div><b>Bewertung:</b> ${d.rating || 0}</div>
+                <div><b>Status:</b> ${d.status || '–'}</div>
               </div>
+
               <hr class="my-3">
-              <div id="imageList" class="space-y-2"></div>
-              <label class="block mt-3 text-sm">📷 Neues Bild
-                <input type="file" id="uploadImageInput" class="mt-2" accept="image/*">
-              </label>
-              <div id="uploadProgressContainer" class="mt-2 hidden">
-                <div class="h-2 bg-gray-200 rounded"><div id="uploadProgressBar" class="h-2 bg-green-500 rounded" style="width:0%"></div></div>
-                <div id="uploadProgressLabel" class="text-xs text-gray-600 mt-1">0%</div>
+
+              <div>
+                <h4 class="text-sm font-semibold mb-1">📸 Fotos</h4>
+                <div id="photoUpload" 
+                     class="border-2 border-dashed border-green-300 bg-green-50 hover:bg-green-100 
+                            rounded-xl p-4 text-center cursor-pointer transition relative">
+                  <p class="text-gray-600 text-sm">Ziehe Bilder hierher oder klicke zum Hochladen</p>
+                  <input id="photoInput" type="file" accept="image/*" multiple class="hidden">
+                  <div id="photoPreview" class="flex flex-wrap gap-2 mt-3 justify-center"></div>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- Right: Edit form + map -->
+          <!-- Hauptformular -->
           <div class="w-full md:w-2/3">
             <div class="bg-white rounded-xl p-6 shadow space-y-4">
               <h4 class="font-semibold">Bearbeitungsformular</h4>
 
               <label class="block">
                 <span class="text-gray-700">Name</span>
-                <input type="text" id="editName" value="${escapeAttr(d.name||'')}" class="mt-1 w-full border rounded-lg p-2" />
+                <input id="editName" value="${escapeAttr(d.name||'')}" class="w-full border rounded p-2 mt-1">
               </label>
 
               <label class="block">
                 <span class="text-gray-700">Beschreibung</span>
-                <div id="quillContainer" class="bg-white border rounded">${d.beschreibung || ''}</div>
+                <div id="quillContainer" class="bg-white border rounded p-2">${d.beschreibung || ''}</div>
               </label>
 
               <div class="grid grid-cols-2 gap-3">
                 <label>
                   <span class="text-gray-700">Sitzplätze</span>
                   <select id="editSitz" class="w-full border rounded p-2">
-                    <option value="">-</option>
                     <option ${d.sitzplaetze==='Ja'?'selected':''}>Ja</option>
                     <option ${d.sitzplaetze==='Nein'?'selected':''}>Nein</option>
                   </select>
@@ -2240,7 +2232,6 @@ async function openEditPage(id) {
                 <label>
                   <span class="text-gray-700">Strom</span>
                   <select id="editStrom" class="w-full border rounded p-2">
-                    <option value="">-</option>
                     <option ${d.strom==='Ja'?'selected':''}>Ja</option>
                     <option ${d.strom==='Nein'?'selected':''}>Nein</option>
                   </select>
@@ -2249,43 +2240,32 @@ async function openEditPage(id) {
 
               <label class="block">
                 <span class="text-gray-700">Extras</span>
-                <input id="editExtras" value="${escapeAttr(d.extras||'')}" class="mt-1 w-full border rounded p-2" />
+                <input id="editExtras" value="${escapeAttr(d.extras||'')}" class="w-full border rounded p-2 mt-1">
               </label>
 
+              <!-- Tiere -->
               <label class="block">
-                <span class="text-gray-700">Tiere (klicke zum togglen)</span>
+                <span class="text-gray-700">Tiere</span>
                 <div id="tiereButtons" class="flex flex-wrap gap-2 mt-2"></div>
               </label>
 
+              <!-- Tags -->
               <label class="block">
-                <span class="text-gray-700">Tags (Komma getrennt)</span>
-                <input id="editTags" value="${Array.isArray(d.tags)?escapeAttr(d.tags.join(', ')) : ''}" class="mt-1 w-full border rounded p-2" />
+                <span class="text-gray-700">Tags</span>
+                <input id="editTags" value="${Array.isArray(d.tags)?escapeAttr(d.tags.join(', ')) : ''}" class="w-full border rounded p-2 mt-1">
               </label>
 
-              <!-- Öffnungszeiten: benutze vorhandenen renderOpeningHoursEditor falls vorhanden -->
-              <div id="openingEditorWrapper">
-                ${ (typeof renderOpeningHoursEditor === 'function') ? renderOpeningHoursEditor(id, d.oeffnungszeiten) : `<label><span class="text-gray-700">Öffnungszeiten</span><textarea id="editOpening" class="w-full border rounded p-2">${escapeAttr(JSON.stringify(d.oeffnungszeiten||{}))}</textarea></label>`}
+              <!-- Öffnungszeiten -->
+              <div id="openingEditorWrapper" class="mt-3">
+                ${(typeof renderOpeningHoursEditor === 'function')
+                  ? renderOpeningHoursEditor(id, d.oeffnungszeiten)
+                  : `<label><span class="text-gray-700">Öffnungszeiten</span>
+                      <textarea id="editOpening" class="w-full border rounded p-2 mt-1">${escapeAttr(JSON.stringify(d.oeffnungszeiten||{}))}</textarea></label>`}
               </div>
 
-              <div>
-                <label class="block">
-                  <span class="text-gray-700">Unterstützer-Status</span>
-                  <select id="editSupport" class="mt-1 w-full border rounded p-2">
-                    <option value="false" ${!d.unterstuetzer ? 'selected' : ''}>Kein Unterstützer</option>
-                    <option value="true" ${d.unterstuetzer ? 'selected' : ''}>💚 Unterstützer</option>
-                  </select>
-                </label>
-              </div>
-
-              <!-- Map -->
-              <div>
-                <span class="text-gray-700">Mini-Map</span>
-                <div id="editMap" class="h-48 mt-2 rounded border"></div>
-              </div>
-
-              <div class="flex justify-end gap-3">
+              <div class="flex justify-end gap-3 pt-4">
                 <button id="deleteEntryBtn" class="px-4 py-2 bg-red-600 text-white rounded">🗑️ Löschen</button>
-                <button id="saveEntryBtn" class="px-4 py-2 bg-green-600 text-white rounded">💾 Änderungen speichern</button>
+                <button id="saveEntryBtn" class="px-4 py-2 bg-green-600 text-white rounded">💾 Speichern</button>
               </div>
             </div>
           </div>
@@ -2293,194 +2273,141 @@ async function openEditPage(id) {
       </div>
     `;
 
-    // back button
-    document.getElementById('backToList').addEventListener('click', () => showMyEntries());
+    // 🔙 Back
+    document.getElementById('backToList').onclick = () => showMyEntries();
 
-    // initialize image list and upload
-    const imageList = document.getElementById('imageList');
-    imageList.innerHTML = '';
-    if (Array.isArray(d.fotos) && d.fotos.length) {
-      d.fotos.forEach(urlOrObj => {
-        const url = (typeof urlOrObj === 'string') ? urlOrObj : urlOrObj.url;
-        const imgWrap = document.createElement('div');
-        imgWrap.className = 'flex items-center gap-2';
-        imgWrap.innerHTML = `
-          <img src="${escapeAttr(url)}" class="w-20 h-14 object-cover rounded border" />
-          <div class="text-sm">
-            <div class="font-semibold">${escapeAttr(d.name||'')}</div>
-            <button class="text-red-600 text-xs mt-1 remove-image" data-url="${escapeAttr(url)}">Bild entfernen</button>
-          </div>
+    // 🖼️ Foto-Upload mit Vorschau
+    const photoInput = document.getElementById('photoInput');
+    const photoUpload = document.getElementById('photoUpload');
+    const preview = document.getElementById('photoPreview');
+
+    // vorhandene Fotos anzeigen
+    if (Array.isArray(d.fotos)) {
+      d.fotos.forEach(url => {
+        const div = document.createElement('div');
+        div.className = 'relative w-24 h-24 border rounded overflow-hidden group';
+        div.innerHTML = `
+          <img src="${url}" class="object-cover w-full h-full">
+          <button class="absolute top-1 right-1 bg-red-600 text-white text-xs rounded-full px-2 opacity-0 group-hover:opacity-100 transition">✕</button>
         `;
-        imageList.appendChild(imgWrap);
+        div.querySelector('button').onclick = async () => {
+          if (!confirm('Bild löschen?')) return;
+          const newFotos = d.fotos.filter(f => f !== url);
+          await docRef.update({ fotos: newFotos });
+          showToast('🗑️ Bild gelöscht');
+          openEditPage(id);
+        };
+        preview.appendChild(div);
       });
-    } else {
-      imageList.innerHTML = `<div class="text-sm text-gray-500">Keine Bilder vorhanden.</div>`;
     }
 
-    // delete image handler
-    imageList.querySelectorAll('.remove-image').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        const url = btn.dataset.url;
-        if (!confirm('Bild wirklich entfernen?')) return;
-        // entferne url aus doc feld
-        const newFotos = (d.fotos||[]).filter(f => ((typeof f === 'string')? f : f.url) !== url);
-        await docRef.update({ fotos: newFotos });
-        showToast('✅ Bild entfernt');
-        openEditPage(id); // reload detailpage
+    photoUpload.onclick = () => photoInput.click();
+    photoUpload.ondragover = e => { e.preventDefault(); photoUpload.classList.add('bg-green-100'); };
+    photoUpload.ondragleave = () => photoUpload.classList.remove('bg-green-100');
+    photoUpload.ondrop = e => { e.preventDefault(); handleFiles(e.dataTransfer.files); };
+    photoInput.onchange = e => handleFiles(e.target.files);
+
+    async function handleFiles(files) {
+      [...files].forEach(file => {
+        const reader = new FileReader();
+        reader.onload = async ev => {
+          const div = document.createElement('div');
+          div.className = 'relative w-24 h-24 border rounded overflow-hidden';
+          div.innerHTML = `<img src="${ev.target.result}" class="object-cover w-full h-full">
+                           <div class="absolute bottom-0 left-0 right-0 h-1 bg-green-400 animate-[upload_2s_ease-in-out]"></div>`;
+          preview.appendChild(div);
+
+          try {
+            const ref = firebase.storage().ref(`eierhuetten/${id}/${Date.now()}_${file.name}`);
+            await ref.put(file);
+            const url = await ref.getDownloadURL();
+            await docRef.update({ fotos: firebase.firestore.FieldValue.arrayUnion(url) });
+          } catch (err) {
+            console.error('Upload error', err);
+          }
+        };
+        reader.readAsDataURL(file);
       });
-    });
+    }
 
-    // upload handler (Firebase Storage)
-    const uploadInput = document.getElementById('uploadImageInput');
-    uploadInput.addEventListener('change', async (ev) => {
-      const file = ev.target.files[0];
-      if (!file) return;
-      const progressContainer = document.getElementById('uploadProgressContainer');
-      const progressBar = document.getElementById('uploadProgressBar');
-      const progressLabel = document.getElementById('uploadProgressLabel');
-      progressContainer.classList.remove('hidden');
-
-      try {
-        const storageRef = firebase.storage().ref(`eierhuetten/${id}/${Date.now()}_${file.name}`);
-        const uploadTask = storageRef.put(file);
-
-        uploadTask.on('state_changed', snapshot => {
-          const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-          progressBar.style.width = pct + '%';
-          progressLabel.textContent = pct + '%';
-        });
-
-        await uploadTask;
-        const downloadURL = await storageRef.getDownloadURL();
-        // push into fotos array
-        const newFotos = Array.isArray(d.fotos) ? [...d.fotos, downloadURL] : [downloadURL];
-        await docRef.update({ fotos: newFotos });
-        showToast('✅ Bild hochgeladen');
-        openEditPage(id); // reload
-      } catch (err) {
-        console.error('upload error', err);
-        showToast('❌ Fehler beim Hochladen: ' + (err.message || err));
-      } finally {
-        progressContainer.classList.add('hidden');
-        uploadInput.value = '';
-      }
-    });
-
-    // Quill init
-    let quill;
-    setTimeout(() => {
-      try {
-        quill = new Quill('#quillContainer', { theme: 'snow' });
-        if (d.beschreibung) quill.root.innerHTML = d.beschreibung;
-      } catch(e) { console.warn('quill init failed', e); }
-    }, 80);
-
-    // Tiere buttons
+    // 🐾 Tiere-Buttons
     const animals = ["🐐 Ziege","🐄 Kuh","🐓 Huhn","🐕 Hund","🐇 Hase","🐈 Katze","Keine Tiere"];
     const tiereContainer = document.getElementById('tiereButtons');
-    const selectedTiere = Array.isArray(d.tiere) ? [...d.tiere] : [];
+    const selected = d.tiere || [];
     animals.forEach(t => {
       const b = document.createElement('button');
-      b.type = 'button';
-      b.className = `px-2 py-1 text-xs rounded ${selectedTiere.includes(t) ? 'bg-green-200 border-green-400' : 'bg-gray-100 border-gray-300'}`;
+      b.className = `px-2 py-1 border rounded text-sm ${selected.includes(t)?'bg-green-200':'bg-gray-100'}`;
       b.textContent = t;
-      b.dataset.t = t;
-      b.addEventListener('click', () => {
-        // toggle
+      b.onclick = () => {
         if (t === 'Keine Tiere') {
-          selectedTiere.length = 0;
-          selectedTiere.push('Keine Tiere');
+          selected.length = 0; selected.push('Keine Tiere');
         } else {
-          // remove Keine Tiere if present
-          const ni = selectedTiere.indexOf('Keine Tiere');
-          if (ni !== -1) selectedTiere.splice(ni,1);
-          const idx = selectedTiere.indexOf(t);
-          if (idx === -1) selectedTiere.push(t); else selectedTiere.splice(idx,1);
+          const idx = selected.indexOf(t);
+          if (idx >= 0) selected.splice(idx,1); else selected.push(t);
+          const none = selected.indexOf('Keine Tiere');
+          if (none >= 0) selected.splice(none,1);
         }
-        // rerender styles
-        tiereContainer.querySelectorAll('button').forEach(btn => {
-          btn.classList.remove('bg-green-200','border-green-400');
-          btn.classList.add('bg-gray-100','border-gray-300');
-        });
-        selectedTiere.forEach(sel => {
-          const match = Array.from(tiereContainer.children).find(n => n.dataset.t === sel);
-          if (match) { match.classList.add('bg-green-200'); match.classList.remove('bg-gray-100'); }
-        });
-      });
+        tiereContainer.querySelectorAll('button').forEach(btn =>
+          btn.classList.toggle('bg-green-200', selected.includes(btn.textContent)));
+      };
       tiereContainer.appendChild(b);
     });
-    // apply initial styles for selected
-    tiereContainer.querySelectorAll('button').forEach(btn => {
-      if (selectedTiere.includes(btn.dataset.t)) {
-        btn.classList.add('bg-green-200'); btn.classList.remove('bg-gray-100');
-      }
-    });
 
-    // Map init
+    // ✍️ Quill Editor
+    setTimeout(() => new Quill('#quillContainer', { theme: 'snow' }), 100);
+
+    // 💾 Save
+    document.getElementById('saveEntryBtn').onclick = async () => {
+      const name = document.getElementById('editName').value.trim();
+      const sitzplaetze = document.getElementById('editSitz').value;
+      const strom = document.getElementById('editStrom').value;
+      const extras = document.getElementById('editExtras').value;
+      const tags = document.getElementById('editTags').value.split(',').map(s => s.trim()).filter(Boolean);
+      const beschreibung = document.querySelector('#quillContainer .ql-editor')?.innerHTML || '';
+
+      // Öffnungszeiten sammeln
+      let oeffnungszeiten = d.oeffnungszeiten;
+      if (typeof collectOpeningHours === 'function') {
+        oeffnungszeiten = collectOpeningHours(id);
+      }
+
+      await docRef.update({ name, sitzplaetze, strom, extras, tags, tiere: selected, beschreibung, oeffnungszeiten });
+      showToast('✅ Gespeichert');
+      openEditPage(id);
+    };
+
+    // 🗑️ Delete
+    document.getElementById('deleteEntryBtn').onclick = () => confirmDeleteEntry(id, d.name);
+
+    // 🕒 Kopierfunktion für Öffnungszeiten
     setTimeout(() => {
-      try {
-        const lat = d.location?.latitude || 47.3;
-        const lon = d.location?.longitude || 11.4;
-        const map = L.map('editMap', { zoomControl: true }).setView([lat, lon], d.location ? 14 : 11);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-        const marker = L.marker([lat, lon], { draggable: true }).addTo(map);
-        marker.on('dragend', async (e) => {
-          const pos = e.target.getLatLng();
-          await docRef.update({ location: new firebase.firestore.GeoPoint(pos.lat, pos.lng) });
-          showToast('📍 Standort gespeichert');
+      const btn = document.createElement('button');
+      btn.textContent = '⏩ Öffnungszeiten kopieren';
+      btn.className = 'px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 mb-2';
+      const wrap = document.querySelector(`#openhours-${id} table`)?.parentElement;
+      if (wrap) wrap.prepend(btn);
+
+      btn.onclick = () => {
+        const first = document.querySelector(`#openhours-${id} .oh-open:checked`);
+        if (!first) return alert('Bitte zuerst einen Tag mit Zeiten ausfüllen.');
+        const day = first.dataset.day;
+        const from = document.querySelector(`.oh-from[data-day="${day}"]`).value;
+        const to = document.querySelector(`.oh-to[data-day="${day}"]`).value;
+        document.querySelectorAll(`#openhours-${id} .oh-open`).forEach(cb => {
+          cb.checked = true;
+          const f = document.querySelector(`.oh-from[data-day="${cb.dataset.day}"]`);
+          const t = document.querySelector(`.oh-to[data-day="${cb.dataset.day}"]`);
+          f.disabled = false; t.disabled = false;
+          f.value = from; t.value = to;
         });
-      } catch(err){ console.warn('edit map error', err); }
-    }, 200);
-
-    // Delete entry button
-    document.getElementById('deleteEntryBtn').addEventListener('click', () => {
-      confirmDeleteEntry(id, d.name);
-    });
-
-    // Save button
-    document.getElementById('saveEntryBtn').addEventListener('click', async () => {
-      try {
-        const name = document.getElementById('editName').value.trim();
-        const sitz = document.getElementById('editSitz').value || '';
-        const strom = document.getElementById('editStrom').value || '';
-        const extras = document.getElementById('editExtras').value || '';
-        const tags = document.getElementById('editTags').value.split(',').map(s => s.trim()).filter(Boolean);
-        const unterstuetzer = document.getElementById('editSupport').value === 'true';
-        const beschreibungHTML = (quill && quill.root) ? quill.root.innerHTML : document.getElementById('quillContainer').innerHTML;
-
-        // Öffnungszeiten: try to collect using a user-supplied helper, else fallback
-        let openingPayload = d.oeffnungszeiten || [];
-        if (typeof collectOpeningHours === 'function') {
-          try { openingPayload = collectOpeningHours(id); } catch(e){ console.warn('collectOpeningHours failed', e); }
-        } else if (document.getElementById('editOpening')) {
-          try {
-            openingPayload = JSON.parse(document.getElementById('editOpening').value || '[]');
-          } catch(e) { openingPayload = d.oeffnungszeiten || []; }
-        }
-
-        // Tiere: read selected
-        const selTiere = Array.from(tiereContainer.querySelectorAll('button')).filter(b => b.classList.contains('bg-green-200')).map(b => b.dataset.t);
-
-        await docRef.update({
-          name, sitzplaetze: sitz, strom, extras, tags,
-          unterstuetzer, beschreibung: beschreibungHTML,
-          oeffnungszeiten: openingPayload,
-          tiere: selTiere
-        });
-
-        showToast('✅ Änderungen gespeichert');
-        openEditPage(id); // reload detail view with fresh data
-      } catch (err) {
-        console.error('save error', err);
-        showToast('❌ Fehler beim Speichern: ' + (err.message || err));
-      }
-    });
+      };
+    }, 300);
 
   } catch (err) {
     console.error('openEditPage error', err);
-    showToast('Fehler: ' + (err.message || err));
+    showToast('❌ Fehler: ' + err.message);
   }
-    }
+          }
     // ==========================================================
 // 🕒 Öffnungszeiten Editor (RadlMap-Style)
 // ==========================================================
