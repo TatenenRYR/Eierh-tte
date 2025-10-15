@@ -1931,247 +1931,558 @@ function locateGPS() {
   /***********************
    * Sidebar actions: Meine Eintragungen (mit Bearbeitung)
    ***********************/
-  async function showMyEntries() {
-    if (!currentUser || !currentUser.uid) {
-  showToast("Bitte zuerst einloggen");
-  return;
+// ================================
+// 🔁 MyEntries 2.0 - Übersicht + Detailseite
+// ================================
+
+// Hilfsfunktion: safe escape für attributes (falls noch nicht vorhanden)
+function escapeAttr(s) {
+  return (s === undefined || s === null) ? '' : String(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
-    const betreiberDoc = await db.collection("betreiber").doc(currentUser.uid).get();
-const isPremium = betreiberDoc.exists && betreiberDoc.data().premium === true;
-    if (!db) { document.getElementById('question-area').innerHTML = '<div class="bg-red-100 p-4 rounded">Firestore nicht verfügbar.</div>'; return; }
-   mode = "list";
-    updateInfoBox();
-    document.getElementById("navBottom").style.display =
-  (mode === "entry") ? "flex" : "none";
-     
-    const qa = document.getElementById('question-area');
-    qa.innerHTML = '<div class="text-gray-500">⏳ Lade Eintragungen…</div>';
-    try {
-      const snapshot = await db.collection('eierhuetten').where('userId', '==', currentUser.uid).orderBy('erstelltAm','desc').get();
-      const docs = snapshot.docs.filter(doc => {
-        const st = doc.data().status;
-        return st !== 'archiviert' && st !== 'deleted';
+
+// ================================
+// Übersicht: Karten mit Bild + Edit/Delete
+// ================================
+async function showMyEntries() {
+  if (!firebase.auth().currentUser) {
+    showToast("Bitte zuerst einloggen");
+    return;
+  }
+  const uid = firebase.auth().currentUser.uid;
+
+  // Lade betreiber-doc für Unterstützer-Status global (falls benötigt)
+  const betreiberDoc = await db.collection("betreiber").doc(uid).get();
+  const isGlobalSupporter = betreiberDoc.exists && (betreiberDoc.data().premium === true || betreiberDoc.data().unterstuetzer === true);
+
+  const container = document.getElementById("question-area");
+  container.innerHTML = `
+    <div class="max-w-6xl mx-auto">
+      <h2 class="text-2xl font-bold mb-6 text-green-700">📋 Meine Eintragungen</h2>
+      <div id="entriesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+    </div>
+  `;
+  const grid = document.getElementById("entriesGrid");
+  grid.innerHTML = `<div class="col-span-3 text-gray-500">⏳ Lade Eintragungen…</div>`;
+
+  try {
+    const snap = await db.collection("eierhuetten")
+      .where("userId", "==", uid)
+      .orderBy("erstelltAm", "desc")
+      .get();
+
+    const docs = snap.docs.filter(d => {
+      const st = d.data().status;
+      return st !== 'archiviert' && st !== 'deleted';
+    });
+
+    if (docs.length === 0) {
+      grid.innerHTML = `<div class="bg-white p-6 rounded shadow text-center">Du hast noch keine Eintragungen.</div>`;
+      return;
+    }
+
+    // optional: aggregate top stats for header (sum)
+    let total = docs.length;
+    let angenommen = docs.filter(d => ['angenommen','accepted'].includes(d.data().status)).length;
+    let offen = docs.filter(d => d.data().status === 'offen').length;
+
+    // optional header
+    const headerBar = document.createElement('div');
+    headerBar.className = 'col-span-3 bg-green-50 p-3 rounded-lg text-sm text-green-800 flex gap-6 justify-center items-center';
+    headerBar.innerHTML = `🥚 <strong>${total}</strong> Eintragungen • ✅ <strong>${angenommen}</strong> angenommen • ⏳ <strong>${offen}</strong> offen`;
+    grid.innerHTML = '';
+    grid.appendChild(headerBar);
+
+    // render each card
+    for (const doc of docs) {
+      const d = doc.data();
+      const id = doc.id;
+      const img = Array.isArray(d.fotos) && d.fotos.length ? (typeof d.fotos[0] === 'string' ? d.fotos[0] : d.fotos[0].url) : 'https://radlmap.net/img/noimg/1.jpg';
+      const isSupporter = d.unterstuetzer === true || isGlobalSupporter === true;
+
+      const card = document.createElement('div');
+      card.className = 'bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition relative';
+      card.style.cursor = 'pointer';
+
+      card.innerHTML = `
+        <div class="relative">
+          <img src="${escapeAttr(img)}" alt="${escapeAttr(d.name||'')}" class="w-full h-48 object-cover">
+          ${isSupporter ? `<span class="absolute top-3 right-3 bg-green-600 text-white text-xs font-semibold px-3 py-1 rounded-full shadow">💚 Unterstützer</span>` : ''}
+        </div>
+        <div class="p-4 flex justify-between items-center">
+          <div class="truncate">
+            <h3 class="font-bold text-lg text-gray-800 truncate">${escapeAttr(d.name||'Unbenannt')}</h3>
+            <p class="text-xs text-gray-500 truncate">${(d.status || 'Unbekannt')}</p>
+          </div>
+          <div class="flex gap-3 text-lg">
+            <button class="edit-btn text-blue-600 hover:text-blue-800" title="Bearbeiten" data-id="${id}">✏️</button>
+            <button class="delete-btn text-red-600 hover:text-red-800" title="Löschen" data-id="${id}" data-name="${escapeAttr(d.name||'')}">❌</button>
+          </div>
+        </div>
+      `;
+
+      // click on card opens edit page
+      card.addEventListener('click', (ev) => {
+        // avoid card-click if edit or delete button clicked
+        if (ev.target.closest('.edit-btn') || ev.target.closest('.delete-btn')) return;
+        openEditPage(id);
       });
 
-      if (docs.length === 0) {
-        qa.innerHTML = `<div class="bg-white p-6 rounded shadow max-w-2xl mx-auto">Du hast noch keine Hütten.</div>`;
-        toggleSidebar();
-        return;
-      }
+      grid.appendChild(card);
+    }
 
-      // stats
-      let total = 0, angenommen = 0, offen = 0;
-      docs.forEach(d => { total++; if (d.data().status === 'angenommen') angenommen++; if (d.data().status === 'offen') offen++; });
+    // event delegation for edit / delete
+    grid.querySelectorAll('.edit-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openEditPage(btn.dataset.id);
+      });
+    });
+    grid.querySelectorAll('.delete-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        confirmDeleteEntry(btn.dataset.id, btn.dataset.name);
+      });
+    });
 
-      qa.innerHTML = '';
-      const statsBar = document.createElement('div');
-      statsBar.className = 'flex justify-around items-center text-sm bg-green-100 text-green-900 py-2 px-4 rounded mb-3 shadow-sm border border-green-300 max-w-2xl mx-auto';
-      statsBar.innerHTML = `<div>🥚 <strong>${total}</strong></div><div>✅ <strong>${angenommen}</strong></div><div>⏳ <strong>${offen}</strong></div>`;
-      qa.appendChild(statsBar);
-
-      // render each hut card with edit controls
-      for (const doc of docs) {
-        const d = doc.data();
-        const id = doc.id;
-        const card = document.createElement('div');
-        card.className = 'bg-white p-4 rounded shadow mb-4 max-w-2xl mx-auto';
-
-        // Normalisieren
-  const normalized = normalizeOpeningHours(d.oeffnungszeiten);
-
-  // Wenn sich was geändert hat → zurückschreiben ins Firestore
-  if (JSON.stringify(d.oeffnungszeiten) !== JSON.stringify(normalized)) {
-    db.collection("eierhuetten").doc(id).update({
-      oeffnungszeiten: normalized
-    }).then(() => {
-      console.log(`oeffnungszeiten normalisiert für Hütte ${id}`);
-    }).catch(console.error);
+  } catch (err) {
+    console.error('showMyEntries error', err);
+    grid.innerHTML = `<div class="bg-red-100 p-4 rounded">Fehler beim Laden: ${err.message}</div>`;
   }
+}
 
-  // Danach für die Anzeige verwenden
-  d.oeffnungszeiten = normalized;
+// ================================
+// Löschen mit Nachfrage (übersicht + detail)
+// ================================
+function confirmDeleteEntry(id, name) {
+  const proceed = confirm(`⚠️ Möchtest du die Eintragung "${name || id}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`);
+  if (!proceed) return;
+  db.collection('eierhuetten').doc(id).delete()
+    .then(() => {
+      showToast('✅ Eintragung gelöscht');
+      showMyEntries();
+    })
+    .catch(err => {
+      console.error('delete error', err);
+      showToast('❌ Fehler beim Löschen: ' + (err.message || err));
+    });
+}
 
+// ================================
+// Detailseite: Statistik + Bearbeitungsformular
+// ================================
+async function openEditPage(id) {
+  if (!id) return;
+  try {
+    const docRef = db.collection('eierhuetten').doc(id);
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) { showToast('❌ Eintrag nicht gefunden'); return; }
+    const d = docSnap.data();
 
-// Premium-Block als String
-const premiumBlock = (id, d) => `
-  <div class="border-t pt-2 mt-3">
-    <h4 class="font-semibold text-sm mb-2">🌟 Premium-Felder</h4>
+    // normalize opening hours if function exists
+    try {
+      if (typeof normalizeOpeningHours === 'function') {
+        const normalized = normalizeOpeningHours(d.oeffnungszeiten || []);
+        if (JSON.stringify(normalized) !== JSON.stringify(d.oeffnungszeiten || [])) {
+          docRef.update({ oeffnungszeiten: normalized }).catch(()=>{});
+        }
+        d.oeffnungszeiten = normalized;
+      }
+    } catch(e){ console.warn('normalizeOH error', e); }
 
-    <label class="block mt-2">Telefon:<br>
-      <input data-id="${id}" class="edit-telefon w-full border px-2 py-1 rounded" 
-             value="${escapeAttr(d.telefon || '')}" placeholder="+49 ..." />
-    </label>
-
-    <label class="block mt-2">Website:<br>
-      <input data-id="${id}" class="edit-website w-full border px-2 py-1 rounded" 
-             value="${escapeAttr(d.website || '')}" placeholder="https://..." />
-    </label>
-
-    <label class="block mt-2">Instagram:<br>
-      <input data-id="${id}" class="edit-insta w-full border px-2 py-1 rounded" 
-             value="${escapeAttr(d.insta || '')}" placeholder="https://instagram.com/..." />
-    </label>
-
-    <div class="mt-2 flex gap-3 text-sm">
-      <label><input type="checkbox" data-id="${id}" class="edit-wc" ${d.wc ? 'checked':''}/> WC</label>
-      <label><input type="checkbox" data-id="${id}" class="edit-ebike" ${d.ebike ? 'checked':''}/> E-Bike-Ladestation</label>
-    </div>
-  </div>
-`;
-        
-        // badge color
-        const statusTxt = d.status === "offen" ? "Wartet auf die Freigabe" : d.status;
-        const badgeColor = d.status === 'accepted' || d.status === 'angenommen' ? 'bg-green-100 text-green-800' : (d.status === 'offen' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-700');
-        card.innerHTML = `
-          <div class="flex justify-between items-start gap-3">
-            <div>
-              <div class="font-bold text-lg">🏡 ${escapeHtml(d.name || 'Unbenannt')}</div>
-              <div class="text-xs text-gray-500 mt-1">${stripHtml(d.beschreibung || '')}</div>
-              <div class="text-xs text-gray-500 mt-1">Extras: ${escapeHtml(d.extras || '-') } • Strom: ${escapeHtml(d.strom || '-') } • Sitzplätze: ${escapeHtml(d.sitzplaetze || '-') }</div>
-              <div class="text-xs text-gray-500 mt-1">Tiere: ${(Array.isArray(d.tiere)?d.tiere.join(', '):'-')}</div>
-            </div>
-            <div>
-              <span class="px-2 py-1 rounded text-xs ${badgeColor}">${escapeHtml(statusTxt || '')}</span>
+    const container = document.getElementById('question-area');
+    container.innerHTML = `
+      <div class="max-w-4xl mx-auto">
+        <button class="mb-4 text-sm text-blue-600 hover:underline" id="backToList">⬅️ Zurück zur Übersicht</button>
+        <div class="flex flex-col md:flex-row gap-6">
+          <!-- Left: Statistik -->
+          <div class="w-full md:w-1/3">
+            <div class="bg-white rounded-xl p-4 shadow">
+              <h3 class="text-lg font-bold mb-3">${escapeAttr(d.name || 'Unbenannt')}</h3>
+              <div class="space-y-3 text-sm">
+                <div><strong>🔢 Aufrufe:</strong> ${d.views || 0}</div>
+                <div><strong>⭐ Bewertung:</strong> ${d.rating || 0}</div>
+                <div><strong>🗓️ Erstellt:</strong> ${d.createdAt?.toDate ? d.createdAt.toDate().toLocaleDateString('de-DE') : 'unbekannt'}</div>
+                <div><strong>📍 Status:</strong> ${escapeAttr(d.status || '–')}</div>
+                <div><strong>💚 Unterstützer:</strong> ${d.unterstuetzer ? 'Ja' : 'Nein'}</div>
+              </div>
+              <hr class="my-3">
+              <div id="imageList" class="space-y-2"></div>
+              <label class="block mt-3 text-sm">📷 Neues Bild
+                <input type="file" id="uploadImageInput" class="mt-2" accept="image/*">
+              </label>
+              <div id="uploadProgressContainer" class="mt-2 hidden">
+                <div class="h-2 bg-gray-200 rounded"><div id="uploadProgressBar" class="h-2 bg-green-500 rounded" style="width:0%"></div></div>
+                <div id="uploadProgressLabel" class="text-xs text-gray-600 mt-1">0%</div>
+              </div>
             </div>
           </div>
 
-          <div class="mt-3 text-sm">
-            <!-- editable fields (only active for accepted entries) -->
-            ${d.status === 'angenommen' || d.status === 'accepted' ? `
-              <label class="block mt-2">Name:<br>
-                <input data-id="${id}" class="edit-name w-full border px-2 py-1 rounded" value="${escapeAttr(d.name||'')}" />
+          <!-- Right: Edit form + map -->
+          <div class="w-full md:w-2/3">
+            <div class="bg-white rounded-xl p-6 shadow space-y-4">
+              <h4 class="font-semibold">Bearbeitungsformular</h4>
+
+              <label class="block">
+                <span class="text-gray-700">Name</span>
+                <input type="text" id="editName" value="${escapeAttr(d.name||'')}" class="mt-1 w-full border rounded-lg p-2" />
               </label>
 
-              <label class="block mt-2">Sitzplätze:
-                <select data-id="${id}" class="edit-sitz border rounded px-2 py-1">
-                  <option ${d.sitzplaetze==='Ja'?'selected':''}>Ja</option>
-                  <option ${d.sitzplaetze==='Nein'?'selected':''}>Nein</option>
-                </select>
+              <label class="block">
+                <span class="text-gray-700">Beschreibung</span>
+                <div id="quillContainer" class="bg-white border rounded">${d.beschreibung || ''}</div>
               </label>
 
-              <label class="block mt-2">Strom:
-                <select data-id="${id}" class="edit-strom border rounded px-2 py-1">
-                  <option ${d.strom==='Ja'?'selected':''}>Ja</option>
-                  <option ${d.strom==='Nein'?'selected':''}>Nein</option>
-                </select>
+              <div class="grid grid-cols-2 gap-3">
+                <label>
+                  <span class="text-gray-700">Sitzplätze</span>
+                  <select id="editSitz" class="w-full border rounded p-2">
+                    <option value="">-</option>
+                    <option ${d.sitzplaetze==='Ja'?'selected':''}>Ja</option>
+                    <option ${d.sitzplaetze==='Nein'?'selected':''}>Nein</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span class="text-gray-700">Strom</span>
+                  <select id="editStrom" class="w-full border rounded p-2">
+                    <option value="">-</option>
+                    <option ${d.strom==='Ja'?'selected':''}>Ja</option>
+                    <option ${d.strom==='Nein'?'selected':''}>Nein</option>
+                  </select>
+                </label>
+              </div>
+
+              <label class="block">
+                <span class="text-gray-700">Extras</span>
+                <input id="editExtras" value="${escapeAttr(d.extras||'')}" class="mt-1 w-full border rounded p-2" />
               </label>
 
-              <label class="block mt-2">Extras:<br>
-                <input data-id="${id}" class="edit-extras w-full border px-2 py-1 rounded" value="${escapeAttr(d.extras||'')}" />
+              <label class="block">
+                <span class="text-gray-700">Tiere (klicke zum togglen)</span>
+                <div id="tiereButtons" class="flex flex-wrap gap-2 mt-2"></div>
               </label>
 
-              <label class="block mt-2">Tiere:<br>
-                <div class="tiere-buttons flex flex-wrap gap-1 mt-1" data-id="${id}">
-                  ${["🐐 Ziege","🐓 Huhn","🐄 Kuh","🐇 Hase","🐕 Hund","🐈 Katze","Keine Tiere"].map(t => {
-                    const isSelected = Array.isArray(d.tiere) && d.tiere.includes(t);
-                    return `<button type="button" class="tiere-btn px-2 py-1 text-xs border rounded ${isSelected?'bg-green-200 border-green-400':'bg-gray-100 border-gray-300'}" data-tiere="${t}">${t}</button>`;
-                  }).join('')}
-                </div>
-                <input type="hidden" data-id="${id}" class="edit-tiere-hidden" value='${Array.isArray(d.tiere)?escapeAttr(d.tiere.join(',')):""}' />
+              <label class="block">
+                <span class="text-gray-700">Tags (Komma getrennt)</span>
+                <input id="editTags" value="${Array.isArray(d.tags)?escapeAttr(d.tags.join(', ')) : ''}" class="mt-1 w-full border rounded p-2" />
               </label>
 
-              <label class="block mt-2">Beschreibung:<br>
-                <div id="editor-${id}" class="quill-editor border rounded">${d.beschreibung || ''}</div>
-              </label>
+              <!-- Öffnungszeiten: benutze vorhandenen renderOpeningHoursEditor falls vorhanden -->
+              <div id="openingEditorWrapper">
+                ${ (typeof renderOpeningHoursEditor === 'function') ? renderOpeningHoursEditor(id, d.oeffnungszeiten) : `<label><span class="text-gray-700">Öffnungszeiten</span><textarea id="editOpening" class="w-full border rounded p-2">${escapeAttr(JSON.stringify(d.oeffnungszeiten||{}))}</textarea></label>`}
+              </div>
 
-<!-- HIER neue Öffnungszeiten-UI -->
-      <div class="mt-2">
-        <label class="font-semibold block mb-1">🕒 Öffnungszeiten</label>
-        ${renderOpeningHoursEditor(id, d.oeffnungszeiten)}
+              <div>
+                <label class="block">
+                  <span class="text-gray-700">Unterstützer-Status</span>
+                  <select id="editSupport" class="mt-1 w-full border rounded p-2">
+                    <option value="false" ${!d.unterstuetzer ? 'selected' : ''}>Kein Unterstützer</option>
+                    <option value="true" ${d.unterstuetzer ? 'selected' : ''}>💚 Unterstützer</option>
+                  </select>
+                </label>
+              </div>
+
+              <!-- Map -->
+              <div>
+                <span class="text-gray-700">Mini-Map</span>
+                <div id="editMap" class="h-48 mt-2 rounded border"></div>
+              </div>
+
+              <div class="flex justify-end gap-3">
+                <button id="deleteEntryBtn" class="px-4 py-2 bg-red-600 text-white rounded">🗑️ Löschen</button>
+                <button id="saveEntryBtn" class="px-4 py-2 bg-green-600 text-white rounded">💾 Änderungen speichern</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
+    `;
 
-              <label class="block mt-2">Tags:<br>
-                <input data-id="${id}" class="edit-tags w-full border px-2 py-1 rounded" value="${Array.isArray(d.tags)?escapeAttr(d.tags.join(', ')) : ''}" placeholder="Komma getrennt" />
-              </label>
+    // back button
+    document.getElementById('backToList').addEventListener('click', () => showMyEntries());
 
-              <div class="mt-3">
-                <button data-id="${id}" class="save-edit px-3 py-1 bg-green-600 text-white rounded">💾 Speichern</button>
-                <button data-id="${id}" class="delete-hut px-3 py-1 bg-red-600 text-white rounded ml-2">🗑️ Löschen</button>
-              </div>
-            ` : `
-              <div class="text-sm text-gray-500 italic mt-2">⛔ Nach Freigabe bearbeitbar.</div>
-              <div class="mt-2">
-                <button data-id="${id}" class="delete-hut px-3 py-1 bg-red-600 text-white rounded">🗑️ Löschen</button>
-              </div>
-            `}
+    // initialize image list and upload
+    const imageList = document.getElementById('imageList');
+    imageList.innerHTML = '';
+    if (Array.isArray(d.fotos) && d.fotos.length) {
+      d.fotos.forEach(urlOrObj => {
+        const url = (typeof urlOrObj === 'string') ? urlOrObj : urlOrObj.url;
+        const imgWrap = document.createElement('div');
+        imgWrap.className = 'flex items-center gap-2';
+        imgWrap.innerHTML = `
+          <img src="${escapeAttr(url)}" class="w-20 h-14 object-cover rounded border" />
+          <div class="text-sm">
+            <div class="font-semibold">${escapeAttr(d.name||'')}</div>
+            <button class="text-red-600 text-xs mt-1 remove-image" data-url="${escapeAttr(url)}">Bild entfernen</button>
           </div>
-
-          <!-- Fotos -->
-          ${Array.isArray(d.fotos) && d.fotos.length ? `
-            <div class="mt-3 grid grid-cols-3 gap-2">
-              ${d.fotos.map((img, idx) => {
-                const obj = (typeof img === 'string') ? { url: img, status: 'freigegeben' } : img;
-                const pending = obj.status === 'wartet';
-return `<div class="relative rounded overflow-hidden border p-1 bg-gray-50">
-  <img src="${escapeAttr(obj.url)}" class="object-cover w-full h-24 rounded ${pending?'opacity-60':''}" />
-  ${pending ? `<span class="absolute bottom-0 left-0 bg-yellow-500 text-white text-xs px-1">Wartet</span>` : ""}
-  <button data-id="${id}" data-url="${escapeAttr(obj.url)}" class="delete-image absolute top-0 right-0 bg-red-600 text-white text-xs rounded-bl px-2">✕</button>
-</div>`;
-              }).join('')}
-            </div>` : ''}
-
-
- <!-- Premium-Felder nur einblenden wenn Premium -->
-      ${isPremium ? premiumBlock(id, d) : ''}
-
-
-          <!-- upload -->
-          <label class="block mt-3 text-sm">📷 Neues Bild:
-            <input type="file" data-id="${id}" class="upload-image mt-1" accept="image/*">
-            <p id="upload-hint-{{hutId}}" class="text-xs text-gray-500 mt-1">
-  Kostenlos: 1 Foto • Premium: bis zu 10 Fotos
-</p>
-          </label>
-          <div id="progress-${id}" class="h-2 bg-gray-200 rounded hidden mt-2"><div class="h-2 bg-green-500 rounded" style="width:0%"></div></div>
-          <div id="progress-label-${id}" class="text-xs text-gray-600 mt-1">0%</div>
-
-          <!-- mini-map -->
-          <div id="minimap-${id}" class="minimap mt-3 rounded border"></div>
-       
-        
         `;
-        qa.appendChild(card);
+        imageList.appendChild(imgWrap);
+      });
+    } else {
+      imageList.innerHTML = `<div class="text-sm text-gray-500">Keine Bilder vorhanden.</div>`;
+    }
 
-        loadMessages(id);
-        // after append: init quill editor, mini-map, attach events
-        setTimeout(() => {
-          // Quill
-          const editorEl = document.getElementById(`editor-${id}`);
-          if (editorEl) {
-            const q = new Quill(`#editor-${id}`, { theme: 'snow' });
-            if (d.beschreibung) q.root.innerHTML = d.beschreibung;
-            // replace the save handler below to read from this quill
-          }
+    // delete image handler
+    imageList.querySelectorAll('.remove-image').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const url = btn.dataset.url;
+        if (!confirm('Bild wirklich entfernen?')) return;
+        // entferne url aus doc feld
+        const newFotos = (d.fotos||[]).filter(f => ((typeof f === 'string')? f : f.url) !== url);
+        await docRef.update({ fotos: newFotos });
+        showToast('✅ Bild entfernt');
+        openEditPage(id); // reload detailpage
+      });
+    });
 
-          // map
-          if (d.location && d.location.latitude && d.location.longitude) {
-            try {
-              const m = L.map(`minimap-${id}`, { zoomControl: true }).setView([d.location.latitude, d.location.longitude], 13);
-              L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(m);
-              const marker = L.marker([d.location.latitude, d.location.longitude], { draggable: (d.status==='angenommen') }).addTo(m);
-              if (d.status === 'angenommen') {
-                marker.on('dragend', async e => {
-                  const pos = e.target.getLatLng();
-                  await db.collection('eierhuetten').doc(id).update({ location: new firebase.firestore.GeoPoint(pos.lat, pos.lng) });
-                  showToast('📍 Standort aktualisiert');
-                });
-              }
-            } catch (err) { console.warn('map error', err); }
-          }
+    // upload handler (Firebase Storage)
+    const uploadInput = document.getElementById('uploadImageInput');
+    uploadInput.addEventListener('change', async (ev) => {
+      const file = ev.target.files[0];
+      if (!file) return;
+      const progressContainer = document.getElementById('uploadProgressContainer');
+      const progressBar = document.getElementById('uploadProgressBar');
+      const progressLabel = document.getElementById('uploadProgressLabel');
+      progressContainer.classList.remove('hidden');
 
-        }, 300);
-      } // end for
+      try {
+        const storageRef = firebase.storage().ref(`eierhuetten/${id}/${Date.now()}_${file.name}`);
+        const uploadTask = storageRef.put(file);
 
-      // attach event delegation: Tiere buttons, save-edit, delete, upload
-      setupMyEntriesDelegation();
+        uploadTask.on('state_changed', snapshot => {
+          const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+          progressBar.style.width = pct + '%';
+          progressLabel.textContent = pct + '%';
+        });
 
-      toggleSidebar();
-    } catch (err) {
-      console.error('showMyEntries error', err);
-      document.getElementById('question-area').innerHTML = `<div class="bg-red-100 p-4 rounded">Fehler beim Laden: ${err.message}</div>`;
+        await uploadTask;
+        const downloadURL = await storageRef.getDownloadURL();
+        // push into fotos array
+        const newFotos = Array.isArray(d.fotos) ? [...d.fotos, downloadURL] : [downloadURL];
+        await docRef.update({ fotos: newFotos });
+        showToast('✅ Bild hochgeladen');
+        openEditPage(id); // reload
+      } catch (err) {
+        console.error('upload error', err);
+        showToast('❌ Fehler beim Hochladen: ' + (err.message || err));
+      } finally {
+        progressContainer.classList.add('hidden');
+        uploadInput.value = '';
+      }
+    });
+
+    // Quill init
+    let quill;
+    setTimeout(() => {
+      try {
+        quill = new Quill('#quillContainer', { theme: 'snow' });
+        if (d.beschreibung) quill.root.innerHTML = d.beschreibung;
+      } catch(e) { console.warn('quill init failed', e); }
+    }, 80);
+
+    // Tiere buttons
+    const animals = ["🐐 Ziege","🐄 Kuh","🐓 Huhn","🐕 Hund","🐇 Hase","🐈 Katze","Keine Tiere"];
+    const tiereContainer = document.getElementById('tiereButtons');
+    const selectedTiere = Array.isArray(d.tiere) ? [...d.tiere] : [];
+    animals.forEach(t => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `px-2 py-1 text-xs rounded ${selectedTiere.includes(t) ? 'bg-green-200 border-green-400' : 'bg-gray-100 border-gray-300'}`;
+      b.textContent = t;
+      b.dataset.t = t;
+      b.addEventListener('click', () => {
+        // toggle
+        if (t === 'Keine Tiere') {
+          selectedTiere.length = 0;
+          selectedTiere.push('Keine Tiere');
+        } else {
+          // remove Keine Tiere if present
+          const ni = selectedTiere.indexOf('Keine Tiere');
+          if (ni !== -1) selectedTiere.splice(ni,1);
+          const idx = selectedTiere.indexOf(t);
+          if (idx === -1) selectedTiere.push(t); else selectedTiere.splice(idx,1);
+        }
+        // rerender styles
+        tiereContainer.querySelectorAll('button').forEach(btn => {
+          btn.classList.remove('bg-green-200','border-green-400');
+          btn.classList.add('bg-gray-100','border-gray-300');
+        });
+        selectedTiere.forEach(sel => {
+          const match = Array.from(tiereContainer.children).find(n => n.dataset.t === sel);
+          if (match) { match.classList.add('bg-green-200'); match.classList.remove('bg-gray-100'); }
+        });
+      });
+      tiereContainer.appendChild(b);
+    });
+    // apply initial styles for selected
+    tiereContainer.querySelectorAll('button').forEach(btn => {
+      if (selectedTiere.includes(btn.dataset.t)) {
+        btn.classList.add('bg-green-200'); btn.classList.remove('bg-gray-100');
+      }
+    });
+
+    // Map init
+    setTimeout(() => {
+      try {
+        const lat = d.location?.latitude || 47.3;
+        const lon = d.location?.longitude || 11.4;
+        const map = L.map('editMap', { zoomControl: true }).setView([lat, lon], d.location ? 14 : 11);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        const marker = L.marker([lat, lon], { draggable: true }).addTo(map);
+        marker.on('dragend', async (e) => {
+          const pos = e.target.getLatLng();
+          await docRef.update({ location: new firebase.firestore.GeoPoint(pos.lat, pos.lng) });
+          showToast('📍 Standort gespeichert');
+        });
+      } catch(err){ console.warn('edit map error', err); }
+    }, 200);
+
+    // Delete entry button
+    document.getElementById('deleteEntryBtn').addEventListener('click', () => {
+      confirmDeleteEntry(id, d.name);
+    });
+
+    // Save button
+    document.getElementById('saveEntryBtn').addEventListener('click', async () => {
+      try {
+        const name = document.getElementById('editName').value.trim();
+        const sitz = document.getElementById('editSitz').value || '';
+        const strom = document.getElementById('editStrom').value || '';
+        const extras = document.getElementById('editExtras').value || '';
+        const tags = document.getElementById('editTags').value.split(',').map(s => s.trim()).filter(Boolean);
+        const unterstuetzer = document.getElementById('editSupport').value === 'true';
+        const beschreibungHTML = (quill && quill.root) ? quill.root.innerHTML : document.getElementById('quillContainer').innerHTML;
+
+        // Öffnungszeiten: try to collect using a user-supplied helper, else fallback
+        let openingPayload = d.oeffnungszeiten || [];
+        if (typeof collectOpeningHours === 'function') {
+          try { openingPayload = collectOpeningHours(id); } catch(e){ console.warn('collectOpeningHours failed', e); }
+        } else if (document.getElementById('editOpening')) {
+          try {
+            openingPayload = JSON.parse(document.getElementById('editOpening').value || '[]');
+          } catch(e) { openingPayload = d.oeffnungszeiten || []; }
+        }
+
+        // Tiere: read selected
+        const selTiere = Array.from(tiereContainer.querySelectorAll('button')).filter(b => b.classList.contains('bg-green-200')).map(b => b.dataset.t);
+
+        await docRef.update({
+          name, sitzplaetze: sitz, strom, extras, tags,
+          unterstuetzer, beschreibung: beschreibungHTML,
+          oeffnungszeiten: openingPayload,
+          tiere: selTiere
+        });
+
+        showToast('✅ Änderungen gespeichert');
+        openEditPage(id); // reload detail view with fresh data
+      } catch (err) {
+        console.error('save error', err);
+        showToast('❌ Fehler beim Speichern: ' + (err.message || err));
+      }
+    });
+
+  } catch (err) {
+    console.error('openEditPage error', err);
+    showToast('Fehler: ' + (err.message || err));
+  }
+    }
+    // ==========================================================
+// 🕒 Öffnungszeiten Editor (RadlMap-Style)
+// ==========================================================
+
+// helper for localized day names
+const DAY_LABELS = [
+  { key: "mo", label: "Montag" },
+  { key: "di", label: "Dienstag" },
+  { key: "mi", label: "Mittwoch" },
+  { key: "do", label: "Donnerstag" },
+  { key: "fr", label: "Freitag" },
+  { key: "sa", label: "Samstag" },
+  { key: "so", label: "Sonntag" }
+];
+
+// Rendering des Editors
+function renderOpeningHoursEditor(hutId, data = {}) {
+  let html = `
+    <div id="openhours-${hutId}" class="space-y-2 mt-2">
+      <table class="w-full text-sm border border-gray-200 rounded overflow-hidden">
+        <thead class="bg-green-100 text-green-800">
+          <tr>
+            <th class="py-2 px-3 text-left">Tag</th>
+            <th class="py-2 px-3 text-center">Geöffnet</th>
+            <th class="py-2 px-3 text-center">Von</th>
+            <th class="py-2 px-3 text-center">Bis</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y">
+  `;
+
+  DAY_LABELS.forEach(day => {
+    const d = data[day.key] || {};
+    const open = !!d.open;
+    const from = d.from || "";
+    const to = d.to || "";
+    html += `
+      <tr>
+        <td class="py-2 px-3">${day.label}</td>
+        <td class="text-center">
+          <input type="checkbox" class="oh-open" data-day="${day.key}" ${open ? "checked" : ""}/>
+        </td>
+        <td class="text-center">
+          <input type="time" class="oh-from border rounded px-2 py-1 text-sm" data-day="${day.key}" value="${from}" ${!open ? "disabled" : ""}/>
+        </td>
+        <td class="text-center">
+          <input type="time" class="oh-to border rounded px-2 py-1 text-sm" data-day="${day.key}" value="${to}" ${!open ? "disabled" : ""}/>
+        </td>
+      </tr>
+    `;
+  });
+
+  html += `
+        </tbody>
+      </table>
+      <p class="text-xs text-gray-500">Tipp: Wenn du nichts einträgst, wird "geschlossen" angezeigt.</p>
+    </div>
+  `;
+  return html;
+}
+
+// Daten auslesen
+function collectOpeningHours(hutId) {
+  const wrapper = document.getElementById(`openhours-${hutId}`);
+  if (!wrapper) return {};
+  const result = {};
+  DAY_LABELS.forEach(day => {
+    const openCheckbox = wrapper.querySelector(`.oh-open[data-day="${day.key}"]`);
+    const fromInput = wrapper.querySelector(`.oh-from[data-day="${day.key}"]`);
+    const toInput = wrapper.querySelector(`.oh-to[data-day="${day.key}"]`);
+    const open = openCheckbox.checked;
+    result[day.key] = {
+      open,
+      from: open ? fromInput.value : "",
+      to: open ? toInput.value : ""
+    };
+  });
+  return result;
+}
+
+// Dynamische Aktivierung / Deaktivierung
+document.addEventListener("change", (e) => {
+  if (e.target.classList.contains("oh-open")) {
+    const day = e.target.dataset.day;
+    const row = e.target.closest("tr");
+    const from = row.querySelector(".oh-from");
+    const to = row.querySelector(".oh-to");
+    const isOpen = e.target.checked;
+    from.disabled = !isOpen;
+    to.disabled = !isOpen;
+    if (!isOpen) {
+      from.value = "";
+      to.value = "";
     }
   }
-    
+});
+  /*
 function renderOpeningHoursEditor(id, oeffnungszeiten) {
   const immer = oeffnungszeiten === "Immer geöffnet";
 
@@ -2210,7 +2521,7 @@ function renderOpeningHoursEditor(id, oeffnungszeiten) {
     const daysEl = document.querySelector(`.oeff-days[data-id="${id}"]`);
     if (daysEl) daysEl.classList.toggle("hidden", e.target.checked);
   }
-});
+});*/
     function normalizeOpeningHours(oeff) {
   if (!oeff) return "Immer geöffnet";
 
