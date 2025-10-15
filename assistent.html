@@ -2317,14 +2317,20 @@ function confirmDeleteEntry(id, name) {
     setTimeout(() => new Quill("#quillContainer", { theme: "snow" }), 100);
 
     // === KI-Beschreibung erzeugen ===
-    document.getElementById("generateDescBtn").onclick = async () => {
+    /*document.getElementById("generateDescBtn").onclick = async () => {
       const q = document.querySelector("#quillContainer .ql-editor");
       const images = d.fotos || [];
       const suggestion = await generateSmartDescription(d, images);
       if (suggestion && confirm(`💬 Vorschlag:\n\n${suggestion}\n\nSoll diese Beschreibung übernommen werden?`)) {
         q.innerHTML = `<p>${suggestion}</p>`;
       }
-    };
+    };*/
+    document.getElementById("generateDescBtn").onclick = () => {
+  const q = document.querySelector("#quillContainer .ql-editor");
+  showDescriptionPreview(generateSmartDescription, d, d.fotos || [], (newText) => {
+    q.innerHTML = `<p>${newText}</p>`;
+  });
+};
 
     // === Speichern ===
     document.getElementById("saveEntryBtn").onclick = async () => {
@@ -2374,7 +2380,74 @@ function confirmDeleteEntry(id, name) {
     showToast("❌ Fehler: " + err.message);
   }
 }
+/* === Vorschau-Dialog für automatisch generierte Beschreibung === */
+function showDescriptionPreview(generateFn, data, images, onConfirm) {
+  // Falls schon ein Modal existiert, entfernen
+  const old = document.getElementById('descModal');
+  if (old) old.remove();
 
+  const modal = document.createElement('div');
+  modal.id = 'descModal';
+  modal.className =
+    'fixed inset-0 bg-black/50 flex items-center justify-center z-50';
+
+  const box = document.createElement('div');
+  box.className =
+    'bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4';
+  modal.appendChild(box);
+
+  const header = document.createElement('div');
+  header.innerHTML =
+    '<h3 class="text-lg font-semibold mb-2">Vorgeschlagene Beschreibung</h3>';
+  box.appendChild(header);
+
+  const content = document.createElement('div');
+  content.id = 'descPreviewText';
+  content.className = 'text-gray-700 text-sm leading-relaxed max-h-60 overflow-y-auto border rounded p-3 bg-gray-50';
+  box.appendChild(content);
+
+  const buttonRow = document.createElement('div');
+  buttonRow.className = 'flex justify-end gap-3 pt-4';
+  box.appendChild(buttonRow);
+
+  const regenBtn = document.createElement('button');
+  regenBtn.textContent = '🔁 Neu generieren';
+  regenBtn.className = 'px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700';
+  buttonRow.appendChild(regenBtn);
+
+  const okBtn = document.createElement('button');
+  okBtn.textContent = '✅ Übernehmen';
+  okBtn.className = 'px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700';
+  buttonRow.appendChild(okBtn);
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = '❌ Abbrechen';
+  cancelBtn.className = 'px-3 py-1 bg-gray-300 text-gray-800 rounded text-sm hover:bg-gray-400';
+  buttonRow.appendChild(cancelBtn);
+
+  // Funktionen
+  async function refreshText() {
+    const txt = await generateFn(data, images);
+    content.innerHTML = txt.replace(/\n/g, '<br>');
+  }
+  regenBtn.onclick = refreshText;
+  cancelBtn.onclick = () => modal.remove();
+  okBtn.onclick = () => {
+    onConfirm(content.innerText);
+    modal.remove();
+  };
+
+  document.body.appendChild(modal);
+  refreshText();
+}
+
+/* === Beispiel-Einbindung in openEditPage === */
+document.getElementById('generateDescBtn').onclick = () => {
+  const q = document.querySelector('#quillContainer .ql-editor');
+  showDescriptionPreview(generateSmartDescription, d, d.fotos || [], (newText) => {
+    q.innerHTML = `<p>${newText}</p>`;
+  });
+};
 /* === Lokaler Textgenerator – idyllischer Stil === */
 /* === Lokaler, ausführlicher Textgenerator === */
 async function generateSmartDescription(d, images) {
