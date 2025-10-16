@@ -2620,8 +2620,7 @@ function renderAIPreview(previewBox, quill, data, photos) {
 }
 
     
-/* === 🖼️ Verbesserter Smart-Image-Uploader (mit Namen & automatischer Beschreibung) === */
-async function renderSmartImageUploader(container, docRef, existingImages = [], entryId) {
+function renderSmartImageUploader(container, docRef, existingImages = [], entryId) {
   container.innerHTML = `
     <div class="bg-white rounded-xl shadow p-4">
       <h3 class="text-sm font-semibold mb-2">📸 Fotos verwalten</h3>
@@ -2635,7 +2634,7 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
           <div id="smartUploadBar" class="h-1 bg-green-500 rounded transition-all" style="width:0%"></div>
         </div>
       </div>
-      <p class="text-xs text-gray-400 mt-2">💡 Nach Upload kannst du jedem Bild einen Titel geben, der später in die KI-Beschreibung einfließt.</p>
+      <p class="text-xs text-gray-400 mt-2">💡 Ziehe mehrere Bilder rein – gleiche Fotos werden automatisch erkannt</p>
     </div>
   `;
 
@@ -2645,117 +2644,29 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
   const bar = container.querySelector("#smartUploadBar");
   const barContainer = container.querySelector("#smartUploadProgress");
 
-  // 🔧 Wenn alte Struktur (nur URLs), konvertiere sie zu Objekten
-  existingImages = existingImages.map(f =>
-    typeof f === "string" ? { url: f, name: "" } : f
-  );
-
+  // vorhandene Bilder anzeigen
   renderExisting();
 
   function renderExisting() {
     preview.innerHTML = "";
-    if (existingImages.length === 0) {
-      preview.innerHTML = `<div class="text-sm text-gray-400">Keine Bilder vorhanden.</div>`;
-      return;
-    }
-
-    existingImages.forEach((img, i) => {
+    (existingImages || []).forEach(url => {
       const card = document.createElement("div");
-      card.className = "relative group w-28 h-28 border rounded overflow-hidden shadow-sm bg-gray-50";
+      card.className = "relative group w-24 h-24 border rounded overflow-hidden shadow-sm";
       card.innerHTML = `
-        <img src="${img.url}" class="object-cover w-full h-20">
-        <input data-idx="${i}" class="imageNameInput border rounded p-1 text-xs w-full mt-1"
-               placeholder="Bildname..." value="${img.name || ""}">
+        <img src="${url}" class="object-cover w-full h-full">
         <button class="absolute top-1 right-1 bg-red-600 text-white text-xs rounded-full px-2 opacity-0 group-hover:opacity-100 transition">✕</button>
       `;
-      card.querySelector("button").onclick = async () => {
+      card.querySelector("button").addEventListener("click", async () => {
         if (!confirm("Bild wirklich löschen?")) return;
-        existingImages.splice(i, 1);
-        await docRef.update({ fotos: existingImages });
+        const updated = existingImages.filter(f => f !== url);
+        await docRef.update({ fotos: updated });
         showToast("🗑️ Bild gelöscht");
+        existingImages = updated;
         renderExisting();
-      };
-
-      // 📝 Änderung des Bildnamens speichern
-      card.querySelector(".imageNameInput").addEventListener("input", async (e) => {
-        const newName = e.target.value.trim();
-        existingImages[i].name = newName;
-        await docRef.update({ fotos: existingImages });
       });
-
       preview.appendChild(card);
     });
   }
-
-  // Drag & Drop
-  zone.addEventListener("click", () => input.click());
-  zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("bg-green-100"); });
-  zone.addEventListener("dragleave", () => zone.classList.remove("bg-green-100"));
-  zone.addEventListener("drop", e => {
-    e.preventDefault();
-    zone.classList.remove("bg-green-100");
-    handleFiles(e.dataTransfer.files);
-  });
-  input.addEventListener("change", e => handleFiles(e.target.files));
-
-  async function handleFiles(files) {
-    const list = Array.from(files);
-    if (list.length === 0) return;
-
-    for (const file of list) {
-      const reader = new FileReader();
-      reader.onload = ev => {
-        const card = document.createElement("div");
-        card.className = "relative w-24 h-24 border rounded overflow-hidden";
-        card.innerHTML = `<img src="${ev.target.result}" class="object-cover w-full h-full opacity-70">`;
-        preview.appendChild(card);
-      };
-      reader.readAsDataURL(file);
-
-      // Automatische Namensvorschläge
-      const nameSuggestion = file.name
-        .replace(/\.[^/.]+$/, "")
-        .replace(/[_-]+/g, " ")
-        .replace(/\s+/g, " ")
-        .replace(/\b\w/g, c => c.toUpperCase());
-
-      // 📤 Upload zu imgbb
-      barContainer.classList.remove("hidden");
-      const formData = new FormData();
-      formData.append("image", file);
-      try {
-        const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`, {
-          method: "POST",
-          body: formData
-        });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error?.message || "Upload fehlgeschlagen");
-
-        const newEntry = { url: data.data.url, name: nameSuggestion };
-        existingImages.push(newEntry);
-        await docRef.update({ fotos: existingImages });
-
-        // 🪄 Vorschlag zur Beschreibung
-        const quillField = document.querySelector("#quillContainer .ql-editor");
-        if (quillField && confirm(`💬 Automatische Bildbeschreibung erkannt: "${nameSuggestion}"\n\nSoll sie der Beschreibung hinzugefügt werden?`)) {
-          quillField.innerHTML += `<p>${nameSuggestion}</p>`;
-        }
-
-        showToast(`✅ Bild "${nameSuggestion}" hochgeladen`);
-      } catch (err) {
-        console.error("imgbb upload error", err);
-        showToast("❌ Fehler: " + err.message);
-      } finally {
-        bar.style.width = "100%";
-        setTimeout(() => {
-          bar.style.width = "0%";
-          barContainer.classList.add("hidden");
-          renderExisting();
-        }, 700);
-      }
-    }
-  }
-}
 
   // Event-Handler
   zone.addEventListener("click", () => input.click());
