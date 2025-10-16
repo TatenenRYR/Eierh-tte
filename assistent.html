@@ -2196,8 +2196,7 @@ function confirmDeleteEntry(id, name) {
 // Detailseite: Statistik + Bearbeitungsformular
 // ================================
  
-    
-    async function openEditPage(id) {
+async function openEditPage(id) {
   if (!id) return;
   try {
     const docRef = db.collection("eierhuetten").doc(id);
@@ -2208,17 +2207,17 @@ function confirmDeleteEntry(id, name) {
     const container = document.getElementById("question-area");
     container.innerHTML = `
       <div class="max-w-5xl mx-auto">
-        <button class="mb-4 text-sm text-blue-600 hover:underline" id="backToList">⬅️ Zurück zur Übersicht</button>
+        <button id="backToList" class="mb-4 text-sm text-blue-600 hover:underline">⬅️ Zurück zur Übersicht</button>
 
         <div class="flex flex-col md:flex-row gap-6">
 
-          <!-- Sidebar: Smarter Foto-Upload -->
-          <div class="w-full md:w-1/3" id="photoUploaderContainer"></div>
+          <!-- 📸 Foto-Upload -->
+          <div id="photoUploaderContainer" class="w-full md:w-1/3 bg-white rounded-xl p-4 shadow"></div>
 
-          <!-- Hauptformular -->
+          <!-- 🧾 Formular -->
           <div class="w-full md:w-2/3">
             <div class="bg-white rounded-xl p-6 shadow space-y-4">
-              <h4 class="font-semibold">Bearbeitungsformular</h4>
+              <h4 class="font-semibold text-lg mb-2">Bearbeitungsformular</h4>
 
               <label class="block">
                 <span class="text-gray-700">Name</span>
@@ -2228,7 +2227,7 @@ function confirmDeleteEntry(id, name) {
               <label class="block">
                 <span class="text-gray-700">Beschreibung</span>
                 <div id="quillContainer" class="bg-white border rounded p-2">${d.beschreibung || ""}</div>
-                <button id="generateDescBtn" class="mt-2 px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition">🪄 Beschreibung automatisch generieren</button>
+                <button id="generateDescBtn" class="mt-3 px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition">🪄 Beschreibung automatisch generieren</button>
               </label>
 
               <div class="grid grid-cols-2 gap-3">
@@ -2282,14 +2281,10 @@ function confirmDeleteEntry(id, name) {
       </div>
     `;
 
-    // === Navigation ===
+    /* === 🔙 Zurück === */
     document.getElementById("backToList").onclick = () => showMyEntries();
 
-    // === Smarter Foto-Upload ===
-    const photoContainer = document.getElementById("photoUploaderContainer");
-    renderSmartImageUploader(photoContainer, docRef, d.fotos || [], id, d.name || d.typ || "");
-
-    // === Tiere ===
+    /* === 🐮 Tiere === */
     const animals = ["🐐 Ziege", "🐄 Kuh", "🐓 Huhn", "🐕 Hund", "🐇 Hase", "🐈 Katze", "Keine Tiere"];
     const tiereContainer = document.getElementById("tiereButtons");
     const selected = d.tiere || [];
@@ -2297,7 +2292,8 @@ function confirmDeleteEntry(id, name) {
       const b = document.createElement("button");
       b.className = `px-2 py-1 border rounded text-sm ${selected.includes(t) ? "bg-green-200" : "bg-gray-100"}`;
       b.textContent = t;
-      b.onclick = () => {
+      b.onclick = (e) => {
+        e.stopPropagation();
         if (t === "Keine Tiere") {
           selected.length = 0;
           selected.push("Keine Tiere");
@@ -2313,26 +2309,22 @@ function confirmDeleteEntry(id, name) {
       tiereContainer.appendChild(b);
     });
 
-    // === Quill Editor ===
-    setTimeout(() => new Quill("#quillContainer", { theme: "snow" }), 100);
+    /* === 🖋️ Quill === */
+    let quill;
+    setTimeout(() => {
+      quill = new Quill("#quillContainer", { theme: "snow" });
+      if (d.beschreibung) quill.root.innerHTML = d.beschreibung;
+    }, 100);
 
-    // === KI-Beschreibung erzeugen ===
-    /*document.getElementById("generateDescBtn").onclick = async () => {
-      const q = document.querySelector("#quillContainer .ql-editor");
-      const images = d.fotos || [];
-      const suggestion = await generateSmartDescription(d, images);
-      if (suggestion && confirm(`💬 Vorschlag:\n\n${suggestion}\n\nSoll diese Beschreibung übernommen werden?`)) {
-        q.innerHTML = `<p>${suggestion}</p>`;
-      }
-    };*/
+    /* === 🤖 KI-Beschreibung (mit Vorschau & Stilwahl) === */
     document.getElementById("generateDescBtn").onclick = () => {
-  const q = document.querySelector("#quillContainer .ql-editor");
-  showDescriptionPreview(generateSmartDescription, d, d.fotos || [], (newText) => {
-    q.innerHTML = `<p>${newText}</p>`;
-  });
-};
+      const q = document.querySelector("#quillContainer .ql-editor");
+      showAIDescriptionPreview(generateSmartDescription, d, d.fotos || [], (newText) => {
+        q.innerHTML = `<p>${newText}</p>`;
+      });
+    };
 
-    // === Speichern ===
+    /* === 💾 Speichern === */
     document.getElementById("saveEntryBtn").onclick = async () => {
       const name = document.getElementById("editName").value.trim();
       const sitzplaetze = document.getElementById("editSitz").value;
@@ -2348,10 +2340,10 @@ function confirmDeleteEntry(id, name) {
       openEditPage(id);
     };
 
-    // === Löschen ===
+    /* === 🗑️ Löschen === */
     document.getElementById("deleteEntryBtn").onclick = () => confirmDeleteEntry(id, d.name);
 
-    // === Öffnungszeiten-Kopierfunktion ===
+    /* === 🕓 Öffnungszeiten-Kopieren === */
     setTimeout(() => {
       const btn = document.createElement("button");
       btn.textContent = "⏩ Öffnungszeiten kopieren";
@@ -2375,11 +2367,16 @@ function confirmDeleteEntry(id, name) {
         });
       };
     }, 300);
+
+    /* === 📸 Moderner ImageBB-Upload mit Fix === */
+    renderSmartImageUploader(document.getElementById("photoUploaderContainer"), docRef, d.fotos || [], id, d.name || "");
+
   } catch (err) {
     console.error("openEditPage error", err);
     showToast("❌ Fehler: " + err.message);
   }
 }
+
 /* === Vorschau-Dialog für automatisch generierte Beschreibung === */
 function showDescriptionPreview(generateFn, data, images, onConfirm) {
   // Falls schon ein Modal existiert, entfernen
@@ -2448,90 +2445,121 @@ document.getElementById('generateDescBtn').onclick = () => {
     q.innerHTML = `<p>${newText}</p>`;
   });
 };
-/* === Lokaler Textgenerator – idyllischer Stil === */
 /* === Lokaler, ausführlicher Textgenerator === */
-async function generateSmartDescription(d, images) {
-  const type = (d.typ || d.name || "").toLowerCase();
-  const tiere = Array.isArray(d.tiere) ? d.tiere.filter(t => t !== "Keine Tiere").join(", ") : "";
-  const extras = d.extras || "";
-  const tags = Array.isArray(d.tags) ? d.tags.join(", ") : "";
-  const fotos = Array.isArray(images) ? images.length : 0;
 
-  const openDays = Array.isArray(d.oeffnungszeiten)
-    ? d.oeffnungszeiten.filter(o => o.open).length
-    : 0;
-
-  // Typ-Kategorie für passendere Beschreibungen
-  let typeText = "Ort";
-  if (/automat/.test(type)) typeText = "Verkaufsautomat";
-  else if (/hof/.test(type)) typeText = "Bauernhof";
-  else if (/hütte|huette/.test(type)) typeText = "Selbstbedienungshütte";
-  else if (/stübchen|stuebchen|bastel/.test(type)) typeText = "Bastelstübchen";
-  else if (/laden/.test(type)) typeText = "Hofladen";
-
-  // Hilfsfunktion: zufälliges Element wählen
-  const rand = arr => arr[Math.floor(Math.random() * arr.length)];
+function generateSmartDescription(data, photos, style = "romantisch") {
+  const name = data.name || "dieser Ort";
+  const type = data.typ || "Ort";
+  const extras = data.extras ? `Hier gibt es ${data.extras}.` : "";
+  const tiere = Array.isArray(data.tiere) && data.tiere.length && !data.tiere.includes("Keine Tiere")
+    ? `Rund um ${name} leben ${data.tiere.join(", ")} – sie verleihen diesem Platz eine besondere Lebendigkeit.` : "";
+  const strom = data.strom === "Ja" ? "Dieser Ort ist sogar mit Strom ausgestattet – ein kleines Detail mit großem Komfort." : "";
+  const sitz = data.sitzplaetze === "Ja" ? "Gemütliche Sitzmöglichkeiten laden zum Verweilen ein." : "";
+  const photosText = (photos && photos.length)
+    ? `Schon ein Blick auf die ${photos.length} Bild${photos.length > 1 ? "er" : ""} zeigt, mit wie viel Liebe dieser Ort gestaltet ist.`
+    : "Auch ohne Bilder spürt man, dass hier Herzblut und Hingabe spürbar sind.";
 
   const intros = [
-    "Inmitten der sanften Landschaft erhebt sich",
-    "Versteckt zwischen alten Obstbäumen liegt",
-    "Wo Natur und Handwerk aufeinandertreffen, steht",
-    "Eingebettet in eine malerische Umgebung befindet sich",
-    "Mitten im Grünen, umgeben von Feldern und Wiesen, lädt ein"
+    `Zwischen Wiesen und Wäldern liegt ${name}, ein Ort, der mit seinem natürlichen Charme verzaubert.`,
+    `${name} ist mehr als nur ein ${type} – es ist ein kleines Stück ländlicher Geborgenheit.`,
+    `Inmitten sanfter Hügel und duftender Wiesen findet sich ${name}, wo die Zeit langsamer zu vergehen scheint.`,
+    `Wer das Echte sucht, wird bei ${name} fündig – ein Ort voller Herz und Geschichte.`
   ];
 
-  const middles = [
-    `Unser ${typeText} <strong>"${d.name || "Standort"}"</strong> ist ein besonderer Ort, an dem Regionalität und Herzlichkeit spürbar werden.`,
-    `Hier dreht sich alles um ehrliche Produkte und liebevolle Details, die man an jeder Ecke entdecken kann.`,
-    `Besucher schätzen die ruhige Atmosphäre und die Möglichkeit, direkt vom Erzeuger einzukaufen.`,
-    `Ein kleiner Ort mit großem Charakter, der einlädt, kurz innezuhalten und zu genießen.`
-  ];
+  const emotionalClosings = {
+    romantisch: [
+      "Ein Besuch hier ist wie eine kleine Reise in eine ruhigere Welt.",
+      "Hier spürt man die Nähe zur Natur und die Wärme echter Gastfreundschaft.",
+      "Ein Ort, an dem die Seele kurz durchatmet und der Alltag Pause macht."
+    ],
+    sachlich: [
+      "Dieser Ort steht für Qualität, Authentizität und regionale Werte.",
+      "Ein durchdachtes Konzept, das auf Nachhaltigkeit und Ehrlichkeit setzt.",
+      "Hier verbindet sich Tradition mit praktischer Einfachheit."
+    ],
+    kurz: [
+      "Authentisch. Regional. Herzlich.",
+      "Einfach. Echt. Besonders.",
+      "Ein Ort, den man erleben muss."
+    ]
+  };
 
-  const extrasParts = extras
-    ? [
-        `Zu den Besonderheiten zählen ${extras.toLowerCase()}, die man sonst kaum findet.`,
-        `Das Angebot wird durch ${extras.toLowerCase()} ergänzt – ein echter Geheimtipp!`,
-        `Besondere Aufmerksamkeit gilt unseren ${extras.toLowerCase()}, die jedes Herz höher schlagen lassen.`
-      ]
-    : [];
+  const intro = intros[Math.floor(Math.random() * intros.length)];
+  const outro = emotionalClosings[style][Math.floor(Math.random() * emotionalClosings[style].length)];
 
-  const animalParts = tiere
-    ? [
-        `Auf dem Gelände leben ${tiere}, die für eine lebendige und herzliche Atmosphäre sorgen.`,
-        `Hier begegnet man ${tiere}, die das Hofleben spürbar machen.`,
-        `Wer Tiere liebt, wird sich über ${tiere} besonders freuen.`
-      ]
-    : [];
-
-  const tagParts = tags
-    ? [
-        `Unsere Schlagworte – ${tags} – spiegeln wider, was uns ausmacht.`,
-        `Begriffe wie ${tags} beschreiben unser Angebot treffend.`,
-        `Ob ${tags}: Hier findet jeder etwas Passendes.`
-      ]
-    : [];
-
-  const closing = [
-    openDays
-      ? `An ${openDays} Tagen pro Woche geöffnet, ist ${d.name || "dieser Ort"} ein Ziel für Genießer und Entdecker gleichermaßen.`
-      : `Ganz gleich, ob spontan oder geplant – ein Besuch lohnt sich immer.`,
-    "Komm vorbei, erlebe den Duft frischer Produkte und genieße den Charme des Landlebens.",
-    "Ein Stück Heimat, das mit jedem Besuch ein kleines bisschen vertrauter wird."
-  ];
-
-  // Zusammenbauen des Textes
-  const parts = [
-    rand(intros),
-    rand(middles),
-    rand(animalParts) || "",
-    rand(extrasParts) || "",
-    rand(tagParts) || "",
-    fotos ? `Unsere ${fotos} Bild${fotos > 1 ? "er" : ""} vermitteln einen ersten Eindruck der Atmosphäre.` : "",
-    rand(closing)
-  ];
-
-  return parts.filter(Boolean).join(" ");
+  return `
+    <p>${intro}</p>
+    <p>${photosText}</p>
+    <p>${tiere}</p>
+    <p>${sitz} ${strom}</p>
+    <p>${extras}</p>
+    <p>${outro}</p>
+  `.replace(/\s+/g, " ").trim();
 }
+
+/* === 💫 KI-Vorschau mit Stil-Auswahl, Neu-Generieren & Übernehmen === */
+function attachAIDescriptionButton(quill, data, photos) {
+  const container = document.querySelector("#quillContainer");
+  if (!container || document.getElementById("aiDescBtn")) return;
+
+  const btn = document.createElement("button");
+  btn.id = "aiDescBtn";
+  btn.textContent = "✨ KI-Beschreibung vorschlagen";
+  btn.className = "mt-4 bg-gradient-to-r from-green-600 to-lime-600 text-white px-4 py-2 rounded-lg hover:from-green-700 transition shadow-md";
+  container.insertAdjacentElement("afterend", btn);
+
+  const previewBox = document.createElement("div");
+  previewBox.id = "aiPreviewBox";
+  previewBox.className = "hidden bg-white border rounded-lg p-5 mt-4 shadow-lg space-y-3";
+  container.parentElement.appendChild(previewBox);
+
+  btn.addEventListener("click", () => {
+    renderAIPreview(previewBox, quill, data, photos);
+  });
+}
+
+function renderAIPreview(previewBox, quill, data, photos) {
+  const styleOptions = `
+    <select id="aiStyleSelect" class="border rounded p-1 text-sm">
+      <option value="romantisch">🌸 Romantisch</option>
+      <option value="sachlich">📘 Sachlich</option>
+      <option value="kurz">⚡ Kurz & Prägnant</option>
+    </select>
+  `;
+
+  const html = generateSmartDescription(data, photos, "romantisch");
+  previewBox.innerHTML = `
+    <div class="flex justify-between items-center mb-2">
+      <h3 class="font-semibold text-lg text-green-700">Vorschlag für Beschreibung</h3>
+      ${styleOptions}
+    </div>
+    <div class="prose max-w-none mb-3 text-gray-700">${html}</div>
+    <div class="flex gap-3">
+      <button id="applyAIDesc" class="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700">✅ Übernehmen</button>
+      <button id="regenAIDesc" class="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">🔁 Neu generieren</button>
+      <button id="closeAIPrev" class="px-3 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400">❌ Schließen</button>
+    </div>
+  `;
+  previewBox.classList.remove("hidden");
+
+  const textContainer = previewBox.querySelector(".prose");
+  const select = previewBox.querySelector("#aiStyleSelect");
+
+  previewBox.querySelector("#regenAIDesc").onclick = () => {
+    const style = select.value;
+    textContainer.innerHTML = generateSmartDescription(data, photos, style);
+  };
+
+  previewBox.querySelector("#applyAIDesc").onclick = () => {
+    quill.root.innerHTML = textContainer.innerHTML;
+    showToast("✅ Beschreibung übernommen");
+  };
+
+  previewBox.querySelector("#closeAIPrev").onclick = () => {
+    previewBox.classList.add("hidden");
+  };
+}
+
     
 function renderSmartImageUploader(container, docRef, existingImages = [], entryId) {
   container.innerHTML = `
