@@ -2506,18 +2506,49 @@ document.getElementById('generateDescBtn').onclick = () => {
 };
 /* === Lokaler, ausführlicher Textgenerator === */
 
-function generateSmartDescription(data, photos, style = "romantisch") {
+function generateSmartDescription(data, photos = [], style = "romantisch") {
   const name = data.name || "dieser Ort";
   const type = data.typ || "Ort";
+
   const extras = data.extras ? `Hier gibt es ${data.extras}.` : "";
   const tiere = Array.isArray(data.tiere) && data.tiere.length && !data.tiere.includes("Keine Tiere")
     ? `Rund um ${name} leben ${data.tiere.join(", ")} – sie verleihen diesem Platz eine besondere Lebendigkeit.` : "";
-  const strom = data.strom === "Ja" ? "Dieser Ort ist sogar mit Strom ausgestattet – ein kleines Detail mit großem Komfort." : "";
-  const sitz = data.sitzplaetze === "Ja" ? "Gemütliche Sitzmöglichkeiten laden zum Verweilen ein." : "";
-  const photosText = (photos && photos.length)
-    ? `Schon ein Blick auf die ${photos.length} Bild${photos.length > 1 ? "er" : ""} zeigt, mit wie viel Liebe dieser Ort gestaltet ist.`
-    : "Auch ohne Bilder spürt man, dass hier Herzblut und Hingabe spürbar sind.";
+  const strom = data.strom === "Ja"
+    ? "Dieser Ort ist sogar mit Strom ausgestattet – ein kleines Detail mit großem Komfort." : "";
+  const sitz = data.sitzplaetze === "Ja"
+    ? "Gemütliche Sitzmöglichkeiten laden zum Verweilen ein." : "";
 
+  // 🖼️ intelligente Foto-Erzählung
+  let photoStory = "";
+  if (photos && photos.length) {
+    const namedPhotos = photos
+      .filter(p => typeof p === "object" && p.name && p.name.trim().length > 1)
+      .map(p => p.name.trim());
+
+    if (namedPhotos.length) {
+      // Erzählerischer Text mit wechselnden Satzanfängen
+      const openers = [
+        "Auf den Bildern erkennt man",
+        "Die Fotos zeigen eindrucksvoll",
+        "Ein Blick auf die Aufnahmen verrät",
+        "Wie man auf den Bildern sieht",
+        "Schon die Fotos von"
+      ];
+      const opener = openers[Math.floor(Math.random() * openers.length)];
+      const namesList = namedPhotos.slice(0, 3).join(", ");
+      const continuation = namedPhotos.length > 3
+        ? `und weitere Motive, die die Atmosphäre perfekt einfangen.`
+        : "– jedes Bild erzählt seine eigene kleine Geschichte.";
+
+      photoStory = `${opener} ${namesList} ${continuation}`;
+    } else {
+      photoStory = `Schon ein Blick auf die ${photos.length} Bild${photos.length > 1 ? "er" : ""} zeigt, mit wie viel Liebe dieser Ort gestaltet ist.`;
+    }
+  } else {
+    photoStory = "Auch ohne Bilder spürt man, dass hier Herzblut und Hingabe spürbar sind.";
+  }
+
+  // 🌿 verschiedene Erzählstile
   const intros = [
     `Zwischen Wiesen und Wäldern liegt ${name}, ein Ort, der mit seinem natürlichen Charme verzaubert.`,
     `${name} ist mehr als nur ein ${type} – es ist ein kleines Stück ländlicher Geborgenheit.`,
@@ -2543,19 +2574,23 @@ function generateSmartDescription(data, photos, style = "romantisch") {
     ]
   };
 
+  // ✨ kleine zufällige Variationen, damit es nie gleich klingt
   const intro = intros[Math.floor(Math.random() * intros.length)];
-  const outro = emotionalClosings[style][Math.floor(Math.random() * emotionalClosings[style].length)];
+  const outroSet = emotionalClosings[style] || emotionalClosings.romantisch;
+  const outro = outroSet[Math.floor(Math.random() * outroSet.length)];
 
-  return `
+  // 🌼 finaler Text
+  const html = `
     <p>${intro}</p>
-    <p>${photosText}</p>
-    <p>${tiere}</p>
-    <p>${sitz} ${strom}</p>
-    <p>${extras}</p>
+    <p>${photoStory}</p>
+    ${tiere ? `<p>${tiere}</p>` : ""}
+    ${(sitz || strom) ? `<p>${sitz} ${strom}</p>` : ""}
+    ${extras ? `<p>${extras}</p>` : ""}
     <p>${outro}</p>
-  `.replace(/\s+/g, " ").trim();
-}
+  `;
 
+  return html.replace(/\s+/g, " ").trim();
+}
 /* === 💫 KI-Vorschau mit Stil-Auswahl, Neu-Generieren & Übernehmen === */
 function attachAIDescriptionButton(quill, data, photos) {
   const container = document.querySelector("#quillContainer");
@@ -2618,8 +2653,7 @@ function renderAIPreview(previewBox, quill, data, photos) {
     previewBox.classList.add("hidden");
   };
 }
-
-  async function renderSmartImageUploader(container, docRef, existingImages = [], entryId) {
+async function renderSmartImageUploader(container, docRef, existingImages = [], entryId) {
   container.innerHTML = `
     <div class="bg-white rounded-xl shadow p-4">
       <h3 class="text-sm font-semibold mb-2">📸 Fotos verwalten</h3>
@@ -2632,7 +2666,7 @@ function renderAIPreview(previewBox, quill, data, photos) {
           <div id="smartUploadBar" class="h-1 bg-green-500 rounded transition-all" style="width:0%"></div>
         </div>
       </div>
-      <p class="text-xs text-gray-400 mt-2">💡 Du kannst Bilder nachträglich benennen – KI-Beschreibungen helfen dir beim Text!</p>
+      <p class="text-xs text-gray-400 mt-2">💡 Du kannst Bilder nachträglich benennen – diese Namen nutzt die KI später automatisch in der Hauptbeschreibung.</p>
     </div>
   `;
 
@@ -2658,7 +2692,7 @@ function renderAIPreview(previewBox, quill, data, photos) {
 
       card.innerHTML = `
         <img src="${img.url}" class="object-cover w-full h-20 rounded pointer-events-none">
-        <input class="mt-1 text-xs text-center border rounded w-full p-0.5 outline-none text-gray-700 imageName" 
+        <input class="mt-1 text-xs text-center border rounded w-full p-0.5 outline-none text-gray-700 imageName"
                value="${img.name || ""}" placeholder="Bildname hinzufügen">
         <div class="flex justify-center gap-1 mt-1">
           <button class="px-2 py-0.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition addDescBtn">🪄 KI</button>
@@ -2666,7 +2700,6 @@ function renderAIPreview(previewBox, quill, data, photos) {
         </div>
       `;
 
-      // 🔹 löschen
       card.querySelector(".delBtn").onclick = async (e) => {
         e.stopPropagation();
         if (!confirm("Bild wirklich löschen?")) return;
@@ -2676,7 +2709,7 @@ function renderAIPreview(previewBox, quill, data, photos) {
         renderExisting();
       };
 
-      // 🔹 Namen speichern + optional KI-Beschreibung vorschlagen
+      // Name ändern + optionale Bildstory anbieten
       card.querySelector(".imageName").addEventListener("change", async (e) => {
         const newName = e.target.value.trim();
         existingImages[idx].name = newName;
@@ -2685,30 +2718,27 @@ function renderAIPreview(previewBox, quill, data, photos) {
 
         if (newName.length > 2) {
           const suggestion = generatePhotoStory(newName);
-          if (confirm(`💬 KI-Vorschlag für "${newName}":\n\n${suggestion}\n\nZur Beschreibung hinzufügen?`)) {
+          if (confirm(`💬 Vorschlag für "${newName}":\n\n${suggestion}\n\nZur Beschreibung hinzufügen?`)) {
             const q = document.querySelector("#quillContainer .ql-editor");
             if (q) q.innerHTML += `<p>${suggestion}</p>`;
           }
         }
       });
 
-      // 🔹 Button für KI-Beschreibung
       card.querySelector(".addDescBtn").onclick = (e) => {
         e.stopPropagation();
         const name = existingImages[idx].name || `Foto ${idx + 1}`;
         const story = generatePhotoStory(name);
         const q = document.querySelector("#quillContainer .ql-editor");
         if (q) q.innerHTML += `<p>${story}</p>`;
-        showToast("✨ KI-Beschreibung hinzugefügt");
+        showToast("✨ Bildbeschreibung hinzugefügt");
       };
 
       preview.appendChild(card);
     });
   }
 
-  // 📤 Datei-Upload
   zone.addEventListener("click", (e) => {
-    // nur öffnen, wenn nicht auf ein Bild geklickt wurde
     if (e.target.id === "smartUploadZone" || e.target.tagName === "P") input.click();
   });
   zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("bg-green-100"); });
@@ -2760,7 +2790,6 @@ function renderAIPreview(previewBox, quill, data, photos) {
     }
   }
 
-  // 🔍 einfache Hashfunktion
   async function generateImageHash(file) {
     const img = document.createElement("img");
     const blobURL = URL.createObjectURL(file);
@@ -2780,19 +2809,24 @@ function renderAIPreview(previewBox, quill, data, photos) {
     return hash;
   }
 
-  // 🧠 KI-mäßige Story-Funktion
+  // 🧠 kleine lokale Story-Bausteine
   function generatePhotoStory(name) {
-    const n = name.toLowerCase();
-    if (n.includes("hof") || n.includes("farm")) return `🐄 Auf dem Bild "${name}" sieht man den idyllischen Hof, wo Natur, Tiere und Ruhe miteinander verschmelzen.`;
-    if (n.includes("huhn") || n.includes("hen")) return `🐓 "${name}" fängt die friedliche Atmosphäre der Hühner bei der Selbstbedienungshütte ein.`;
-    if (n.includes("huette") || n.includes("hut")) return `🏡 "${name}" zeigt unsere liebevoll gestaltete Hütte – ein Ort der Gemütlichkeit.`;
-    if (n.includes("ziege")) return `🐐 "${name}" erzählt von neugierigen Ziegen, die Besucher fröhlich begrüßen.`;
-    if (n.includes("landschaft")) return `🌅 "${name}" fängt die weite, sanfte Landschaft rund um den Hof ein – ein Stück heile Welt.`;
-    if (n.includes("automat")) return `🥚 "${name}" zeigt den Verkaufsautomaten, der frische Produkte jederzeit zugänglich macht.`;
-    return `📷 "${name}" zeigt einen besonderen Moment rund um die Eierhütte – voller Charme, Ruhe und ländlicher Idylle.`;
+    const lower = name.toLowerCase();
+    if (lower.includes("hof") || lower.includes("farm"))
+      return `🐄 "${name}" zeigt den Hof, wo Natur und Tiere im Einklang leben.`;
+    if (lower.includes("automat"))
+      return `🥚 "${name}" zeigt den Verkaufsautomaten, der rund um die Uhr regionale Produkte bereithält.`;
+    if (lower.includes("huette"))
+      return `🏡 "${name}" zeigt unsere liebevoll gestaltete Hütte – gemütlich und herzlich.`;
+    if (lower.includes("landschaft"))
+      return `🌅 "${name}" fängt die friedliche Landschaft rund um den Hof ein.`;
+    if (lower.includes("ziege"))
+      return `🐐 "${name}" erzählt von neugierigen Ziegen, die Besucher freundlich begrüßen.`;
+    if (lower.includes("huhn") || lower.includes("hen"))
+      return `🐓 "${name}" zeigt unsere glücklichen Hühner bei der Eierhütte.`;
+    return `📷 "${name}" hält einen besonderen Moment auf dem Hof fest – voller Ruhe und Landleben.`;
   }
-}
-
+    }
     // ==========================================================
 // 🕒 Öffnungszeiten Editor (RadlMap-Style)
 // ==========================================================
