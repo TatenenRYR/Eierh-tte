@@ -2618,13 +2618,13 @@ function renderAIPreview(previewBox, quill, data, photos) {
     previewBox.classList.add("hidden");
   };
 }
-async function renderSmartImageUploader(container, docRef, existingImages = [], entryId) {
+
+  async function renderSmartImageUploader(container, docRef, existingImages = [], entryId) {
   container.innerHTML = `
     <div class="bg-white rounded-xl shadow p-4">
       <h3 class="text-sm font-semibold mb-2">📸 Fotos verwalten</h3>
       <div id="smartUploadZone"
-           class="border-2 border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition 
-                  rounded-xl p-6 text-center cursor-pointer relative">
+           class="border-2 border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition rounded-xl p-6 text-center cursor-pointer relative select-none">
         <p class="text-gray-600 text-sm">Ziehe Bilder hierher oder klicke zum Hochladen</p>
         <input id="smartUploadInput" type="file" accept="image/*" multiple class="hidden">
         <div id="smartUploadPreview" class="flex flex-wrap gap-3 justify-center mt-3"></div>
@@ -2632,7 +2632,7 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
           <div id="smartUploadBar" class="h-1 bg-green-500 rounded transition-all" style="width:0%"></div>
         </div>
       </div>
-      <p class="text-xs text-gray-400 mt-2">💡 Ziehe mehrere Bilder rein – gleiche Fotos werden automatisch erkannt</p>
+      <p class="text-xs text-gray-400 mt-2">💡 Du kannst Bilder nachträglich benennen – KI-Beschreibungen helfen dir beim Text!</p>
     </div>
   `;
 
@@ -2642,109 +2642,125 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
   const bar = container.querySelector("#smartUploadBar");
   const barContainer = container.querySelector("#smartUploadProgress");
 
+  existingImages = existingImages.map(i => (typeof i === "string" ? { url: i, name: "" } : i));
   renderExisting();
 
   function renderExisting() {
     preview.innerHTML = "";
-    (existingImages || []).forEach(imgObj => {
-      const url = typeof imgObj === "string" ? imgObj : imgObj.url;
-      const name = typeof imgObj === "object" ? imgObj.name || "Unbenannt" : "Unbenannt";
+    if (!existingImages.length) {
+      preview.innerHTML = `<div class="text-sm text-gray-400">Keine Bilder vorhanden.</div>`;
+      return;
+    }
 
+    existingImages.forEach((img, idx) => {
       const card = document.createElement("div");
-      card.className = "relative group w-24 h-28 border rounded overflow-hidden shadow-sm bg-white flex flex-col items-center";
+      card.className = "relative group w-28 border rounded-xl overflow-hidden shadow-sm bg-white flex flex-col items-center p-1";
+
       card.innerHTML = `
-        <img src="${url}" class="object-cover w-full h-20">
-        <input class="text-xs text-center border-t w-full py-0.5 outline-none text-gray-700" value="${name}">
-        <button class="absolute top-1 right-1 bg-red-600 text-white text-xs rounded-full px-2 opacity-0 group-hover:opacity-100 transition">✕</button>
+        <img src="${img.url}" class="object-cover w-full h-20 rounded pointer-events-none">
+        <input class="mt-1 text-xs text-center border rounded w-full p-0.5 outline-none text-gray-700 imageName" 
+               value="${img.name || ""}" placeholder="Bildname hinzufügen">
+        <div class="flex justify-center gap-1 mt-1">
+          <button class="px-2 py-0.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition addDescBtn">🪄 KI</button>
+          <button class="px-2 py-0.5 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition delBtn">✕</button>
+        </div>
       `;
 
-      // 🗑️ Löschen
-      card.querySelector("button").addEventListener("click", async () => {
+      // 🔹 löschen
+      card.querySelector(".delBtn").onclick = async (e) => {
+        e.stopPropagation();
         if (!confirm("Bild wirklich löschen?")) return;
-        const updated = existingImages.filter(f => (f.url || f) !== url);
-        await docRef.update({ fotos: updated });
+        existingImages.splice(idx, 1);
+        await docRef.update({ fotos: existingImages });
         showToast("🗑️ Bild gelöscht");
-        existingImages = updated;
         renderExisting();
+      };
+
+      // 🔹 Namen speichern + optional KI-Beschreibung vorschlagen
+      card.querySelector(".imageName").addEventListener("change", async (e) => {
+        const newName = e.target.value.trim();
+        existingImages[idx].name = newName;
+        await docRef.update({ fotos: existingImages });
+        showToast("✏️ Bildname gespeichert");
+
+        if (newName.length > 2) {
+          const suggestion = generatePhotoStory(newName);
+          if (confirm(`💬 KI-Vorschlag für "${newName}":\n\n${suggestion}\n\nZur Beschreibung hinzufügen?`)) {
+            const q = document.querySelector("#quillContainer .ql-editor");
+            if (q) q.innerHTML += `<p>${suggestion}</p>`;
+          }
+        }
       });
 
-      // 🖊️ Name ändern
-      card.querySelector("input").addEventListener("change", async e => {
-        const newName = e.target.value.trim();
-        const updated = existingImages.map(f =>
-          (f.url || f) === url ? { url, name: newName } : f
-        );
-        existingImages = updated;
-        await docRef.update({ fotos: updated });
-        showToast("✏️ Bildname aktualisiert");
-      });
+      // 🔹 Button für KI-Beschreibung
+      card.querySelector(".addDescBtn").onclick = (e) => {
+        e.stopPropagation();
+        const name = existingImages[idx].name || `Foto ${idx + 1}`;
+        const story = generatePhotoStory(name);
+        const q = document.querySelector("#quillContainer .ql-editor");
+        if (q) q.innerHTML += `<p>${story}</p>`;
+        showToast("✨ KI-Beschreibung hinzugefügt");
+      };
 
       preview.appendChild(card);
     });
   }
 
-  // Upload Events
-  zone.addEventListener("click", () => input.click());
-  zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("bg-green-100"); });
+  // 📤 Datei-Upload
+  zone.addEventListener("click", (e) => {
+    // nur öffnen, wenn nicht auf ein Bild geklickt wurde
+    if (e.target.id === "smartUploadZone" || e.target.tagName === "P") input.click();
+  });
+  zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("bg-green-100"); });
   zone.addEventListener("dragleave", () => zone.classList.remove("bg-green-100"));
-  zone.addEventListener("drop", e => { e.preventDefault(); zone.classList.remove("bg-green-100"); handleFiles(e.dataTransfer.files); });
-  input.addEventListener("change", e => handleFiles(e.target.files));
+  zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("bg-green-100"); handleFiles(e.dataTransfer.files); });
+  input.addEventListener("change", (e) => handleFiles(e.target.files));
 
   async function handleFiles(files) {
     const list = Array.from(files);
-    if (!list.length) return;
-
     for (const file of list) {
       const hash = await generateImageHash(file);
-      if (existingImages.some(img => localStorage.getItem(img.url || img) === hash)) {
-        showToast("⚠️ Dieses Bild ist schon vorhanden – übersprungen");
+      if (existingImages.some(img => localStorage.getItem(img.url) === hash)) {
+        showToast("⚠️ Dieses Bild scheint schon vorhanden zu sein – wird übersprungen");
         continue;
       }
 
-      // Vorschau
       const reader = new FileReader();
       reader.onload = ev => {
-        const temp = document.createElement("div");
-        temp.className = "w-24 h-24 border rounded overflow-hidden relative";
-        temp.innerHTML = `<img src="${ev.target.result}" class="object-cover w-full h-full opacity-70">`;
-        preview.appendChild(temp);
+        const card = document.createElement("div");
+        card.className = "w-24 h-24 border rounded overflow-hidden";
+        card.innerHTML = `<img src="${ev.target.result}" class="object-cover w-full h-full opacity-70">`;
+        preview.appendChild(card);
       };
       reader.readAsDataURL(file);
 
-      // 💬 Beschreibungsvorschlag aus Dateinamen
-      const aiDesc = await generateSmartFileDescription(file.name);
-      if (aiDesc) {
-        const confirmText = `🧠 KI-Vorschlag: "${aiDesc}"\n\nZur Beschreibung hinzufügen?`;
-        if (confirm(confirmText)) {
-          const descField = document.querySelector("#quillContainer .ql-editor");
-          if (descField) descField.innerHTML += `<p>${aiDesc}</p>`;
-        }
-      }
-
-      // 📤 Upload
       barContainer.classList.remove("hidden");
       const formData = new FormData();
       formData.append("image", file);
+
       try {
         const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`, { method: "POST", body: formData });
         const data = await res.json();
         if (!data.success) throw new Error(data.error?.message || "Upload fehlgeschlagen");
 
-        const newImage = { url: data.data.url, name: file.name.replace(/\.[^/.]+$/, "") };
+        const baseName = file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ").trim();
+        const newImage = { url: data.data.url, name: baseName };
         existingImages.push(newImage);
         await docRef.update({ fotos: existingImages });
-        showToast("✅ Bild erfolgreich hochgeladen");
         localStorage.setItem(newImage.url, hash);
+        showToast(`✅ Bild "${baseName}" hochgeladen`);
+        renderExisting();
       } catch (err) {
         console.error(err);
-        showToast("❌ Upload-Fehler: " + err.message);
+        showToast("❌ Fehler: " + err.message);
       } finally {
         bar.style.width = "100%";
-        setTimeout(() => { bar.style.width = "0%"; barContainer.classList.add("hidden"); renderExisting(); }, 800);
+        setTimeout(() => { bar.style.width = "0%"; barContainer.classList.add("hidden"); }, 700);
       }
     }
   }
 
+  // 🔍 einfache Hashfunktion
   async function generateImageHash(file) {
     const img = document.createElement("img");
     const blobURL = URL.createObjectURL(file);
@@ -2757,31 +2773,26 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
     const pixels = ctx.getImageData(0, 0, 8, 8).data;
     let hash = "";
     for (let i = 0; i < pixels.length; i += 4) {
-      const avg = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
+      const avg = (pixels[i] + pixels[i+1] + pixels[i+2]) / 3;
       hash += avg > 127 ? "1" : "0";
     }
     URL.revokeObjectURL(blobURL);
     return hash;
   }
 
-  // 🧠 KI-Beschreibung basierend auf Dateinamen
-  async function generateSmartFileDescription(filename) {
-    const cleanName = filename.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ").toLowerCase();
-    const keywords = cleanName.split(" ");
-    let desc = "";
-
-    if (keywords.includes("kuh")) desc = "🐄 Eine friedliche Kuh auf der Wiese bei der Eierhütte.";
-    else if (keywords.includes("ziege")) desc = "🐐 Eine neugierige Ziege vor der Hütte.";
-    else if (keywords.includes("landschaft")) desc = "🌄 Malerische Landschaft rund um die Eierhütte.";
-    else if (keywords.includes("huette") || keywords.includes("hut")) desc = "🏡 Unsere charmante Eierhütte im Grünen.";
-    else if (keywords.includes("huhn")) desc = "🐓 Hühner genießen die Sonne neben der Hütte.";
-    else
-      desc = `📷 Ein Foto namens "${cleanName}" – möglicherweise ein einzigartiger Moment rund um die Hütte.`;
-
-    // KI-Veredelung
-    return `${desc} Das Foto "${cleanName}" trägt zur authentischen Atmosphäre der Eierhütte bei.`;
+  // 🧠 KI-mäßige Story-Funktion
+  function generatePhotoStory(name) {
+    const n = name.toLowerCase();
+    if (n.includes("hof") || n.includes("farm")) return `🐄 Auf dem Bild "${name}" sieht man den idyllischen Hof, wo Natur, Tiere und Ruhe miteinander verschmelzen.`;
+    if (n.includes("huhn") || n.includes("hen")) return `🐓 "${name}" fängt die friedliche Atmosphäre der Hühner bei der Selbstbedienungshütte ein.`;
+    if (n.includes("huette") || n.includes("hut")) return `🏡 "${name}" zeigt unsere liebevoll gestaltete Hütte – ein Ort der Gemütlichkeit.`;
+    if (n.includes("ziege")) return `🐐 "${name}" erzählt von neugierigen Ziegen, die Besucher fröhlich begrüßen.`;
+    if (n.includes("landschaft")) return `🌅 "${name}" fängt die weite, sanfte Landschaft rund um den Hof ein – ein Stück heile Welt.`;
+    if (n.includes("automat")) return `🥚 "${name}" zeigt den Verkaufsautomaten, der frische Produkte jederzeit zugänglich macht.`;
+    return `📷 "${name}" zeigt einen besonderen Moment rund um die Eierhütte – voller Charme, Ruhe und ländlicher Idylle.`;
   }
-  }
+}
+
     // ==========================================================
 // 🕒 Öffnungszeiten Editor (RadlMap-Style)
 // ==========================================================
