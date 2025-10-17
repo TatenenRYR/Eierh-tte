@@ -687,12 +687,8 @@ if (step === 2) {
             <div id="quillContainer" class="bg-white"></div>
           </div>`;
         setTimeout(() => {
-          // initialize quill and set content if exists
-          const quill = new Quill('#quillContainer', { theme: 'snow' });
-          if (editingData.beschreibung) quill.root.innerHTML = editingData.beschreibung;
-          // store on change
-          quill.on('text-change', () => { editingData.beschreibung = quill.root.innerHTML; });
-        }, 120);
+  initEnhancedEditor("quillContainer", editingData);
+}, 120);
         return;
       }
 
@@ -2504,93 +2500,73 @@ document.getElementById('generateDescBtn').onclick = () => {
     q.innerHTML = `<p>${newText}</p>`;
   });
 };
-/* === Lokaler, ausführlicher Textgenerator === */
 
-function generateSmartDescription(data, photos = [], style = "romantisch") {
-  const name = data.name || "dieser Ort";
-  const type = data.typ || "Ort";
-
-  const extras = data.extras ? `Hier gibt es ${data.extras}.` : "";
-  const tiere = Array.isArray(data.tiere) && data.tiere.length && !data.tiere.includes("Keine Tiere")
-    ? `Rund um ${name} leben ${data.tiere.join(", ")} – sie verleihen diesem Platz eine besondere Lebendigkeit.` : "";
-  const strom = data.strom === "Ja"
-    ? "Dieser Ort ist sogar mit Strom ausgestattet – ein kleines Detail mit großem Komfort." : "";
-  const sitz = data.sitzplaetze === "Ja"
-    ? "Gemütliche Sitzmöglichkeiten laden zum Verweilen ein." : "";
-
-  // 🖼️ intelligente Foto-Erzählung
-  let photoStory = "";
-  if (photos && photos.length) {
-    const namedPhotos = photos
-      .filter(p => typeof p === "object" && p.name && p.name.trim().length > 1)
-      .map(p => p.name.trim());
-
-    if (namedPhotos.length) {
-      // Erzählerischer Text mit wechselnden Satzanfängen
-      const openers = [
-        "Auf den Bildern erkennt man",
-        "Die Fotos zeigen eindrucksvoll",
-        "Ein Blick auf die Aufnahmen verrät",
-        "Wie man auf den Bildern sieht",
-        "Schon die Fotos von"
-      ];
-      const opener = openers[Math.floor(Math.random() * openers.length)];
-      const namesList = namedPhotos.slice(0, 3).join(", ");
-      const continuation = namedPhotos.length > 3
-        ? `und weitere Motive, die die Atmosphäre perfekt einfangen.`
-        : "– jedes Bild erzählt seine eigene kleine Geschichte.";
-
-      photoStory = `${opener} ${namesList} ${continuation}`;
-    } else {
-      photoStory = `Schon ein Blick auf die ${photos.length} Bild${photos.length > 1 ? "er" : ""} zeigt, mit wie viel Liebe dieser Ort gestaltet ist.`;
-    }
-  } else {
-    photoStory = "Auch ohne Bilder spürt man, dass hier Herzblut und Hingabe spürbar sind.";
-  }
-
-  // 🌿 verschiedene Erzählstile
-  const intros = [
-    `Zwischen Wiesen und Wäldern liegt ${name}, ein Ort, der mit seinem natürlichen Charme verzaubert.`,
-    `${name} ist mehr als nur ein ${type} – es ist ein kleines Stück ländlicher Geborgenheit.`,
-    `Inmitten sanfter Hügel und duftender Wiesen findet sich ${name}, wo die Zeit langsamer zu vergehen scheint.`,
-    `Wer das Echte sucht, wird bei ${name} fündig – ein Ort voller Herz und Geschichte.`
-  ];
-
-  const emotionalClosings = {
-    romantisch: [
-      "Ein Besuch hier ist wie eine kleine Reise in eine ruhigere Welt.",
-      "Hier spürt man die Nähe zur Natur und die Wärme echter Gastfreundschaft.",
-      "Ein Ort, an dem die Seele kurz durchatmet und der Alltag Pause macht."
-    ],
-    sachlich: [
-      "Dieser Ort steht für Qualität, Authentizität und regionale Werte.",
-      "Ein durchdachtes Konzept, das auf Nachhaltigkeit und Ehrlichkeit setzt.",
-      "Hier verbindet sich Tradition mit praktischer Einfachheit."
-    ],
-    kurz: [
-      "Authentisch. Regional. Herzlich.",
-      "Einfach. Echt. Besonders.",
-      "Ein Ort, den man erleben muss."
-    ]
-  };
-
-  // ✨ kleine zufällige Variationen, damit es nie gleich klingt
-  const intro = intros[Math.floor(Math.random() * intros.length)];
-  const outroSet = emotionalClosings[style] || emotionalClosings.romantisch;
-  const outro = outroSet[Math.floor(Math.random() * outroSet.length)];
-
-  // 🌼 finaler Text
-  const html = `
-    <p>${intro}</p>
-    <p>${photoStory}</p>
-    ${tiere ? `<p>${tiere}</p>` : ""}
-    ${(sitz || strom) ? `<p>${sitz} ${strom}</p>` : ""}
-    ${extras ? `<p>${extras}</p>` : ""}
-    <p>${outro}</p>
+// === Erweiterung für Beschreibung-Editor mit Undo/Redo + KI-Vorschlag ===
+function initEnhancedEditor(containerId, data) {
+  const editorContainer = document.getElementById(containerId);
+  const toolbar = document.createElement("div");
+  toolbar.id = "quillToolbar";
+  toolbar.className = "flex gap-2 mb-2";
+  toolbar.innerHTML = `
+    <button id="undoBtn" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">↩️ Rückgängig</button>
+    <button id="redoBtn" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">↪️ Wiederholen</button>
+    <button id="aiGenBtn" class="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700">🤖 KI-Beschreibung erstellen</button>
   `;
+  editorContainer.parentElement.insertBefore(toolbar, editorContainer);
 
-  return html.replace(/\s+/g, " ").trim();
+  // Quill initialisieren
+  const quill = new Quill(`#${containerId}`, { theme: "snow" });
+  if (data.beschreibung) quill.root.innerHTML = data.beschreibung;
+
+  // Verlauf speichern für Undo/Redo
+  const history = quill.getModule('history');
+
+  document.getElementById("undoBtn").addEventListener("click", () => history.undo());
+  document.getElementById("redoBtn").addEventListener("click", () => history.redo());
+
+  // Live speichern
+  quill.on("text-change", () => {
+    data.beschreibung = quill.root.innerHTML;
+  });
+
+  // KI-Beschreibung-Button
+  document.getElementById("aiGenBtn").addEventListener("click", async () => {
+    showToast("🧠 Erzeuge KI-Beschreibung...");
+    const fotos = data.fotos || [];
+    const nameList = fotos.map(url => decodeURIComponent(url.split('/').pop().split('.')[0])).slice(0, 5);
+    const kiText = await generateSmartDescription(data, nameList);
+    const confirmAdd = confirm("Neue KI-Beschreibung:\n\n" + kiText + "\n\n➡️ Möchtest du sie einfügen?");
+    if (confirmAdd) {
+      quill.root.innerHTML += `<p>${kiText}</p>`;
+      data.beschreibung = quill.root.innerHTML;
+    }
+  });
 }
+
+// === KI-Beschreibungslogik ===
+async function generateSmartDescription(data, imageNames = []) {
+  const name = data.name || "dieser Ort";
+  const typ = data.typ || "Ort";
+  const extras = data.extras ? `Hier findest du ${data.extras}.` : "";
+  const tiere = Array.isArray(data.tiere) && data.tiere.length && !data.tiere.includes("Keine Tiere")
+    ? `Rund um ${name} begegnen dir ${data.tiere.join(", ")}.`
+    : "";
+  const bilder = imageNames.length ? `Die Fotos zeigen ${imageNames.join(", ")}.` : "";
+  const zeit = new Date();
+  const stimmung = ["sonnig", "ruhig", "idyllisch", "lebendig", "gemütlich"][Math.floor(Math.random() * 5)];
+  const natur = ["grüne Wiesen", "duftende Blumen", "zwitschernde Vögel", "freundliche Tiere", "sanfte Hügel"][Math.floor(Math.random() * 5)];
+  const ende = ["Ein Ort zum Verweilen.", "Perfekt für eine kleine Pause.", "Hier spürt man die Nähe zur Natur.", "Ein Geheimtipp für Genießer.", "Ein Stück ländliche Idylle."];
+  
+  const text = `
+    ${name} ist ein ${stimmung}er ${typ} inmitten von ${natur}.
+    ${extras} ${tiere} ${bilder}
+    Wer hier vorbeikommt, erlebt einen Moment der Entschleunigung und Authentizität.
+    ${ende[Math.floor(Math.random() * ende.length)]}
+  `;
+  await new Promise(res => setTimeout(res, 300 + Math.random() * 300)); // kleine KI-Simulation
+  return text.trim().replace(/\s+/g, " ");
+}
+
 /* === 💫 KI-Vorschau mit Stil-Auswahl, Neu-Generieren & Übernehmen === */
 function attachAIDescriptionButton(quill, data, photos) {
   const container = document.querySelector("#quillContainer");
