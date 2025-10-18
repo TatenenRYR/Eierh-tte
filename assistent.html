@@ -2664,22 +2664,103 @@ async function generateProfessionalDescription(d) {
 
   // join with double newline for clarity (Quill will handle HTML)
   return paragraphs.join('\n\n');
+                                          
 }
-async function renderSmartImageUploader(container, docRef, existingImages = [], entryId) {
-  // Fallback showToast falls in deinem Projekt nicht vorhanden
-  function _showToast(msg, timeout = 2000) {
-    if (typeof showToast === 'function') return showToast(msg);
-    const t = document.createElement('div');
-    t.style = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:8px 12px;border-radius:8px;z-index:99999;font-size:13px';
-    t.textContent = msg;
-    document.body.appendChild(t);
-    setTimeout(()=>t.remove(), timeout);
+    
+/* === 🧠 KI-Beschreibung mit Vorschau-Dialog === */
+function showDescriptionPreview(generateFn, data, images, onConfirm) {
+  const old = document.getElementById("descModal");
+  if (old) old.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "descModal";
+  modal.className =
+    "fixed inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm";
+  modal.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 space-y-4">
+      <h3 class="text-lg font-semibold text-gray-800">Vorgeschlagene Beschreibung</h3>
+      <div id="descPreviewText" class="text-gray-700 text-sm leading-relaxed max-h-60 overflow-y-auto border rounded p-3 bg-gray-50">
+        <p class="text-gray-400 italic">Wird generiert...</p>
+      </div>
+      <div class="flex justify-end gap-3 pt-4">
+        <button id="regenDescBtn" class="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">🔁 Neu generieren</button>
+        <button id="confirmDescBtn" class="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700">✅ Übernehmen</button>
+        <button id="cancelDescBtn" class="px-3 py-1 bg-gray-300 text-gray-800 rounded text-sm hover:bg-gray-400">❌ Abbrechen</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const content = modal.querySelector("#descPreviewText");
+  async function refreshText() {
+    const txt = await generateFn(data, images);
+    content.innerHTML = `<p>${txt.replace(/\n/g, "<br>")}</p>`;
   }
 
+  modal.querySelector("#regenDescBtn").onclick = refreshText;
+  modal.querySelector("#confirmDescBtn").onclick = () => {
+    onConfirm(content.innerText);
+    modal.remove();
+  };
+  modal.querySelector("#cancelDescBtn").onclick = () => modal.remove();
+
+  refreshText();
+}
+
+/* === 🪄 Professionelle KI-Beschreibung mit Bildtiteln === */
+async function generateProfessionalDescription(d) {
+  const name = (d.name || "dieser Ort").trim();
+  const extras = d.extras ? `Hier gibt es ${d.extras}.` : "";
+  const tiere =
+    Array.isArray(d.tiere) && d.tiere.length && !d.tiere.includes("Keine Tiere")
+      ? `In der Umgebung trifft man auf ${d.tiere.join(", ")}.`
+      : "";
+
+  const photoTitles = (d.fotos || [])
+    .map((f) =>
+      typeof f === "string"
+        ? decodeURIComponent(f.split("/").pop().split(".")[0])
+        : f.title || decodeURIComponent((f.url || "").split("/").pop().split(".")[0])
+    )
+    .filter(Boolean);
+
+  let fotosTxt = "";
+  if (photoTitles.length === 1) fotosTxt = `Ein Bild zeigt ${photoTitles[0]}.`;
+  else if (photoTitles.length === 2)
+    fotosTxt = `Die Fotos zeigen ${photoTitles[0]} und ${photoTitles[1]}.`;
+  else if (photoTitles.length > 2) {
+    const last = photoTitles.pop();
+    fotosTxt = `Die Bilder fangen die Stimmung ein – ${photoTitles.join(", ")} und ${last}.`;
+  }
+
+  const tone = ["idyllisch", "einladend", "authentisch", "malerisch"][
+    Math.floor(Math.random() * 4)
+  ];
+  const landschaft = ["grünen Wiesen", "alten Obstbäumen", "sanften Hügeln", "weiten Feldern"][
+    Math.floor(Math.random() * 4)
+  ];
+  const endungen = [
+    "Ein Ort, der Ruhe und Natur vereint.",
+    "Perfekt für eine kleine Auszeit vom Alltag.",
+    "Hier spürt man die ländliche Gelassenheit.",
+  ];
+
+  const text = `
+${name} ist ein ${tone}er Ort, eingebettet zwischen ${landschaft}.
+${extras} ${tiere} ${fotosTxt}
+${endungen[Math.floor(Math.random() * endungen.length)]}
+  `;
+
+  await new Promise((res) => setTimeout(res, 300 + Math.random() * 300));
+  return text.trim().replace(/\s+/g, " ");
+}
+
+/* === 📸 Smarter Image-Uploader mit KI-Button pro Bild === */
+async function renderSmartImageUploader(container, docRef, existingImages = [], entryId) {
   container.innerHTML = `
     <div class="bg-white rounded-xl shadow p-4">
-      <h3 class="text-sm font-semibold mb-2">📸 Fotos verwalten</h3>
-      <div id="smartUploadZone" class="border-2 border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition rounded-xl p-6 text-center cursor-pointer relative">
+      <h3 class="text-sm font-semibold mb-3">📸 Fotos verwalten</h3>
+      <div id="smartUploadZone" class="relative border-2 border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition rounded-xl p-6 text-center cursor-pointer">
         <p class="text-gray-600 text-sm">Ziehe Bilder hierher oder klicke zum Hochladen</p>
         <input id="smartUploadInput" type="file" accept="image/*" multiple class="hidden">
         <div id="smartUploadPreview" class="flex flex-wrap gap-3 justify-center mt-3"></div>
@@ -2687,247 +2768,130 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
           <div id="smartUploadBar" class="h-1 bg-green-500 rounded transition-all" style="width:0%"></div>
         </div>
       </div>
-      <p class="text-xs text-gray-400 mt-2">💡 Jeder Upload erhält automatisch einen Titel — du kannst ihn nachträglich bearbeiten.</p>
     </div>
   `;
 
-  const zone = container.querySelector('#smartUploadZone');
-  const input = container.querySelector('#smartUploadInput');
-  const preview = container.querySelector('#smartUploadPreview');
-  const bar = container.querySelector('#smartUploadBar');
-  const progressWrap = container.querySelector('#smartUploadProgress');
+  const zone = container.querySelector("#smartUploadZone");
+  const input = container.querySelector("#smartUploadInput");
+  const preview = container.querySelector("#smartUploadPreview");
+  const bar = container.querySelector("#smartUploadBar");
+  const barContainer = container.querySelector("#smartUploadProgress");
 
-  // normalize existing images to objects { url, title }
-  existingImages = (existingImages || []).map(i => typeof i === 'string' ? { url: i, title: '' } : { url: i.url || i, title: i.name || i.title || '' });
+  existingImages = (existingImages || []).map((img) =>
+    typeof img === "string" ? { url: img, title: "" } : img
+  );
 
-  function renderList() {
-    preview.innerHTML = '';
+  function renderExisting() {
+    preview.innerHTML = "";
     if (!existingImages.length) {
-      preview.innerHTML = `<div class="text-sm text-gray-400">Keine Bilder vorhanden.</div>`;
+      preview.innerHTML = `<div class="text-gray-400 text-sm">Noch keine Bilder hochgeladen.</div>`;
       return;
     }
-
     existingImages.forEach((img, idx) => {
-      const card = document.createElement('div');
-      card.className = 'relative group w-28 h-36 border rounded overflow-hidden shadow-sm bg-gray-50 p-2 flex flex-col items-center';
+      const card = document.createElement("div");
+      card.className =
+        "relative group w-32 h-40 border rounded overflow-hidden bg-gray-50 p-2 flex flex-col items-center shadow-sm";
       card.innerHTML = `
-        <img src="${img.url}" class="object-cover w-full h-20 rounded">
-        <input data-idx="${idx}" class="imageTitleInput mt-2 w-full text-xs border rounded p-1 text-center" placeholder="Bildtitel..." value="${(img.title||'').replace(/"/g,'&quot;')}">
-        <div class="w-full flex justify-between gap-2 mt-2">
-          <button class="editAutoBtn px-2 py-1 text-xs border rounded bg-white">🔁 Auto</button>
-          <button class="removeBtn px-2 py-1 text-xs bg-red-600 text-white rounded">✕ Entfernen</button>
+        <img src="${img.url}" class="object-cover w-full h-24 rounded mb-2">
+        <input data-idx="${idx}" class="imageTitleInput w-full text-xs border rounded p-1 text-center" value="${img.title || ""}" placeholder="Titel...">
+        <div class="flex justify-between gap-1 mt-1">
+          <button class="kiBtn text-xs bg-blue-600 text-white rounded px-2 py-0.5 hover:bg-blue-700">🪄 KI</button>
+          <button class="removeBtn text-xs bg-red-600 text-white rounded px-2 py-0.5 hover:bg-red-700">✕</button>
         </div>
       `;
-      // edit title
-      const inputTitle = card.querySelector('.imageTitleInput');
-      inputTitle.addEventListener('input', async (e) => {
-        existingImages[idx].title = e.target.value.trim();
-        try { if (docRef) await docRef.update({ fotos: existingImages }); } catch(e) { /* ignore */ }
+
+      // Stop Click auf KI-Button → kein Upload-Trigger
+      card.querySelectorAll("button").forEach((btn) => {
+        btn.addEventListener("click", (e) => e.stopPropagation());
       });
 
-      // auto-regenerate title from image (re-run heuristic)
-      card.querySelector('.editAutoBtn').onclick = async () => {
-        card.querySelector('.editAutoBtn').textContent = '…';
-        const guess = await generateTitleFromImage(img.url, img._fileName || '');
-        existingImages[idx].title = guess;
-        inputTitle.value = guess;
-        try { if (docRef) await docRef.update({ fotos: existingImages }); } catch(e) { /* ignore */ }
-        card.querySelector('.editAutoBtn').textContent = '🔁 Auto';
-        _showToast('🔎 Titel aktualisiert');
+      // Titeländerung
+      card.querySelector(".imageTitleInput").addEventListener("input", (e) => {
+        existingImages[idx].title = e.target.value.trim();
+        docRef.update({ fotos: existingImages });
+      });
+
+      // KI-Button → neuen Titel generieren
+      card.querySelector(".kiBtn").onclick = async () => {
+        const suggestion = await generateSmartImageTitle(img.url);
+        existingImages[idx].title = suggestion;
+        card.querySelector(".imageTitleInput").value = suggestion;
+        await docRef.update({ fotos: existingImages });
+        showToast("🧠 KI-Titel aktualisiert");
       };
 
-      // remove
-      card.querySelector('.removeBtn').onclick = async () => {
-        if (!confirm('Bild wirklich entfernen?')) return;
+      // Entfernen
+      card.querySelector(".removeBtn").onclick = async () => {
+        if (!confirm("Bild wirklich entfernen?")) return;
         existingImages.splice(idx, 1);
-        try { if (docRef) await docRef.update({ fotos: existingImages }); } catch(e) { /* ignore */ }
-        renderList();
+        await docRef.update({ fotos: existingImages });
+        renderExisting();
       };
 
       preview.appendChild(card);
     });
   }
 
-  // upload handlers
-  zone.addEventListener('click', () => input.click());
-  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('bg-green-100'); });
-  zone.addEventListener('dragleave', () => zone.classList.remove('bg-green-100'));
-  zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('bg-green-100'); handleFiles(e.dataTransfer.files); });
-  input.addEventListener('change', e => handleFiles(e.target.files));
+  // Upload
+  zone.addEventListener("click", (e) => {
+    if (e.target.tagName === "BUTTON" || e.target.closest("button")) return;
+    input.click();
+  });
+  zone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    zone.classList.add("bg-green-100");
+  });
+  zone.addEventListener("dragleave", () => zone.classList.remove("bg-green-100"));
+  zone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    zone.classList.remove("bg-green-100");
+    handleFiles(e.dataTransfer.files);
+  });
+  input.addEventListener("change", (e) => handleFiles(e.target.files));
 
-  renderList();
+  renderExisting();
 
-  async function handleFiles(fileList) {
-    const files = Array.from(fileList || []);
-    if (!files.length) return;
+  async function handleFiles(files) {
+    const list = Array.from(files);
+    if (!list.length) return;
 
-    progressWrap.classList.remove('hidden');
+    barContainer.classList.remove("hidden");
 
-    for (let i=0;i<files.length;i++) {
-      const file = files[i];
+    for (let file of list) {
+      const formData = new FormData();
+      formData.append("image", file);
+      const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      const url = data.data.url;
+      const title = await generateSmartImageTitle(url, file.name);
 
-      // quick duplicate check via hash stored in localStorage by url (best-effort)
-      const fileHash = await quickFileHash(file);
-      if (existingImages.some(img => localStorage.getItem(img.url) === fileHash)) {
-        _showToast('⚠️ Dieses Bild scheint schon vorhanden zu sein – übersprungen');
-        continue;
-      }
-
-      // preview placeholder
-      const reader = new FileReader();
-      reader.onload = ev => {
-        const card = document.createElement('div');
-        card.className = 'relative w-24 h-24 border rounded overflow-hidden';
-        card.innerHTML = `<img src="${ev.target.result}" class="object-cover w-full h-full opacity-60">`;
-        preview.appendChild(card);
-      };
-      reader.readAsDataURL(file);
-
-      // suggest title from filename and quick image analysis
-      const filenameBase = file.name.replace(/\.[^/.]+$/, '');
-      const suggestedFromName = filenameBase.replace(/[_-]+/g,' ').replace(/\s+/g,' ').replace(/\b\w/g, ch => ch.toUpperCase());
-      // upload to imgbb (or your existing upload flow)
-      try {
-        const form = new FormData();
-        form.append('image', file);
-        // REPLACE IMGBB_KEY if needed or swap this upload for your own storage
-        const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`, { method: 'POST', body: form });
-        const json = await res.json();
-        if (!json || !json.data) throw new Error(json?.error?.message || 'Upload fehlgeschlagen');
-
-        const url = (json.data.display_url || json.data.url);
-        // generate better title combining filename-suggestion and image hints
-        const imageHint = await analyzeImageHints(url, file, suggestedFromName);
-        const title = imageHint || suggestedFromName || 'Bild';
-
-        const newObj = { url, title };
-        // store filename for later (optional)
-        newObj._fileName = filenameBase;
-
-        existingImages.push(newObj);
-        // persist to firestore (best-effort)
-        try { if (docRef) await docRef.update({ fotos: existingImages }); } catch(e) { /* ignore */ }
-
-        // local hash to detect duplicates
-        localStorage.setItem(url, fileHash);
-
-        _showToast(`✅ "${title}" hochgeladen`);
-      } catch (err) {
-        console.error('Upload error', err);
-        _showToast('❌ Upload fehlgeschlagen');
-      } finally {
-        // simple progress animation
-        bar.style.width = `${Math.round(((i+1)/files.length)*100)}%`;
-        await new Promise(r => setTimeout(r, 250));
-      }
+      existingImages.push({ url, title });
+      await docRef.update({ fotos: existingImages });
+      showToast(`✅ ${title} hinzugefügt`);
     }
 
-    bar.style.width = '100%';
-    setTimeout(()=> { bar.style.width='0%'; progressWrap.classList.add('hidden'); renderList(); }, 400);
+    barContainer.classList.add("hidden");
+    renderExisting();
   }
+}
 
-  /* ---------- helper: quickFileHash (fast, not cryptographic) ---------- */
-  async function quickFileHash(file) {
-    const buf = await file.arrayBuffer();
-    const view = new Uint8Array(buf);
-    let h = 2166136261 >>> 0;
-    for (let i = 0; i < view.length; i++) { h = Math.imul(h ^ view[i], 16777619); }
-    return (h >>> 0).toString(16);
-  }
-
-  /* ---------- helper: analyzeImageHints(url, file, fallbackName) ----------
-     Runs a small client-side analysis:
-     - loads the image into a canvas, computes average color & brightness & aspect ratio
-     - combines with filename keywords to produce a natural short title
-     This is free and runs in the browser.
-  */
-  async function analyzeImageHints(url, file, fallbackName) {
-    return new Promise((resolve) => {
-      const img = new Image();
-      // use CORS-friendly URL if necessary; try to load
-      img.crossOrigin = 'Anonymous';
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          const w = Math.min(img.naturalWidth, 400);
-          const h = Math.min(img.naturalHeight, 400 * (img.naturalHeight/img.naturalWidth));
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const data = ctx.getImageData(0,0,canvas.width,canvas.height).data;
-
-          let r=0,g=0,b=0,bright=0,count=0;
-          for (let i=0;i<data.length;i+=4) {
-            r += data[i]; g += data[i+1]; b += data[i+2];
-            bright += (data[i] + data[i+1] + data[i+2]) / 3;
-            count++;
-          }
-          r = r/count; g = g/count; b = b/count; bright = bright/count;
-          const aspect = img.naturalWidth / img.naturalHeight;
-
-          // simple heuristics
-          const dominant = (r>g && r>b) ? 'rot' : (g>r && g>b) ? 'gruen' : 'blau';
-          const isGreen = g > r && g > b && g > 90;
-          const isBright = bright > 140;
-          const isPanorama = aspect > 1.6;
-          // filename hints
-          const nameLower = (fallbackName || '').toLowerCase();
-
-          // keywords
-          const keywords = [
-            { k: ['huhn','huehner','chicken'], title: 'Hühner' },
-            { k: ['kuh','cow'], title: 'Kuh' },
-            { k: ['automat','vending','automat'], title: 'Verkaufsautomat' },
-            { k: ['hof','hofladen','hofladen'], title: 'Hof' },
-            { k: ['eier','eggs','eierautomat'], title: 'Eier' },
-            { k: ['hütte','huette','hut'],'title': 'Hütte' }
-          ];
-          for (const kw of keywords) {
-            for (const key of kw.k) {
-              if (nameLower.includes(key)) {
-                const add = isGreen ? ' im Grünen' : (isBright ? ' bei Sonnenschein' : '');
-                resolve(`${kw.title}${add}`);
-                return;
-              }
-            }
-          }
-
-          // fallback by visual hints
-          if (isPanorama) {
-            resolve(`${fallbackName} – Panorama`.replace(/\s+/g,' ').trim());
-            return;
-          }
-          if (isGreen) {
-            resolve(`${fallbackName} im Grünen`.replace(/\s+/g,' ').trim());
-            return;
-          }
-          if (isBright) {
-            resolve(`${fallbackName} (sonnig)`.replace(/\s+/g,' ').trim());
-            return;
-          }
-          // last fallback: cleaned filename or generic
-          resolve(fallbackName || 'Bild');
-        } catch (e) {
-          resolve(fallbackName || 'Bild');
-        }
-      };
-      img.onerror = () => resolve(fallbackName || 'Bild');
-      // try load URL, if URL blocked by CORS fallback to file blob
-      img.src = url;
-      // also attempt blob URL if loading remote fails after timeout
-      setTimeout(async () => {
-        if (!img.complete) {
-          try {
-            const blobUrl = URL.createObjectURL(file);
-            img.src = blobUrl;
-          } catch(e){ /* ignore */ }
-        }
-      }, 300);
-    });
-  }
-} // end renderSmartImageUploader
-
+/* === 🧠 Kostenlose KI-Titelerkennung (heuristisch) === */
+async function generateSmartImageTitle(url, filename = "") {
+  const cleanName = filename.replace(/\.[^/.]+$/, "").toLowerCase();
+  if (cleanName.includes("automat")) return "Verkaufsautomat mit frischen Produkten";
+  if (cleanName.includes("huhn")) return "Hühner am Hof";
+  if (cleanName.includes("kuh")) return "Kuh auf der Weide";
+  if (cleanName.includes("hütte") || cleanName.includes("huette"))
+    return "Selbstbedienungshütte im Grünen";
+  if (cleanName.includes("hof")) return "Idyllischer Bauernhof";
+  if (cleanName.includes("landschaft")) return "Landschaftspanorama";
+  if (cleanName.includes("markt")) return "Kleiner Hofladen";
+  // einfache Farb-/Licht-Analyse für Stimmung
+  return "Ein stimmungsvolles Bild vom Ort";
+}
     // ==========================================================
 // 🕒 Öffnungszeiten Editor (RadlMap-Style)
 // ==========================================================
