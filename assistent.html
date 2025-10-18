@@ -2366,32 +2366,7 @@ async function openEditPage(id) {
   }
 }
 
-/* === KI-Beschreibungsgenerator (professionell & emotional) === */
-async function generateProfessionalDescription(d, fotos = []) {
-  const name = d.name || "dieser Ort";
-  const typ = d.typ || "Ort";
-  const extras = d.extras ? `Hier gibt es ${d.extras}.` : "";
-  const tiere = Array.isArray(d.tiere) && d.tiere.length && !d.tiere.includes("Keine Tiere")
-    ? `Rund um ${name} kannst du ${d.tiere.join(", ")} entdecken.`
-    : "";
-  const fotosTxt = fotos.length ? `Die Bilder zeigen ${fotos.length} Impressionen – von ${fotos.map(f => decodeURIComponent(f.split("/").pop().split(".")[0])).join(", ")}.` : "";
 
-  const atmos = ["idyllisch", "einladend", "malerisch", "rustikal", "herzlich"][Math.floor(Math.random() * 5)];
-  const natur = ["weiten Feldern", "duftenden Wiesen", "sanften Hügeln", "alten Obstbäumen", "glitzernden Bächen"][Math.floor(Math.random() * 5)];
-  const end = [
-    "Ein Ort, an dem Zeit keine Rolle spielt.",
-    "Hier spürt man die Liebe zur Natur.",
-    "Ein Platz, der einfach glücklich macht.",
-    "Wo Ruhe, Genuss und Herzlichkeit aufeinandertreffen.",
-  ];
-
-  return `
-    ${name} ist ein ${atmos}er ${typ}, eingebettet zwischen ${natur}.
-    ${extras} ${tiere} ${fotosTxt}
-    Wer hier verweilt, erlebt ehrliche Gastfreundschaft und ein Stück echtes Landleben.
-    ${end[Math.floor(Math.random() * end.length)]}
-  `.trim().replace(/\s+/g, " ");
-}
 
 /* === 💫 Vorschau mit Stil-Auswahl & Neu-Generieren === */
 function showAIDescriptionPreview(generateFn, data, photos, onConfirm) {
@@ -2650,12 +2625,61 @@ function renderAIPreview(previewBox, quill, data, photos) {
     previewBox.classList.add("hidden");
   };
 }
+/* === Kostenloser, smarter Image-Uploader mit automatischer Titel-Generierung ===
+   - Speichert images als { url, title } in Firestore
+   - Erzeugt Titel aus Dateiname + einfacher Bildanalyse (Farben/Helligkeit/Aspect)
+   - Titel sind editierbar nach Upload
+   - Keine externe KI erforderlich
+*/
+    /* === Professionelle Beschreibung, die Bildtitel nutzt === */
+async function generateProfessionalDescription(d) {
+  const name = (d.name || 'dieser Ort').trim();
+  const extras = d.extras ? `Hier gibt es ${d.extras}.` : '';
+  const tiere = Array.isArray(d.tiere) && d.tiere.length && !d.tiere.includes('Keine Tiere')
+    ? `Rund um ${name} kannst du ${d.tiere.join(', ')} entdecken.` : '';
+
+  // fotos kann array von {url, title} oder strings sein
+  const photoTitles = (d.fotos || []).map(f => typeof f === 'string' ? (decodeURIComponent(f.split('/').pop().split('.')[0]) || '') : (f.title || f.name || decodeURIComponent((f.url||'').split('/').pop().split('.')[0]) || '')).filter(Boolean);
+
+  let fotosTxt = '';
+  if (photoTitles.length === 1) fotosTxt = `Auf einem Foto sieht man ${photoTitles[0]}.`;
+  else if (photoTitles.length === 2) fotosTxt = `Die Fotos zeigen ${photoTitles[0]} und ${photoTitles[1]}.`;
+  else if (photoTitles.length > 2) {
+    const last = photoTitles[photoTitles.length-1];
+    const rest = photoTitles.slice(0,-1).join(', ');
+    fotosTxt = `Die Bilder fangen die Stimmung ein – ${rest} und ${last}.`;
+  }
+
+  const tone = ['idyllisch', 'einladend', 'malerisch', 'authentisch'][Math.floor(Math.random()*4)];
+  const landscape = ['weiten Wiesen', 'alten Obstbäumen', 'sanften Hügeln', 'duftenden Feldern'][Math.floor(Math.random()*4)];
+  const ending = ['Ein Ort zum Verweilen.', 'Hier spürt man die Liebe zur Natur.', 'Ein Platz, der Ruhe und Genuss vereint.'];
+
+  // build multi-paragraph, professional text
+  const paragraphs = [];
+  paragraphs.push(`${name} ist ein ${tone}er Ort, eingebettet zwischen ${landscape}.`);
+  if (extras) paragraphs.push(extras);
+  if (tiere) paragraphs.push(tiere);
+  if (fotosTxt) paragraphs.push(fotosTxt);
+  paragraphs.push(ending[Math.floor(Math.random()*ending.length)]);
+
+  // join with double newline for clarity (Quill will handle HTML)
+  return paragraphs.join('\n\n');
+}
 async function renderSmartImageUploader(container, docRef, existingImages = [], entryId) {
+  // Fallback showToast falls in deinem Projekt nicht vorhanden
+  function _showToast(msg, timeout = 2000) {
+    if (typeof showToast === 'function') return showToast(msg);
+    const t = document.createElement('div');
+    t.style = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:8px 12px;border-radius:8px;z-index:99999;font-size:13px';
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(()=>t.remove(), timeout);
+  }
+
   container.innerHTML = `
     <div class="bg-white rounded-xl shadow p-4">
       <h3 class="text-sm font-semibold mb-2">📸 Fotos verwalten</h3>
-      <div id="smartUploadZone"
-           class="border-2 border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition rounded-xl p-6 text-center cursor-pointer relative select-none">
+      <div id="smartUploadZone" class="border-2 border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition rounded-xl p-6 text-center cursor-pointer relative">
         <p class="text-gray-600 text-sm">Ziehe Bilder hierher oder klicke zum Hochladen</p>
         <input id="smartUploadInput" type="file" accept="image/*" multiple class="hidden">
         <div id="smartUploadPreview" class="flex flex-wrap gap-3 justify-center mt-3"></div>
@@ -2663,167 +2687,247 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
           <div id="smartUploadBar" class="h-1 bg-green-500 rounded transition-all" style="width:0%"></div>
         </div>
       </div>
-      <p class="text-xs text-gray-400 mt-2">💡 Du kannst Bilder nachträglich benennen – diese Namen nutzt die KI später automatisch in der Hauptbeschreibung.</p>
+      <p class="text-xs text-gray-400 mt-2">💡 Jeder Upload erhält automatisch einen Titel — du kannst ihn nachträglich bearbeiten.</p>
     </div>
   `;
 
-  const zone = container.querySelector("#smartUploadZone");
-  const input = container.querySelector("#smartUploadInput");
-  const preview = container.querySelector("#smartUploadPreview");
-  const bar = container.querySelector("#smartUploadBar");
-  const barContainer = container.querySelector("#smartUploadProgress");
+  const zone = container.querySelector('#smartUploadZone');
+  const input = container.querySelector('#smartUploadInput');
+  const preview = container.querySelector('#smartUploadPreview');
+  const bar = container.querySelector('#smartUploadBar');
+  const progressWrap = container.querySelector('#smartUploadProgress');
 
-  existingImages = existingImages.map(i => (typeof i === "string" ? { url: i, name: "" } : i));
-  renderExisting();
+  // normalize existing images to objects { url, title }
+  existingImages = (existingImages || []).map(i => typeof i === 'string' ? { url: i, title: '' } : { url: i.url || i, title: i.name || i.title || '' });
 
-  function renderExisting() {
-    preview.innerHTML = "";
+  function renderList() {
+    preview.innerHTML = '';
     if (!existingImages.length) {
       preview.innerHTML = `<div class="text-sm text-gray-400">Keine Bilder vorhanden.</div>`;
       return;
     }
 
     existingImages.forEach((img, idx) => {
-      const card = document.createElement("div");
-      card.className = "relative group w-28 border rounded-xl overflow-hidden shadow-sm bg-white flex flex-col items-center p-1";
-
+      const card = document.createElement('div');
+      card.className = 'relative group w-28 h-36 border rounded overflow-hidden shadow-sm bg-gray-50 p-2 flex flex-col items-center';
       card.innerHTML = `
-        <img src="${img.url}" class="object-cover w-full h-20 rounded pointer-events-none">
-        <input class="mt-1 text-xs text-center border rounded w-full p-0.5 outline-none text-gray-700 imageName"
-               value="${img.name || ""}" placeholder="Bildname hinzufügen">
-        <div class="flex justify-center gap-1 mt-1">
-          <button class="px-2 py-0.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition addDescBtn">🪄 KI</button>
-          <button class="px-2 py-0.5 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition delBtn">✕</button>
+        <img src="${img.url}" class="object-cover w-full h-20 rounded">
+        <input data-idx="${idx}" class="imageTitleInput mt-2 w-full text-xs border rounded p-1 text-center" placeholder="Bildtitel..." value="${(img.title||'').replace(/"/g,'&quot;')}">
+        <div class="w-full flex justify-between gap-2 mt-2">
+          <button class="editAutoBtn px-2 py-1 text-xs border rounded bg-white">🔁 Auto</button>
+          <button class="removeBtn px-2 py-1 text-xs bg-red-600 text-white rounded">✕ Entfernen</button>
         </div>
       `;
-
-      card.querySelector(".delBtn").onclick = async (e) => {
-        e.stopPropagation();
-        if (!confirm("Bild wirklich löschen?")) return;
-        existingImages.splice(idx, 1);
-        await docRef.update({ fotos: existingImages });
-        showToast("🗑️ Bild gelöscht");
-        renderExisting();
-      };
-
-      // Name ändern + optionale Bildstory anbieten
-      card.querySelector(".imageName").addEventListener("change", async (e) => {
-        const newName = e.target.value.trim();
-        existingImages[idx].name = newName;
-        await docRef.update({ fotos: existingImages });
-        showToast("✏️ Bildname gespeichert");
-
-        if (newName.length > 2) {
-          const suggestion = generatePhotoStory(newName);
-          if (confirm(`💬 Vorschlag für "${newName}":\n\n${suggestion}\n\nZur Beschreibung hinzufügen?`)) {
-            const q = document.querySelector("#quillContainer .ql-editor");
-            if (q) q.innerHTML += `<p>${suggestion}</p>`;
-          }
-        }
+      // edit title
+      const inputTitle = card.querySelector('.imageTitleInput');
+      inputTitle.addEventListener('input', async (e) => {
+        existingImages[idx].title = e.target.value.trim();
+        try { if (docRef) await docRef.update({ fotos: existingImages }); } catch(e) { /* ignore */ }
       });
 
-      card.querySelector(".addDescBtn").onclick = (e) => {
-        e.stopPropagation();
-        const name = existingImages[idx].name || `Foto ${idx + 1}`;
-        const story = generatePhotoStory(name);
-        const q = document.querySelector("#quillContainer .ql-editor");
-        if (q) q.innerHTML += `<p>${story}</p>`;
-        showToast("✨ Bildbeschreibung hinzugefügt");
+      // auto-regenerate title from image (re-run heuristic)
+      card.querySelector('.editAutoBtn').onclick = async () => {
+        card.querySelector('.editAutoBtn').textContent = '…';
+        const guess = await generateTitleFromImage(img.url, img._fileName || '');
+        existingImages[idx].title = guess;
+        inputTitle.value = guess;
+        try { if (docRef) await docRef.update({ fotos: existingImages }); } catch(e) { /* ignore */ }
+        card.querySelector('.editAutoBtn').textContent = '🔁 Auto';
+        _showToast('🔎 Titel aktualisiert');
+      };
+
+      // remove
+      card.querySelector('.removeBtn').onclick = async () => {
+        if (!confirm('Bild wirklich entfernen?')) return;
+        existingImages.splice(idx, 1);
+        try { if (docRef) await docRef.update({ fotos: existingImages }); } catch(e) { /* ignore */ }
+        renderList();
       };
 
       preview.appendChild(card);
     });
   }
 
-  zone.addEventListener("click", (e) => {
-    if (e.target.id === "smartUploadZone" || e.target.tagName === "P") input.click();
-  });
-  zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("bg-green-100"); });
-  zone.addEventListener("dragleave", () => zone.classList.remove("bg-green-100"));
-  zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("bg-green-100"); handleFiles(e.dataTransfer.files); });
-  input.addEventListener("change", (e) => handleFiles(e.target.files));
+  // upload handlers
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('bg-green-100'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('bg-green-100'));
+  zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('bg-green-100'); handleFiles(e.dataTransfer.files); });
+  input.addEventListener('change', e => handleFiles(e.target.files));
 
-  async function handleFiles(files) {
-    const list = Array.from(files);
-    for (const file of list) {
-      const hash = await generateImageHash(file);
-      if (existingImages.some(img => localStorage.getItem(img.url) === hash)) {
-        showToast("⚠️ Dieses Bild scheint schon vorhanden zu sein – wird übersprungen");
+  renderList();
+
+  async function handleFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+
+    progressWrap.classList.remove('hidden');
+
+    for (let i=0;i<files.length;i++) {
+      const file = files[i];
+
+      // quick duplicate check via hash stored in localStorage by url (best-effort)
+      const fileHash = await quickFileHash(file);
+      if (existingImages.some(img => localStorage.getItem(img.url) === fileHash)) {
+        _showToast('⚠️ Dieses Bild scheint schon vorhanden zu sein – übersprungen');
         continue;
       }
 
+      // preview placeholder
       const reader = new FileReader();
       reader.onload = ev => {
-        const card = document.createElement("div");
-        card.className = "w-24 h-24 border rounded overflow-hidden";
-        card.innerHTML = `<img src="${ev.target.result}" class="object-cover w-full h-full opacity-70">`;
+        const card = document.createElement('div');
+        card.className = 'relative w-24 h-24 border rounded overflow-hidden';
+        card.innerHTML = `<img src="${ev.target.result}" class="object-cover w-full h-full opacity-60">`;
         preview.appendChild(card);
       };
       reader.readAsDataURL(file);
 
-      barContainer.classList.remove("hidden");
-      const formData = new FormData();
-      formData.append("image", file);
-
+      // suggest title from filename and quick image analysis
+      const filenameBase = file.name.replace(/\.[^/.]+$/, '');
+      const suggestedFromName = filenameBase.replace(/[_-]+/g,' ').replace(/\s+/g,' ').replace(/\b\w/g, ch => ch.toUpperCase());
+      // upload to imgbb (or your existing upload flow)
       try {
-        const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`, { method: "POST", body: formData });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error?.message || "Upload fehlgeschlagen");
+        const form = new FormData();
+        form.append('image', file);
+        // REPLACE IMGBB_KEY if needed or swap this upload for your own storage
+        const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`, { method: 'POST', body: form });
+        const json = await res.json();
+        if (!json || !json.data) throw new Error(json?.error?.message || 'Upload fehlgeschlagen');
 
-        const baseName = file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ").trim();
-        const newImage = { url: data.data.url, name: baseName };
-        existingImages.push(newImage);
-        await docRef.update({ fotos: existingImages });
-        localStorage.setItem(newImage.url, hash);
-        showToast(`✅ Bild "${baseName}" hochgeladen`);
-        renderExisting();
+        const url = (json.data.display_url || json.data.url);
+        // generate better title combining filename-suggestion and image hints
+        const imageHint = await analyzeImageHints(url, file, suggestedFromName);
+        const title = imageHint || suggestedFromName || 'Bild';
+
+        const newObj = { url, title };
+        // store filename for later (optional)
+        newObj._fileName = filenameBase;
+
+        existingImages.push(newObj);
+        // persist to firestore (best-effort)
+        try { if (docRef) await docRef.update({ fotos: existingImages }); } catch(e) { /* ignore */ }
+
+        // local hash to detect duplicates
+        localStorage.setItem(url, fileHash);
+
+        _showToast(`✅ "${title}" hochgeladen`);
       } catch (err) {
-        console.error(err);
-        showToast("❌ Fehler: " + err.message);
+        console.error('Upload error', err);
+        _showToast('❌ Upload fehlgeschlagen');
       } finally {
-        bar.style.width = "100%";
-        setTimeout(() => { bar.style.width = "0%"; barContainer.classList.add("hidden"); }, 700);
+        // simple progress animation
+        bar.style.width = `${Math.round(((i+1)/files.length)*100)}%`;
+        await new Promise(r => setTimeout(r, 250));
       }
     }
+
+    bar.style.width = '100%';
+    setTimeout(()=> { bar.style.width='0%'; progressWrap.classList.add('hidden'); renderList(); }, 400);
   }
 
-  async function generateImageHash(file) {
-    const img = document.createElement("img");
-    const blobURL = URL.createObjectURL(file);
-    img.src = blobURL;
-    await new Promise(res => img.onload = res);
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    canvas.width = 8; canvas.height = 8;
-    ctx.drawImage(img, 0, 0, 8, 8);
-    const pixels = ctx.getImageData(0, 0, 8, 8).data;
-    let hash = "";
-    for (let i = 0; i < pixels.length; i += 4) {
-      const avg = (pixels[i] + pixels[i+1] + pixels[i+2]) / 3;
-      hash += avg > 127 ? "1" : "0";
-    }
-    URL.revokeObjectURL(blobURL);
-    return hash;
+  /* ---------- helper: quickFileHash (fast, not cryptographic) ---------- */
+  async function quickFileHash(file) {
+    const buf = await file.arrayBuffer();
+    const view = new Uint8Array(buf);
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < view.length; i++) { h = Math.imul(h ^ view[i], 16777619); }
+    return (h >>> 0).toString(16);
   }
 
-  // 🧠 kleine lokale Story-Bausteine
-  function generatePhotoStory(name) {
-    const lower = name.toLowerCase();
-    if (lower.includes("hof") || lower.includes("farm"))
-      return `🐄 "${name}" zeigt den Hof, wo Natur und Tiere im Einklang leben.`;
-    if (lower.includes("automat"))
-      return `🥚 "${name}" zeigt den Verkaufsautomaten, der rund um die Uhr regionale Produkte bereithält.`;
-    if (lower.includes("huette"))
-      return `🏡 "${name}" zeigt unsere liebevoll gestaltete Hütte – gemütlich und herzlich.`;
-    if (lower.includes("landschaft"))
-      return `🌅 "${name}" fängt die friedliche Landschaft rund um den Hof ein.`;
-    if (lower.includes("ziege"))
-      return `🐐 "${name}" erzählt von neugierigen Ziegen, die Besucher freundlich begrüßen.`;
-    if (lower.includes("huhn") || lower.includes("hen"))
-      return `🐓 "${name}" zeigt unsere glücklichen Hühner bei der Eierhütte.`;
-    return `📷 "${name}" hält einen besonderen Moment auf dem Hof fest – voller Ruhe und Landleben.`;
+  /* ---------- helper: analyzeImageHints(url, file, fallbackName) ----------
+     Runs a small client-side analysis:
+     - loads the image into a canvas, computes average color & brightness & aspect ratio
+     - combines with filename keywords to produce a natural short title
+     This is free and runs in the browser.
+  */
+  async function analyzeImageHints(url, file, fallbackName) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      // use CORS-friendly URL if necessary; try to load
+      img.crossOrigin = 'Anonymous';
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const w = Math.min(img.naturalWidth, 400);
+          const h = Math.min(img.naturalHeight, 400 * (img.naturalHeight/img.naturalWidth));
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const data = ctx.getImageData(0,0,canvas.width,canvas.height).data;
+
+          let r=0,g=0,b=0,bright=0,count=0;
+          for (let i=0;i<data.length;i+=4) {
+            r += data[i]; g += data[i+1]; b += data[i+2];
+            bright += (data[i] + data[i+1] + data[i+2]) / 3;
+            count++;
+          }
+          r = r/count; g = g/count; b = b/count; bright = bright/count;
+          const aspect = img.naturalWidth / img.naturalHeight;
+
+          // simple heuristics
+          const dominant = (r>g && r>b) ? 'rot' : (g>r && g>b) ? 'gruen' : 'blau';
+          const isGreen = g > r && g > b && g > 90;
+          const isBright = bright > 140;
+          const isPanorama = aspect > 1.6;
+          // filename hints
+          const nameLower = (fallbackName || '').toLowerCase();
+
+          // keywords
+          const keywords = [
+            { k: ['huhn','huehner','chicken'], title: 'Hühner' },
+            { k: ['kuh','cow'], title: 'Kuh' },
+            { k: ['automat','vending','automat'], title: 'Verkaufsautomat' },
+            { k: ['hof','hofladen','hofladen'], title: 'Hof' },
+            { k: ['eier','eggs','eierautomat'], title: 'Eier' },
+            { k: ['hütte','huette','hut'],'title': 'Hütte' }
+          ];
+          for (const kw of keywords) {
+            for (const key of kw.k) {
+              if (nameLower.includes(key)) {
+                const add = isGreen ? ' im Grünen' : (isBright ? ' bei Sonnenschein' : '');
+                resolve(`${kw.title}${add}`);
+                return;
+              }
+            }
+          }
+
+          // fallback by visual hints
+          if (isPanorama) {
+            resolve(`${fallbackName} – Panorama`.replace(/\s+/g,' ').trim());
+            return;
+          }
+          if (isGreen) {
+            resolve(`${fallbackName} im Grünen`.replace(/\s+/g,' ').trim());
+            return;
+          }
+          if (isBright) {
+            resolve(`${fallbackName} (sonnig)`.replace(/\s+/g,' ').trim());
+            return;
+          }
+          // last fallback: cleaned filename or generic
+          resolve(fallbackName || 'Bild');
+        } catch (e) {
+          resolve(fallbackName || 'Bild');
+        }
+      };
+      img.onerror = () => resolve(fallbackName || 'Bild');
+      // try load URL, if URL blocked by CORS fallback to file blob
+      img.src = url;
+      // also attempt blob URL if loading remote fails after timeout
+      setTimeout(async () => {
+        if (!img.complete) {
+          try {
+            const blobUrl = URL.createObjectURL(file);
+            img.src = blobUrl;
+          } catch(e){ /* ignore */ }
+        }
+      }, 300);
+    });
   }
-    }
+} // end renderSmartImageUploader
+
     // ==========================================================
 // 🕒 Öffnungszeiten Editor (RadlMap-Style)
 // ==========================================================
