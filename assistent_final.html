@@ -1,0 +1,4421 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Assistent</title>
+
+  <!-- Firebase (compat, wie in deinem Projekt) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet (Karten) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Quill (WYSIWYG für Beschreibung) -->
+  <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+  <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+<script src="https://js.stripe.com/v3/"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; }
+    .card-option { transition: transform .16s, box-shadow .16s; }
+    .card-option:hover { transform: translateY(-4px); box-shadow: 0 8px 20px rgba(0,0,0,.08); }
+    .selected { border: 2px solid #10b981; background-color: #ecfdf5; }
+    .minimap {
+  height: 200px;
+  z-index: 0;
+}
+.leaflet-container {
+  z-index: 0 !important;
+}
+    /* Small helper for fixed bottom nav on small screens */
+    @media (max-width: 767px) {
+      #question-area { padding-bottom: 92px; } /* space for fixed nav */
+    }
+    @media (min-width: 768px) {
+      #question-area { padding-bottom: 92px; }
+    }
+    .sidebar-btn.active {
+  background-color: #e8f8ee;
+  color: #166534;
+  font-weight: 600;
+    }
+    
+/* === Smarter Upload Style === */
+#smartUploadZone {
+  transition: all 0.25s ease;
+}
+#smartUploadZone:hover {
+  background-color: #ecfdf5;
+  border-color: #10b981;
+  transform: scale(1.01);
+}
+#smartUploadPreview img {
+  transition: all 0.25s ease;
+}
+#smartUploadPreview img:hover {
+  transform: scale(1.05);
+  filter: brightness(1.1);
+}
+@keyframes pulseUpload {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+.uploading::after {
+  content: "⏫";
+  position: absolute;
+  top: 4px; right: 4px;
+  font-size: 0.8rem;
+  animation: pulseUpload 1s infinite;
+  color: #16a34a;
+}
+  </style>
+</head>
+<body class="bg-gray-100">
+<!-- Login Screen -->
+<div id="loginScreen" class="flex items-center justify-center min-h-screen bg-gradient-to-br from-green-50 to-green-100 hidden">
+  <div class="bg-white rounded-2xl shadow-xl p-10 max-w-md w-full text-center transform transition hover:scale-[1.01]">
+    
+    <!-- Illustration -->
+    <div class="flex justify-center mb-6">
+      <img src="https://radlmap.net/img/login.png" 
+           class="w-64 h-64 drop-shadow-lg" 
+           alt="Funny Hut" />
+    </div>
+
+    <!-- Titel -->
+    <h1 class="text-3xl font-extrabold text-green-700 mb-3">
+      Assistent-Dashboard
+    </h1>
+    <p class="text-gray-500 mb-8">
+      Verwalte deine <span class="font-semibold text-green-600">Eintragungen</span> ganz einfach online.<br>
+      Bitte melde dich mit deinem Google-Konto an.
+    </p>
+
+    <!-- Google Login Button -->
+    <button onclick="doGoogleLogin()" 
+      class="flex items-center gap-3 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-md transition w-full justify-center font-medium">
+      <img src="https://www.svgrepo.com/show/475656/google-color.svg" 
+           class="w-6 h-6 bg-white rounded-full p-1" />
+      <span>Mit Google anmelden</span>
+    </button>
+
+    <!-- Fußnote -->
+    <p class="text-xs text-gray-400 mt-6">
+      🔒 Deine Daten bleiben sicher und werden nicht ohne Zustimmung geteilt.
+    </p>
+  </div>
+</div>
+
+
+  <div id="mainApp" class="flex min-h-screen hidden">
+
+    
+<!-- Sidebar -->
+<aside id="sidebar" class="fixed md:static inset-y-0 left-0 w-64 bg-white border-r p-6 flex flex-col transform -translate-x-full md:translate-x-0 transition-transform z-50 shadow-lg">
+
+  <!-- Profilbereich -->
+  <div class="flex flex-col items-center mb-8">
+    <div id="avatarWrapper" class="w-20 h-20 rounded-full overflow-hidden border-2 border-green-500 mb-3 bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center text-white text-2xl font-bold shadow-md">
+      <img id="profilePic" src="" alt="Profilbild" class="w-full h-full object-cover hidden">
+      <span id="avatarInitials"></span>
+    </div>
+    <p class="text-sm text-gray-600">Angemeldet als:</p>
+    <p id="accountMail" class="text-green-700 font-semibold truncate max-w-[180px] text-center">-</p>
+    <button class="mt-3 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 active:scale-95 transition transform">Logout</button>
+  </div>
+
+  <!-- Logo / App-Name -->
+  <div class="text-2xl font-extrabold text-green-700 mb-6 text-center tracking-tight">
+    🌿 Assistent
+  </div>
+
+  <!-- Navigationsbuttons -->
+  <nav class="flex flex-col gap-2 text-[15px]">
+    <a href="https://radlmap.net" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition">
+      🚲 Startseite
+    </a>
+    <a href="navi.html" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition">
+      🚴‍♂️ zur RadlMap
+    </a>
+
+    <button id="btnDashboard" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnDashboard'); showDashboard()">
+      📊 Betreiber-Dashboard
+    </button>
+    <button id="btnEntries" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnEntries'); showMyEntries()">
+      📋 Meine Eintragungen
+    </button>
+    <button id="btnNewEntry" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnNewEntry'); startNewEntry()">
+      ➕ Neue Eintragung
+    </button>
+
+    <!-- 🗓️ Unterkategorie: Events -->
+    <div class="mt-4">
+      <div class="flex items-center justify-between px-3 mb-1">
+        <p class="text-xs uppercase font-semibold text-gray-400 tracking-wider">Events</p>
+        <span class="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">neu</span>
+      </div>
+
+      <div class="ml-2 border-l-2 border-green-100 pl-3 flex flex-col gap-1">
+        <button id="btnMyEvents"
+          class="sidebar-btn px-3 py-1.5 rounded-lg hover:bg-green-50 flex items-center gap-2 text-sm transition"
+          onclick="setActive('btnMyEvents'); showMyEvents(firebase.auth().currentUser)">
+          📅 <span>Meine Events</span>
+        </button>
+        <button id="btnCreateEvent"
+          class="sidebar-btn px-3 py-1.5 rounded-lg hover:bg-green-50 flex items-center gap-2 text-sm transition"
+          onclick="setActive('btnCreateEvent'); showCreateEvent(firebase.auth().currentUser)">
+          ➕ <span>Neues Event</span>
+        </button>
+      </div>
+    </div>
+
+    <hr class="my-3 border-gray-200">
+
+    <button id="btnSupport" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnSupport'); openSupport()">
+      💬 Support
+    </button>
+    <button id="btnHutMessages" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition relative" onclick="setActive('btnHutMessages'); showHutMessages()">
+      💌 Hütten-Nachrichten
+      <span id="hutMessagesCount" class="absolute right-4 hidden bg-red-600 text-white text-xs px-2 py-0.5 rounded-full">0</span>
+    </button>
+  </nav>
+
+  <!-- Footer -->
+  <div class="mt-auto text-center text-xs text-gray-400 pt-4 border-t border-gray-200">
+    v2.1 &middot; RadlMap Assistent
+  </div>
+</aside>
+    <!-- Rechte Info-Leiste -->
+<!-- Info Sidebar -->
+<div id="infoSidebar" class="hidden lg:block w-72 p-4 bg-gray-50 border-l">
+  <div class="sticky top-4">
+    <h3 class="text-lg font-bold mb-3">ℹ️ Hilfe & Beispiele</h3>
+    <div id="infoBox" class="space-y-3 text-sm text-gray-700"></div>
+  </div>
+</div>
+
+<!-- Mobile Overlay -->
+<div id="infoOverlay" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+  <div class="absolute bottom-0 w-full bg-white p-4 rounded-t-2xl shadow-lg max-h-[80vh] overflow-y-auto">
+    <button id="closeInfo" class="absolute top-2 right-2 text-gray-600">✕</button>
+    <h3 class="text-lg font-bold mb-3">ℹ️ Hilfe & Beispiele</h3>
+    <div id="infoBoxMobile" class="space-y-3 text-sm text-gray-700"></div>
+  </div>
+</div>
+
+<!-- Button nur für Mobile -->
+<button id="toggleInfo" class="lg:hidden fixed bottom-20 right-4 bg-blue-500 text-white p-3 rounded-full shadow-lg">
+  ℹ️
+</button>
+
+<script>
+  // Entfernt vorherige aktive Buttons und markiert den aktuellen
+  function setActive(buttonId) {
+    const buttons = document.querySelectorAll('.sidebar-btn');
+    buttons.forEach(btn => btn.classList.remove('bg-green-100', 'font-semibold'));
+    const activeBtn = document.getElementById(buttonId);
+    if(activeBtn) {
+      activeBtn.classList.add('bg-green-100', 'font-semibold');
+    }
+  }
+</script>
+
+    <!-- Main -->
+    <main class="flex-1 flex flex-col">
+      <!-- topbar mobile -->
+      <div class="md:hidden flex items-center justify-between bg-white border-b p-3">
+        <div class="font-bold text-green-700">Assistent</div>
+        <button class="p-2 bg-green-600 text-white rounded" onclick="toggleSidebar()">☰</button>
+      </div>
+
+      <!-- progressbar -->
+      <div class="w-full h-2 bg-gray-200">
+        <div id="progress" class="h-2 bg-green-500 w-0 transition-all"></div>
+      </div>
+
+      <!-- question area -->
+      <section id="question-area" class="flex-1 p-6 overflow-y-auto">
+        <!-- dynamic content -->
+      </section>
+
+      <!-- fixed bottom nav -->
+      <div id="navBottom" class="fixed bottom-0 left-0 md:left-64 right-0 flex justify-between p-4 border-t bg-white z-40">
+        <button id="prevBtn" class="px-4 py-2 bg-gray-200 rounded" onclick="prevStep()">⬅️ Zurück</button>
+        <button id="nextBtn" class="px-4 py-2 bg-green-600 text-white rounded" onclick="nextStep()">Weiter ➡️</button>
+      </div>
+    </main>
+  </div>
+
+  <!-- Notification area -->
+  <div id="toast" class="fixed top-6 right-6 hidden p-3 rounded shadow bg-blue-600 text-white z-50"></div>
+
+  <script>
+  /***********************
+   * Config & Init
+   ***********************/
+  // Firebase config (aus deinem Admin-File)
+  const firebaseConfig = {
+    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+    authDomain: "eierhuettentour.firebaseapp.com",
+    projectId: "eierhuettentour",
+    storageBucket: "eierhuettentour.appspot.com",
+    messagingSenderId: "348272135205",
+    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+  };
+
+  // imgbb API key (wie in Admin-Code verwendet)
+  const IMGBB_KEY = "5df04de9bfd2776f101329be4193e44c";
+
+  // Init firebase
+    
+  let app, db;
+  try {
+    app = firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+  } catch (e) {
+    console.error("Firebase init error", e);
+    document.getElementById('question-area').innerHTML = `<div class="bg-red-100 p-4 rounded">❌ Firebase konnte nicht initialisiert werden. Prüfe die Konfiguration in der Datei.</div>`;
+  }
+
+  // Demo user: in deinem Produktivbetrieb sollte hier auth.onAuthStateChanged triggern
+  let currentUser = { uid: "demo", email: "demo@example.com", displayName: "Demo" };
+firebase.auth().onAuthStateChanged(u => {
+  if (u) {
+    currentUser = u;
+    document.getElementById("accountMail").textContent = u.email;
+    document.getElementById("loginScreen").classList.add("hidden");
+    document.getElementById("mainApp").classList.remove("hidden");
+
+    // Sidebar geschlossen halten
+    document.getElementById('sidebar').classList.add('-translate-x-full');
+
+    mode = "list";
+document.getElementById("navBottom").style.display =
+  (mode === "entry") ? "flex" : "none";
+    
+    // Tutorial-Startseite zeigen
+    showTutorial();
+initHutMessagesBadge();
+  } else {
+    // nicht eingeloggt
+    document.getElementById("mainApp").classList.add("hidden");
+    document.getElementById("loginScreen").classList.remove("hidden");
+    document.getElementById("question-area").innerHTML = "";
+  }
+});
+    async function doGoogleLogin() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  try {
+    await firebase.auth().signInWithPopup(provider);
+    showToast("✅ Eingeloggt mit Google");
+    
+  } catch (e) {
+    console.error("Google Login error", e);
+    alert("Fehler beim Google-Login: " + e.message);
+  }
+    }
+
+function logout() {
+  firebase.auth().signOut();
+}
+    let mode = "entry"; // "entry" oder "list"
+  /***********************
+   * State & steps
+   ***********************/
+  let editingData = {};
+  let step = 0;
+  const stepsCount = 11; // 0..9
+  
+
+  function showToast(text, time = 3000) {
+    const t = document.getElementById('toast');
+    t.textContent = text;
+    t.classList.remove('hidden');
+    setTimeout(()=>{ t.classList.add('hidden'); }, time);
+  }
+
+  function updateProgress() {
+    const pct = (step / (stepsCount - 1)) * 100;
+    document.getElementById('progress').style.width = pct + '%';
+  }
+    // ==========================================================
+// 🕒 Öffnungszeiten Editor (RadlMap-Style)
+// ==========================================================
+
+// helper for localized day names
+const DAY_LABELS = [
+  { key: "mo", label: "Montag" },
+  { key: "di", label: "Dienstag" },
+  { key: "mi", label: "Mittwoch" },
+  { key: "do", label: "Donnerstag" },
+  { key: "fr", label: "Freitag" },
+  { key: "sa", label: "Samstag" },
+  { key: "so", label: "Sonntag" }
+];
+
+// Rendering des Editors
+function renderOpeningHoursEditor(hutId, data = {}) {
+  let html = `
+    <div id="openhours-${hutId}" class="space-y-2 mt-2">
+      <table class="w-full text-sm border border-gray-200 rounded overflow-hidden">
+        <thead class="bg-green-100 text-green-800">
+          <tr>
+            <th class="py-2 px-3 text-left">Tag</th>
+            <th class="py-2 px-3 text-center">Geöffnet</th>
+            <th class="py-2 px-3 text-center">Von</th>
+            <th class="py-2 px-3 text-center">Bis</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y">
+  `;
+
+  DAY_LABELS.forEach(day => {
+    const d = data[day.key] || {};
+    const open = !!d.open;
+    const from = d.from || "";
+    const to = d.to || "";
+    html += `
+      <tr>
+        <td class="py-2 px-3">${day.label}</td>
+        <td class="text-center">
+          <input type="checkbox" class="oh-open" data-day="${day.key}" ${open ? "checked" : ""}/>
+        </td>
+        <td class="text-center">
+          <input type="time" class="oh-from border rounded px-2 py-1 text-sm" data-day="${day.key}" value="${from}" ${!open ? "disabled" : ""}/>
+        </td>
+        <td class="text-center">
+          <input type="time" class="oh-to border rounded px-2 py-1 text-sm" data-day="${day.key}" value="${to}" ${!open ? "disabled" : ""}/>
+        </td>
+      </tr>
+    `;
+  });
+
+  html += `
+        </tbody>
+      </table>
+      <p class="text-xs text-gray-500">Tipp: Wenn du nichts einträgst, wird "geschlossen" angezeigt.</p>
+    </div>
+  `;
+  return html;
+}
+
+// Daten auslesen
+function collectOpeningHours(hutId) {
+  const wrapper = document.getElementById(`openhours-${hutId}`);
+  if (!wrapper) return {};
+  const result = {};
+  DAY_LABELS.forEach(day => {
+    const openCheckbox = wrapper.querySelector(`.oh-open[data-day="${day.key}"]`);
+    const fromInput = wrapper.querySelector(`.oh-from[data-day="${day.key}"]`);
+    const toInput = wrapper.querySelector(`.oh-to[data-day="${day.key}"]`);
+    const open = openCheckbox.checked;
+    result[day.key] = {
+      open,
+      from: open ? fromInput.value : "",
+      to: open ? toInput.value : ""
+    };
+  });
+  return result;
+}
+
+// Dynamische Aktivierung / Deaktivierung
+document.addEventListener("change", (e) => {
+  if (e.target.classList.contains("oh-open")) {
+    const day = e.target.dataset.day;
+    const row = e.target.closest("tr");
+    const from = row.querySelector(".oh-from");
+    const to = row.querySelector(".oh-to");
+    const isOpen = e.target.checked;
+    from.disabled = !isOpen;
+    to.disabled = !isOpen;
+    if (!isOpen) {
+      from.value = "";
+      to.value = "";
+    }
+  }
+});
+  /***********************
+   * Render Flow (Questions)
+   ***********************/
+          // Texte für Step 2 je nach Typ
+const typeTexts = {
+  Eierhütte: {
+    title: "🏷️ Name der Eierhütte",
+    question: "Wie soll deine Eierhütte heißen?"
+  },
+  Hofladen: {
+    title: "🏷️ Name des Hofladens",
+    question: "Wie soll dein Hofladen heißen?"
+  },
+  Selbstbedienung: {
+    title: "🏷️ Name des Selbstbedienungshäuschens",
+    question: "Wie soll dein Selbstbedienungshäuschen heißen?"
+  },
+  Spielplatz: {
+    title: "🏷️ Name des Spielplatzes",
+    question: "Wie soll der Spielplatz heißen?"
+  },
+  Abenteuerhof: {
+    title: "🏷️ Name des Abenteuerhofs",
+    question: "Wie soll dein Abenteuerhof heißen?"
+  },
+  Automat: {
+    title: "🏷️ Name des Automaten",
+    question: "Wie soll dein Automat heißen?"
+  }
+};
+  function renderQuestion() {
+    const qa = document.getElementById('question-area');
+    qa.innerHTML = ''; // reset
+    updateProgress();
+    updateInfoBox();
+document.getElementById("navBottom").style.display =
+  (mode === "entry") ? "flex" : "none";
+      
+    try {
+      if (step === 0) {
+  qa.innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+      <h2 class="text-xl font-bold mb-3">🛡️ Datenschutzerklärung</h2>
+
+      <!-- Scrollbox mit horizontalem + vertikalem Scroll -->
+      <div id="dsScrollBox" class="h-60 mb-3 rounded-lg overflow-auto border border-gray-200">
+        <iframe 
+          src="https://radlmap.net/datenschutz.html" 
+          class="w-full h-[500px] border-0 bg-white"
+          style="display:block; min-width:100%; overflow:auto;">
+        </iframe>
+      </div>
+
+      <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+        <input id="dsCheck" type="checkbox" class="w-4 h-4" disabled /> 
+        Ich akzeptiere die Datenschutzerklärung
+      </label>
+      <div id="dsHint" class="text-xs text-red-500 mt-1">
+        ⬇️ Bitte bis ganz nach unten scrollen
+      </div>
+    </div>`;
+
+  // Scroll-Überwachung
+  const scrollBox = document.getElementById("dsScrollBox");
+  const check = document.getElementById("dsCheck");
+  const hint = document.getElementById("dsHint");
+
+  scrollBox.addEventListener("scroll", () => {
+    if (scrollBox.scrollTop + scrollBox.clientHeight >= scrollBox.scrollHeight - 5) {
+      check.disabled = false;
+      hint.textContent = "✅ Du kannst nun die Datenschutzerklärung akzeptieren.";
+      hint.classList.remove("text-red-500");
+      hint.classList.add("text-green-600");
+    }
+  });
+  return;
+}
+      if (step === 1) {
+        // Typ-Auswahl
+        const opts = [
+          { emoji: '🥚', label: 'Eierhütte', key: 'Eierhütte' },
+          { emoji: '🏪', label: 'Hofladen', key: 'Hofladen' },
+          { emoji: '🏠', label: 'Selbstbedienungshäuschen', key: 'Selbstbedienung' },
+          { emoji: '🛝', label: 'Spielplatz', key: 'Spielplatz' },
+          { emoji: '🌄', label: 'Abenteuerhof', key: 'Abenteuerhof' },
+          { emoji: '🍶', label: 'Automat', key: 'Automat' }
+        ];
+        const wrap = document.createElement('div');
+        wrap.className = 'grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto';
+        opts.forEach(o => {
+          const card = document.createElement('div');
+          card.className = 'bg-white p-6 rounded-xl shadow card-option text-center cursor-pointer';
+          card.innerHTML = `<div class="text-3xl">${o.emoji}</div><div class="font-semibold mt-2">${o.label}</div>`;
+          card.onclick = () => {
+            document.querySelectorAll('.card-option').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            editingData.typ = o.key;
+          };
+          wrap.appendChild(card);
+        });
+        qa.appendChild(wrap);
+        return;
+      }
+
+
+
+if (step === 2) {
+  const currentType = editingData.typ; // <-- statt eintragung.type
+  const { title, question } = typeTexts[currentType] || {
+    title: "🏷️ Name",
+    question: "Wie soll dein Eintrag heißen?"
+  };
+
+  qa.innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+      <h2 class="text-lg font-bold mb-2">${title}</h2>
+      <p class="text-sm text-gray-600 mb-2">${question}</p>
+      <input id="nameInput"
+             class="w-full border p-2 rounded"
+             placeholder="Name eingeben"
+             value="${editingData.name || ''}">
+    </div>`;
+  return;
+}
+
+      if (step === 3) {
+        qa.innerHTML = `
+          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+            <h2 class="text-lg font-bold mb-2">🪑 Gibt es Sitzplätze?</h2>
+            <div class="flex gap-4">
+              <button class="flex-1 p-3 border rounded" onclick="selectOption('sitzplaetze','Ja',this)">✅ Ja</button>
+              <button class="flex-1 p-3 border rounded" onclick="selectOption('sitzplaetze','Nein',this)">❌ Nein</button>
+            </div>
+          </div>`;
+        return;
+      }
+
+      if (step === 4) {
+        qa.innerHTML = `
+          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+            <h2 class="text-lg font-bold mb-2">🔌 Gibt es Strom?</h2>
+            <div class="flex gap-4">
+              <button class="flex-1 p-3 border rounded" onclick="selectOption('strom','Ja',this)">⚡ Ja</button>
+              <button class="flex-1 p-3 border rounded" onclick="selectOption('strom','Nein',this)">❌ Nein</button>
+            </div>
+          </div>`;
+        return;
+      }
+      if (step === 5) {
+  const immer = editingData.oeffnungszeiten === "Immer geöffnet";
+
+  qa.innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+      <h2 class="text-lg font-bold mb-3">🕒 Öffnungszeiten</h2>
+
+      <label class="flex items-center gap-2 mb-4">
+        <input type="checkbox" id="immerCheck" ${immer ? "checked" : ""}>
+        Immer geöffnet
+      </label>
+
+      <div id="dayInputs" class="${immer ? "hidden" : ""}">
+        ${["Mo","Di","Mi","Do","Fr","Sa","So"].map(day => {
+          // vorhandene Werte beim Bearbeiten einsetzen
+          let von = "", bis = "";
+          if (Array.isArray(editingData.oeffnungszeiten)) {
+            const found = editingData.oeffnungszeiten.find(x => x.tag === day);
+            if (found) { von = found.von; bis = found.bis; }
+          }
+          return `
+            <div class="flex items-center gap-2 mb-1">
+              <span class="w-10">${day}</span>
+              <input id="open-${day}-von" type="time" value="${von}" class="border p-1 rounded text-sm">
+              <span>-</span>
+              <input id="open-${day}-bis" type="time" value="${bis}" class="border p-1 rounded text-sm">
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+
+  document.getElementById("immerCheck").addEventListener("change", (e) => {
+    document.getElementById("dayInputs").classList.toggle("hidden", e.target.checked);
+  });
+
+  return;
+      }
+      
+
+      if (step === 6) {
+        qa.innerHTML = `
+          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+            <h2 class="text-lg font-bold mb-2">✨ Extras (optional)</h2>
+            <input id="extrasInput" class="w-full border p-2 rounded" placeholder="z.B. Getränke, Kühlschrank" value="${editingData.extras || ''}">
+          </div>`;
+        return;
+      }
+
+      if (step === 7) {
+        // Tiere toggle buttons (markieren, don't auto-next)
+        const animals = ["🐐 Ziege","🐄 Kuh","🐓 Huhn","🐕 Hund","🐇 Hase","🐈 Katze","Keine Tiere"];
+        const grid = document.createElement('div');
+        grid.className = 'bg-white p-6 rounded-xl shadow max-w-2xl mx-auto';
+        grid.innerHTML = `<h2 class="text-lg font-bold mb-3">🐾 Welche Tiere gibt es?</h2><div id="tiereGrid" class="grid grid-cols-3 gap-2"></div>`;
+        qa.appendChild(grid);
+        const holder = document.getElementById('tiereGrid');
+        editingData.tiere = editingData.tiere || [];
+        animals.forEach(t => {
+          const btn = document.createElement('button');
+          const isSel = editingData.tiere.includes(t);
+          btn.className = `p-2 border rounded text-sm ${isSel ? 'selected' : ''}`;
+          btn.textContent = t;
+          btn.onclick = () => {
+            // toggle
+            if (t === 'Keine Tiere') {
+              editingData.tiere = ['Keine Tiere'];
+              // remove selected from others
+              holder.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+              btn.classList.add('selected');
+              return;
+            }
+            // if 'Keine Tiere' present -> remove it
+            editingData.tiere = (editingData.tiere || []).filter(x => x !== 'Keine Tiere');
+            const idx = (editingData.tiere || []).indexOf(t);
+            if (idx >= 0) {
+              editingData.tiere.splice(idx, 1);
+              btn.classList.remove('selected');
+            } else {
+              editingData.tiere.push(t);
+              btn.classList.add('selected');
+            }
+          };
+          holder.appendChild(btn);
+        });
+        return;
+      }
+
+      if (step === 8) {
+        qa.innerHTML = `
+          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+            <h2 class="text-lg font-bold mb-2">📝 Beschreibung</h2>
+            <div id="quillContainer" class="bg-white"></div>
+          </div>`;
+        setTimeout(() => {
+  initEnhancedEditor("quillContainer", editingData);
+}, 120);
+        return;
+      }
+
+      if (step === 9) {
+        qa.innerHTML = `
+          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+            <h2 class="text-lg font-bold mb-2">🏷️ Schlagwörter (Komma getrennt)</h2>
+            <input id="tagsInput" class="w-full border p-2 rounded" placeholder="z.B. Frühstück,Schattig" value="${(editingData.tags||[]).join(', ')}">
+          </div>`;
+        return;
+      }
+
+      if (step === 10) {
+        mode = "list";
+         
+         document.getElementById("navBottom").style.display =
+         (mode === "entry") ? "flex" : "none";
+     
+  qa.innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+      <h2 class="text-xl font-bold mb-3">📋 Übersicht</h2>
+      
+      <h3 class="text-lg font-bold mt-4 mb-2">📍 Standort</h3>
+      <div class="relative mb-2">
+        <input id="addressSearch" class="w-full border p-2 rounded" placeholder="Adresse suchen…" />
+        <div id="addressSuggestions" class="absolute left-0 right-0 bg-white border rounded mt-1 hidden z-50 max-h-48 overflow-y-auto"></div>
+      </div>
+      <button id="gpsBtn" class="px-3 py-2 mb-3 bg-blue-600 text-white rounded">📡 Mein Standort</button>
+
+      <div id="overview-map" class="h-64 rounded border mb-4"></div>
+
+      <div class="flex gap-2">
+        <button id="submitBtn" class="px-4 py-2 bg-green-600 text-white rounded" onclick="submitEntry()">✅ Einreichen</button>
+        <button class="px-4 py-2 bg-gray-200 rounded" onclick="showMyEntries()">✖ Abbrechen</button>
+      </div>
+      <p class="text-xs text-gray-500 mt-3">Deine Eintragung wird geprüft und erst nach Freigabe sichtbar.</p>
+    </div>`;
+
+  // Jetzt nur noch Map initialisieren
+  setTimeout(() => {
+  initOverviewMap();
+
+  // GPS-Button aktivieren
+  const gpsBtn = document.getElementById("gpsBtn");
+  if (gpsBtn) gpsBtn.addEventListener("click", locateGPS);
+
+  // Adress-Suche mit Vorschlägen
+  const addr = document.getElementById("addressSearch");
+  const suggestionBox = document.getElementById("addressSuggestions");
+  if (addr) {
+    addr.addEventListener("input", async e => {
+      const query = e.target.value.trim();
+      if (query.length < 3) {
+        suggestionBox.innerHTML = "";
+        suggestionBox.classList.add("hidden");
+        return;
+      }
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (!data.length) {
+          suggestionBox.innerHTML = "<div class='p-2 text-gray-500'>Keine Treffer</div>";
+          suggestionBox.classList.remove("hidden");
+          return;
+        }
+
+        suggestionBox.innerHTML = data.map(item => `
+          <div class="p-2 hover:bg-gray-100 cursor-pointer" data-lat="${item.lat}" data-lon="${item.lon}">
+            ${item.display_name}
+          </div>`).join("");
+        suggestionBox.classList.remove("hidden");
+
+        suggestionBox.querySelectorAll("div").forEach(div => {
+          div.addEventListener("click", () => {
+            const lat = parseFloat(div.dataset.lat);
+            const lon = parseFloat(div.dataset.lon);
+            addr.value = div.textContent;
+            suggestionBox.classList.add("hidden");
+            initOverviewMap(lat, lon, 15);
+          });
+        });
+      } catch (err) {
+        console.error("Fehler bei Nominatim:", err);
+      }
+    });
+  }
+}, 200);
+  return;
+      }
+      
+    } catch (err) {
+      console.error("renderQuestion error", err);
+      document.getElementById('question-area').innerHTML = `<div class="bg-red-100 p-4 rounded">Fehler: ${err.message}</div>`;
+    }
+  }
+    
+const stripe = Stripe("pk_test_51SFLgEBghOTdsn6RBYuZr6x4R2BC6lhq4NFWmcKTtyNahatWHMVHAq3posYIhsXKRl598qHOzMzyymuV6DgKWYly006AaME4Wr");
+
+
+async function showDashboard() {
+  const qa = document.getElementById("question-area");
+  qa.innerHTML = `
+    <section class="bg-gradient-to-br from-green-50 to-white p-6 rounded-2xl shadow-xl max-w-5xl mx-auto animate-fadeIn">
+      <h2 class="text-2xl font-extrabold text-green-800 mb-6">📊 Mein Dashboard</h2>
+
+      <!-- Statistik -->
+      <div id="statsArea" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        <div class="col-span-3 text-center text-gray-500">Lade Daten...</div>
+      </div>
+
+      <!-- Foto-Limit -->
+      <div id="limitsArea" class="mb-10"></div>
+
+      <!-- Premium -->
+      <div id="premiumArea" class="mb-10"></div>
+
+      <!-- Events -->
+      <div id="eventsArea" class="mb-4"></div>
+    </section>
+  `;
+
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    document.getElementById("statsArea").innerHTML =
+      `<div class="col-span-3 text-center text-red-600 font-semibold">Bitte zuerst einloggen.</div>`;
+    return;
+  }
+
+  // 📈 Statistik (Summe)
+  db.collection("eierhuetten").where("userId", "==", user.uid).onSnapshot(snapshot => {
+    let totalViews = 0, totalRoutes = 0;
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      totalViews += data.views || 0;
+      totalRoutes += data.routeStarts || 0;
+    });
+    const avgPerDay = Math.round(totalViews / Math.max(1, snapshot.size));
+
+    document.getElementById("statsArea").innerHTML = `
+      <div class="bg-white p-6 rounded-xl shadow text-center">
+        <div class="text-3xl mb-2">👁️</div>
+        <h3 class="font-semibold">Aufrufe</h3>
+        <p class="text-2xl font-bold text-green-700">${totalViews}</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl shadow text-center">
+        <div class="text-3xl mb-2">📍</div>
+        <h3 class="font-semibold">Routenstarts</h3>
+        <p class="text-2xl font-bold text-green-700">${totalRoutes}</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl shadow text-center">
+        <div class="text-3xl mb-2">📊</div>
+        <h3 class="font-semibold">Ø Aufrufe pro Hütte</h3>
+        <p class="text-2xl font-bold text-green-700">${avgPerDay}</p>
+      </div>
+    `;
+  });
+
+  // 📸 Foto-Limit (Placeholder: du kannst showLimitsSection hier einfügen)
+  document.getElementById("limitsArea").innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow">
+      <h3 class="text-lg font-bold mb-2">📸 Foto-Limit</h3>
+      <p class="text-sm text-gray-600">Zeige hier, wie viele Fotos schon hochgeladen sind (Free: 1 / Premium: 10)</p>
+    </div>
+  `;
+
+  // 🌟 Premium-Bereich
+  const betreiberDoc = await db.collection("betreiber").doc(user.uid).get();
+  const data = betreiberDoc.data() || {};
+  const premiumArea = document.getElementById("premiumArea");
+
+  if (data.premium) {
+    premiumArea.innerHTML = `
+      <div class="bg-green-100 p-6 rounded-xl shadow-inner text-center">
+        <h3 class="text-lg font-bold text-green-800 mb-2">🌟 Unterstützer werden</h3>
+        <p class="text-gray-700 mb-3">
+          Gültig bis <b>${data.premium_until ? new Date(data.premium_until).toLocaleDateString("de-DE") : "unbekannt"}</b>
+        </p>
+        <div class="flex gap-3 justify-center">
+          <span class="px-4 py-1 bg-green-600 text-white rounded-full text-sm">Unterstützer</span>
+          <button 
+            class="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-semibold hover:bg-red-600 transition"
+            onclick="cancelPremium()"
+          >
+            ❌ Ich möchte bitte kein Unterstützer mehr sein 
+          </button>
+        </div>
+      </div>
+    `;
+    // Premium-only Features laden
+    showEventsSection(user); 
+  } else {
+    premiumArea.innerHTML = `
+      <div class="bg-white border border-dashed border-gray-300 p-6 rounded-xl text-center">
+        <h3 class="text-lg font-semibold mb-2">🚀 Werde Unterstützer!</h3>
+        <p class="text-sm text-gray-500 mb-4">
+          Erhalte erweiterte Statistiken, mehr Fotos und Live-Events.
+        </p>
+        <button 
+          class="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold shadow hover:bg-green-700 transition"
+          onclick="showPremiumUpgrade()"
+        >
+          🌟 Unterstützer werden – nur 2 €/Monat
+        </button>
+      </div>
+    `;
+  }
+}
+    
+    async function editEvent(hutId, eventId) {
+  const evDoc = await db.collection("eierhuetten").doc(hutId).collection("events").doc(eventId).get();
+  const ev = evDoc.data();
+
+  showCreateEvent(firebase.auth().currentUser);
+
+  setTimeout(() => {
+    document.getElementById("eventHut").value = hutId;
+    document.getElementById("eventTitle").value = ev.title;
+    document.getElementById("eventDesc").value = ev.desc || "";
+    document.getElementById("eventStart").value = ev.startDate.toDate().toISOString().slice(0, 10);
+    document.getElementById("eventEnd").value = ev.endDate.toDate().toISOString().slice(0, 10);
+
+    const form = document.getElementById("eventForm");
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      await db.collection("eierhuetten").doc(hutId).collection("events").doc(eventId).update({
+        title: document.getElementById("eventTitle").value,
+        desc: document.getElementById("eventDesc").value,
+        startDate: firebase.firestore.Timestamp.fromDate(new Date(document.getElementById("eventStart").value)),
+        endDate: firebase.firestore.Timestamp.fromDate(new Date(document.getElementById("eventEnd").value))
+      });
+      showToast("✅ Event aktualisiert!");
+      showMyEvents(firebase.auth().currentUser);
+    };
+  }, 400);
+}
+
+async function deleteEvent(hutId, eventId) {
+  if (!confirm("Möchtest du dieses Event wirklich löschen?")) return;
+  await db.collection("eierhuetten").doc(hutId).collection("events").doc(eventId).delete();
+  showToast("🗑️ Event gelöscht!");
+  showMyEvents(firebase.auth().currentUser);
+}
+async function showEventsSection(user) {
+  const eventsArea = document.getElementById("eventsArea");
+  if (!eventsArea) return;
+
+  // Lade Hütten des Betreibers
+  const hutsSnapshot = await db.collection("eierhuetten").where("userId", "==", user.uid).get();
+  let options = "";
+  hutsSnapshot.forEach(doc => {
+    const hut = doc.data();
+    options += `<option value="${doc.id}">${hut.name}</option>`;
+  });
+
+  eventsArea.innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow">
+      <h3 class="text-lg font-bold mb-4">🗓️ Live-Event erstellen</h3>
+      <form id="eventForm" class="grid gap-3">
+        <label>
+          <span class="text-sm text-gray-600">Hütte wählen</span>
+          <select id="eventHut" class="w-full p-2 border rounded">${options}</select>
+        </label>
+        <label>
+          <span class="text-sm text-gray-600">Titel</span>
+          <input id="eventTitle" type="text" class="w-full p-2 border rounded" required>
+        </label>
+        <label>
+          <span class="text-sm text-gray-600">Beschreibung</span>
+          <textarea id="eventDesc" class="w-full p-2 border rounded" rows="2"></textarea>
+        </label>
+        <div class="grid grid-cols-2 gap-3">
+          <label>
+            <span class="text-sm text-gray-600">Startdatum</span>
+            <input id="eventStart" type="date" class="w-full p-2 border rounded" required>
+          </label>
+          <label>
+            <span class="text-sm text-gray-600">Enddatum</span>
+            <input id="eventEnd" type="date" class="w-full p-2 border rounded" required>
+          </label>
+        </div>
+        <button class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">📌 Event speichern</button>
+      </form>
+
+      <div id="eventList" class="mt-6"></div>
+    </div>
+  `;
+
+  const form = document.getElementById("eventForm");
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const hutId = document.getElementById("eventHut").value;
+    const title = document.getElementById("eventTitle").value;
+    const desc = document.getElementById("eventDesc").value;
+    const start = new Date(document.getElementById("eventStart").value);
+    const end = new Date(document.getElementById("eventEnd").value);
+
+    if (end <= start) {
+      showToast("❌ Enddatum muss nach dem Startdatum liegen!", 3000);
+      return;
+    }
+
+    await db.collection("eierhuetten").doc(hutId).collection("events").add({
+  title,
+  desc,
+  startDate: firebase.firestore.Timestamp.fromDate(new Date(start)),
+  endDate: firebase.firestore.Timestamp.fromDate(new Date(end)),
+  createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+  active: true,
+});
+
+    showToast("✅ Event gespeichert!", 3000);
+    showEventsSection(user);
+  };
+
+  // Events anzeigen
+  for (const doc of hutsSnapshot.docs) {
+    const eventsSnap = await db.collection("eierhuetten").doc(doc.id).collection("events").get();
+    eventsSnap.forEach(evDoc => {
+      const ev = evDoc.data();
+      const now = new Date();
+
+      let status = "";
+      if (ev.startDate.toDate() > now) {
+        status = `🔒 Geplant (ab ${ev.startDate.toDate().toLocaleDateString("de-DE")})`;
+      } else if (ev.endDate.toDate() < now) {
+        status = `⏹️ Abgelaufen (bis ${ev.endDate.toDate().toLocaleDateString("de-DE")})`;
+      } else {
+        status = `🟢 Aktiv (endet am ${ev.endDate.toDate().toLocaleDateString("de-DE")})`;
+      }
+
+      document.getElementById("eventList").innerHTML += `
+        <div class="border p-3 rounded mb-2">
+          <b>${ev.title}</b><br>
+          <span class="text-sm text-gray-600">${ev.desc || ""}</span><br>
+          <span class="text-xs">${status}</span>
+          <div class="mt-2 flex gap-2">
+            <button class="px-2 py-1 bg-blue-500 text-white rounded text-xs" 
+              onclick="editEvent('${doc.id}','${evDoc.id}')">✏️ Bearbeiten</button>
+            <button class="px-2 py-1 bg-red-500 text-white rounded text-xs" 
+              onclick="deleteEvent('${doc.id}','${evDoc.id}')">🗑️ Löschen</button>
+          </div>
+        </div>
+      `;
+    });
+  }
+    }
+
+
+
+
+async function showCreateEvent(user) {
+  const betreiberDoc = await db.collection("betreiber").doc(user.uid).get();
+  const data = betreiberDoc.data() || {};
+  
+  if (data.premium) {
+  const qa = document.getElementById("question-area");
+  qa.innerHTML = `<div class="text-gray-500">⏳ Lade deine Hütten...</div>`;
+
+  const hutsSnapshot = await db.collection("eierhuetten").where("userId", "==", user.uid).get();
+  if (hutsSnapshot.empty) {
+    qa.innerHTML = `<div class="p-6 bg-white rounded shadow text-center">
+      🚫 Du hast noch keine Hütte. <br>
+      <button class="mt-4 px-3 py-2 bg-green-600 text-white rounded" onclick="showMyEntries()">➕ Jetzt eine Hütte anlegen</button>
+    </div>`;
+    return;
+  }
+
+  let options = "";
+  hutsSnapshot.forEach(doc => {
+    const hut = doc.data();
+    options += `<option value="${doc.id}">${hut.name}</option>`;
+  });
+
+  qa.innerHTML = `
+    <section class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto animate-fadeIn">
+      <h2 class="text-2xl font-bold mb-4">🗓️ Neues Event erstellen</h2>
+      <form id="eventForm" class="grid gap-3">
+        <label>
+          <span class="text-sm text-gray-600">Hütte wählen</span>
+          <select id="eventHut" class="w-full p-2 border rounded">${options}</select>
+        </label>
+
+        <label>
+          <span class="text-sm text-gray-600">Titel</span>
+          <input id="eventTitle" type="text" class="w-full p-2 border rounded" required placeholder="z.B. Sommerfest">
+        </label>
+
+        <label>
+          <span class="text-sm text-gray-600">Beschreibung</span>
+          <textarea id="eventDesc" class="w-full p-2 border rounded" rows="2" placeholder="z.B. mit Musik, Grill & Getränken"></textarea>
+        </label>
+
+        <div class="grid grid-cols-2 gap-3">
+          <label>
+            <span class="text-sm text-gray-600">Startdatum</span>
+            <input id="eventStart" type="date" class="w-full p-2 border rounded" required>
+          </label>
+          <label>
+            <span class="text-sm text-gray-600">Enddatum</span>
+            <input id="eventEnd" type="date" class="w-full p-2 border rounded" required>
+          </label>
+        </div>
+
+        <button class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
+          ✅ Event speichern
+        </button>
+      </form>
+    </section>
+  `;
+
+  document.getElementById("eventForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const hutId = document.getElementById("eventHut").value;
+    const title = document.getElementById("eventTitle").value;
+    const desc = document.getElementById("eventDesc").value;
+    const start = new Date(document.getElementById("eventStart").value);
+    const end = new Date(document.getElementById("eventEnd").value);
+
+    if (end <= start) {
+      showToast("❌ Enddatum muss nach dem Startdatum liegen!");
+      return;
+    }
+
+    await db.collection("eierhuetten").doc(hutId).collection("events").add({
+  title,
+  desc,
+  startDate: firebase.firestore.Timestamp.fromDate(new Date(start)),
+  endDate: firebase.firestore.Timestamp.fromDate(new Date(end)),
+  createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+  active: true,
+});
+
+    showToast("✅ Event erfolgreich gespeichert!");
+    showMyEvents(user);
+  });
+  }
+}
+
+
+
+
+    
+function showPremiumUpgrade() {
+  const qa = document.getElementById("question-area");
+  qa.innerHTML = `
+    <section class="bg-white p-6 rounded-xl shadow max-w-xl mx-auto animate-fadeIn">
+      <h2 class="text-2xl font-bold mb-4">🌟 Unterstützer werden</h2>
+      <p class="text-gray-700 mb-4">Mit RadlMap Premium erhältst du:</p>
+      <ul class="list-disc list-inside mb-6 text-gray-700">
+        <li>🔝 Hervorgehobene Anzeige auf der Karte</li>
+        <li>📸 Bis zu 10 Fotos hochladen</li>
+        <li>📈 Erweiterte Statistiken</li>
+        <li>💬 Kontaktmöglichkeiten in deinem Eintrag</li>
+      </ul>
+
+      <p class="font-semibold mb-4">Preis: <span class="text-green-700">2,00 €/Monat</span></p>
+
+      <!-- showPremiumUpgrade erzeugt diesen Button (oder passe dein Template an) -->
+<button id="activatePremiumBtn"
+  class="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition">
+  ✅ Jetzt Premium aktivieren
+</button>
+
+      <button 
+        class="w-full mt-4 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300 transition"
+        onclick="showDashboard()"
+      >
+        🔙 Zurück
+      </button>
+    </section>
+  `;
+}
+
+
+async function showMyEvents(user) {
+  const betreiberDoc = await db.collection("betreiber").doc(user.uid).get();
+  const data = betreiberDoc.data() || {};
+  
+  if (data.premium) {
+  const qa = document.getElementById("question-area");
+  qa.innerHTML = `<div class="text-gray-500">⏳ Lade deine Events...</div>`;
+
+  const hutsSnapshot = await db.collection("eierhuetten").where("userId", "==", user.uid).get();
+  let html = `
+    <section class="bg-white p-6 rounded-xl shadow max-w-3xl mx-auto animate-fadeIn">
+      <h2 class="text-2xl font-bold mb-4">📅 Meine Events</h2>
+      <div id="eventList"></div>
+    </section>
+  `;
+  qa.innerHTML = html;
+
+  const list = document.getElementById("eventList");
+  let found = false;
+
+  for (const hutDoc of hutsSnapshot.docs) {
+    const hut = hutDoc.data();
+    const eventsSnap = await db.collection("eierhuetten").doc(hutDoc.id).collection("events").get();
+
+    eventsSnap.forEach(evDoc => {
+      found = true;
+      const ev = evDoc.data();
+      const now = new Date();
+
+      let status;
+      if (ev.startDate.toDate() > now) {
+        status = `<span class="text-yellow-600 font-semibold">🕓 Geplant</span>`;
+      } else if (ev.endDate.toDate() < now) {
+        status = `<span class="text-gray-500 font-semibold">⏹️ Abgelaufen</span>`;
+      } else {
+        status = `<span class="text-green-700 font-semibold animate-pulse">🟢 Aktiv</span>`;
+      }
+
+      list.innerHTML += `
+        <div class="border rounded-lg p-4 mb-3 bg-gray-50">
+          <div class="flex justify-between items-center">
+            <div>
+              <h3 class="text-lg font-bold text-green-800">${ev.title}</h3>
+              <p class="text-sm text-gray-600">${ev.desc || ""}</p>
+              <p class="text-xs mt-1">${status} | ${hut.name}</p>
+              <p class="text-xs text-gray-500">
+                ${ev.startDate.toDate().toLocaleDateString("de-DE")} – ${ev.endDate.toDate().toLocaleDateString("de-DE")}
+              </p>
+            </div>
+            <div class="flex gap-2">
+              <button class="bg-blue-500 text-white px-3 py-1 rounded text-xs hover:bg-blue-600"
+                onclick="editEvent('${hutDoc.id}', '${evDoc.id}')">✏️ Bearbeiten</button>
+              <button class="bg-red-500 text-white px-3 py-1 rounded text-xs hover:bg-red-600"
+                onclick="deleteEvent('${hutDoc.id}', '${evDoc.id}')">🗑️ Löschen</button>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  if (!found) {
+    list.innerHTML = `<p class="text-center text-gray-500">Keine Events gefunden.</p>`;
+  }
+  }
+}
+
+
+
+
+    
+
+
+// robustes activatePremium
+    async function activatePremium() {
+  const user = firebase.auth().currentUser;
+  if (!user) return alert("Bitte einloggen.");
+
+  // Simuliere Bezahlung
+  alert("✅ Test: Premium wurde aktiviert (ohne Stripe)");
+
+  // Schreibe direkt ins Firestore
+  const until = new Date(Date.now() + 30*24*60*60*1000); // +30 Tage
+  await db.collection("betreiber").doc(user.uid).set({
+    premium: true,
+    premium_until: until.toISOString()
+  }, { merge: true });
+
+  // Danach zurück ins Dashboard
+  showDashboard();
+    }
+/*async function activatePremium() {
+  const user = firebase.auth().currentUser;
+  if (!user) return alert("Bitte einloggen.");
+
+  const btn = document.getElementById("activatePremiumBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Leite weiter..."; }
+
+  try {
+    // 1) request an backend
+    const res = await fetch("/create-checkout-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uid: user.uid })
+    });
+
+    if (!res.ok) {
+      // hilfreiche Fehlermeldung für Debug
+      const txt = await res.text().catch(()=>"");
+      throw new Error(`Server antwortete mit ${res.status}: ${txt}`);
+    }
+
+    const session = await res.json();
+    if (!session || !session.id) throw new Error("Keine session.id vom Server erhalten.");
+
+    // 2) bereitstellen / prüfen ob Stripe geladen ist
+    if (typeof Stripe === "undefined" && typeof window.stripe === "undefined") {
+      throw new Error("Stripe.js nicht geladen. Bitte src='https://js.stripe.com/v3/'> einbinden.");
+    }
+
+    // Verwende vorhandene globale public key-Variable oder setze sie hier:
+    // (besser: public key in config, nicht hardcoden)
+    const PUBLISHABLE_KEY = window.RADLMAP_STRIPE_PUBKEY || "pk_live_51SFLg0PfD3BVBNRdvVxf0hegWHOzKrAF7OqCHeMRqZtGtzCTtvbIaVIf0ChrAZss5XJ4Mafdh9z4HUa90J4IacsU00FnIAB2xk";
+
+    const stripeInstance = (typeof window._stripeInstance !== "undefined")
+      ? window._stripeInstance
+      : Stripe(PUBLISHABLE_KEY);
+
+    window._stripeInstance = stripeInstance;
+
+    // 3) Redirect
+    const result = await stripeInstance.redirectToCheckout({ sessionId: session.id });
+    if (result && result.error) throw new Error(result.error.message);
+
+  } catch (err) {
+    console.error("activatePremium error:", err);
+    alert("Fehler beim Starten der Bezahlung: " + (err.message || err));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "✅ Jetzt Premium aktivieren"; }
+  }
+}*/
+async function cancelPremium() {
+  const user = firebase.auth().currentUser;
+  if (!user) return alert("Bitte einloggen.");
+
+  if (!confirm("Möchtest du dein Premium wirklich kündigen?")) return;
+
+  await db.collection("betreiber").doc(user.uid).update({
+    premium: false,
+    premium_until: null
+  });
+
+  alert("❌ Premium wurde beendet. Du kannst jederzeit wieder upgraden.");
+  showDashboard(); // Dashboard neu laden
+}
+// Wenn du inline onclick nutzt: sorgt dafür, dass die Funktion existiert
+document.addEventListener("click", (e) => {
+  if (e.target && e.target.id === "activatePremiumBtn") {
+    activatePremium();
+  }
+});
+
+// ⏱️ Ablauf prüfen
+/*function checkPremiumExpiration() {
+  const user = firebase.auth().currentUser;
+  if (!user) return;
+
+  db.collection("betreiber").doc(user.uid).get().then(doc => {
+    const data = doc.data();
+    if (data?.premium_until) {
+      const today = new Date();
+      const until = new Date(data.premium_until);
+      if (today > until) {
+        db.collection("betreiber").doc(user.uid).update({ premium: false });
+      }
+    }
+  });
+}*/
+    function checkPremiumExpiration() {
+  const user = firebase.auth().currentUser;
+  if (!user) return;
+
+  db.collection("betreiber").doc(user.uid).get().then(doc => {
+    const data = doc.data();
+    if (data?.premium_until) {
+      const today = new Date();
+      const until = new Date(data.premium_until);
+      if (today > until) {
+        db.collection("betreiber").doc(user.uid).update({ premium: false });
+      }
+    }
+  });
+    }
+
+// Erweiterte Premium-Statistik (Diagramm)
+async function showPremiumStatsChart(user) {
+  const container = document.getElementById("premiumArea");
+  if (!container) return;
+
+  // Diagramm-Container
+  const chartBox = document.createElement("div");
+  chartBox.className = "bg-white p-4 rounded-xl shadow mt-6";
+  chartBox.innerHTML = `
+    <h3 class="text-lg font-bold mb-2 text-green-700">📈 Aufrufe der letzten 7 Tage</h3>
+    <canvas id="viewsChart" height="150"></canvas>
+  `;
+  container.appendChild(chartBox);
+
+  // Beispielhafte Daten – hole echte Daten aus Firestore
+  const statsMap = new Map();
+  const now = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(now.getDate() - i);
+    statsMap.set(d.toLocaleDateString("de-DE"), 0);
+  }
+
+  // Daten aus Firestore abrufen
+  const snapshot = await db.collection("eierhuetten")
+    .where("ownerUid", "==", user.uid)
+    .get();
+
+  snapshot.forEach(doc => {
+    const data = doc.data();
+    if (Array.isArray(data.dailyViews)) {
+      data.dailyViews.forEach(v => {
+        const day = new Date(v.date).toLocaleDateString("de-DE");
+        if (statsMap.has(day)) {
+          statsMap.set(day, statsMap.get(day) + (v.count || 0));
+        }
+      });
+    }
+  });
+
+  const labels = Array.from(statsMap.keys());
+  const values = Array.from(statsMap.values());
+
+  const ctx = document.getElementById("viewsChart").getContext("2d");
+  new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: "Seitenaufrufe",
+        data: values,
+        fill: true,
+        borderColor: "#10b981",
+        backgroundColor: "rgba(16,185,129,0.2)",
+        tension: 0.3
+      }]
+    },
+    options: {
+      plugins: {
+        legend: { display: false },
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, ticks: { stepSize: 1 } }
+      }
+    }
+  });
+}
+
+// Dann rufe in showDashboard() am Ende folgendes auf:
+db.collection("betreiber").doc(user.uid).get().then(doc => {
+  const data = doc.data() || {};
+  const premiumArea = document.getElementById("premiumArea");
+
+  if (data.premium) {
+    premiumArea.innerHTML = `
+      <div class="p-4 bg-green-50 rounded-lg shadow text-center">
+        🌟 <b>Premium aktiv</b><br>
+        <span class="text-sm text-gray-600">bis ${data.premium_until || "unbekannt"}</span>
+      </div>
+    `;
+    // Nur wenn Premium aktiv: Diagramm anzeigen
+    showPremiumStatsChart(user);
+  } else {
+    premiumArea.innerHTML = `
+      <button 
+        class="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition"
+        onclick="showPremiumUpgrade()"
+      >
+        🌟 Premium freischalten (2 €/Monat)
+      </button>
+    `;
+  }
+});
+
+async function showLimitsSection(user, isPremium) {
+  const qa = document.getElementById("statsArea");
+  if (!qa) return;
+
+  const entriesSnap = await db.collection("eierhuetten")
+    .where("ownerUid", "==", user.uid)
+    .get();
+
+  const count = entriesSnap.size;
+  const limit = isPremium ? 999 : 1; // Free: 1 Eintrag, Premium: praktisch unbegrenzt
+  const pct = Math.min((count / limit) * 100, 100).toFixed(0);
+
+  // Section erstellen
+  const box = document.createElement("div");
+  box.className = "bg-white p-4 rounded-xl shadow mb-6";
+
+  if (isPremium) {
+    box.innerHTML = `
+      <h3 class="text-lg font-bold text-green-700 mb-2">🔓 Premium-Vorteile</h3>
+      <p class="text-gray-600 mb-3">Du kannst unbegrenzt Hütten hinzufügen und bis zu 10 Fotos pro Hütte hochladen.</p>
+      <div class="w-full bg-green-100 h-3 rounded"><div class="h-3 bg-green-500 rounded w-full"></div></div>
+      <p class="text-sm text-green-700 mt-2 font-semibold">✔️ Keine Limits aktiv</p>
+    `;
+  } else {
+    box.innerHTML = `
+      <h3 class="text-lg font-bold text-gray-800 mb-2">⚙️ Dein aktueller Fortschritt</h3>
+      <p class="text-gray-600 mb-3">Du hast <b>${count}</b> von <b>${limit}</b> möglichen Einträgen erstellt.</p>
+      <div class="w-full bg-gray-200 h-3 rounded"><div class="h-3 bg-green-500 rounded" style="width:${pct}%;"></div></div>
+      <p class="text-sm text-gray-600 mt-2">${pct}% deines Limits erreicht</p>
+      ${count >= limit ? `
+        <div class="mt-4 text-center">
+          <p class="text-red-600 text-sm mb-2">🚫 Du hast dein Limit erreicht.</p>
+          <button class="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition"
+            onclick="showPremiumUpgrade()">🌟 Jetzt auf Premium upgraden</button>
+        </div>` : ""}
+    `;
+  }
+
+  qa.insertAdjacentElement("afterend", box);
+}
+
+  
+function showTutorial() {
+  const qa = document.getElementById("question-area");
+  mode = "tutorial";
+
+  const tutorialHTML = `
+    <section class="bg-white p-8 rounded-2xl shadow-lg max-w-3xl mx-auto animate-fadeIn">
+      <!-- Header -->
+      <header class="mb-6 text-center">
+        <h2 class="text-3xl font-extrabold text-green-600 mb-2">👋 Willkommen!</h2>
+        <p class="text-gray-600 text-lg">
+          Schön, dass du den <span class="font-semibold text-green-600">Hütten-Assistent</span> benutzt.
+          Hier ein kurzer Überblick über die wichtigsten Funktionen:
+        </p>
+      </header>
+
+      <!-- Übersicht -->
+      <ul class="space-y-5 text-gray-700">
+        <li class="flex items-start">
+          <span class="text-green-500 mr-3 text-xl">➕</span>
+          <p>
+            <strong>„Neue Eintragung“</strong> – Erstelle eine neue Hütten-/Hofladen-Eintragung mit Fotos und Informationen.
+          </p>
+        </li>
+
+        <li class="flex items-start">
+          <span class="text-green-500 mr-3 text-xl">📋</span>
+          <p>
+            <strong>„Meine Eintragungen“</strong> – Übersicht über deine Einträge: Status, Fotos, Standort und Bearbeitungsmöglichkeiten.
+          </p>
+        </li>
+
+        <li class="flex items-start">
+          <span class="text-green-500 mr-3 text-xl">💬</span>
+          <p>
+            <strong>„Hütten-Nachrichten“</strong> – Hier sammeln sich Nachrichten von Besuchern zu deinen Hütten.
+            Neue Nachrichten erscheinen durch das rote Badge in der Seitenleiste. Du kannst Nachrichten öffnen, lesen und (als Hütten-Besitzer) einzelne Nachrichten löschen.
+          </p>
+        </li>
+
+        <li class="flex items-start">
+          <span class="text-green-500 mr-3 text-xl">🆘</span>
+          <p>
+            <strong>„Support“</strong> – Melde Probleme oder stelle Fragen an das Team. Support-Tickets werden gespeichert.
+          </p>
+        </li>
+      </ul>
+
+      <!-- Footer -->
+      <footer class="mt-8 text-center">
+        <p class="text-sm text-gray-500">
+          💡 Tipp: Das System aktualisiert Nachrichten live — das Badge zeigt neue, ungelesene Nachrichten an.
+        </p>
+      </footer>
+    </section>
+  `;
+
+  qa.innerHTML = tutorialHTML;
+  updateInfoBox();
+}
+let hutMessagesUnsub = null;       // Listener für die Liste
+let hutMessagesBadgeUnsub = null;  // Listener für die Sidebar-Badge
+
+// -------------------
+// Seite "Hütten-Nachrichten" öffnen
+// -------------------
+function showHutMessages() {
+  const qa = document.getElementById("question-area");
+  mode = "hutMessages";
+
+  const hutMessagesHTML = `
+    <section class="bg-white p-6 rounded-2xl shadow-lg max-w-3xl mx-auto animate-fadeIn">
+      <header class="mb-4 text-center">
+        <h2 class="text-2xl font-extrabold text-green-600 mb-2">🏡 Hütten-Nachrichten</h2>
+        <p class="text-gray-600 text-sm">Hier findest du Nachrichten, die Besucher zu deinen Hütten geschrieben haben.</p>
+      </header>
+      <div id="hutMessagesList" class="divide-y divide-gray-200 text-sm">
+        <div class="text-gray-400 p-4">⏳ Lade Nachrichten...</div>
+      </div>
+      <footer class="mt-4 text-center">
+        <div id="hutMessagesBadge" class="hidden text-red-600 font-semibold">🔔 Neue Nachrichten!</div>
+      </footer>
+    </section>
+  `;
+
+  qa.innerHTML = hutMessagesHTML;
+  ladeHutMessagesLive();  // Nachrichten live laden
+  updateInfoBox();
+}
+
+// -------------------
+// Sidebar-Badge immer aktuell halten
+// -------------------
+async function initHutMessagesBadge() {
+  if (hutMessagesBadgeUnsub) { hutMessagesBadgeUnsub(); hutMessagesBadgeUnsub = null; }
+
+  const huettenSnap = await db.collection("eierhuetten")
+    .where("userId", "==", currentUser.uid)
+    .get();
+
+  if (huettenSnap.empty) {
+    const counter = document.getElementById("hutMessagesCount");
+    if (counter) counter.classList.add("hidden");
+    return;
+  }
+
+  const hutIds = huettenSnap.docs.map(d => d.id);
+
+  // in Batches von 10 IDs splitten
+  const batches = [];
+  for (let i = 0; i < hutIds.length; i += 10) {
+    const batchIds = hutIds.slice(i, i + 10);
+    batches.push(
+      db.collection("hutMessages")
+        .where("hutId", "in", batchIds)
+    );
+  }
+
+  // mehrere Listener kombinieren
+  const counters = [];
+  hutMessagesBadgeUnsub = () => counters.forEach(unsub => unsub());
+
+  batches.forEach(batchQuery => {
+    const unsub = batchQuery.onSnapshot(snap => {
+      let neuCount = 0;
+      snap.forEach(doc => {
+        if (doc.data().answered === false) neuCount++;
+      });
+
+      const counter = document.getElementById("hutMessagesCount");
+      if (counter) {
+        if (neuCount > 0) {
+          counter.textContent = neuCount;
+          counter.classList.remove("hidden");
+        } else {
+          counter.classList.add("hidden");
+        }
+      }
+    });
+    counters.push(unsub);
+  });
+}
+
+// -------------------
+// Nachrichten-Liste für die Seite
+// -------------------
+async function ladeHutMessagesLive() {
+  const list = document.getElementById("hutMessagesList");
+  const counter = document.getElementById("hutMessagesCount");
+
+  if (!currentUser || !currentUser.uid) {
+    if (list) list.innerHTML = `<div class="p-4 text-gray-500">Bitte anmelden, um Nachrichten zu sehen.</div>`;
+    if (counter) counter.classList.add("hidden");
+    return;
+  }
+
+  if (hutMessagesUnsub) { hutMessagesUnsub(); hutMessagesUnsub = null; }
+
+  const huettenSnap = await db.collection("eierhuetten")
+    .where("userId", "==", currentUser.uid)
+    .get();
+
+  if (huettenSnap.empty) {
+    if (list) list.innerHTML = `<div class="p-4 text-gray-500">Keine eigenen Hütten gefunden.</div>`;
+    if (counter) counter.classList.add("hidden");
+    return;
+  }
+
+  const hutIds = huettenSnap.docs.map(d => d.id);
+
+  // split into batches
+  const batches = [];
+  for (let i = 0; i < hutIds.length; i += 10) {
+    batches.push(
+      db.collection("hutMessages")
+        .where("hutId", "in", hutIds.slice(i, i + 10))
+        .orderBy("createdAt", "desc")
+    );
+  }
+
+  const unsubs = [];
+  hutMessagesUnsub = () => unsubs.forEach(u => u());
+
+  list.innerHTML = "⏳ Lade Nachrichten...";
+
+  // wir sammeln alle Messages aus allen Batches
+  batches.forEach(query => {
+    const unsub = query.onSnapshot(snap => {
+      const allMessages = [];
+
+      // alle Batches abfragen
+      Promise.all(batches.map(b => b.get())).then(results => {
+        results.forEach(batchSnap => {
+          batchSnap.forEach(doc => {
+            allMessages.push({ id: doc.id, ...doc.data() });
+          });
+        });
+
+        // sortieren nach Datum
+        allMessages.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
+
+        // rendern
+        if (allMessages.length === 0) {
+          list.innerHTML = `<div class="p-4 text-gray-500">Keine Nachrichten vorhanden.</div>`;
+          if (counter) counter.classList.add("hidden");
+          return;
+        }
+
+        let neuCount = 0;
+        list.innerHTML = "";
+        allMessages.forEach(d => {
+          if (d.answered === false) neuCount++;
+          const datum = d.createdAt?.toDate?.().toLocaleString("de-DE") || "-";
+          list.innerHTML += `
+            <div class="p-4 border-b">
+              <div class="text-xs text-gray-500">${datum}</div>
+              <div class="font-semibold">${d.hutName || "-"}</div>
+              <div class="mt-1">${d.message || ""}</div>
+              <div class="text-xs text-gray-400 mt-1">von ${d.senderName || "Gast"}</div>
+                 <!-- 🗑 Löschbutton -->
+      <button 
+        class="text-red-500 text-sm hover:underline"
+        onclick="deleteHutMessage('${d.id}')"
+      >Löschen</button>
+            </div>
+          `;
+        });
+
+        // Badge aktualisieren
+        if (counter) {
+          counter.textContent = `${neuCount}/${allMessages.length}`;
+          counter.classList.remove("hidden");
+        }
+      });
+    });
+
+    unsubs.push(unsub);
+  });
+}
+    async function deleteHutMessage(id) {
+  if (!confirm("Willst du diese Nachricht wirklich löschen?")) return;
+  try {
+    await db.collection("hutMessages").doc(id).delete();
+    console.log("Nachricht gelöscht:", id);
+  } catch (err) {
+    console.error("Fehler beim Löschen:", err);
+    alert("❌ Konnte Nachricht nicht löschen");
+  }
+  }
+  function selectOption(field, value, el) {
+    // deselect siblings
+    if (el && el.parentNode) {
+      el.parentNode.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+      el.classList.add('selected');
+    }
+    editingData[field] = value;
+  }
+
+  function nextStep() {
+    // validation for some steps
+    if (step === 0) {
+      const ok = document.getElementById('dsCheck') && document.getElementById('dsCheck').checked;
+      if (!ok) { alert('Bitte Datenschutzerklärung akzeptieren'); return; }
+      editingData.datenschutz = true;
+    }
+    // Typ auswählen
+  if (step === 1) {
+    if (!editingData.typ) {
+      alert("Bitte einen Typ auswählen.");
+      return false;
+    }
+  }
+
+  // Öffnungszeiten
+  if (step === 5) {
+    const rawOeff = collectOpeningHours();
+    const normalized = normalizeOpeningHours(rawOeff);
+    if (!normalized || (Array.isArray(normalized) && normalized.length === 0)) {
+      alert("Bitte Öffnungszeiten angeben oder 'Immer geöffnet' auswählen.");
+      return false;
+    }
+    editingData.oeffnungszeiten = normalized;
+  }
+    if (step === 2) {
+      const v = document.getElementById('nameInput')?.value?.trim();
+      if (!v) { alert('Bitte Namen eingeben'); return; }
+      editingData.name = v;
+    }
+    if (step === 6) {
+      editingData.extras = document.getElementById('extrasInput')?.value?.trim();
+    }
+    if (step === 7) {
+      // description already captured via quill on change
+    }
+    if (step === 8) {
+      const raw = document.getElementById('tagsInput')?.value || '';
+      editingData.tags = raw.split(',').map(s=>s.trim()).filter(Boolean).slice(0, 10);
+    }
+
+    if (step < stepsCount - 1) step++;
+    renderQuestion();
+    updateProgress();
+  }
+
+  function prevStep() {
+    if (step > 0) step--;
+    renderQuestion();
+    updateProgress();
+  }
+
+  function startNewEntry() {
+    if (!currentUser || !currentUser.uid) {
+  showToast("Bitte zuerst einloggen");
+  return;
+    }
+    editingData = {};
+    step = 0;
+    mode = "entry";
+    document.getElementById("navBottom").style.display =
+  (mode === "entry") ? "flex" : "none";
+      
+    renderQuestion();
+    toggleSidebar();
+    updateProgress();
+  }
+function collectOpeningHours() {
+  const immer = document.getElementById("immerCheck")?.checked;
+  if (immer) {
+    return "Immer geöffnet";
+  }
+
+  const days = ["Mo","Di","Mi","Do","Fr","Sa","So"];
+  const arr = [];
+  days.forEach(d => {
+    const vonEl = document.getElementById(`open-${d}-von`);
+    const bisEl = document.getElementById(`open-${d}-bis`);
+    const von = vonEl?.value.trim();
+    const bis = bisEl?.value.trim();
+
+    if (von && bis) {
+      arr.push({ tag: d, von, bis });
+    }
+  });
+  return arr;
+}
+    function renderOpeningHours(oeff) {
+  if (!oeff) return "–";
+
+  // Fall 1: String
+  if (typeof oeff === "string") {
+    if (oeff.toLowerCase().includes("immer")) {
+      return "Immer geöffnet ✅";
+    }
+    return oeff; // z.B. "09:00 – 18:00"
+  }
+
+  // Fall 2: Map mit immer:true
+  if (typeof oeff === "object" && !Array.isArray(oeff)) {
+    if (oeff.immer === true) return "Immer geöffnet ✅";
+
+    // Falls in Zukunft auch andere Felder im Objekt gespeichert
+    let keys = Object.keys(oeff);
+    return keys.map(k => `${k}: ${oeff[k]}`).join("<br>");
+  }
+
+  // Fall 3: Array [{tag, von, bis}, …]
+  if (Array.isArray(oeff)) {
+    if (oeff.length === 0) return "–";
+    return oeff.map(o => `${o.tag}: ${o.von} – ${o.bis}`).join("<br>");
+  }
+
+  return "–";
+    }
+  
+  async function submitEntry() {
+  if (!editingData.name || !editingData.typ) {
+    alert('Bitte Typ und Name ausfüllen.');
+    return;
+  }
+
+  // Öffnungszeiten normalisieren bevor sie gespeichert werden
+  const rawOeff = collectOpeningHours();
+  const normalizedOeff = normalizeOpeningHours(rawOeff);
+
+  const payload = {
+    userId: currentUser.uid,
+    name: editingData.name,
+    typ: editingData.typ,
+    sitzplaetze: editingData.sitzplaetze || 'Nein',
+    strom: editingData.strom || 'Nein',
+    extras: editingData.extras || '',
+    tiere: editingData.tiere || [],
+    beschreibung: editingData.beschreibung || '',
+    tags: editingData.tags || [],
+    oeffnungszeiten: normalizedOeff, // ✅ jetzt wird es sauber gespeichert
+    status: 'offen',
+    erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
+    datenschutzZustimmung: {
+      bestaetigtAm: firebase.firestore.FieldValue.serverTimestamp(),
+      durch: currentUser.email || null
+    }
+  };
+
+  if (editingData.location?.lat && editingData.location?.lng) {
+    payload.location = new firebase.firestore.GeoPoint(
+      editingData.location.lat,
+      editingData.location.lng
+    );
+  }
+
+  try {
+    await db.collection('eierhuetten').add(payload);
+    showToast('✅ Eintragung gesendet. Wird geprüft.');
+    showMyEntries();
+  } catch (err) {
+    console.error('submitEntry error', err);
+    alert('Fehler beim Senden: ' + (err.message || err));
+  }
+               }
+
+let overviewMap;
+let overviewMarker;
+
+function initOverviewMap(lat = 51.1657, lng = 10.4515, zoom = 6) {
+  if (!overviewMap) {
+    overviewMap = L.map("overview-map").setView([lat, lng], zoom);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(overviewMap);
+  } else {
+    overviewMap.setView([lat, lng], zoom);
+  }
+
+  if (!overviewMarker) {
+    overviewMarker = L.marker([lat, lng], { draggable: true }).addTo(overviewMap);
+    overviewMarker.on("dragend", ev => {
+      const p = ev.target.getLatLng();
+      editingData.location = { lat: p.lat, lng: p.lng };
+    });
+  } else {
+    overviewMarker.setLatLng([lat, lng]);
+  }
+
+  editingData.location = { lat, lng };
+}
+
+function locateGPS() {
+  if (!navigator.geolocation) return alert("❌ GPS nicht verfügbar");
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const { latitude, longitude } = pos.coords;
+      initOverviewMap(latitude, longitude, 15);
+    },
+    err => {
+      alert("❌ GPS-Fehler: " + err.message);
+    }
+  );
+}
+
+
+    const stepInfos = {
+  0: {
+    title: "Datenschutz",
+    text: "Bitte lies die Datenschutzerklärung aufmerksam und bestätige sie. Ohne Zustimmung können wir keine Daten annehmen."
+  },
+  1: {
+    title: "Art der Eintragung",
+    text: "Wähle, ob du eine Eierhütte, Hofladen, Selbstbedienungshäuschen, Spielplatz oder Abenteuerhof eintragen möchtest."
+  },
+  2: {
+    title: "Name der Hütte",
+    text: "Verwende einen kurzen, prägnanten Namen, z. B. „Eierhütte am Dorfplatz“."
+  },
+  3: {
+    title: "Sitzplätze",
+    text: "Falls es Sitzgelegenheiten gibt, wähle Ja. Sonst Nein."
+  },
+  4: {
+    title: "Strom",
+    text: "Angabe, ob Strom verfügbar ist. (z.B. zum Aufladen des E-Bikes oder für das Handy)."
+  },
+  5: {
+    title: "Extras",
+    text: "Hier kannst du Besonderheiten angeben, z. B. Getränke, Kühlschrank, Grillmöglichkeiten."
+  },
+  6: {
+    title: "Tiere",
+    text: "Wähle alle Tiere aus, die es vor Ort gibt. Falls keine Tiere da sind, bitte „Keine Tiere“ auswählen."
+  },
+  7: {
+    title: "Beschreibung",
+    text: "Beschreibe deine Hütte, den Hof oder den Ort möglichst ausführlich. Z. B. „Unsere Hütte liegt direkt am Radweg und bietet frische Eier aus Freilandhaltung.“"
+  },
+  8: {
+    title: "Tags",
+    text: "Gib Schlagwörter ein, damit andere die Hütte besser finden können (max. 10). Z. B. „regional, Bio, Frühstück“."
+  },
+  9: {
+    title: "Übersicht & Standort",
+    text: "Hier siehst du alle Angaben zusammen. Wähle den Standort per Klick auf die Karte oder GPS. Du kannst den Marker mit Drag & Drop verschieben."
+  }
+};
+    function updateInfoBox() {
+  const boxDesktop = document.getElementById("infoBox");
+  const boxMobile = document.getElementById("infoBoxMobile");
+
+  let html = "";
+
+  if (mode === "entry") {
+    const info = stepInfos[step];
+    if (info) {
+      html = `
+        <h4 class="font-semibold">${info.title}</h4>
+        <p>${info.text}</p>
+      `;
+    } else {
+      html = "<p>Keine weiteren Informationen verfügbar.</p>";
+    }
+  } else if (mode === "list") {
+    html = `
+      <h4 class="font-semibold">📋 Meine Eintragungen</h4>
+      <p>Hier siehst du deine bereits eingereichten Hütten.<br>
+      Bearbeiten ist nur möglich, sobald die Hütte freigegeben wurde.</p>
+    `;
+  } else if (mode === "tutorial") {
+    html = `
+      <h4 class="font-semibold">👋 Willkommen</h4>
+      <p>Du befindest dich hier im Tutorial, <br>
+      hier wird Dir alles erklärt. </p>
+    `;
+  }  else if (mode === "support") {
+    html = `
+      <h4 class="font-semibold">💬 Support</h4>
+      <p>Stelle hier deine Fragen oder melde Probleme.<br>
+      Deine Tickets werden gespeichert und können später eingesehen oder gelöscht werden.</p>
+    `;
+  } else if (mode === "hutMessages") {
+  html = `
+    <h4 class="font-semibold">🏡 Hütten-Nachrichten</h4>
+    <p>
+      Hier siehst du alle Nachrichten, die Besucher zu deinen Hütten geschickt haben.<br>
+      Diese Übersicht aktualisiert sich automatisch, sobald neue Nachrichten eintreffen.
+    </p>
+    <p class="mt-1 text-sm text-gray-500">
+      Tipp: Neue Nachrichten erkennst du am roten 🔔 Badge in der Seitenleiste.
+    </p>
+  `;
+  } else {
+    html = "<p>ℹ️ Wähle links eine Funktion aus.</p>";
+  }
+
+  // ✨ Desktop-Bereich befüllen
+  if (boxDesktop) boxDesktop.innerHTML = html;
+  // ✨ Mobile Overlay befüllen
+  if (boxMobile) boxMobile.innerHTML = html;
+    }
+  /***********************
+   * Sidebar actions: Meine Eintragungen (mit Bearbeitung)
+   ***********************/
+// ================================
+// 🔁 MyEntries 2.0 - Übersicht + Detailseite
+// ================================
+
+// Hilfsfunktion: safe escape für attributes (falls noch nicht vorhanden)
+function escapeAttr(s) {
+  return (s === undefined || s === null) ? '' : String(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ================================
+// Übersicht: Karten mit Bild + Edit/Delete
+// ================================
+async function showMyEntries() {
+  if (!firebase.auth().currentUser) {
+    showToast("Bitte zuerst einloggen");
+    return;
+  }
+  const uid = firebase.auth().currentUser.uid;
+
+  // Lade betreiber-doc für Unterstützer-Status global (falls benötigt)
+  const betreiberDoc = await db.collection("betreiber").doc(uid).get();
+  const isGlobalSupporter = betreiberDoc.exists && (betreiberDoc.data().premium === true || betreiberDoc.data().unterstuetzer === true);
+
+  const container = document.getElementById("question-area");
+  container.innerHTML = `
+    <div class="max-w-6xl mx-auto">
+      <h2 class="text-2xl font-bold mb-6 text-green-700">📋 Meine Eintragungen</h2>
+      <div id="entriesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+    </div>
+  `;
+  const grid = document.getElementById("entriesGrid");
+  grid.innerHTML = `<div class="col-span-3 text-gray-500">⏳ Lade Eintragungen…</div>`;
+
+  try {
+    const snap = await db.collection("eierhuetten")
+      .where("userId", "==", uid)
+      .orderBy("erstelltAm", "desc")
+      .get();
+
+    const docs = snap.docs.filter(d => {
+      const st = d.data().status;
+      return st !== 'archiviert' && st !== 'deleted';
+    });
+
+    if (docs.length === 0) {
+      grid.innerHTML = `<div class="bg-white p-6 rounded shadow text-center">Du hast noch keine Eintragungen.</div>`;
+      return;
+    }
+
+    // optional: aggregate top stats for header (sum)
+    let total = docs.length;
+    let angenommen = docs.filter(d => ['angenommen','accepted'].includes(d.data().status)).length;
+    let offen = docs.filter(d => d.data().status === 'offen').length;
+
+    // optional header
+    const headerBar = document.createElement('div');
+    headerBar.className = 'col-span-3 bg-green-50 p-3 rounded-lg text-sm text-green-800 flex gap-6 justify-center items-center';
+    headerBar.innerHTML = `🥚 <strong>${total}</strong> Eintragungen • ✅ <strong>${angenommen}</strong> angenommen • ⏳ <strong>${offen}</strong> offen`;
+    grid.innerHTML = '';
+    grid.appendChild(headerBar);
+
+    // render each card
+    for (const doc of docs) {
+      const d = doc.data();
+      const id = doc.id;
+      const img = Array.isArray(d.fotos) && d.fotos.length ? (typeof d.fotos[0] === 'string' ? d.fotos[0] : d.fotos[0].url) : 'https://radlmap.net/img/noimg/1.jpg';
+      const isSupporter = d.unterstuetzer === true || isGlobalSupporter === true;
+
+      const card = document.createElement('div');
+      card.className = 'bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition relative';
+      card.style.cursor = 'pointer';
+
+      card.innerHTML = `
+        <div class="relative">
+          <img src="${escapeAttr(img)}" alt="${escapeAttr(d.name||'')}" class="w-full h-48 object-cover">
+          ${isSupporter ? `<span class="absolute top-3 right-3 bg-green-600 text-white text-xs font-semibold px-3 py-1 rounded-full shadow">💚 Unterstützer</span>` : ''}
+        </div>
+        <div class="p-4 flex justify-between items-center">
+          <div class="truncate">
+            <h3 class="font-bold text-lg text-gray-800 truncate">${escapeAttr(d.name||'Unbenannt')}</h3>
+            <p class="text-xs text-gray-500 truncate">${(d.status || 'Unbekannt')}</p>
+          </div>
+          <div class="flex gap-3 text-lg">
+            <button class="edit-btn text-blue-600 hover:text-blue-800" title="Bearbeiten" data-id="${id}">✏️</button>
+            <button class="delete-btn text-red-600 hover:text-red-800" title="Löschen" data-id="${id}" data-name="${escapeAttr(d.name||'')}">❌</button>
+          </div>
+        </div>
+      `;
+
+      // click on card opens edit page
+      card.addEventListener('click', (ev) => {
+        // avoid card-click if edit or delete button clicked
+        if (ev.target.closest('.edit-btn') || ev.target.closest('.delete-btn')) return;
+        openEditPage(id);
+      });
+
+      grid.appendChild(card);
+    }
+
+    // event delegation for edit / delete
+    grid.querySelectorAll('.edit-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openEditPage(btn.dataset.id);
+      });
+    });
+    grid.querySelectorAll('.delete-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        confirmDeleteEntry(btn.dataset.id, btn.dataset.name);
+      });
+    });
+
+  } catch (err) {
+    console.error('showMyEntries error', err);
+    grid.innerHTML = `<div class="bg-red-100 p-4 rounded">Fehler beim Laden: ${err.message}</div>`;
+  }
+}
+
+// ================================
+// Löschen mit Nachfrage (übersicht + detail)
+// ================================
+function confirmDeleteEntry(id, name) {
+  const proceed = confirm(`⚠️ Möchtest du die Eintragung "${name || id}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`);
+  if (!proceed) return;
+  db.collection('eierhuetten').doc(id).delete()
+    .then(() => {
+      showToast('✅ Eintragung gelöscht');
+      showMyEntries();
+    })
+    .catch(err => {
+      console.error('delete error', err);
+      showToast('❌ Fehler beim Löschen: ' + (err.message || err));
+    });
+}
+
+// ================================
+// Detailseite: Statistik + Bearbeitungsformular
+// ================================
+ 
+async function openEditPage(id) {
+  if (!id) return;
+  try {
+    const docRef = db.collection("eierhuetten").doc(id);
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) return showToast("❌ Eintrag nicht gefunden");
+    const d = docSnap.data();
+
+    const container = document.getElementById("question-area");
+    container.innerHTML = `
+      <div class="max-w-5xl mx-auto">
+        <button id="backToList" class="mb-4 text-sm text-blue-600 hover:underline">⬅️ Zurück zur Übersicht</button>
+
+        <div class="flex flex-col md:flex-row gap-6">
+
+          <!-- 📸 Foto-Upload -->
+          <div id="photoUploaderContainer" class="w-full md:w-1/3 bg-white rounded-xl p-4 shadow"></div>
+
+          <!-- 🧾 Formular -->
+          <div class="w-full md:w-2/3">
+            <div class="bg-white rounded-xl p-6 shadow space-y-4">
+              <h4 class="font-semibold text-lg mb-2">Bearbeitungsformular</h4>
+
+              <label class="block">
+                <span class="text-gray-700">Name</span>
+                <input id="editName" value="${escapeAttr(d.name || "")}" class="w-full border rounded p-2 mt-1">
+              </label>
+
+              <label class="block">
+                <span class="text-gray-700">Beschreibung</span>
+                <div id="toolbar" class="flex gap-2 mb-2">
+                  <button id="undoBtn" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">↩️ Rückgängig</button>
+                  <button id="redoBtn" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">↪️ Wiederholen</button>
+                </div>
+                <div id="quillContainer" class="bg-white border rounded p-2 min-h-[150px]">${d.beschreibung || ""}</div>
+                <button id="generateDescBtn" class="mt-3 px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition">🪄 Automatische KI-Beschreibung erstellen</button>
+              </label>
+
+              <div class="grid grid-cols-2 gap-3">
+                <label>
+                  <span class="text-gray-700">Sitzplätze</span>
+                  <select id="editSitz" class="w-full border rounded p-2">
+                    <option ${d.sitzplaetze === "Ja" ? "selected" : ""}>Ja</option>
+                    <option ${d.sitzplaetze === "Nein" ? "selected" : ""}>Nein</option>
+                  </select>
+                </label>
+                <label>
+                  <span class="text-gray-700">Strom</span>
+                  <select id="editStrom" class="w-full border rounded p-2">
+                    <option ${d.strom === "Ja" ? "selected" : ""}>Ja</option>
+                    <option ${d.strom === "Nein" ? "selected" : ""}>Nein</option>
+                  </select>
+                </label>
+              </div>
+
+              <label class="block">
+                <span class="text-gray-700">Extras</span>
+                <input id="editExtras" value="${escapeAttr(d.extras || "")}" class="w-full border rounded p-2 mt-1">
+              </label>
+
+              <label class="block">
+                <span class="text-gray-700">Tiere</span>
+                <div id="tiereButtons" class="flex flex-wrap gap-2 mt-2"></div>
+              </label>
+
+              <label class="block">
+                <span class="text-gray-700">Tags</span>
+                <input id="editTags" value="${Array.isArray(d.tags) ? escapeAttr(d.tags.join(", ")) : ""}" class="w-full border rounded p-2 mt-1">
+              </label>
+
+              <div id="openingEditorWrapper" class="mt-3">
+                ${typeof renderOpeningHoursEditor === "function"
+                  ? renderOpeningHoursEditor(id, d.oeffnungszeiten)
+                  : `<label><span class="text-gray-700">Öffnungszeiten</span>
+                      <textarea id="editOpening" class="w-full border rounded p-2 mt-1">${escapeAttr(
+                        JSON.stringify(d.oeffnungszeiten || {})
+                      )}</textarea></label>`}
+              </div>
+
+              <div class="flex justify-end gap-3 pt-4">
+                <button id="deleteEntryBtn" class="px-4 py-2 bg-red-600 text-white rounded">🗑️ Löschen</button>
+                <button id="saveEntryBtn" class="px-4 py-2 bg-green-600 text-white rounded">💾 Speichern</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // === Navigation zurück
+    document.getElementById("backToList").onclick = () => showMyEntries();
+
+    // === Tiere-Buttons
+    const animals = ["🐐 Ziege", "🐄 Kuh", "🐓 Huhn", "🐕 Hund", "🐇 Hase", "🐈 Katze", "Keine Tiere"];
+    const tiereContainer = document.getElementById("tiereButtons");
+    const selected = d.tiere || [];
+    animals.forEach((t) => {
+      const b = document.createElement("button");
+      b.className = `px-2 py-1 border rounded text-sm transition ${selected.includes(t) ? "bg-green-200" : "bg-gray-100"}`;
+      b.textContent = t;
+      b.onclick = (e) => {
+        e.stopPropagation();
+        if (t === "Keine Tiere") selected.splice(0, selected.length, "Keine Tiere");
+        else {
+          const idx = selected.indexOf(t);
+          idx >= 0 ? selected.splice(idx, 1) : selected.push(t);
+          const none = selected.indexOf("Keine Tiere");
+          if (none >= 0) selected.splice(none, 1);
+        }
+        tiereContainer.querySelectorAll("button").forEach((btn) =>
+          btn.classList.toggle("bg-green-200", selected.includes(btn.textContent))
+        );
+      };
+      tiereContainer.appendChild(b);
+    });
+
+    // === Quill Editor mit Undo/Redo
+    let quill;
+    setTimeout(() => {
+      quill = new Quill("#quillContainer", {
+        theme: "snow",
+        modules: { history: { delay: 1000, maxStack: 50 } },
+      });
+      if (d.beschreibung) quill.root.innerHTML = d.beschreibung;
+      document.getElementById("undoBtn").onclick = () => quill.history.undo();
+      document.getElementById("redoBtn").onclick = () => quill.history.redo();
+    }, 120);
+
+    // === KI-Beschreibung mit Vorschau
+    document.getElementById("generateDescBtn").onclick = async () => {
+      const fotos = d.fotos || [];
+      const previewText = await generateProfessionalDescription(d, fotos);
+      const confirmAdd = confirm("Neue KI-Beschreibung:\n\n" + previewText + "\n\n➡️ Möchtest du sie übernehmen?");
+      if (confirmAdd && quill) {
+        quill.root.innerHTML = `<p>${previewText}</p>`;
+      }
+    };
+
+    // === Speichern
+    document.getElementById("saveEntryBtn").onclick = async () => {
+      const beschreibung = quill?.root.innerHTML || "";
+      const updated = {
+        name: document.getElementById("editName").value.trim(),
+        sitzplaetze: document.getElementById("editSitz").value,
+        strom: document.getElementById("editStrom").value,
+        extras: document.getElementById("editExtras").value,
+        tags: document.getElementById("editTags").value.split(",").map((s) => s.trim()).filter(Boolean),
+        tiere: selected,
+        beschreibung,
+        oeffnungszeiten: typeof collectOpeningHours === "function" ? collectOpeningHours(id) : d.oeffnungszeiten,
+      };
+      await docRef.update(updated);
+      showToast("✅ Gespeichert");
+      openEditPage(id);
+    };
+
+    // === Löschen
+    document.getElementById("deleteEntryBtn").onclick = () => confirmDeleteEntry(id, d.name);
+
+    // === 📸 Image-Upload mit smarter Integration
+    renderSmartImageUploader(
+      document.getElementById("photoUploaderContainer"),
+      docRef,
+      d.fotos || [],
+      id,
+      d.name || ""
+    );
+
+  } catch (err) {
+    console.error("openEditPage error", err);
+    showToast("❌ Fehler: " + err.message);
+  }
+}
+
+
+
+/* === 💫 Vorschau mit Stil-Auswahl & Neu-Generieren === */
+function showAIDescriptionPreview(generateFn, data, photos, onConfirm) {
+  const old = document.getElementById("aiModal");
+  if (old) old.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "aiModal";
+  modal.className = "fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm";
+
+  const box = document.createElement("div");
+  box.className = "bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4";
+  modal.appendChild(box);
+
+  box.innerHTML = `
+    <div class="flex justify-between items-center">
+      <h3 class="text-lg font-semibold text-green-700">Vorgeschlagene Beschreibung</h3>
+      <button id="closeAiModal" class="text-gray-400 hover:text-gray-600">✖</button>
+    </div>
+    <div class="flex items-center gap-2">
+      <label class="text-sm text-gray-600">Stil:</label>
+      <select id="aiStyleSelect" class="border rounded p-1 text-sm">
+        <option value="romantisch">🌸 Romantisch</option>
+        <option value="sachlich">📘 Sachlich</option>
+        <option value="kurz">⚡ Kurz & Prägnant</option>
+      </select>
+    </div>
+    <div id="aiPreviewText" class="text-gray-700 text-sm leading-relaxed max-h-60 overflow-y-auto border rounded p-3 bg-gray-50"></div>
+    <div class="flex justify-end gap-3">
+      <button id="regenAiBtn" class="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">🔁 Neu generieren</button>
+      <button id="applyAiBtn" class="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700">✅ Übernehmen</button>
+      <button id="cancelAiBtn" class="px-3 py-1 bg-gray-300 text-gray-800 rounded text-sm hover:bg-gray-400">❌ Abbrechen</button>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const preview = box.querySelector("#aiPreviewText");
+  const styleSel = box.querySelector("#aiStyleSelect");
+  const regen = box.querySelector("#regenAiBtn");
+  const apply = box.querySelector("#applyAiBtn");
+  const cancel = box.querySelector("#cancelAiBtn");
+  const close = box.querySelector("#closeAiModal");
+
+  async function refresh() {
+    const style = styleSel.value;
+    const txt = generateFn(data, photos, style);
+    preview.innerHTML = txt.replace(/\n/g, "<br>");
+  }
+
+  regen.onclick = refresh;
+  styleSel.onchange = refresh;
+  cancel.onclick = () => modal.remove();
+  close.onclick = () => modal.remove();
+  apply.onclick = () => {
+    onConfirm(preview.innerText);
+    modal.remove();
+  };
+
+  refresh();
+}
+/* === Vorschau-Dialog für automatisch generierte Beschreibung === */
+function showDescriptionPreview(generateFn, data, images, onConfirm) {
+  // Falls schon ein Modal existiert, entfernen
+  const old = document.getElementById('descModal');
+  if (old) old.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'descModal';
+  modal.className =
+    'fixed inset-0 bg-black/50 flex items-center justify-center z-50';
+
+  const box = document.createElement('div');
+  box.className =
+    'bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4';
+  modal.appendChild(box);
+
+  const header = document.createElement('div');
+  header.innerHTML =
+    '<h3 class="text-lg font-semibold mb-2">Vorgeschlagene Beschreibung</h3>';
+  box.appendChild(header);
+
+  const content = document.createElement('div');
+  content.id = 'descPreviewText';
+  content.className = 'text-gray-700 text-sm leading-relaxed max-h-60 overflow-y-auto border rounded p-3 bg-gray-50';
+  box.appendChild(content);
+
+  const buttonRow = document.createElement('div');
+  buttonRow.className = 'flex justify-end gap-3 pt-4';
+  box.appendChild(buttonRow);
+
+  const regenBtn = document.createElement('button');
+  regenBtn.textContent = '🔁 Neu generieren';
+  regenBtn.className = 'px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700';
+  buttonRow.appendChild(regenBtn);
+
+  const okBtn = document.createElement('button');
+  okBtn.textContent = '✅ Übernehmen';
+  okBtn.className = 'px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700';
+  buttonRow.appendChild(okBtn);
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = '❌ Abbrechen';
+  cancelBtn.className = 'px-3 py-1 bg-gray-300 text-gray-800 rounded text-sm hover:bg-gray-400';
+  buttonRow.appendChild(cancelBtn);
+
+  // Funktionen
+  async function refreshText() {
+    const txt = await generateFn(data, images);
+    content.innerHTML = txt.replace(/\n/g, '<br>');
+  }
+  regenBtn.onclick = refreshText;
+  cancelBtn.onclick = () => modal.remove();
+  okBtn.onclick = () => {
+    onConfirm(content.innerText);
+    modal.remove();
+  };
+
+  document.body.appendChild(modal);
+  refreshText();
+}
+
+/* === Beispiel-Einbindung in openEditPage === */
+document.getElementById('generateDescBtn').onclick = () => {
+  const q = document.querySelector('#quillContainer .ql-editor');
+  showDescriptionPreview(generateSmartDescription, d, d.fotos || [], (newText) => {
+    q.innerHTML = `<p>${newText}</p>`;
+  });
+};
+
+// === Erweiterung für Beschreibung-Editor mit Undo/Redo + KI-Vorschlag ===
+function initEnhancedEditor(containerId, data) {
+  const editorContainer = document.getElementById(containerId);
+  const toolbar = document.createElement("div");
+  toolbar.id = "quillToolbar";
+  toolbar.className = "flex gap-2 mb-2";
+  toolbar.innerHTML = `
+    <button id="undoBtn" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">↩️ Rückgängig</button>
+    <button id="redoBtn" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">↪️ Wiederholen</button>
+    <button id="aiGenBtn" class="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700">🤖 KI-Beschreibung erstellen</button>
+  `;
+  editorContainer.parentElement.insertBefore(toolbar, editorContainer);
+
+  // Quill initialisieren
+  const quill = new Quill(`#${containerId}`, { theme: "snow" });
+  if (data.beschreibung) quill.root.innerHTML = data.beschreibung;
+
+  // Verlauf speichern für Undo/Redo
+  const history = quill.getModule('history');
+
+  document.getElementById("undoBtn").addEventListener("click", () => history.undo());
+  document.getElementById("redoBtn").addEventListener("click", () => history.redo());
+
+  // Live speichern
+  quill.on("text-change", () => {
+    data.beschreibung = quill.root.innerHTML;
+  });
+
+  // KI-Beschreibung-Button
+  document.getElementById("aiGenBtn").addEventListener("click", async () => {
+    showToast("🧠 Erzeuge KI-Beschreibung...");
+    const fotos = data.fotos || [];
+    const nameList = fotos.map(url => decodeURIComponent(url.split('/').pop().split('.')[0])).slice(0, 5);
+    const kiText = await generateSmartDescription(data, nameList);
+    const confirmAdd = confirm("Neue KI-Beschreibung:\n\n" + kiText + "\n\n➡️ Möchtest du sie einfügen?");
+    if (confirmAdd) {
+      quill.root.innerHTML += `<p>${kiText}</p>`;
+      data.beschreibung = quill.root.innerHTML;
+    }
+  });
+}
+
+// === KI-Beschreibungslogik ===
+async function generateSmartDescription(data, imageNames = []) {
+  const name = data.name || "dieser Ort";
+  const typ = data.typ || "Ort";
+  const extras = data.extras ? `Hier findest du ${data.extras}.` : "";
+  const tiere = Array.isArray(data.tiere) && data.tiere.length && !data.tiere.includes("Keine Tiere")
+    ? `Rund um ${name} begegnen dir ${data.tiere.join(", ")}.`
+    : "";
+  const bilder = imageNames.length ? `Die Fotos zeigen ${imageNames.join(", ")}.` : "";
+  const zeit = new Date();
+  const stimmung = ["sonnig", "ruhig", "idyllisch", "lebendig", "gemütlich"][Math.floor(Math.random() * 5)];
+  const natur = ["grüne Wiesen", "duftende Blumen", "zwitschernde Vögel", "freundliche Tiere", "sanfte Hügel"][Math.floor(Math.random() * 5)];
+  const ende = ["Ein Ort zum Verweilen.", "Perfekt für eine kleine Pause.", "Hier spürt man die Nähe zur Natur.", "Ein Geheimtipp für Genießer.", "Ein Stück ländliche Idylle."];
+  
+  const text = `
+    ${name} ist ein ${stimmung}er ${typ} inmitten von ${natur}.
+    ${extras} ${tiere} ${bilder}
+    Wer hier vorbeikommt, erlebt einen Moment der Entschleunigung und Authentizität.
+    ${ende[Math.floor(Math.random() * ende.length)]}
+  `;
+  await new Promise(res => setTimeout(res, 300 + Math.random() * 300)); // kleine KI-Simulation
+  return text.trim().replace(/\s+/g, " ");
+}
+
+/* === 💫 KI-Vorschau mit Stil-Auswahl, Neu-Generieren & Übernehmen === */
+function attachAIDescriptionButton(quill, data, photos) {
+  const container = document.querySelector("#quillContainer");
+  if (!container || document.getElementById("aiDescBtn")) return;
+
+  const btn = document.createElement("button");
+  btn.id = "aiDescBtn";
+  btn.textContent = "✨ KI-Beschreibung vorschlagen";
+  btn.className = "mt-4 bg-gradient-to-r from-green-600 to-lime-600 text-white px-4 py-2 rounded-lg hover:from-green-700 transition shadow-md";
+  container.insertAdjacentElement("afterend", btn);
+
+  const previewBox = document.createElement("div");
+  previewBox.id = "aiPreviewBox";
+  previewBox.className = "hidden bg-white border rounded-lg p-5 mt-4 shadow-lg space-y-3";
+  container.parentElement.appendChild(previewBox);
+
+  btn.addEventListener("click", () => {
+    renderAIPreview(previewBox, quill, data, photos);
+  });
+}
+
+function renderAIPreview(previewBox, quill, data, photos) {
+  const styleOptions = `
+    <select id="aiStyleSelect" class="border rounded p-1 text-sm">
+      <option value="romantisch">🌸 Romantisch</option>
+      <option value="sachlich">📘 Sachlich</option>
+      <option value="kurz">⚡ Kurz & Prägnant</option>
+    </select>
+  `;
+
+  const html = generateSmartDescription(data, photos, "romantisch");
+  previewBox.innerHTML = `
+    <div class="flex justify-between items-center mb-2">
+      <h3 class="font-semibold text-lg text-green-700">Vorschlag für Beschreibung</h3>
+      ${styleOptions}
+    </div>
+    <div class="prose max-w-none mb-3 text-gray-700">${html}</div>
+    <div class="flex gap-3">
+      <button id="applyAIDesc" class="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700">✅ Übernehmen</button>
+      <button id="regenAIDesc" class="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">🔁 Neu generieren</button>
+      <button id="closeAIPrev" class="px-3 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400">❌ Schließen</button>
+    </div>
+  `;
+  previewBox.classList.remove("hidden");
+
+  const textContainer = previewBox.querySelector(".prose");
+  const select = previewBox.querySelector("#aiStyleSelect");
+
+  previewBox.querySelector("#regenAIDesc").onclick = () => {
+    const style = select.value;
+    textContainer.innerHTML = generateSmartDescription(data, photos, style);
+  };
+
+  previewBox.querySelector("#applyAIDesc").onclick = () => {
+    quill.root.innerHTML = textContainer.innerHTML;
+    showToast("✅ Beschreibung übernommen");
+  };
+
+  previewBox.querySelector("#closeAIPrev").onclick = () => {
+    previewBox.classList.add("hidden");
+  };
+}
+/* === Kostenloser, smarter Image-Uploader mit automatischer Titel-Generierung ===
+   - Speichert images als { url, title } in Firestore
+   - Erzeugt Titel aus Dateiname + einfacher Bildanalyse (Farben/Helligkeit/Aspect)
+   - Titel sind editierbar nach Upload
+   - Keine externe KI erforderlich
+*/
+    /* === Professionelle Beschreibung, die Bildtitel nutzt === */
+async function generateProfessionalDescription(d) {
+  const name = (d.name || 'dieser Ort').trim();
+  const extras = d.extras ? `Hier gibt es ${d.extras}.` : '';
+  const tiere = Array.isArray(d.tiere) && d.tiere.length && !d.tiere.includes('Keine Tiere')
+    ? `Rund um ${name} kannst du ${d.tiere.join(', ')} entdecken.` : '';
+
+  // fotos kann array von {url, title} oder strings sein
+  const photoTitles = (d.fotos || []).map(f => typeof f === 'string' ? (decodeURIComponent(f.split('/').pop().split('.')[0]) || '') : (f.title || f.name || decodeURIComponent((f.url||'').split('/').pop().split('.')[0]) || '')).filter(Boolean);
+
+  let fotosTxt = '';
+  if (photoTitles.length === 1) fotosTxt = `Auf einem Foto sieht man ${photoTitles[0]}.`;
+  else if (photoTitles.length === 2) fotosTxt = `Die Fotos zeigen ${photoTitles[0]} und ${photoTitles[1]}.`;
+  else if (photoTitles.length > 2) {
+    const last = photoTitles[photoTitles.length-1];
+    const rest = photoTitles.slice(0,-1).join(', ');
+    fotosTxt = `Die Bilder fangen die Stimmung ein – ${rest} und ${last}.`;
+  }
+
+  const tone = ['idyllisch', 'einladend', 'malerisch', 'authentisch'][Math.floor(Math.random()*4)];
+  const landscape = ['weiten Wiesen', 'alten Obstbäumen', 'sanften Hügeln', 'duftenden Feldern'][Math.floor(Math.random()*4)];
+  const ending = ['Ein Ort zum Verweilen.', 'Hier spürt man die Liebe zur Natur.', 'Ein Platz, der Ruhe und Genuss vereint.'];
+
+  // build multi-paragraph, professional text
+  const paragraphs = [];
+  paragraphs.push(`${name} ist ein ${tone}er Ort, eingebettet zwischen ${landscape}.`);
+  if (extras) paragraphs.push(extras);
+  if (tiere) paragraphs.push(tiere);
+  if (fotosTxt) paragraphs.push(fotosTxt);
+  paragraphs.push(ending[Math.floor(Math.random()*ending.length)]);
+
+  // join with double newline for clarity (Quill will handle HTML)
+  return paragraphs.join('\n\n');
+                                          
+}
+    
+/* === 🧠 KI-Beschreibung mit Vorschau-Dialog === */
+function showDescriptionPreview(generateFn, data, images, onConfirm) {
+  const old = document.getElementById("descModal");
+  if (old) old.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "descModal";
+  modal.className =
+    "fixed inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm";
+  modal.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 space-y-4">
+      <h3 class="text-lg font-semibold text-gray-800">Vorgeschlagene Beschreibung</h3>
+      <div id="descPreviewText" class="text-gray-700 text-sm leading-relaxed max-h-60 overflow-y-auto border rounded p-3 bg-gray-50">
+        <p class="text-gray-400 italic">Wird generiert...</p>
+      </div>
+      <div class="flex justify-end gap-3 pt-4">
+        <button id="regenDescBtn" class="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">🔁 Neu generieren</button>
+        <button id="confirmDescBtn" class="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700">✅ Übernehmen</button>
+        <button id="cancelDescBtn" class="px-3 py-1 bg-gray-300 text-gray-800 rounded text-sm hover:bg-gray-400">❌ Abbrechen</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const content = modal.querySelector("#descPreviewText");
+  async function refreshText() {
+    const txt = await generateFn(data, images);
+    content.innerHTML = `<p>${txt.replace(/\n/g, "<br>")}</p>`;
+  }
+
+  modal.querySelector("#regenDescBtn").onclick = refreshText;
+  modal.querySelector("#confirmDescBtn").onclick = () => {
+    onConfirm(content.innerText);
+    modal.remove();
+  };
+  modal.querySelector("#cancelDescBtn").onclick = () => modal.remove();
+
+  refreshText();
+}
+
+/* === 🪄 Professionelle KI-Beschreibung mit Bildtiteln === */
+async function generateProfessionalDescription(d) {
+  const name = (d.name || "dieser Ort").trim();
+  const extras = d.extras ? `Hier gibt es ${d.extras}.` : "";
+  const tiere =
+    Array.isArray(d.tiere) && d.tiere.length && !d.tiere.includes("Keine Tiere")
+      ? `In der Umgebung trifft man auf ${d.tiere.join(", ")}.`
+      : "";
+
+  const photoTitles = (d.fotos || [])
+    .map((f) =>
+      typeof f === "string"
+        ? decodeURIComponent(f.split("/").pop().split(".")[0])
+        : f.title || decodeURIComponent((f.url || "").split("/").pop().split(".")[0])
+    )
+    .filter(Boolean);
+
+  let fotosTxt = "";
+  if (photoTitles.length === 1) fotosTxt = `Ein Bild zeigt ${photoTitles[0]}.`;
+  else if (photoTitles.length === 2)
+    fotosTxt = `Die Fotos zeigen ${photoTitles[0]} und ${photoTitles[1]}.`;
+  else if (photoTitles.length > 2) {
+    const last = photoTitles.pop();
+    fotosTxt = `Die Bilder fangen die Stimmung ein – ${photoTitles.join(", ")} und ${last}.`;
+  }
+
+  const tone = ["idyllisch", "einladend", "authentisch", "malerisch"][
+    Math.floor(Math.random() * 4)
+  ];
+  const landschaft = ["grünen Wiesen", "alten Obstbäumen", "sanften Hügeln", "weiten Feldern"][
+    Math.floor(Math.random() * 4)
+  ];
+  const endungen = [
+    "Ein Ort, der Ruhe und Natur vereint.",
+    "Perfekt für eine kleine Auszeit vom Alltag.",
+    "Hier spürt man die ländliche Gelassenheit.",
+  ];
+
+  const text = `
+${name} ist ein ${tone}er Ort, eingebettet zwischen ${landschaft}.
+${extras} ${tiere} ${fotosTxt}
+${endungen[Math.floor(Math.random() * endungen.length)]}
+  `;
+
+  await new Promise((res) => setTimeout(res, 300 + Math.random() * 300));
+  return text.trim().replace(/\s+/g, " ");
+}
+
+/* === 📸 Smarter Image-Uploader mit KI-Button pro Bild === */
+async function renderSmartImageUploader(container, docRef, existingImages = [], entryId) {
+  container.innerHTML = `
+    <div class="bg-white rounded-xl shadow p-4">
+      <h3 class="text-sm font-semibold mb-3">📸 Fotos verwalten</h3>
+      <div id="smartUploadZone" class="relative border-2 border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition rounded-xl p-6 text-center cursor-pointer">
+        <p class="text-gray-600 text-sm">Ziehe Bilder hierher oder klicke zum Hochladen</p>
+        <input id="smartUploadInput" type="file" accept="image/*" multiple class="hidden">
+        <div id="smartUploadPreview" class="flex flex-wrap gap-3 justify-center mt-3"></div>
+        <div id="smartUploadProgress" class="hidden absolute bottom-2 left-2 right-2 h-1 bg-gray-200 rounded">
+          <div id="smartUploadBar" class="h-1 bg-green-500 rounded transition-all" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const zone = container.querySelector("#smartUploadZone");
+  const input = container.querySelector("#smartUploadInput");
+  const preview = container.querySelector("#smartUploadPreview");
+  const bar = container.querySelector("#smartUploadBar");
+  const barContainer = container.querySelector("#smartUploadProgress");
+
+  existingImages = (existingImages || []).map((img) =>
+    typeof img === "string" ? { url: img, title: "" } : img
+  );
+
+  function renderExisting() {
+    preview.innerHTML = "";
+    if (!existingImages.length) {
+      preview.innerHTML = `<div class="text-gray-400 text-sm">Noch keine Bilder hochgeladen.</div>`;
+      return;
+    }
+    existingImages.forEach((img, idx) => {
+      const card = document.createElement("div");
+      card.className =
+        "relative group w-32 h-40 border rounded overflow-hidden bg-gray-50 p-2 flex flex-col items-center shadow-sm";
+      card.innerHTML = `
+        <img src="${img.url}" class="object-cover w-full h-24 rounded mb-2">
+        <input data-idx="${idx}" class="imageTitleInput w-full text-xs border rounded p-1 text-center" value="${img.title || ""}" placeholder="Titel...">
+        <div class="flex justify-between gap-1 mt-1">
+          <button class="kiBtn text-xs bg-blue-600 text-white rounded px-2 py-0.5 hover:bg-blue-700">🪄 KI</button>
+          <button class="removeBtn text-xs bg-red-600 text-white rounded px-2 py-0.5 hover:bg-red-700">✕</button>
+        </div>
+      `;
+
+      // Stop Click auf KI-Button → kein Upload-Trigger
+      card.querySelectorAll("button").forEach((btn) => {
+        btn.addEventListener("click", (e) => e.stopPropagation());
+      });
+
+      // Titeländerung
+      card.querySelector(".imageTitleInput").addEventListener("input", (e) => {
+        existingImages[idx].title = e.target.value.trim();
+        docRef.update({ fotos: existingImages });
+      });
+
+      // KI-Button → neuen Titel generieren
+      card.querySelector(".kiBtn").onclick = async () => {
+        const suggestion = await generateSmartImageTitle(img.url);
+        existingImages[idx].title = suggestion;
+        card.querySelector(".imageTitleInput").value = suggestion;
+        await docRef.update({ fotos: existingImages });
+        showToast("🧠 KI-Titel aktualisiert");
+      };
+
+      // Entfernen
+      card.querySelector(".removeBtn").onclick = async () => {
+        if (!confirm("Bild wirklich entfernen?")) return;
+        existingImages.splice(idx, 1);
+        await docRef.update({ fotos: existingImages });
+        renderExisting();
+      };
+
+      preview.appendChild(card);
+    });
+  }
+
+  // Upload
+  zone.addEventListener("click", (e) => {
+    if (e.target.tagName === "BUTTON" || e.target.closest("button")) return;
+    input.click();
+  });
+  zone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    zone.classList.add("bg-green-100");
+  });
+  zone.addEventListener("dragleave", () => zone.classList.remove("bg-green-100"));
+  zone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    zone.classList.remove("bg-green-100");
+    handleFiles(e.dataTransfer.files);
+  });
+  input.addEventListener("change", (e) => handleFiles(e.target.files));
+
+  renderExisting();
+
+  async function handleFiles(files) {
+    const list = Array.from(files);
+    if (!list.length) return;
+
+    barContainer.classList.remove("hidden");
+
+    for (let file of list) {
+      const formData = new FormData();
+      formData.append("image", file);
+      const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      const url = data.data.url;
+      const title = await generateSmartImageTitle(url, file.name);
+
+      existingImages.push({ url, title });
+      await docRef.update({ fotos: existingImages });
+      showToast(`✅ ${title} hinzugefügt`);
+    }
+
+    barContainer.classList.add("hidden");
+    renderExisting();
+  }
+}
+
+/* === 🧠 Kostenlose KI-Titelerkennung (heuristisch) === */
+async function generateSmartImageTitle(url, filename = "") {
+  const cleanName = filename.replace(/\.[^/.]+$/, "").toLowerCase();
+  if (cleanName.includes("automat")) return "Verkaufsautomat mit frischen Produkten";
+  if (cleanName.includes("huhn")) return "Hühner am Hof";
+  if (cleanName.includes("kuh")) return "Kuh auf der Weide";
+  if (cleanName.includes("hütte") || cleanName.includes("huette"))
+    return "Selbstbedienungshütte im Grünen";
+  if (cleanName.includes("hof")) return "Idyllischer Bauernhof";
+  if (cleanName.includes("landschaft")) return "Landschaftspanorama";
+  if (cleanName.includes("markt")) return "Kleiner Hofladen";
+  // einfache Farb-/Licht-Analyse für Stimmung
+  return "Ein stimmungsvolles Bild vom Ort";
+}
+    // ==========================================================
+// 🕒 Öffnungszeiten Editor (RadlMap-Style)
+// ==========================================================
+
+// helper for localized day names
+
+  /*
+function renderOpeningHoursEditor(id, oeffnungszeiten) {
+  const immer = oeffnungszeiten === "Immer geöffnet";
+
+  return `
+    <div class="border p-2 rounded bg-gray-50">
+      <label class="flex items-center gap-2 mb-3">
+        <input type="checkbox" class="oeff-immer" data-id="${id}" ${immer ? "checked" : ""}>
+        Immer geöffnet
+      </label>
+      <div class="oeff-days ${immer ? "hidden" : ""}" data-id="${id}">
+        ${["Mo","Di","Mi","Do","Fr","Sa","So"].map(day => {
+          let von = "", bis = "";
+          if (Array.isArray(oeffnungszeiten)) {
+            const found = oeffnungszeiten.find(x => x.tag === day);
+            if (found) { von = found.von; bis = found.bis; }
+          }
+          return `
+            <div class="flex items-center gap-2 mb-1">
+              <span class="w-10">${day}</span>
+              <input type="time" class="border p-1 rounded text-sm oeff-von" data-day="${day}" data-id="${id}" value="${von}">
+              <span>-</span>
+              <input type="time" class="border p-1 rounded text-sm oeff-bis" data-day="${day}" data-id="${id}" value="${bis}">
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+
+    
+    document.addEventListener("change", e => {
+  if (e.target.classList.contains("oeff-immer")) {
+    const id = e.target.dataset.id;
+    const daysEl = document.querySelector(`.oeff-days[data-id="${id}"]`);
+    if (daysEl) daysEl.classList.toggle("hidden", e.target.checked);
+  }
+});
+    function normalizeOpeningHours(oeff) {
+  if (!oeff) return "Immer geöffnet";
+
+  // Fall 1: String
+  if (typeof oeff === "string") {
+    if (oeff.toLowerCase().includes("immer")) {
+      return "Immer geöffnet";
+    }
+    // String wie "09:00 – 18:00" → als Array für jeden Tag
+    return ["Mo","Di","Mi","Do","Fr","Sa","So"].map(tag => ({
+      tag,
+      von: oeff.split("–")[0].trim(),
+      bis: oeff.split("–")[1].trim()
+    }));
+  }
+
+  // Fall 2: Map {immer:true}
+  if (typeof oeff === "object" && !Array.isArray(oeff)) {
+    if (oeff.immer === true) return "Immer geöffnet";
+    // Falls mal ein Objekt mit Tag->Zeiten drin war
+    return Object.keys(oeff).map(tag => ({
+      tag,
+      von: oeff[tag].split("–")[0].trim(),
+      bis: oeff[tag].split("–")[1].trim()
+    }));
+  }
+
+  // Fall 3: Array [{tag, von, bis}, …] → bereits korrekt
+  if (Array.isArray(oeff)) {
+    return oeff.map(d => ({
+      tag: d.tag,
+      von: d.von,
+      bis: d.bis
+    }));
+  }
+
+  return "Immer geöffnet";
+    }
+    function collectOpeningHoursFromUI(id) {
+  const immerCheck = document.querySelector(`.oeff-immer[data-id="${id}"]`);
+  if (immerCheck?.checked) {
+    return "Immer geöffnet";
+  }
+
+  const result = [];
+  document.querySelectorAll(`.oeff-days[data-id="${id}"] .oeff-von`).forEach(vonEl => {
+    const day = vonEl.dataset.day;
+    const bisEl = document.querySelector(`.oeff-bis[data-day="${day}"][data-id="${id}"]`);
+    const von = vonEl.value.trim();
+    const bis = bisEl?.value.trim();
+    if (von && bis) {
+      result.push({ tag: day, von, bis });
+    }
+  });
+  return result;
+}*/
+function showPreviewPopup() {
+  const qa = document.getElementById("question-area");
+  const datum = new Date().toLocaleDateString("de-DE");
+
+  qa.innerHTML = `
+    <div class="bg-white p-4 rounded-xl shadow-lg max-w-md mx-auto">
+      <img src="${editingData.imageUrl || '/placeholder.jpg'}" 
+           class="w-full h-40 object-cover rounded mb-3"/>
+
+      <h3 class="text-green-700 font-bold text-lg mb-1">
+        ${editingData.name || 'Unbenannte Hütte'}
+      </h3>
+      <div class="text-sm text-gray-700 mb-2">
+  🕒 Öffnungszeiten:<br>${renderOpeningHours(editingData.oeffnungszeiten)}
+</div>
+      <div class="text-sm">⚡ Strom: ${editingData.strom === "ja" ? "✅" : "❌"}</div>
+      <div class="text-sm">🪑 Sitzplätze: ${editingData.sitzplaetze === "ja" ? "✅" : "❌"}</div>
+      ${editingData.extras ? `<div class="text-sm">📄 Extras: ${editingData.extras}</div>` : ""}
+      ${editingData.tiere?.length ? `<div class="text-sm">🐾 Tiere: ${editingData.tiere.join(" ")} </div>` : ""}
+      ${editingData.beschreibung ? `<div class="text-sm">📝 ${editingData.beschreibung}</div>` : ""}
+      
+      <div class="flex flex-wrap gap-1 mt-2">
+        ${(editingData.tags || []).map(t => `<span class="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded">#${t}</span>`).join("")}
+      </div>
+
+      <div id="previewMap" class="w-full h-48 mt-4 rounded border"></div>
+
+      <div class="text-xs text-gray-400 mt-2">📅 Eingetragen: ${datum}</div>
+
+      <div class="flex gap-3 mt-4">
+        <button onclick="cancelEntry()" 
+          class="flex-1 bg-gray-300 text-gray-800 px-3 py-2 rounded">❌ Abbrechen</button>
+        <button onclick="submitEntry()" 
+          class="flex-1 bg-green-600 text-white px-3 py-2 rounded">✅ Einreichen</button>
+      </div>
+    </div>
+  `;
+
+  // Kleine Leaflet-Karte erstellen
+  setTimeout(() => {
+    const map = L.map("previewMap", { attributionControl: false, zoomControl: false })
+      .setView([editingData.lat, editingData.lng], 16);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+    }).addTo(map);
+
+    L.marker([editingData.lat, editingData.lng]).addTo(map)
+      .bindPopup(editingData.name || "Neue Hütte")
+      .openPopup();
+  }, 100);
+}
+  /***********************
+   * Delegation & Helpers for Editing UI
+   ***********************/
+  function setupMyEntriesDelegation() {
+    // Tiere buttons (delegated)
+    document.querySelectorAll('.tiere-buttons').forEach(container => {
+      container.querySelectorAll('.tiere-btn').forEach(btn => {
+        btn.onclick = () => {
+  let t = btn.getAttribute('data-tiere');
+  t = t.replace(/^[^\s]+\s*/, "").trim(); // Emoji wegschneiden
+
+  const parent = container;
+  const hidden = parent.nextElementSibling; // edit-tiere-hidden
+  let arr = hidden.value ? hidden.value.split(',').map(s=>s.trim()).filter(Boolean) : [];
+  const idx = arr.indexOf(t);
+
+  if (t === 'Keine Tiere') {
+    arr = ['Keine Tiere'];
+    parent.querySelectorAll('.tiere-btn').forEach(b=>b.classList.remove('bg-green-200','border-green-400'));
+    btn.classList.add('bg-green-200','border-green-400');
+  } else {
+    arr = arr.filter(x => x !== 'Keine Tiere');
+    if (idx >= 0) {
+      arr.splice(idx,1);
+      btn.classList.remove('bg-green-200','border-green-400');
+      btn.classList.add('bg-gray-100','border-gray-300');
+    } else {
+      arr.push(t);
+      btn.classList.add('bg-green-200','border-green-400');
+    }
+    parent.querySelectorAll('.tiere-btn[data-tiere="Keine Tiere"]').forEach(b=>{
+      b.classList.remove('bg-green-200','border-green-400');
+      b.classList.add('bg-gray-100','border-gray-300');
+    });
+  }
+
+  hidden.value = arr.join(',');
+};
+      });
+    });
+
+    // save edit buttons
+    document.querySelectorAll('.save-edit').forEach(btn => {
+      btn.onclick = async () => {
+        const id = btn.getAttribute('data-id');
+        await saveEditFromUI(id);
+      };
+    });
+
+    // delete hut
+    document.querySelectorAll('.delete-hut').forEach(btn => {
+      btn.onclick = async () => {
+        const id = btn.getAttribute('data-id');
+        if (!confirm('Hütte wirklich löschen?')) return;
+        try { await db.collection('eierhuetten').doc(id).update({ status: 'archiviert' }); showToast('Hütte archiviert'); showMyEntries(); }
+        catch (e) { console.error(e); alert('Fehler: '+e.message); }
+      };
+    });
+
+    // image upload inputs
+    document.querySelectorAll('.upload-image').forEach(input => {
+      input.onchange = async (ev) => {
+        const id = input.getAttribute('data-id');
+        await uploadImagesForHut(input.files, id);
+      };
+    });
+
+    // delete image buttons
+    document.querySelectorAll('.delete-image').forEach(btn => {
+      btn.onclick = async (ev) => {
+        const id = btn.getAttribute('data-id');
+        const url = btn.getAttribute('data-url');
+        if (!confirm('Dieses Bild löschen?')) return;
+        try {
+          // remove from array
+          const docRef = db.collection('eierhuetten').doc(id);
+          const snap = await docRef.get();
+          const fotos = Array.isArray(snap.data().fotos) ? [...snap.data().fotos] : [];
+          const newFotos = fotos.filter(f => (typeof f === 'string' ? f : f.url) !== url);
+          await docRef.update({ fotos: newFotos });
+          showToast('Bild entfernt');
+          showMyEntries();
+        } catch (e) { console.error(e); alert('Fehler: '+e.message); }
+      };
+    });
+  }
+function loadMessages(hutId) {
+  const wrap = document.getElementById("msgs-" + hutId);
+  if (!wrap) return;
+
+  // Live-Listener
+  db.collection("eierhuetten").doc(hutId)
+    .collection("messages").orderBy("createdAt", "desc")
+    .onSnapshot(snap => {
+      wrap.innerHTML = "";
+      snap.forEach(doc => {
+        const d = doc.data();
+        wrap.innerHTML += `<div class="bg-gray-100 rounded px-2 py-1">
+          <div>${escapeHtml(d.text)}</div>
+          <div class="text-xs text-gray-500">
+            ${d.sender || "-"} · ${d.createdAt?.toDate?.().toLocaleString?.() || ""}
+          </div>
+        </div>`;
+      });
+    });
+}
+
+async function sendMsg(hutId) {
+  const inp = document.getElementById("msgInput-"+hutId);
+  const text = inp.value.trim();
+  if (!text) return;
+  await db.collection("eierhuetten").doc(hutId).collection("messages").add({
+    text,
+    sender: currentUser.email,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  inp.value = "";
+  loadMessages(hutId);
+}
+  window.pendingEdit = null; // Zwischenspeicher für aktuelle Änderungen
+
+// defensive escape fallback (falls in deinem Projekt noch nicht vorhanden)
+function escapeHtmlSafe(str) {
+  if (typeof str !== "string") return String(str || "");
+  return str
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+// Robustere, fehlertolerante Version
+async function saveEditFromUI(id) {
+  try {
+    // --- Basic sanity checks ---
+    const user = (typeof currentUser !== "undefined" && currentUser && currentUser.uid)
+      ? currentUser
+      : firebase.auth().currentUser;
+    if (!user || !user.uid) throw new Error("Kein eingeloggter Nutzer (currentUser fehlt)");
+
+    if (typeof db === "undefined") throw new Error("Firestore (db) ist nicht initialisiert");
+
+    // helper: safe selector + value getter
+    const $ = (sel) => document.querySelector(sel) || null;
+    const getVal = (el) => {
+      if (!el) return undefined;
+      if (el.type === "checkbox") return el.checked;
+      if (el.tagName === "SELECT") return el.value;
+      return el.value;
+    };
+
+    // --- Elemente lesen ---
+    const nameEl = $(`.edit-name[data-id="${id}"]`);
+    const sitzEl = $(`.edit-sitz[data-id="${id}"]`);
+    const stromEl = $(`.edit-strom[data-id="${id}"]`);
+    const extrasEl = $(`.edit-extras[data-id="${id}"]`);
+    const tiereHidden = $(`.edit-tiere-hidden[data-id="${id}"]`);
+    const tagsEl = $(`.edit-tags[data-id="${id}"]`);
+    const editorEl = document.getElementById(`editor-${id}`);
+
+    // Öffnungszeiten: defensiv aufrufen (falls Funktion fehlt, nur warnen)
+    let oeffnungszeiten;
+    if (typeof collectOpeningHoursFromUI === "function") {
+      try { oeffnungszeiten = collectOpeningHoursFromUI(id); }
+      catch (e) { console.warn("collectOpeningHoursFromUI failed:", e); }
+    } else {
+      console.warn("collectOpeningHoursFromUI() nicht vorhanden — Öffnungszeiten werden nicht geprüft.");
+    }
+
+    // --- Payload aufbauen ---
+    const payload = {};
+    if (nameEl && getVal(nameEl) != null) payload.name = getVal(nameEl).trim();
+    if (sitzEl && getVal(sitzEl) != null) payload.sitzplaetze = getVal(sitzEl);
+    if (stromEl && getVal(stromEl) != null) payload.strom = getVal(stromEl);
+    if (extrasEl && getVal(extrasEl) != null) payload.extras = getVal(extrasEl).trim();
+    if (tagsEl && getVal(tagsEl) != null) payload.tags = getVal(tagsEl) ? getVal(tagsEl).split(',').map(s=>s.trim()).filter(Boolean).slice(0,10) : [];
+    if (tiereHidden && getVal(tiereHidden) != null) payload.tiere = getVal(tiereHidden) ? getVal(tiereHidden).split(",").map(s=>s.trim()).filter(Boolean) : [];
+    if (typeof oeffnungszeiten !== "undefined" && oeffnungszeiten !== null) payload.oeffnungszeiten = oeffnungszeiten;
+
+    // Beschreibung: Quill oder fallback auf innerHTML
+    if (editorEl) {
+      try {
+        const q = Quill.find ? Quill.find(editorEl) : null;
+        if (q && q.root) {
+          payload.beschreibung = q.root.innerHTML;
+        } else {
+          // fallback: falls Quill.find nicht funktioniert
+          const qInner = editorEl.querySelector && editorEl.querySelector('.ql-editor');
+          payload.beschreibung = qInner ? qInner.innerHTML : editorEl.innerHTML;
+        }
+      } catch (err) {
+        console.warn("Fehler beim Auslesen von Quill:", err);
+        const qInner = editorEl.querySelector && editorEl.querySelector('.ql-editor');
+        if (qInner) payload.beschreibung = qInner.innerHTML;
+      }
+    }
+
+    // --- Premium-Felder (nur wenn Betreiber Premium) ---
+    const betreiberDoc = await db.collection("betreiber").doc(user.uid).get();
+    const isPremium = betreiberDoc.exists && !!betreiberDoc.data().premium;
+    if (isPremium) {
+      const telEl = $(`.edit-telefon[data-id="${id}"]`);
+      const webEl = $(`.edit-website[data-id="${id}"]`);
+      const instaEl = $(`.edit-insta[data-id="${id}"]`);
+      const wcEl = $(`.edit-wc[data-id="${id}"]`);
+      const ebikeEl = $(`.edit-ebike[data-id="${id}"]`);
+
+      if (telEl && getVal(telEl) !== undefined) payload.telefon = getVal(telEl).trim();
+      if (webEl && getVal(webEl) !== undefined) payload.website = getVal(webEl).trim();
+      if (instaEl && getVal(instaEl) !== undefined) payload.insta = getVal(instaEl).trim();
+      if (wcEl) payload.wc = !!getVal(wcEl);
+      if (ebikeEl) payload.ebike = !!getVal(ebikeEl);
+    }
+
+    console.log("DEBUG: payload assembled for saveEditFromUI:", payload, "isPremium:", isPremium);
+
+    // --- Alte Daten holen & Diff erzeugen ---
+    const docSnap = await db.collection('eierhuetten').doc(id).get();
+    const alteDaten = docSnap.exists ? docSnap.data() : {};
+
+    const diffs = [];
+    Object.keys(payload).forEach(key => {
+      const oldValRaw = typeof alteDaten[key] === "undefined" ? "" : alteDaten[key];
+      const newValRaw = typeof payload[key] === "undefined" ? "" : payload[key];
+
+      const oldVal = Array.isArray(oldValRaw) ? oldValRaw.join(", ") : String(oldValRaw || "");
+      const newVal = Array.isArray(newValRaw) ? newValRaw.join(", ") : String(newValRaw || "");
+
+      if (oldVal !== newVal) {
+        diffs.push({
+          key,
+          oldVal,
+          newVal
+        });
+      }
+    });
+
+    if (diffs.length === 0) {
+      showToast("ℹ️ Keine Änderungen erkannt");
+      return;
+    }
+
+    // --- pendingEdit merken ---
+    pendingEdit = { id, payload, alteDaten };
+
+    // --- Modal / Anzeige der Änderungen ---
+    const editChangesList = document.getElementById("editChangesList");
+    const editConfirmModal = document.getElementById("editConfirmModal");
+
+    const html = diffs.map(d => `
+      <div class="mb-2">
+        <span class="font-semibold">${escapeHtmlSafe(d.key)}:</span><br>
+        <span class="text-gray-500 text-xs">alt:</span> ${escapeHtmlSafe(d.oldVal)}<br>
+        <span class="text-gray-500 text-xs">neu:</span> ${escapeHtmlSafe(d.newVal)}
+      </div>
+    `).join("");
+
+    if (editChangesList && editConfirmModal) {
+      editChangesList.innerHTML = html;
+      editConfirmModal.classList.remove("hidden");
+      editConfirmModal.classList.add("flex");
+    } else {
+      // Fallback: Modal nicht vorhanden -> direkt speichern (nützlich beim Test)
+      console.warn("Modal-Elemente fehlen (editChangesList / editConfirmModal). Speichere direkt.");
+      await db.collection('eierhuetten').doc(id).update(payload);
+      showToast("✅ Änderungen gespeichert (Modal fehlte zur Ansicht)");
+      // optional: neu laden
+      showMyEntries();
+    }
+
+  } catch (err) {
+    console.error('saveEditFromUI error', err);
+    alert('Fehler beim Sammeln der Änderungen: ' + (err.message || err));
+  }
+}
+
+function cancelEdit() {
+  if (!pendingEdit) return;
+  const { id, alteDaten } = pendingEdit;
+
+  // Eingabefelder zurücksetzen
+  const nameEl = document.querySelector(`.edit-name[data-id="${id}"]`);
+  const sitzEl = document.querySelector(`.edit-sitz[data-id="${id}"]`);
+  const stromEl = document.querySelector(`.edit-strom[data-id="${id}"]`);
+  const extrasEl = document.querySelector(`.edit-extras[data-id="${id}"]`);
+  const tiereHidden = document.querySelector(`.edit-tiere-hidden[data-id="${id}"]`);
+  const tagsEl = document.querySelector(`.edit-tags[data-id="${id}"]`);
+  const editorEl = document.getElementById(`editor-${id}`);
+
+  if (nameEl) nameEl.value = alteDaten.name || "";
+  if (sitzEl) sitzEl.value = alteDaten.sitzplaetze || "";
+  if (stromEl) stromEl.value = alteDaten.strom || "";
+  if (extrasEl) extrasEl.value = alteDaten.extras || "";
+  if (tagsEl) tagsEl.value = (alteDaten.tags || []).join(", ");
+  if (tiereHidden) tiereHidden.value = (alteDaten.tiere || []).join(", ");
+  if (editorEl) {
+    try {
+      const q = Quill.find(editorEl);
+      if (q) q.root.innerHTML = alteDaten.beschreibung || "";
+    } catch (e) {}
+  }
+
+  // Modal schließen
+  document.getElementById("editConfirmModal").classList.add("hidden");
+  document.getElementById("editConfirmModal").classList.remove("flex");
+
+  pendingEdit = null;
+  showToast("❌ Änderungen verworfen und UI zurückgesetzt");
+}
+async function confirmEdit() {
+  if (!pendingEdit) return;
+  const { id, payload } = pendingEdit;
+  try {
+    await db.collection('eierhuetten').doc(id).update(payload);
+    await db.collection('eierhuetten').doc(id).collection('log').add({
+      admin: currentUser.email || currentUser.displayName || 'web',
+      feld: 'edit',
+      wert: JSON.stringify(payload),
+      zeitpunkt: new Date()
+    });
+    showToast('✅ Änderungen gespeichert');
+    await showMyEntries();
+  } catch (e) {
+    console.error("confirmEdit error", e);
+    alert("Fehler beim Speichern: " + (e.message || e));
+  }
+  // Modal schließen
+  document.getElementById("editConfirmModal").classList.add("hidden");
+  document.getElementById("editConfirmModal").classList.remove("flex");
+  pendingEdit = null;
+      }
+   
+function setActive(buttonId) {
+    const buttons = document.querySelectorAll('.sidebar-btn');
+    buttons.forEach(btn => btn.classList.remove('bg-green-100', 'font-semibold'));
+    const activeBtn = document.getElementById(buttonId);
+    if(activeBtn) {
+      activeBtn.classList.add('bg-green-100', 'font-semibold');
+    }
+  }
+
+  /**
+   * Setzt Google Profil oder generiertes Avatar mit Initialen und Farbverlauf.
+   * @param {Object} user - { email: string, picture: string|null }
+   */
+  function setGoogleProfile(user) {
+    const email = user.email || '-';
+    const picture = user.picture;
+
+    const profilePic = document.getElementById('profilePic');
+    const avatarWrapper = document.getElementById('avatarWrapper');
+    const avatarInitials = document.getElementById('avatarInitials');
+
+    if(picture) {
+      profilePic.src = picture;
+      profilePic.classList.remove('hidden');
+      avatarInitials.textContent = '';
+      avatarWrapper.style.background = ''; // Bild überlagert Farbverlauf
+    } else {
+      profilePic.classList.add('hidden');
+      const initial = email.charAt(0).toUpperCase() || 'U';
+      avatarInitials.textContent = initial;
+
+      // Farbverlauf basierend auf E-Mail hash
+      const hash = Array.from(email).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      const colors = [
+        ['#34D399','#10B981'], // grün
+        ['#60A5FA','#3B82F6'], // blau
+        ['#FBBF24','#F59E0B'], // gelb
+        ['#F87171','#EF4444'], // rot
+        ['#A78BFA','#8B5CF6'], // lila
+        ['#F472B6','#EC4899']  // pink
+      ];
+      const chosen = colors[hash % colors.length];
+      avatarWrapper.style.background = `linear-gradient(135deg, ${chosen[0]}, ${chosen[1]})`;
+    }
+
+    document.getElementById('accountMail').textContent = email;
+  }
+
+  // Beispiel-Aufruf:
+  // setGoogleProfile({ email: "max@gmail.com", picture: null });
+  /***********************
+   * Image upload (immediate upload to imgbb + push to Firestore)
+   ***********************/
+    // Zeigt/versteckt Upload-Button basierend auf Limit
+async function updateUploadButton(hutId) {
+  const user = firebase.auth().currentUser;
+  if (!user) return;
+
+  const betreiberDoc = await db.collection("betreiber").doc(user.uid).get();
+  const isPremium = betreiberDoc.exists && betreiberDoc.data().premium;
+
+  const hutDoc = await db.collection("eierhuetten").doc(hutId).get();
+  const fotos = hutDoc.exists && hutDoc.data().fotos ? hutDoc.data().fotos : [];
+
+  const limit = isPremium ? 10 : 1;
+
+  const uploadInput = document.getElementById(`upload-${hutId}`);
+  const hintText = document.getElementById(`upload-hint-${hutId}`);
+
+  if (!uploadInput || !hintText) return;
+
+  if (fotos.length >= limit) {
+    uploadInput.classList.add("hidden");
+    hintText.textContent = `✅ Du hast das Limit von ${limit} Foto${limit>1?"s":""} erreicht.`;
+  } else {
+    uploadInput.classList.remove("hidden");
+    hintText.textContent = `Noch möglich: ${limit - fotos.length} Foto${(limit-fotos.length)>1?"s":""}.`;
+  }
+}
+  async function uploadImagesForHut(fileList, hutId) {
+  if (!fileList || fileList.length === 0) return;
+  const files = Array.from(fileList);
+
+  const user = firebase.auth().currentUser;
+  if (!user) return alert("Bitte einloggen.");
+
+  // 👉 Premium-Status prüfen
+  const betreiberDoc = await db.collection("betreiber").doc(user.uid).get();
+  const isPremium = betreiberDoc.exists && betreiberDoc.data().premium;
+
+  // 👉 Anzahl bereits vorhandener Fotos
+  const hutDoc = await db.collection("eierhuetten").doc(hutId).get();
+  const existingFotos = hutDoc.exists && hutDoc.data().fotos ? hutDoc.data().fotos : [];
+  const limit = isPremium ? 10 : 1;
+
+  // 👉 Prüfen ob Limit überschritten wird
+  if (existingFotos.length >= limit) {
+    alert(
+      `❌ Du kannst maximal ${limit} Foto${limit > 1 ? "s" : ""} hochladen.` +
+      (isPremium ? "" : "\n🌟 Mit Premium sind bis zu 10 möglich.")
+    );
+    return;
+  }
+  if (existingFotos.length + files.length > limit) {
+    alert(
+      `❌ Du kannst nur noch ${limit - existingFotos.length} weitere Foto${(limit - existingFotos.length) !== 1 ? "s" : ""} hochladen.` +
+      (isPremium ? "" : "\n🌟 Mit Premium sind bis zu 10 möglich.")
+    );
+    return;
+  }
+
+  // 👉 Upload starten
+  const progressBar = document.getElementById(`progress-${hutId}`);
+  const progressLabel = document.getElementById(`progress-label-${hutId}`);
+  progressBar.classList.remove('hidden');
+  let uploaded = [];
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    progressLabel.textContent = `Lade ${i+1}/${files.length} ...`;
+    try {
+      const base64 = await fileToBase64(file);
+      const fd = new FormData();
+      fd.append('key', IMGBB_KEY);
+      fd.append('image', base64);
+      const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: fd });
+      const json = await res.json();
+      if (json && json.data && json.data.url) {
+        uploaded.push({ url: json.data.url, delete_url: json.data.delete_url || null, status: 'wartet' });
+      } else {
+        console.warn('imgbb response invalid', json);
+      }
+      const pct = Math.round(((i+1)/files.length)*100);
+      progressBar.querySelector('div').style.width = pct + '%';
+    } catch (e) {
+      console.error('upload error', e);
+      showToast('Fehler beim Hochladen', 4000);
+    }
+  }
+
+  // 👉 Firestore updaten
+  if (uploaded.length > 0) {
+    try {
+      const ref = db.collection('eierhuetten').doc(hutId);
+      await ref.update({ fotos: firebase.firestore.FieldValue.arrayUnion(...uploaded) });
+      showToast('Bilder hochgeladen (warten auf Freigabe)');
+    } catch (e) {
+      console.error('write fotos error', e);
+      alert('Fehler beim Speichern der Bild-Daten: ' + e.message);
+    }
+  }
+
+  progressLabel.textContent = 'Fertig';
+  setTimeout(() => { 
+    progressBar.classList.add('hidden'); 
+    progressLabel.textContent = '0%'; 
+  }, 1200);
+
+  // Refresh Ansicht
+  showMyEntries();
+    updateUploadButton(hutId);
+  }
+
+  function fileToBase64(file) {
+    return new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        const base64 = dataUrl.split(',')[1];
+        res(base64);
+      };
+      reader.onerror = err => rej(err);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /***********************
+   * Support form
+   ***********************/
+
+    // ------- Support: Formular + Laden der Tickets -------
+function openSupport() {
+  if (!currentUser || !currentUser.uid) {
+    showToast("Bitte zuerst einloggen");
+    return;
+  }
+
+  mode = "support";
+  document.getElementById("navBottom").style.display = (mode === "entry") ? "flex" : "none";
+
+  const qa = document.getElementById('question-area');
+  qa.innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+      <h2 class="text-xl font-bold mb-3">📨 Support</h2>
+
+      <label class="block mb-2">
+        <div class="text-sm text-gray-600">Name</div>
+        <input id="supName" class="w-full border p-2 rounded" placeholder="Dein Name" value="${escapeAttr(currentUser.displayName || '')}" />
+      </label>
+
+      <label class="block mb-2">
+        <div class="text-sm text-gray-600">E-Mail</div>
+        <input id="supMail" class="w-full border p-2 rounded" placeholder="E-Mail" value="${escapeAttr(currentUser.email || '')}" />
+      </label>
+
+      <label class="block mb-4">
+        <div class="text-sm text-gray-600">Nachricht</div>
+        <textarea id="supMsg" class="w-full border p-2 rounded" rows="4" placeholder="Nachricht..."></textarea>
+      </label>
+
+      <div class="flex gap-2 mb-4">
+        <button class="px-4 py-2 bg-green-600 text-white rounded" onclick="sendSupport()">Absenden</button>
+        <button class="px-4 py-2 bg-gray-200 rounded" onclick="startNewEntry()">Abbrechen</button>
+      </div>
+
+      <hr class="my-4" />
+
+      <h3 class="text-lg font-bold mb-2">📂 Deine bisherigen Support-Tickets</h3>
+      <div id="supportList" class="space-y-2 text-sm text-gray-700">⏳ Lade Support-Tickets…</div>
+    </div>
+  `;
+
+  updateInfoBox();
+  loadSupportTickets(); // befüllt #supportList
+  toggleSidebar();
+}
+
+
+
+  
+/**
+ * Optional: showSupportTickets() belassen oder neu anpassen, damit
+ * sie die Liste (ohne Formular) zeigt. Beispiel:
+ */
+async function showSupportTickets() {
+  if (!currentUser || !currentUser.uid) { showToast("Bitte zuerst einloggen"); return; }
+  mode = "list";
+  document.getElementById("navBottom").style.display = (mode === "entry") ? "flex" : "none";
+  const qa = document.getElementById("question-area");
+  qa.innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+      <h2 class="text-xl font-bold mb-3">📂 Meine Support-Tickets</h2>
+      <div id="supportList" class="space-y-2 text-sm text-gray-700">⏳ Lade Support-Tickets…</div>
+    </div>
+  `;
+  updateInfoBox();
+  loadSupportTickets();
+  toggleSidebar();
+}
+/* -------------------------
+   Robuste Support-Implementierung
+   - zeigt support id an
+   - individuelle message-listener pro ticket (mit unsubscribe map)
+   - fallback: erste Nachricht aus ticket doc (wenn messages empty)
+   - Zeichenbegrenzung + Counter pro Eingabefeld
+   - sichere DOM-Erstellung (keine großen innerHTML-Klumpen)
+   ------------------------- */
+
+const SUPPORT_MSG_MAX = 250;
+// Map ticketId -> unsubscribe function for messages onSnapshot
+const _supportUnsubs = new Map();
+
+async function loadSupportTickets() {
+  const list = document.getElementById("supportList");
+  if (!list) return;
+  if (!currentUser || !currentUser.email) {
+    list.innerHTML = "<div class='text-gray-500'>Bitte anmelden, um deine Tickets zu sehen.</div>";
+    return;
+  }
+
+  // unsubscribe all previous listeners to avoid duplicates
+  _supportUnsubs.forEach(u => { try { u(); } catch(e){} });
+  _supportUnsubs.clear();
+
+  list.innerHTML = "⏳ Lade Support-Tickets…";
+
+  try {
+    let query = db.collection("support").where("mail", "==", currentUser.email);
+    let snap;
+    try {
+      snap = await query.orderBy("createdAt", "desc").get();
+    } catch (errOrder) {
+      console.warn("OrderBy failed (maybe index required) - fallback without orderBy:", errOrder);
+      snap = await query.get();
+    }
+
+    if (!snap || snap.empty) {
+      list.innerHTML = "<div class='text-gray-500'>Keine Support-Anfragen gefunden.</div>";
+      return;
+    }
+
+    // build DOM with document fragment for performance
+    const frag = document.createDocumentFragment();
+    snap.forEach(doc => {
+      const d = doc.data();
+      const id = doc.id;
+
+      // outer card
+      const card = document.createElement("div");
+      card.className = "bg-gray-100 p-3 rounded mb-3";
+
+      // header row: title + support id
+      const hdr = document.createElement("div");
+      hdr.className = "flex justify-between items-start gap-2";
+      const title = document.createElement("div");
+      title.className = "font-semibold";
+      title.textContent = "📨 Support Ticket";
+      const idEl = document.createElement("div");
+      idEl.className = "text-xs text-gray-500";
+      idEl.innerHTML = `<span class="font-mono">ID: ${escapeHtml(id)}</span>`; // safe: id is escaped
+      hdr.appendChild(title);
+      hdr.appendChild(idEl);
+      card.appendChild(hdr);
+
+      // meta: created + status
+      const created = document.createElement("div");
+      created.className = "text-xs text-gray-500 mt-1";
+      let createdStr = "-";
+      try {
+        if (d.createdAt && typeof d.createdAt.toDate === "function") createdStr = d.createdAt.toDate().toLocaleString();
+        else if (d.createdAt) createdStr = new Date(d.createdAt).toLocaleString();
+      } catch(e){}
+      created.innerHTML = `Gesendet: ${escapeHtml(createdStr)}<br>Status: ${escapeHtml(d.status || "offen")}`;
+      card.appendChild(created);
+
+      // messages container
+      const msgsWrap = document.createElement("div");
+      msgsWrap.id = `msgs-${id}`;
+      msgsWrap.className = "space-y-2 my-2 text-sm";
+      msgsWrap.textContent = "⏳ Lade Nachrichten…";
+      card.appendChild(msgsWrap);
+
+      // controls container
+      const controls = document.createElement("div");
+      controls.className = "mt-2";
+
+      if (d.status !== "geschlossen") {
+        // input
+        const input = document.createElement("input");
+        input.type = "text";
+        input.id = `msgInput-${id}`;
+        input.maxLength = SUPPORT_MSG_MAX;
+        input.placeholder = `Antwort schreiben (max ${SUPPORT_MSG_MAX} Zeichen)...`;
+        input.className = "w-full border p-2 rounded text-sm mb-1";
+
+        // counter
+        const counter = document.createElement("div");
+        counter.id = `msgCounter-${id}`;
+        counter.className = "text-xs text-gray-500 mb-2";
+        counter.textContent = `${SUPPORT_MSG_MAX} Zeichen übrig`;
+
+        // buttons row
+        const btnRow = document.createElement("div");
+        btnRow.className = "flex gap-2";
+
+        const sendBtn = document.createElement("button");
+        sendBtn.className = "px-3 py-2 bg-green-600 text-white rounded text-sm flex-1";
+        sendBtn.textContent = "Senden";
+
+        const closeBtn = document.createElement("button");
+        closeBtn.className = "px-3 py-2 bg-gray-600 text-white rounded text-sm";
+        closeBtn.textContent = "✅ Ticket schließen";
+
+        btnRow.appendChild(sendBtn);
+        btnRow.appendChild(closeBtn);
+
+        controls.appendChild(input);
+        controls.appendChild(counter);
+        controls.appendChild(btnRow);
+
+        // attach event listeners (closure captures id)
+        input.addEventListener("input", () => {
+          const left = SUPPORT_MSG_MAX - input.value.length;
+          counter.textContent = `${left} Zeichen übrig`;
+        });
+        sendBtn.addEventListener("click", () => replySupport(id));
+        closeBtn.addEventListener("click", () => closeSupportTicket(id));
+
+      } else {
+        // closed ticket -> show notice and allow delete only
+        const closedNotice = document.createElement("div");
+        closedNotice.className = "text-sm text-red-600";
+        closedNotice.textContent = "Ticket ist geschlossen";
+        controls.appendChild(closedNotice);
+      }
+
+      // small action row: show path + delete button
+      const actionRow = document.createElement("div");
+      actionRow.className = "mt-2 flex items-center justify-between gap-2";
+      const pathInfo = document.createElement("div");
+      pathInfo.className = "text-xs text-gray-400";
+      pathInfo.innerHTML = `Gespeichert in: <code>support/${escapeHtml(id)}</code>`;
+      const delBtn = document.createElement("button");
+      delBtn.className = "px-2 py-1 text-xs bg-red-600 text-white rounded";
+      delBtn.textContent = "🗑️ Löschen";
+      delBtn.addEventListener("click", () => deleteSupport(id));
+      actionRow.appendChild(pathInfo);
+      actionRow.appendChild(delBtn);
+
+      card.appendChild(controls);
+      card.appendChild(actionRow);
+
+      frag.appendChild(card);
+
+      // start messages listener for this ticket (store unsubscribe)
+      const ticketDocMsg = d.msg ?? null; // first msg stored in doc field (legacy)
+      const ticketDocMail = d.mail ?? null;
+      const ticketDocCreatedAt = d.createdAt ?? null;
+
+      // create onSnapshot listener and store unsubscribe
+      const unsub = db.collection("support").doc(id).collection("messages")
+        .orderBy("createdAt", "asc")
+        .onSnapshot((msnap) => {
+          // render messages for this ticket
+          const wrap = document.getElementById(`msgs-${id}`);
+          if (!wrap) return;
+          // build html
+          let html = "";
+          if (!msnap.empty) {
+            msnap.forEach(mdoc => {
+              const md = mdoc.data();
+              let time = "-";
+              try { if (md.createdAt && md.createdAt.toDate) time = md.createdAt.toDate().toLocaleString(); } catch(e){}
+              html += `
+                <div class="bg-white border rounded p-2">
+                  <div class="text-sm">${escapeHtml(md.text)}</div>
+                  <div class="text-xs text-gray-500">${escapeHtml(md.sender || "-")} · ${escapeHtml(time)}</div>
+                </div>`;
+            });
+          } else if (ticketDocMsg) {
+            // fallback: show doc.msg if no subcollection messages
+            let t = "-";
+            try { if (ticketDocCreatedAt && ticketDocCreatedAt.toDate) t = ticketDocCreatedAt.toDate().toLocaleString(); } catch(e){}
+            html += `
+              <div class="bg-white border rounded p-2">
+                <div class="text-sm">${escapeHtml(ticketDocMsg)}</div>
+                <div class="text-xs text-gray-500">${escapeHtml(ticketDocMail || "-")} · ${escapeHtml(t)}</div>
+              </div>`;
+          } else {
+            html = "<div class='text-gray-500'>Keine Nachrichten</div>";
+          }
+          wrap.innerHTML = html;
+        }, err => {
+          console.error("messages onSnapshot error for", id, err);
+          const wrap = document.getElementById(`msgs-${id}`);
+          if (wrap) wrap.innerHTML = `<div class="text-red-600">Fehler beim Laden der Nachrichten: ${escapeHtml(err.message || String(err))}</div>`;
+        });
+
+      // store unsubscribe
+      _supportUnsubs.set(id, unsub);
+    });
+
+    // replace list content
+    list.innerHTML = "";
+    list.appendChild(frag);
+
+  } catch (err) {
+    console.error("loadSupportTickets error:", err);
+    list.innerHTML = `<div class="text-red-600">❌ Fehler beim Laden: ${escapeHtml(err.message || String(err))}</div>`;
+  }
+}
+
+// Antwort schreiben (replies gehen in support/{id}/messages)
+async function replySupport(ticketId) {
+  // read input for this ticket
+  const inp = document.getElementById(`msgInput-${ticketId}`);
+  if (!inp) return;
+  const text = inp.value.trim();
+  if (!text) return;
+
+  // check ticket status before sending (optional read)
+  try {
+    const doc = await db.collection("support").doc(ticketId).get();
+    const data = doc.exists ? doc.data() : null;
+    if (data && data.status === "geschlossen") {
+      alert("Dieses Ticket ist geschlossen. Keine Antworten möglich.");
+      return;
+    }
+  } catch (err) {
+    console.warn("Could not read ticket status:", err);
+  }
+
+  try {
+    await db.collection("support").doc(ticketId).collection("messages").add({
+      text,
+      sender: currentUser.email || currentUser.uid || "web",
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    inp.value = "";
+    const counter = document.getElementById(`msgCounter-${ticketId}`);
+    if (counter) counter.textContent = `${SUPPORT_MSG_MAX} Zeichen übrig`;
+  } catch (err) {
+    console.error("replySupport error:", err);
+    alert("Fehler beim Senden: " + (err.message || String(err)));
+  }
+}
+
+// Ticket erstellen + erste Nachricht in subcollection schreiben
+async function sendSupport() {
+  const name = document.getElementById('supName')?.value.trim() || '';
+  const mail = document.getElementById('supMail')?.value.trim() || (currentUser?.email || '');
+  const msg = document.getElementById('supMsg')?.value.trim() || '';
+  if (!msg || !mail) { alert('Bitte Nachricht und E-Mail ausfüllen'); return; }
+
+  try {
+    // create ticket doc first (without msg field or keep legacy)
+    const ticketRef = await db.collection('support').add({
+      name,
+      mail,
+      status: 'offen',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    // add first message in subcollection
+    await ticketRef.collection('messages').add({
+      text: msg,
+      sender: mail,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    showToast('✅ Ticket erstellt');
+    // clear form
+    if (document.getElementById('supMsg')) document.getElementById('supMsg').value = '';
+    // reload tickets
+    await loadSupportTickets();
+  } catch (err) {
+    console.error("sendSupport error:", err);
+    alert("Fehler: " + (err.message || String(err)));
+  }
+}
+
+// Ticket schließen
+async function closeSupportTicket(ticketId) {
+  if (!confirm("Ticket wirklich schließen?")) return;
+  try {
+    await db.collection('support').doc(ticketId).update({ status: "geschlossen" });
+    showToast("Ticket geschlossen");
+    // reload tickets (will unsubscribe and re-subscribe)
+    await loadSupportTickets();
+  } catch (err) {
+    console.error("closeSupportTicket error:", err);
+    alert("Fehler beim Schließen: " + (err.message || String(err)));
+  }
+}
+
+// Ticket löschen
+async function deleteSupport(ticketId) {
+  if (!confirm("Ticket wirklich löschen?")) return;
+  try {
+    // unsubscribe listener if present
+    const unsub = _supportUnsubs.get(ticketId);
+    if (unsub) { try { unsub(); } catch(e){}; _supportUnsubs.delete(ticketId); }
+
+    await db.collection('support').doc(ticketId).delete();
+    showToast("Support-Ticket gelöscht");
+    // reload list
+    await loadSupportTickets();
+  } catch (err) {
+    console.error("deleteSupport error:", err);
+    alert("Fehler beim Löschen: " + (err.message || String(err)));
+  }
+}
+  /***********************
+   * Utility, escape helpers
+   ***********************/
+  function escapeHtml(s) {
+    if (!s && s !== 0) return '';
+    return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+  function escapeAttr(s) {
+    if (!s && s !== 0) return '';
+    return String(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+function stripHtml(html) {
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+  return tmp.textContent || tmp.innerText || "";
+}
+  /***********************
+   * Sidebar toggle + init
+   ***********************/
+  function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('-translate-x-full');
+  }
+async function showSupportTickets() {
+  if (!currentUser || !currentUser.uid) {
+  showToast("Bitte zuerst einloggen");
+  return;
+}
+  mode = "support";
+  document.getElementById("navBottom").style.display =
+  (mode === "entry") ? "flex" : "none";
+    
+  const qa = document.getElementById("question-area");
+  qa.innerHTML = "⏳ Lade Support-Tickets…";
+  const snap = await db.collection("support").where("mail","==",currentUser.email).orderBy("createdAt","desc").get();
+  if (snap.empty) { qa.innerHTML = "<p>Keine Support-Anfragen gefunden.</p>"; return; }
+  qa.innerHTML = "";
+  snap.forEach(doc=>{
+    const d = doc.data();
+    qa.innerHTML += `
+      <div class="bg-white p-4 rounded shadow mb-2">
+        <div class="font-bold">📨 ${d.msg}</div>
+        <div class="text-xs text-gray-500">Gesendet: ${d.createdAt?.toDate?.().toLocaleString?.() || '-'}</div>
+        <div class="text-xs">Status: ${d.status || "offen"}</div>
+        <button class="delete-support px-2 py-1 text-xs bg-red-600 text-white rounded mt-1" onclick="deleteSupport('${doc.id}')">Löschen</button>
+      </div>`;
+  });
+  toggleSidebar();
+  updateInfoBox();
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  const btn = document.getElementById("toggleInfo");
+  const overlay = document.getElementById("infoOverlay");
+  const close = document.getElementById("closeInfo");
+
+  if (btn && overlay && close) {
+    btn.addEventListener("click", () => overlay.classList.remove("hidden"));
+    close.addEventListener("click", () => overlay.classList.add("hidden"));
+  }
+});
+
+    
+
+async function deleteSupport(id) {
+  if (!confirm("Ticket wirklich löschen?")) return;
+  await db.collection("support").doc(id).delete();
+  showToast("Support-Ticket gelöscht");
+  showSupportTickets();
+}
+  // initial render
+  renderQuestion();
+  updateProgress();
+
+  // Expose helpful functions to window for inline handlers
+  window.selectOption = selectOption;
+  window.nextStep = nextStep;
+  window.prevStep = prevStep;
+  window.startNewEntry = startNewEntry;
+  window.showMyEntries = showMyEntries;
+  window.openSupport = openSupport;
+  window.toggleSidebar = toggleSidebar;
+  window.submitEntry = submitEntry;
+
+  </script>
+<script>
+// === 🧩 Vollständige In-App-Konsole ===
+// zeigt ALLE Logs (log, warn, error, info, debug, Fehler, Rejections)
+(function () {
+  const ENABLE_APP_CONSOLE = true;
+  if (!ENABLE_APP_CONSOLE) return;
+
+  // --- Container erstellen ---
+  const consoleDiv = document.createElement("div");
+  consoleDiv.id = "appConsole";
+  consoleDiv.style.cssText = `
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-height: 300px;
+    overflow-y: auto;
+    background: #000;
+    color: #0f0;
+    font-family: Consolas, monospace;
+    font-size: 12px;
+    padding: 6px 8px;
+    box-sizing: border-box;
+    display: none;
+    z-index: 99999;
+    border-top: 2px solid #333;
+    user-select: text;
+    line-height: 1.4;
+  `;
+  document.body.appendChild(consoleDiv);
+
+  // --- Toggle Button ---
+  const toggleBtn = document.createElement("button");
+  toggleBtn.textContent = "🧠 Konsole";
+  toggleBtn.style.cssText = `
+    position: fixed;
+    bottom: 310px;
+    right: 10px;
+    padding: 6px 10px;
+    background: #111;
+    color: #eee;
+    border: 1px solid #555;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    z-index: 100000;
+  `;
+  document.body.appendChild(toggleBtn);
+
+  let visible = false;
+  toggleBtn.onclick = () => {
+    visible = !visible;
+    consoleDiv.style.display = visible ? "block" : "none";
+    toggleBtn.textContent = visible ? "📕 Konsole schließen" : "🧠 Konsole";
+  };
+
+  // --- Hilfsfunktion: Zeitformat ---
+  const timestamp = () => {
+    const d = new Date();
+    return d.toLocaleTimeString("de-DE", { hour12: false });
+  };
+
+  // --- Hilfsfunktion: Objekt zu String / Expandable JSON ---
+  function formatArg(arg) {
+    if (typeof arg === "object" && arg !== null) {
+      const summary = document.createElement("details");
+      const summaryText = document.createElement("summary");
+      summaryText.textContent = Array.isArray(arg)
+        ? `Array[${arg.length}]`
+        : `Object { ${Object.keys(arg).length} keys }`;
+      summaryText.style.color = "#0af";
+      summary.appendChild(summaryText);
+
+      const pre = document.createElement("pre");
+      pre.textContent = JSON.stringify(arg, null, 2);
+      pre.style.marginLeft = "10px";
+      pre.style.color = "#0f0";
+      summary.appendChild(pre);
+      return summary;
+    } else {
+      const span = document.createElement("span");
+      span.textContent = typeof arg === "string" ? arg : String(arg);
+      return span;
+    }
+  }
+
+  // --- Ausgabe ---
+  function print(type, args) {
+    const line = document.createElement("div");
+    line.style.marginBottom = "3px";
+    let color =
+      type === "error" ? "#ff4d4d" :
+      type === "warn"  ? "#ffb84d" :
+      type === "info"  ? "#66ccff" :
+      type === "debug" ? "#aaa" :
+      "#0f0";
+    line.innerHTML = `<span style="color:#888">[${timestamp()}]</span> <span style="color:${color}">${type.toUpperCase()}</span>: `;
+    args.forEach((a) => line.appendChild(formatArg(a)));
+    consoleDiv.appendChild(line);
+    consoleDiv.scrollTop = consoleDiv.scrollHeight;
+  }
+
+  // --- Original-Methoden sichern ---
+  const orig = {
+    log: console.log,
+    warn: console.warn,
+    error: console.error,
+    info: console.info,
+    debug: console.debug,
+  };
+
+  // --- Hooks installieren ---
+  console.log = (...a) => { orig.log(...a); print("log", a); };
+  console.warn = (...a) => { orig.warn(...a); print("warn", a); };
+  console.error = (...a) => { orig.error(...a); print("error", a); };
+  console.info = (...a) => { orig.info(...a); print("info", a); };
+  console.debug = (...a) => { orig.debug(...a); print("debug", a); };
+
+  // --- Fehler abfangen ---
+  window.addEventListener("error", (e) => {
+    print("error", [`❌ ${e.message}`, `${e.filename}:${e.lineno}:${e.colno}`]);
+  });
+
+  window.addEventListener("unhandledrejection", (e) => {
+    print("error", ["💥 Unhandled Promise rejection:", e.reason]);
+  });
+
+  console.info("🟢 In-App Konsole gestartet – alle Logs, Fehler & Warnungen werden hier angezeigt.");
+})();
+</script>
+  <!-- Modal zur Bestätigung von Änderungen -->
+<div id="editConfirmModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+  <div class="bg-white rounded-xl shadow p-6 max-w-lg w-full">
+    <h3 class="text-lg font-bold mb-3">Änderungen bestätigen</h3>
+    <div id="editChangesList" class="text-sm bg-gray-50 border p-3 rounded mb-4 max-h-60 overflow-y-auto">
+      <!-- Änderungen werden hier dynamisch eingefügt -->
+    </div>
+    <div class="flex justify-end gap-2">
+      <button onclick="cancelEdit()" class="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400">
+        ❌ Abbrechen
+      </button>
+      <button onclick="confirmEdit()" class="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700">
+        ✅ Speichern
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* Imgbb upload, KI-Generator (template), and Dashboard enhancements
+   Integrated by ChatGPT. Imgbb key set from user input.
+*/
+const IMGBB_KEY = "5df04de9bfd2776f101329be4193e44c";
+function debounce(fn, ms=700){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+
+function initImageUI() { 
+  const qa = document.getElementById('question-area');
+  if (!qa) return;
+  if (document.getElementById('globalImageUploader')) return;
+  const box = document.createElement('div');
+  box.id = 'globalImageUploader';
+  box.className = 'bg-white p-4 rounded-lg shadow mb-4 max-w-2xl mx-auto';
+  box.innerHTML = `
+    <h4 class="font-semibold mb-2">🖼️ Fotos (Drag & Drop oder auswählen)</h4>
+    <div id="dropZone" class="w-full border-dashed border-2 border-gray-200 rounded p-4 text-center cursor-pointer">
+      Ziehe Bilder hierher oder klicke zum Auswählen (max 10)
+      <input id="fileInput" type="file" accept="image/*" multiple class="hidden" />
+    </div>
+    <div id="imagePreview" class="mt-3 grid grid-cols-3 gap-2"></div>
+  `;
+  qa.prepend(box);
+
+  const drop = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const preview = document.getElementById('imagePreview');
+
+  drop.addEventListener('click', ()=> fileInput.click());
+  drop.addEventListener('dragover', (e)=>{ e.preventDefault(); drop.classList.add('bg-green-50'); });
+  drop.addEventListener('dragleave', ()=> drop.classList.remove('bg-green-50'));
+  drop.addEventListener('drop', (e)=>{
+    e.preventDefault(); drop.classList.remove('bg-green-50');
+    const files = Array.from(e.dataTransfer.files || []);
+    handleFiles(files);
+  });
+  fileInput.addEventListener('change', (e)=> handleFiles(Array.from(e.target.files || [])));
+
+  showGalleryFromEditingData();
+}
+
+function showGalleryFromEditingData() {
+  const preview = document.getElementById('imagePreview');
+  if (!preview) return;
+  preview.innerHTML = '';
+  editingData.photos = editingData.photos || [];
+  editingData.photos.forEach((url, idx) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'relative';
+    wrap.innerHTML = `
+      <img src="${url}" class="object-cover w-full h-28 rounded" data-idx="${idx}" style="cursor:pointer"/>
+      <button data-idx="${idx}" class="removePhoto absolute top-1 right-1 bg-red-500 text-white text-xs px-1 rounded">✕</button>
+    `;
+    preview.appendChild(wrap);
+  });
+  preview.querySelectorAll('button.removePhoto').forEach(b=>{
+    b.onclick = (ev)=>{
+      const i = Number(ev.target.dataset.idx);
+      editingData.photos.splice(i,1);
+      showGalleryFromEditingData();
+    };
+  });
+  preview.querySelectorAll('img').forEach(img=>{
+    img.onclick = ()=>{
+      const url = img.src;
+      const extra = generateImageDescriptionFromURL(url);
+      if (window.currentQuill) {
+        const q = window.currentQuill;
+        q.root.innerHTML = (q.root.innerHTML || '') + `<p><em>${extra}</em></p>`;
+        showToast("✨ Bildbeschreibung zur Beschreibung hinzugefügt");
+      } else if (window.editQuill) {
+        window.editQuill.root.innerHTML = (window.editQuill.root.innerHTML || '') + `<p><em>${extra}</em></p>`;
+        showToast("✨ Bildbeschreibung zur Beschreibung hinzugefügt");
+      } else {
+        editingData.description = (editingData.description || '') + '\n' + extra;
+        showToast("✨ Bildbeschreibung zwischengespeichert");
+      }
+    };
+  });
+}
+
+function generateImageDescriptionFromURL(url) {
+  try {
+    const name = url.split('/').pop().split('?')[0].replace(/[-_]/g,' ');
+    return `Foto: ${decodeURIComponent(name)} — ein sehenswertes Detail des Ortes.`;
+  } catch(e){ return "Ein ansprechendes Bild des Ortes."; }
+}
+
+function handleFiles(files) {
+  if (!files || !files.length) return;
+  editingData.photos = editingData.photos || [];
+  const remaining = Math.max(0, 10 - editingData.photos.length);
+  const toUpload = files.slice(0, remaining);
+  if (!toUpload.length) { alert("Max. 10 Bilder erlaubt."); return; }
+  toUpload.forEach(file => uploadToImgbb(file));
+}
+
+function fileToBase64(file){ return new Promise((res, rej)=>{ const fr = new FileReader(); fr.onload = () => res(fr.result.split(',')[1]); fr.onerror = rej; fr.readAsDataURL(file); }); }
+
+async function uploadToImgbb(file) {
+  try {
+    showToast("⏫ Lade Bild hoch...");
+    const b64 = await fileToBase64(file);
+    const form = new FormData();
+    form.append('key', IMGBB_KEY);
+    form.append('image', b64);
+    form.append('name', file.name);
+    const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: form });
+    const data = await res.json();
+    if (data && data.data && data.data.url) {
+      editingData.photos = editingData.photos || [];
+      editingData.photos.push(data.data.url);
+      showGalleryFromEditingData();
+      showToast("✅ Bild hochgeladen");
+    } else {
+      console.error("Imgbb error", data);
+      alert("Fehler beim Hochladen des Bildes.");
+    }
+  } catch (err) {
+    console.error("uploadToImgbb error", err);
+    alert("Fehler beim Bild-Upload: " + (err.message||err));
+  }
+}
+
+function generateSmartDescription(data={name:'', typ:'', extras:'', tiere:[]}, photos=[], style='romantisch') {
+  const parts = [];
+  if (data.name) parts.push(`${data.name} ist ein charmantes ${data.typ || 'Plätzchen'} auf dem Land.`);
+  if (data.extras) parts.push(`Besonders praktisch: ${data.extras}.`);
+  if (Array.isArray(data.tiere) && data.tiere.length && !data.tiere.includes('Keine Tiere')) {
+    parts.push(`Vor Ort gibt es ${data.tiere.join(', ')} — ideal für Tierfreunde.`);
+  }
+  if (photos && photos.length) parts.push(`Auf den Bildern sieht man unter anderem ${photos.length} eindrucksvolle Aufnahmen des Ortes.`);
+  parts.push(`Perfekt für einen spontanen Besuch oder als Zwischenstopp. Öffnungszeiten findest du weiter unten.`);
+  const base = parts.join(' ');
+  if (style === 'romantisch') return `<p>${base} 🌿</p>`;
+  return `<p>${base}</p>`;
+}
+
+const autoGenDebounced = debounce(()=>{
+  const nameInput = document.getElementById('nameInput');
+  const typeSel = editingData.typ || null;
+  if (nameInput && nameInput.value && typeSel) {
+    const payload = Object.assign({}, editingData, { name: nameInput.value });
+    const desc = generateSmartDescription(payload, editingData.photos||[], 'romantisch');
+    if (window.currentQuill) {
+      window.currentQuill.root.innerHTML = desc;
+      showToast("✨ KI-Beschreibung automatisch erzeugt");
+    }
+  }
+}, 900);
+
+(function patchRenderQuestionForExtras(){
+  if (typeof renderQuestion !== 'function') return;
+  const orig = renderQuestion;
+  window.renderQuestion = function(){
+    try{ orig(); } catch(e){ console.error("original renderQuestion failed", e); orig(); }
+    initImageUI();
+    showGalleryFromEditingData();
+    const nameInput = document.getElementById('nameInput');
+    if (nameInput && !nameInput._autoAttached) {
+      nameInput._autoAttached = true;
+      nameInput.addEventListener('input', ()=>{ autoGenDebounced(); });
+    }
+    setTimeout(()=>{
+      const quillContainer = document.getElementById('quillContainer') || document.getElementById('edit_quill');
+      if (quillContainer && !quillContainer._kiBtn) {
+        const btn = document.createElement('button');
+        btn.className = 'mt-2 px-3 py-2 bg-indigo-600 text-white rounded';
+        btn.textContent = '✨ KI-Beschreibung erstellen';
+        btn.onclick = async ()=>{
+          const payload = Object.assign({}, editingData, { name: document.getElementById('nameInput')?.value || editingData.name });
+          const desc = generateSmartDescription(payload, editingData.photos||[], 'romantisch');
+          if (window.currentQuill) { window.currentQuill.root.innerHTML = desc; showToast("✨ KI-Beschreibung eingefügt"); }
+          if (window.editQuill) { window.editQuill.root.innerHTML = desc; showToast("✨ KI-Beschreibung eingefügt"); }
+        };
+        quillContainer.appendChild(btn);
+        quillContainer._kiBtn = true;
+      }
+    }, 200);
+  };
+})();
+
+async function enhanceDashboardMoreFeatures() {
+  const user = firebase.auth().currentUser || currentUser;
+  if (!user) return;
+  try {
+    const snap = await db.collection('eierhuetten').where('userId','==',user.uid).get();
+    const total = snap.size;
+    let active=0, pending=0, photosCount=0;
+    const perDay = {};
+    const today = new Date();
+    for (let i=29;i>=0;i--){ const d=new Date(); d.setDate(today.getDate()-i); perDay[d.toLocaleDateString('de-DE')] = 0; }
+    snap.forEach(doc=>{
+      const d = doc.data();
+      if (d.active) active++; else pending++;
+      photosCount += (d.photos || []).length;
+      if (d.createdAt && d.createdAt.toDate) {
+        const day = d.createdAt.toDate().toLocaleDateString('de-DE');
+        if (perDay.hasOwnProperty(day)) perDay[day]++;
+      }
+    });
+    const statsArea = document.getElementById('statsArea');
+    const container = document.createElement('div');
+    container.className = 'bg-white p-4 rounded-xl shadow mt-4 max-w-5xl mx-auto';
+    container.innerHTML = `
+      <div class="flex justify-between items-center mb-3">
+        <div><b>Analyse & Verwaltung</b></div>
+        <div class="flex gap-2">
+          <button class="px-3 py-1 bg-gray-200 rounded" onclick="showMyEntries()">📋 Meine Einträge</button>
+          <button class="px-3 py-1 bg-gray-200 rounded" onclick="exportEntriesCSV()">⬇ CSV</button>
+        </div>
+      </div>
+      <div class="grid grid-cols-3 gap-4 text-sm">
+        <div class="p-3 border rounded"><div class="text-xs text-gray-500">Gesamt</div><div class="text-xl font-bold">${total}</div></div>
+        <div class="p-3 border rounded"><div class="text-xs text-gray-500">Aktiv</div><div class="text-xl font-bold">${active}</div></div>
+        <div class="p-3 border rounded"><div class="text-xs text-gray-500">In Prüfung</div><div class="text-xl font-bold">${pending}</div></div>
+      </div>
+      <div class="mt-3"><canvas id="entriesChart" height="100"></canvas></div>
+    `;
+    if (statsArea && statsArea.parentNode) statsArea.parentNode.insertBefore(container, statsArea.nextSibling);
+    const labels = Object.keys(perDay);
+    const values = labels.map(l=>perDay[l]);
+    const ctx = document.getElementById('entriesChart')?.getContext('2d');
+    if (ctx && typeof Chart !== 'undefined') {
+      new Chart(ctx, { type: 'bar', data: { labels, datasets:[{ label: 'Neuanmeldungen', data: values, backgroundColor:'rgba(16,185,129,0.6)'}] }, options:{ plugins:{ legend:{ display:false } }, scales:{ x:{ ticks:{ maxRotation:45 } } } } });
+    }
+    setTimeout(()=>{ document.querySelectorAll('#myEntriesList img').forEach(img=>{ img.style.objectFit='cover'; }); },200);
+  } catch(err){ console.error("enhanceDashboardMoreFeatures error", err); }
+}
+
+(function patchShowDashboard(){
+  if (typeof showDashboard !== 'function') return;
+  const orig = showDashboard;
+  window.showDashboard = async function(){ await orig.apply(this, arguments); setTimeout(()=>{ enhanceDashboardExtras(); enhanceDashboardMoreFeatures(); }, 400); };
+})();
+
+window.uploadToImgbb = uploadToImgbb;
+window.handleFiles = handleFiles;
+window.generateSmartDescription = generateSmartDescription;
+window.enhanceDashboardMoreFeatures = enhanceDashboardMoreFeatures;
+
+console.log("Imgbb + KI + Dashboard enhancements loaded.");
+</script>
+
+</body>
+  </html>
