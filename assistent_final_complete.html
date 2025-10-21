@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Assistent | Smarter V3</title>
+  <title>Assistent</title>
 
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -17,39 +17,40 @@
 
   <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
   <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
-
+  
   <script src="https://js.stripe.com/v3/"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
+  
   <style>
     body { font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; }
     .card-option { transition: transform .16s, box-shadow .16s; }
     .card-option:hover { transform: translateY(-4px); box-shadow: 0 8px 20px rgba(0,0,0,.08); }
-    .selected { border: 3px solid #10b981; background-color: #ecfdf5; box-shadow: 0 4px 10px rgba(16, 185, 129, 0.2); }
+    .selected { border: 2px solid #10b981; background-color: #ecfdf5; }
     .minimap { height: 200px; z-index: 0; }
     .leaflet-container { z-index: 0 !important; }
-    /* Small helper for fixed bottom nav on small screens */
+    
     @media (max-width: 767px) {
-      #question-area { padding-bottom: 92px; } /* space for fixed nav */
+      #question-area { padding-bottom: 92px; }
     }
     @media (min-width: 768px) {
       #question-area { padding-bottom: 92px; }
     }
+    
     .sidebar-btn.active {
       background-color: #e8f8ee;
       color: #166534;
       font-weight: 600;
     }
-
-    /* === Smarter Upload Style === */
-    #smartUploadZone {
-      transition: all 0.25s ease;
-      min-height: 150px;
-    }
-    #smartUploadZone:hover {
-      background-color: #ecfdf5;
-      border-color: #10b981;
-      transform: scale(1.01);
+    
+    #smartUploadZone { transition: all 0.25s ease; }
+    #smartUploadZone:hover { background-color: #ecfdf5; border-color: #10b981; transform: scale(1.01); }
+    #smartUploadPreview img { transition: all 0.25s ease; }
+    #smartUploadPreview img:hover { transform: scale(1.05); filter: brightness(1.1); }
+    
+    @keyframes pulseUpload {
+      0% { opacity: 0.6; }
+      50% { opacity: 1; }
+      100% { opacity: 0.6; }
     }
     .uploading::after {
       content: "⏫";
@@ -59,30 +60,22 @@
       animation: pulseUpload 1s infinite;
       color: #16a34a;
     }
-    @keyframes pulseUpload {
-      0% { opacity: 0.6; }
-      50% { opacity: 1; }
-      100% { opacity: 0.6; }
-    }
   </style>
 </head>
 <body class="bg-gray-100">
-<script>window.stepInfos = window.stepInfos || [];</script>
 
 <div id="loginScreen" class="flex items-center justify-center min-h-screen bg-gradient-to-br from-green-50 to-green-100 hidden">
   <div class="bg-white rounded-2xl shadow-xl p-10 max-w-md w-full text-center transform transition hover:scale-[1.01]">
     <div class="flex justify-center mb-6">
-      <img src="https://radlmap.net/img/login.png" class="w-64 h-64 drop-shadow-lg" alt="Funny Hut" />
+      <img src="https://radlmap.net/img/login.png" class="w-64 h-64 drop-shadow-lg" alt="Illustration" />
     </div>
     <h1 class="text-3xl font-extrabold text-green-700 mb-3">Assistent-Dashboard</h1>
     <p class="text-gray-500 mb-8">
       Verwalte deine <span class="font-semibold text-green-600">Eintragungen</span> ganz einfach online.<br>
       Bitte melde dich mit deinem Google-Konto an.
     </p>
-    <button onclick="doGoogleLogin()"
-      class="flex items-center gap-3 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-md transition w-full justify-center font-medium">
-      <img src="https://www.svgrepo.com/show/475656/google-color.svg"
-           class="w-6 h-6 bg-white rounded-full p-1" />
+    <button onclick="doGoogleLogin()" class="flex items-center gap-3 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-md transition w-full justify-center font-medium">
+      <img src="https://www.svgrepo.com/show/475656/google-color.svg" class="w-6 h-6 bg-white rounded-full p-1" alt="Google Logo"/>
       <span>Mit Google anmelden</span>
     </button>
     <p class="text-xs text-gray-400 mt-6">🔒 Deine Daten bleiben sicher und werden nicht ohne Zustimmung geteilt.</p>
@@ -91,109 +84,101 @@
 
 <div id="mainApp" class="flex min-h-screen hidden">
 
-    <aside id="sidebar" class="fixed md:static inset-y-0 left-0 w-64 bg-white border-r p-6 flex flex-col transform -translate-x-full md:translate-x-0 transition-transform z-50 shadow-lg">
-
-      <div class="flex flex-col items-center mb-8">
-        <div id="avatarWrapper" class="w-20 h-20 rounded-full overflow-hidden border-2 border-green-500 mb-3 bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center text-white text-2xl font-bold shadow-md">
-          <img id="profilePic" src="" alt="Profilbild" class="w-full h-full object-cover hidden">
-          <span id="avatarInitials"></span>
-        </div>
-        <p class="text-sm text-gray-600">Angemeldet als:</p>
-        <p id="accountMail" class="text-green-700 font-semibold truncate max-w-[180px] text-center">-</p>
-        <button onclick="logout()" class="mt-3 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 active:scale-95 transition transform">Logout</button>
+  <aside id="sidebar" class="fixed md:static inset-y-0 left-0 w-64 bg-white border-r p-6 flex flex-col transform -translate-x-full md:translate-x-0 transition-transform z-50 shadow-lg">
+    <div class="flex flex-col items-center mb-8">
+      <div id="avatarWrapper" class="w-20 h-20 rounded-full overflow-hidden border-2 border-green-500 mb-3 bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center text-white text-2xl font-bold shadow-md">
+        <img id="profilePic" src="" alt="Profilbild" class="w-full h-full object-cover hidden">
+        <span id="avatarInitials"></span>
       </div>
-
-      <div class="text-2xl font-extrabold text-green-700 mb-6 text-center tracking-tight">
-        🌿 Assistent
-      </div>
-
-      <nav class="flex flex-col gap-2 text-[15px]">
-        <a href="https://radlmap.net" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition">
-          🚲 Startseite
-        </a>
-        <a href="navi.html" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition">
-          🚴‍♂️ zur RadlMap
-        </a>
-
-        <button id="btnDashboard" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnDashboard'); showDashboard()">
-          📊 Betreiber-Dashboard
-        </button>
-        <button id="btnEntries" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnEntries'); showMyEntries()">
-          📋 Meine Eintragungen
-        </button>
-        <button id="btnNewEntry" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnNewEntry'); startNewEntry()">
-          ➕ Neue Eintragung
-        </button>
-
-        <div class="mt-4">
-          <div class="flex items-center justify-between px-3 mb-1">
-            <p class="text-xs uppercase font-semibold text-gray-400 tracking-wider">Events</p>
-            <span class="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">neu</span>
-          </div>
-
-          <div class="ml-2 border-l-2 border-green-100 pl-3 flex flex-col gap-1">
-            <button id="btnMyEvents"
-              class="sidebar-btn px-3 py-1.5 rounded-lg hover:bg-green-50 flex items-center gap-2 text-sm transition"
-              onclick="setActive('btnMyEvents'); showMyEvents()">
-              📅 <span>Meine Events</span>
-            </button>
-            <button id="btnCreateEvent"
-              class="sidebar-btn px-3 py-1.5 rounded-lg hover:bg-green-50 flex items-center gap-2 text-sm transition"
-              onclick="setActive('btnCreateEvent'); showCreateEvent()">
-              ➕ <span>Neues Event</span>
-            </button>
-          </div>
-        </div>
-
-        <hr class="my-3 border-gray-200">
-
-        <button id="btnSupport" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnSupport'); openSupport()">
-          💬 Support
-        </button>
-        <button id="btnHutMessages" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition relative" onclick="setActive('btnHutMessages'); showHutMessages()">
-          💌 Hütten-Nachrichten
-          <span id="hutMessagesCount" class="absolute right-4 hidden bg-red-600 text-white text-xs px-2 py-0.5 rounded-full">0</span>
-        </button>
-      </nav>
-
-      <div class="mt-auto text-center text-xs text-gray-400 pt-4 border-t border-gray-200">
-        v3.0 Smarter &middot; RadlMap Assistent
-      </div>
-    </aside>
-
-    <div id="infoSidebar" class="hidden lg:block w-72 p-4 bg-gray-50 border-l">
-      <div class="sticky top-4">
-        <h3 class="text-lg font-bold mb-3">ℹ️ Hilfe & Beispiele</h3>
-        <div id="infoBox" class="space-y-3 text-sm text-gray-700"></div>
-      </div>
+      <p class="text-sm text-gray-600">Angemeldet als:</p>
+      <p id="accountMail" class="text-green-700 font-semibold truncate max-w-[180px] text-center">-</p>
+      <button onclick="logout()" class="mt-3 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 active:scale-95 transition transform">Logout</button>
     </div>
 
-    <main class="flex-1 flex flex-col">
-      <div class="md:hidden flex items-center justify-between bg-white border-b p-3">
-        <div class="font-bold text-green-700">Assistent</div>
-        <button class="p-2 bg-green-600 text-white rounded" onclick="toggleSidebar()">☰</button>
+    <div class="text-2xl font-extrabold text-green-700 mb-6 text-center tracking-tight">🌿 Assistent</div>
+
+    <nav class="flex flex-col gap-2 text-[15px]">
+      <a href="https://radlmap.net" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition">🚲 Startseite</a>
+      <a href="navi.html" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition">🚴‍♂️ zur RadlMap</a>
+      <button id="btnDashboard" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnDashboard'); showDashboard()">📊 Betreiber-Dashboard</button>
+      <button id="btnEntries" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnEntries'); showMyEntries()">📋 Meine Eintragungen</button>
+      <button id="btnNewEntry" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnNewEntry'); startNewEntry()">➕ Neue Eintragung</button>
+
+      <div class="mt-4">
+        <div class="flex items-center justify-between px-3 mb-1">
+          <p class="text-xs uppercase font-semibold text-gray-400 tracking-wider">Events</p>
+          <span class="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">neu</span>
+        </div>
+        <div class="ml-2 border-l-2 border-green-100 pl-3 flex flex-col gap-1">
+          <button id="btnMyEvents" class="sidebar-btn px-3 py-1.5 rounded-lg hover:bg-green-50 flex items-center gap-2 text-sm transition" onclick="setActive('btnMyEvents'); showMyEvents(firebase.auth().currentUser)">📅 <span>Meine Events</span></button>
+          <button id="btnCreateEvent" class="sidebar-btn px-3 py-1.5 rounded-lg hover:bg-green-50 flex items-center gap-2 text-sm transition" onclick="setActive('btnCreateEvent'); showCreateEvent(firebase.auth().currentUser)">➕ <span>Neues Event</span></button>
+        </div>
       </div>
 
-      <div class="w-full h-2 bg-gray-200">
-        <div id="progress" class="h-2 bg-green-500 w-0 transition-all"></div>
-      </div>
+      <hr class="my-3 border-gray-200">
+      <button id="btnSupport" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnSupport'); openSupport()">💬 Support</button>
+      <button id="btnHutMessages" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition relative" onclick="setActive('btnHutMessages'); showHutMessages()">
+        💌 Hütten-Nachrichten
+        <span id="hutMessagesCount" class="absolute right-4 hidden bg-red-600 text-white text-xs px-2 py-0.5 rounded-full">0</span>
+      </button>
+    </nav>
 
-      <section id="question-area" class="flex-1 p-6 overflow-y-auto">
-        </section>
+    <div class="mt-auto text-center text-xs text-gray-400 pt-4 border-t border-gray-200">v2.1 &middot; RadlMap Assistent</div>
+  </aside>
 
-      <div id="navBottom" class="fixed bottom-0 left-0 md:left-64 right-0 flex justify-between p-4 border-t bg-white z-40 hidden">
-        <button id="prevBtn" class="px-4 py-2 bg-gray-200 rounded" onclick="prevStep()">⬅️ Zurück</button>
-        <button id="nextBtn" class="px-4 py-2 bg-green-600 text-white rounded" onclick="nextStep()">Weiter ➡️</button>
-      </div>
-    </main>
+  <div id="infoSidebar" class="hidden lg:block w-72 p-4 bg-gray-50 border-l">
+    <div class="sticky top-4">
+      <h3 class="text-lg font-bold mb-3">ℹ️ Hilfe & Beispiele</h3>
+      <div id="infoBox" class="space-y-3 text-sm text-gray-700"></div>
+    </div>
+  </div>
+
+  <div id="infoOverlay" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+    <div class="absolute bottom-0 w-full bg-white p-4 rounded-t-2xl shadow-lg max-h-[80vh] overflow-y-auto">
+      <button id="closeInfo" class="absolute top-2 right-2 text-gray-600">✕</button>
+      <h3 class="text-lg font-bold mb-3">ℹ️ Hilfe & Beispiele</h3>
+      <div id="infoBoxMobile" class="space-y-3 text-sm text-gray-700"></div>
+    </div>
+  </div>
+  <button id="toggleInfo" class="lg:hidden fixed bottom-20 right-4 bg-blue-500 text-white p-3 rounded-full shadow-lg">ℹ️</button>
+
+  <main class="flex-1 flex flex-col">
+    <div class="md:hidden flex items-center justify-between bg-white border-b p-3">
+      <div class="font-bold text-green-700">Assistent</div>
+      <button class="p-2 bg-green-600 text-white rounded" onclick="toggleSidebar()">☰</button>
+    </div>
+
+    <div class="w-full h-2 bg-gray-200">
+      <div id="progress" class="h-2 bg-green-500 w-0 transition-all"></div>
+    </div>
+
+    <section id="question-area" class="flex-1 p-6 overflow-y-auto"></section>
+
+    <nav id="navBottom" class="fixed bottom-0 left-0 md:left-64 right-0 flex justify-between p-4 border-t bg-white z-40">
+      <button id="prevBtn" class="px-4 py-2 bg-gray-200 rounded" onclick="prevStep()">⬅️ Zurück</button>
+      <button id="nextBtn" class="px-4 py-2 bg-green-600 text-white rounded" onclick="nextStep()">Weiter ➡️</button>
+    </nav>
+  </main>
 </div>
 
 <div id="toast" class="fixed top-6 right-6 hidden p-3 rounded shadow bg-blue-600 text-white z-50"></div>
 
-<script>
-(function() {
-  'use strict';
+<div id="editConfirmModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+  <div class="bg-white rounded-xl shadow p-6 max-w-lg w-full">
+    <h3 class="text-lg font-bold mb-3">Änderungen bestätigen</h3>
+    <div id="editChangesList" class="text-sm bg-gray-50 border p-3 rounded mb-4 max-h-60 overflow-y-auto"></div>
+    <div class="flex justify-end gap-2">
+      <button onclick="cancelEdit()" class="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400">❌ Abbrechen</button>
+      <button onclick="confirmEdit()" class="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700">✅ Speichern</button>
+    </div>
+  </div>
+</div>
 
+<script>
+// =================================================================================
+// SCRIPT START
+// =================================================================================
+(function() {
   /***********************
    * Config & Init
    ***********************/
@@ -205,130 +190,101 @@
     messagingSenderId: "348272135205",
     appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
   };
-  const IMGBB_KEY = "5df04de9bfd2776f101329be4193e44c"; // Used for image uploads
-  const FALLBACK_LOCATION = [51.1657, 10.4515]; // Center Germany
+  const IMGBB_KEY = "5df04de9bfd2776f101329be4193e44c";
+  const STRIPE_PUBLISHABLE_KEY = "pk_test_51SFLgEBghOTdsn6RBYuZr6x4R2BC6lhq4NFWmcKTtyNahatWHMVHAq3posYIhsXKRl598qHOzMzyymuV6DgKWYly006AaME4Wr";
 
-  let app, db, storage;
+  let app, db, auth, storage, stripe;
   try {
     app = firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
+    auth = firebase.auth();
     storage = firebase.storage();
+    stripe = Stripe(STRIPE_PUBLISHABLE_KEY);
   } catch (e) {
     console.error("Firebase init error", e);
-    // Error handling ...
+    document.getElementById('question-area').innerHTML = `<div class="bg-red-100 p-4 rounded">❌ Firebase konnte nicht initialisiert werden.</div>`;
   }
 
-  let currentUser = null; // Will be set on auth state change
+  /***********************
+   * State Management
+   ***********************/
+  let currentUser = null;
   let editingData = {};
   let step = 0;
-  const stepsCount = 12; // 0..11
-  let mode = "tutorial"; // "entry", "list", "tutorial", "support", "hutMessages"
-  let overviewMap;
-  let overviewMarker;
-  let quillEditor;
-
-  // Texts for Step 2
-  const typeTexts = {
-    Eierhütte: { title: "🏷️ Name der Eierhütte", question: "Wie soll deine Eierhütte heißen?" },
-    Hofladen: { title: "🏷️ Name des Hofladens", question: "Wie soll dein Hofladen heißen?" },
-    Selbstbedienung: { title: "🏷️ Name des SB-Hauses", question: "Wie soll dein Selbstbedienungshäuschen heißen?" },
-    Spielplatz: { title: "🏷️ Name des Spielplatzes", question: "Wie soll der Spielplatz heißen?" },
-    Abenteuerhof: { title: "🏷️ Name des Abenteuerhofs", question: "Wie soll dein Abenteuerhof heißen?" },
-    Automat: { title: "🏷️ Name des Automaten", question: "Wie soll dein Automat heißen?" }
-  };
+  const stepsCount = 11;
+  let mode = "entry"; // "entry", "list", "dashboard", etc.
+  let pendingEdit = null;
   
-  // Texts for Info Box
-  const stepInfos = {
-    0: { title: "Datenschutz", text: "Bitte lies die Datenschutzerklärung aufmerksam und bestätige sie." },
-    1: { title: "Art der Eintragung", text: "Wähle den Typ (Eierhütte, Hofladen etc.)." },
-    2: { title: "Name der Hütte", text: "Kurz, prägnant, z. B. „Eierhütte am Dorfplatz“." },
-    3: { title: "Sitzplätze", text: "Gibt es Sitzgelegenheiten vor Ort?" },
-    4: { title: "Strom", text: "Ist Strom für E-Bikes oder Handys verfügbar?" },
-    5: { title: "Öffnungszeiten (SMART)", text: "Gib deine Öffnungszeiten pro Tag an oder wähle 'Immer geöffnet'." },
-    6: { title: "Extras", text: "Besonderheiten angeben, z. B. Getränke, Kühlschrank, Grillmöglichkeiten." },
-    7: { title: "Bilder / Fotos (NEU)", text: "Lade deine Fotos hier hoch. Bis zu 10 Bilder sind erlaubt." },
-    8: { title: "Tiere", text: "Wähle alle Tiere aus, die es vor Ort gibt." },
-    9: { title: "Beschreibung", text: "Beschreibe deinen Ort möglichst ausführlich. Der Text wird im Eintrag angezeigt." },
-    10: { title: "Schlagwörter", text: "Gib Schlagwörter ein, damit andere die Hütte besser finden können (max. 10)." },
-    11: { title: "Standort & Übersicht", text: "Wähle den Standort per Klick auf die Karte oder GPS. Du kannst den Marker verschieben." }
-  };
-    
   /***********************
    * Authentication
    ***********************/
-  window.doGoogleLogin = async function() {
-    const provider = new firebase.auth.GoogleAuthProvider();
-    try {
-      await firebase.auth().signInWithPopup(provider);
-      showToast("✅ Eingeloggt mit Google");
-    } catch (e) {
-      console.error("Google Login error", e);
-      alert("Fehler beim Google-Login: " + e.message);
-    }
-  }
-
-  window.logout = function() {
-    firebase.auth().signOut();
-  }
-
-  firebase.auth().onAuthStateChanged(u => {
-    if (u) {
-      currentUser = u;
-      document.getElementById("accountMail").textContent = u.email;
-      setGoogleProfile(u);
-      document.getElementById("loginScreen").classList.add("hidden");
-      document.getElementById("mainApp").classList.remove("hidden");
-      // Sidebar mobil standardmäßig geschlossen halten
+  auth.onAuthStateChanged(user => {
+    const loginScreen = document.getElementById("loginScreen");
+    const mainApp = document.getElementById("mainApp");
+    
+    if (user) {
+      currentUser = user;
+      mainApp.classList.remove("hidden");
+      loginScreen.classList.add("hidden");
       document.getElementById('sidebar').classList.add('-translate-x-full');
+      updateUserProfile(user);
       showTutorial();
       initHutMessagesBadge();
     } else {
       currentUser = null;
-      document.getElementById("mainApp").classList.add("hidden");
-      document.getElementById("loginScreen").classList.remove("hidden");
-      document.getElementById("question-area").innerHTML = "";
+      mainApp.classList.add("hidden");
+      loginScreen.classList.remove("hidden");
     }
   });
 
-  function setGoogleProfile(user) {
-    const picEl = document.getElementById('profilePic');
-    const initEl = document.getElementById('avatarInitials');
-    if (user.photoURL) {
-        picEl.src = user.photoURL;
-        picEl.classList.remove('hidden');
-        initEl.classList.add('hidden');
-    } else if (user.displayName) {
-        const initials = user.displayName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
-        initEl.textContent = initials;
-        initEl.classList.remove('hidden');
-        picEl.classList.add('hidden');
-    } else {
-        const initials = user.email ? user.email[0].toUpperCase() : '?';
-        initEl.textContent = initials;
-        initEl.classList.remove('hidden');
-        picEl.classList.add('hidden');
+  async function doGoogleLogin() {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    try {
+      await auth.signInWithPopup(provider);
+      showToast("✅ Erfolgreich eingeloggt!");
+    } catch (e) {
+      console.error("Google Login error", e);
+      showToast("Fehler beim Google-Login: " + e.message, 5000, true);
     }
   }
 
+  function logout() {
+    auth.signOut();
+  }
+  
+  function updateUserProfile(user) {
+      document.getElementById("accountMail").textContent = user.email;
+      const profilePic = document.getElementById('profilePic');
+      const avatarWrapper = document.getElementById('avatarWrapper');
+      const avatarInitials = document.getElementById('avatarInitials');
+
+      if (user.photoURL) {
+          profilePic.src = user.photoURL;
+          profilePic.classList.remove('hidden');
+          avatarInitials.textContent = '';
+      } else {
+          profilePic.classList.add('hidden');
+          const initial = (user.displayName || user.email || 'U').charAt(0).toUpperCase();
+          avatarInitials.textContent = initial;
+          const hash = Array.from(user.email).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+          const colors = [
+              ['#34D399','#10B981'], ['#60A5FA','#3B82F6'], ['#FBBF24','#F59E0B'],
+              ['#F87171','#EF4444'], ['#A78BFA','#8B5CF6'], ['#F472B6','#EC4899']
+          ];
+          const chosen = colors[hash % colors.length];
+          avatarWrapper.style.background = `linear-gradient(135deg, ${chosen[0]}, ${chosen[1]})`;
+      }
+  }
+
   /***********************
-   * Navigation & State
+   * UI Helpers & Utilities
    ***********************/
-  window.setActive = function(buttonId) {
-    const buttons = document.querySelectorAll('.sidebar-btn');
-    buttons.forEach(btn => btn.classList.remove('active'));
-    const activeBtn = document.getElementById(buttonId);
-    if(activeBtn) activeBtn.classList.add('active');
-  }
-
-  window.toggleSidebar = function() {
-    document.getElementById('sidebar').classList.toggle('-translate-x-full');
-  }
-
-  window.showToast = function(text, time = 3000) {
+  function showToast(text, time = 3000, isError = false) {
     const t = document.getElementById('toast');
     t.textContent = text;
+    t.className = `fixed top-6 right-6 p-3 rounded shadow text-white z-50 ${isError ? 'bg-red-600' : 'bg-blue-600'}`;
     t.classList.remove('hidden');
-    setTimeout(()=>{ t.classList.add('hidden'); }, time);
+    setTimeout(() => t.classList.add('hidden'), time);
   }
 
   function updateProgress() {
@@ -336,29 +292,322 @@
     document.getElementById('progress').style.width = pct + '%';
   }
 
-  window.startNewEntry = function() {
-    if (!currentUser || !currentUser.uid) { showToast("Bitte zuerst einloggen"); return; }
-    editingData = {};
-    step = 0;
-    mode = "entry";
-    setActive('btnNewEntry');
-    document.getElementById("navBottom").classList.remove("hidden");
-    renderQuestion();
-    toggleSidebar(); // schließt Sidebar auf Mobile
+  function setActive(buttonId) {
+    document.querySelectorAll('.sidebar-btn').forEach(btn => btn.classList.remove('active'));
+    const activeBtn = document.getElementById(buttonId);
+    if (activeBtn) activeBtn.classList.add('active');
   }
 
-  window.selectOption = function(field, value, el) {
-    // deselect siblings if (el && el.parentNode) {
-    el.parentNode.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
-    el.classList.add('selected');
-    editingData[field] = value;
+  function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('-translate-x-full');
+  }
+  
+  function escapeAttr(s) {
+    return (s === undefined || s === null) ? '' : String(s).replace(/"/g, '&quot;');
+  }
+  
+  /***********************
+   * Main Navigation / Views
+   ***********************/
+   function setMode(newMode) {
+     mode = newMode;
+     const isEntryMode = (mode === "entry");
+     document.getElementById("navBottom").style.display = isEntryMode ? "flex" : "none";
+     updateInfoBox();
+   }
+
+  function showTutorial() {
+    setMode("tutorial");
+    const qa = document.getElementById("question-area");
+    qa.innerHTML = `
+      <section class="bg-white p-8 rounded-2xl shadow-lg max-w-3xl mx-auto">
+        <header class="mb-6 text-center">
+          <h2 class="text-3xl font-extrabold text-green-600 mb-2">👋 Willkommen!</h2>
+          <p class="text-gray-600 text-lg">Dies ist der Hütten-Assistent. Hier ein kurzer Überblick:</p>
+        </header>
+        <ul class="space-y-5 text-gray-700">
+          <li class="flex items-start"><span class="text-green-500 mr-3 text-xl">➕</span><p><strong>Neue Eintragung:</strong> Erstelle eine neue Hütte, einen Hofladen oder einen anderen Ort.</p></li>
+          <li class="flex items-start"><span class="text-green-500 mr-3 text-xl">📋</span><p><strong>Meine Eintragungen:</strong> Verwalte deine bestehenden Einträge, bearbeite Details und lade Fotos hoch.</p></li>
+          <li class="flex items-start"><span class="text-green-500 mr-3 text-xl">💌</span><p><strong>Hütten-Nachrichten:</strong> Lies und verwalte Nachrichten, die Besucher an deinen Hütten hinterlassen.</p></li>
+          <li class="flex items-start"><span class="text-green-500 mr-3 text-xl">💬</span><p><strong>Support:</strong> Kontaktiere uns bei Problemen oder Fragen.</p></li>
+        </ul>
+      </section>
+    `;
   }
 
   /***********************
-   * Form Logic (Steps)
+   * New Entry Flow (Steps 0-10)
    ***********************/
+  function startNewEntry() {
+    if (!currentUser) return showToast("Bitte zuerst einloggen.", 3000, true);
+    editingData = {};
+    step = 0;
+    setMode("entry");
+    renderQuestion();
+    toggleSidebar();
+  }
 
-  // --- SMARTER Öffnungszeiten Editor (aus deiner Datei übernommen) ---
+  function nextStep() {
+    // Validation checks for current step
+    let isValid = true;
+    switch (step) {
+      case 0:
+        if (!document.getElementById('dsCheck')?.checked) {
+          showToast('Bitte die Datenschutzerklärung akzeptieren.', 3000, true);
+          isValid = false;
+        } else {
+            editingData.datenschutz = true;
+        }
+        break;
+      case 1:
+        if (!editingData.typ) {
+          showToast('Bitte einen Typ auswählen.', 3000, true);
+          isValid = false;
+        }
+        break;
+      case 2:
+        const name = document.getElementById('nameInput')?.value.trim();
+        if (!name) {
+          showToast('Bitte einen Namen eingeben.', 3000, true);
+          isValid = false;
+        } else {
+            editingData.name = name;
+        }
+        break;
+      case 5:
+        editingData.oeffnungszeiten = collectOpeningHours('new-entry');
+        break;
+      case 6:
+        editingData.extras = document.getElementById('extrasInput')?.value.trim();
+        break;
+      case 8: // Quill editor data is saved on text-change
+        break;
+      case 9:
+        const rawTags = document.getElementById('tagsInput')?.value || '';
+        editingData.tags = rawTags.split(',').map(s => s.trim()).filter(Boolean).slice(0, 10);
+        break;
+    }
+    
+    if (isValid && step < stepsCount - 1) {
+      step++;
+      renderQuestion();
+    }
+  }
+
+  function prevStep() {
+    if (step > 0) {
+      step--;
+      renderQuestion();
+    }
+  }
+  
+  const typeTexts = {
+      Eierhütte: { title: "🏷️ Name der Eierhütte", question: "Wie soll deine Eierhütte heißen?" },
+      Hofladen: { title: "🏷️ Name des Hofladens", question: "Wie soll dein Hofladen heißen?" },
+      Selbstbedienung: { title: "🏷️ Name des Selbstbedienungshäuschens", question: "Wie soll dein Selbstbedienungshäuschen heißen?" },
+      Spielplatz: { title: "🏷️ Name des Spielplatzes", question: "Wie soll der Spielplatz heißen?" },
+      Abenteuerhof: { title: "🏷️ Name des Abenteuerhofs", question: "Wie soll dein Abenteuerhof heißen?" },
+      Automat: { title: "🏷️ Name des Automaten", question: "Wie soll dein Automat heißen?" }
+  };
+
+  function renderQuestion() {
+    const qa = document.getElementById('question-area');
+    qa.innerHTML = ''; // Clear previous content
+    updateProgress();
+    
+    let content = '';
+    
+    try {
+      switch (step) {
+        case 0: // Privacy Policy
+          content = `
+            <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+              <h2 class="text-xl font-bold mb-3">🛡️ Datenschutzerklärung</h2>
+              <div id="dsScrollBox" class="h-60 mb-3 rounded-lg overflow-auto border border-gray-200">
+                <iframe src="https://radlmap.net/datenschutz.html" class="w-full h-[500px] border-0 bg-white"></iframe>
+              </div>
+              <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                <input id="dsCheck" type="checkbox" class="w-4 h-4" disabled /> Ich akzeptiere die Datenschutzerklärung
+              </label>
+              <div id="dsHint" class="text-xs text-red-500 mt-1">⬇️ Bitte bis ganz nach unten scrollen</div>
+            </div>`;
+          qa.innerHTML = content;
+          const scrollBox = document.getElementById("dsScrollBox");
+          scrollBox.addEventListener("scroll", () => {
+            if (scrollBox.scrollTop + scrollBox.clientHeight >= scrollBox.scrollHeight - 10) {
+              document.getElementById("dsCheck").disabled = false;
+              const hint = document.getElementById("dsHint");
+              hint.textContent = "✅ Du kannst nun akzeptieren.";
+              hint.classList.remove("text-red-500");
+              hint.classList.add("text-green-600");
+            }
+          });
+          break;
+          
+        case 1: // Type Selection
+            const opts = [
+              { emoji: '🥚', label: 'Eierhütte', key: 'Eierhütte' }, { emoji: '🏪', label: 'Hofladen', key: 'Hofladen' },
+              { emoji: '🏠', label: 'Selbstbedienungshäuschen', key: 'Selbstbedienung' }, { emoji: '🛝', label: 'Spielplatz', key: 'Spielplatz' },
+              { emoji: '🌄', label: 'Abenteuerhof', key: 'Abenteuerhof' }, { emoji: '🍶', label: 'Automat', key: 'Automat' }
+            ];
+            let cardsHTML = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">';
+            opts.forEach(o => {
+                const isSelected = editingData.typ === o.key ? 'selected' : '';
+                cardsHTML += `<div class="bg-white p-6 rounded-xl shadow card-option text-center cursor-pointer ${isSelected}" onclick="window.selectCardOption(this, 'typ', '${o.key}')">
+                                <div class="text-3xl">${o.emoji}</div><div class="font-semibold mt-2">${o.label}</div>
+                              </div>`;
+            });
+            cardsHTML += '</div>';
+            qa.innerHTML = cardsHTML;
+            break;
+        
+        case 2: // Name
+          const { title, question } = typeTexts[editingData.typ] || { title: "🏷️ Name", question: "Wie soll dein Eintrag heißen?" };
+          qa.innerHTML = `
+            <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+              <h2 class="text-lg font-bold mb-2">${title}</h2>
+              <p class="text-sm text-gray-600 mb-2">${question}</p>
+              <input id="nameInput" class="w-full border p-2 rounded" placeholder="Name eingeben" value="${editingData.name || ''}">
+            </div>`;
+          break;
+          
+        case 3: // Seating
+        case 4: // Power
+            const field = step === 3 ? 'sitzplaetze' : 'strom';
+            const details = step === 3 ? {title: '🪑 Sitzplätze', yes: '✅ Ja', no: '❌ Nein'} : {title: '🔌 Strom', yes: '⚡ Ja', no: '❌ Nein'};
+            qa.innerHTML = `
+                <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+                    <h2 class="text-lg font-bold mb-2">Gibt es ${details.title}?</h2>
+                    <div class="flex gap-4">
+                        <button class="flex-1 p-3 border rounded ${editingData[field] === 'Ja' ? 'selected' : ''}" onclick="selectOption('${field}','Ja', this)">${details.yes}</button>
+                        <button class="flex-1 p-3 border rounded ${editingData[field] === 'Nein' ? 'selected' : ''}" onclick="selectOption('${field}','Nein', this)">${details.no}</button>
+                    </div>
+                </div>`;
+            break;
+
+        case 5: // Opening Hours
+            qa.innerHTML = `
+                <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+                  <h2 class="text-lg font-bold mb-3">🕒 Öffnungszeiten</h2>
+                  ${renderOpeningHoursEditor('new-entry', editingData.oeffnungszeiten)}
+                </div>`;
+            break;
+            
+        case 6: // Extras
+            qa.innerHTML = `
+                <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+                    <h2 class="text-lg font-bold mb-2">✨ Extras (optional)</h2>
+                    <input id="extrasInput" class="w-full border p-2 rounded" placeholder="z.B. Getränke, Kühlschrank" value="${editingData.extras || ''}">
+                </div>`;
+            break;
+
+        case 7: // Animals
+            const animals = ["🐐 Ziege","🐄 Kuh","🐓 Huhn","🐕 Hund","🐇 Hase","🐈 Katze","Keine Tiere"];
+            let animalsHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+                                <h2 class="text-lg font-bold mb-3">🐾 Welche Tiere gibt es?</h2>
+                                <div id="tiereGrid" class="grid grid-cols-3 gap-2">`;
+            editingData.tiere = editingData.tiere || [];
+            animals.forEach(t => {
+                const isSel = editingData.tiere.includes(t) ? 'selected' : '';
+                animalsHTML += `<button class="p-2 border rounded text-sm ${isSel}" onclick="toggleAnimal(this, '${t}')">${t}</button>`;
+            });
+            animalsHTML += `</div></div>`;
+            qa.innerHTML = animalsHTML;
+            break;
+
+        case 8: // Description
+            qa.innerHTML = `
+                <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+                    <h2 class="text-lg font-bold mb-2">📝 Beschreibung</h2>
+                    <div id="quillContainer" class="bg-white h-40"></div>
+                </div>`;
+            setTimeout(() => {
+                const quill = new Quill('#quillContainer', { theme: 'snow' });
+                if (editingData.beschreibung) {
+                    quill.root.innerHTML = editingData.beschreibung;
+                }
+                quill.on('text-change', () => {
+                    editingData.beschreibung = quill.root.innerHTML;
+                });
+            }, 100);
+            break;
+
+        case 9: // Tags
+            qa.innerHTML = `
+                <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+                    <h2 class="text-lg font-bold mb-2">🏷️ Schlagwörter (Komma-getrennt)</h2>
+                    <input id="tagsInput" class="w-full border p-2 rounded" placeholder="z.B. Frühstück, Schattig" value="${(editingData.tags || []).join(', ')}">
+                </div>`;
+            break;
+
+        case 10: // Overview & Location
+            qa.innerHTML = `
+                <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+                  <h2 class="text-xl font-bold mb-3">📋 Übersicht & Standort</h2>
+                  <h3 class="text-lg font-bold mt-4 mb-2">📍 Standort</h3>
+                  <div class="relative mb-2">
+                    <input id="addressSearch" class="w-full border p-2 rounded" placeholder="Adresse suchen…" />
+                    <div id="addressSuggestions" class="absolute left-0 right-0 bg-white border rounded mt-1 hidden z-50 max-h-48 overflow-y-auto"></div>
+                  </div>
+                  <button id="gpsBtn" class="px-3 py-2 mb-3 bg-blue-600 text-white rounded">📡 Mein Standort</button>
+                  <div id="overview-map" class="h-64 rounded border mb-4"></div>
+                  <div class="flex gap-2">
+                    <button id="submitBtn" class="px-4 py-2 bg-green-600 text-white rounded" onclick="submitEntry()">✅ Einreichen</button>
+                    <button class="px-4 py-2 bg-gray-200 rounded" onclick="showMyEntries()">✖ Abbrechen</button>
+                  </div>
+                  <p class="text-xs text-gray-500 mt-3">Deine Eintragung wird geprüft und erst nach Freigabe sichtbar.</p>
+                </div>`;
+            setTimeout(() => initOverviewMap(), 200);
+            break;
+            
+        default:
+          qa.innerHTML = `<div class="text-center p-4">Schritt ${step} nicht definiert.</div>`;
+      }
+    } catch (err) {
+      console.error("renderQuestion error", err);
+      qa.innerHTML = `<div class="bg-red-100 p-4 rounded">Fehler beim Rendern: ${err.message}</div>`;
+    }
+  }
+  
+  // Helpers for step rendering
+  window.selectCardOption = (el, field, value) => {
+    document.querySelectorAll('.card-option').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    editingData[field] = value;
+  };
+  
+  window.selectOption = (field, value, el) => {
+    if (el && el.parentNode) {
+      el.parentNode.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+      el.classList.add('selected');
+    }
+    editingData[field] = value;
+  };
+  
+  window.toggleAnimal = (btn, animal) => {
+    const isSelected = btn.classList.toggle('selected');
+    editingData.tiere = editingData.tiere || [];
+    
+    if (animal === 'Keine Tiere' && isSelected) {
+        editingData.tiere = ['Keine Tiere'];
+        document.querySelectorAll('#tiereGrid button').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+    } else {
+        editingData.tiere = editingData.tiere.filter(t => t !== 'Keine Tiere');
+        document.querySelector('#tiereGrid button[onclick*="Keine Tiere"]').classList.remove('selected');
+        
+        const index = editingData.tiere.indexOf(animal);
+        if (isSelected && index === -1) {
+            editingData.tiere.push(animal);
+        } else if (!isSelected && index !== -1) {
+            editingData.tiere.splice(index, 1);
+        }
+    }
+  };
+
+  /***********************
+   * Opening Hours Editor
+   ***********************/
   const DAY_LABELS = [
     { key: "mo", label: "Montag" }, { key: "di", label: "Dienstag" },
     { key: "mi", label: "Mittwoch" }, { key: "do", label: "Donnerstag" },
@@ -366,460 +615,136 @@
     { key: "so", label: "Sonntag" }
   ];
 
-  function renderOpeningHoursEditor(data = {}) {
-    let html = `<div id="openhours-editor" class="space-y-2 mt-2">
-      <div class="flex items-center gap-2 mb-4">
-        <input type="checkbox" id="immerCheck" ${data === "Immer geöffnet" ? "checked" : ""}>
-        <label for="immerCheck" class="font-semibold text-green-700">Immer geöffnet (24/7)</label>
-      </div>
-      <table id="ohTable" class="w-full text-sm border border-gray-200 rounded overflow-hidden ${data === "Immer geöffnet" ? "hidden" : ""}">
-        <thead class="bg-green-100 text-green-800"><tr>
-          <th class="py-2 px-3 text-left">Tag</th>
-          <th class="py-2 px-3 text-center">Geöffnet</th>
-          <th class="py-2 px-3 text-center">Von</th>
-          <th class="py-2 px-3 text-center">Bis</th>
-        </tr></thead>
-        <tbody class="divide-y">`;
-
+  function renderOpeningHoursEditor(id, data = {}) {
+    let html = `
+      <div id="openhours-${id}" class="space-y-2 mt-2">
+        <label class="flex items-center gap-2 mb-4">
+            <input type="checkbox" id="immerCheck-${id}" onchange="toggleOpeningDays('${id}')" ${data === 'Immer geöffnet' ? 'checked' : ''}> Immer geöffnet
+        </label>
+        <table id="days-table-${id}" class="w-full text-sm border border-gray-200 rounded overflow-hidden ${data === 'Immer geöffnet' ? 'hidden' : ''}">
+          <thead class="bg-green-100 text-green-800">
+            <tr>
+              <th class="py-2 px-3 text-left">Tag</th><th class="py-2 px-3 text-center">Geöffnet</th>
+              <th class="py-2 px-3 text-center">Von</th><th class="py-2 px-3 text-center">Bis</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y">`;
     DAY_LABELS.forEach(day => {
-      const d = (typeof data === 'object' && data !== null) ? (data[day.key] || {}) : {};
-      const open = !!d.open;
-      const from = d.from || "";
-      const to = d.to || "";
-      html += `<tr><td class="py-2 px-3">${day.label}</td>
-        <td class="text-center">
-          <input type="checkbox" class="oh-open" data-day="${day.key}" ${open ? "checked" : ""}/>
-        </td>
-        <td class="text-center">
-          <input type="time" class="oh-from border rounded px-2 py-1 text-sm" data-day="${day.key}" value="${from}" ${!open ? "disabled" : ""}/>
-        </td>
-        <td class="text-center">
-          <input type="time" class="oh-to border rounded px-2 py-1 text-sm" data-day="${day.key}" value="${to}" ${!open ? "disabled" : ""}/>
-        </td></tr>`;
+      const dayData = Array.isArray(data) ? data.find(d => d.tag?.toLowerCase() === day.key) || {} : {};
+      const open = !!dayData.von;
+      html += `
+        <tr>
+          <td class="py-2 px-3">${day.label}</td>
+          <td class="text-center"><input type="checkbox" class="oh-open" data-day="${day.key}" onchange="toggleTimeInputs(this)" ${open ? "checked" : ""}/></td>
+          <td class="text-center"><input type="time" class="oh-from border rounded px-2 py-1 text-sm" data-day="${day.key}" value="${dayData.von || ''}" ${!open ? "disabled" : ""}/></td>
+          <td class="text-center"><input type="time" class="oh-to border rounded px-2 py-1 text-sm" data-day="${day.key}" value="${dayData.bis || ''}" ${!open ? "disabled" : ""}/></td>
+        </tr>`;
     });
-
-    html += `</tbody></table>
-      <p class="text-xs text-gray-500 mt-2">Tipp: Ungewählte Tage oder leere Zeiten werden als "geschlossen" angezeigt.</p>
-    </div>`;
+    html += `</tbody></table></div>`;
     return html;
   }
   
-  // Event Listener für Öffnungszeiten (wird nach renderQuestion() hinzugefügt)
-  document.addEventListener("change", (e) => {
-    if (e.target.classList.contains("oh-open")) {
-      const row = e.target.closest("tr");
-      const from = row.querySelector(".oh-from");
-      const to = row.querySelector(".oh-to");
-      const isOpen = e.target.checked;
-      from.disabled = !isOpen;
-      to.disabled = !isOpen;
-      if (!isOpen) { from.value = ""; to.value = ""; }
-    } else if (e.target.id === "immerCheck") {
-      document.getElementById("ohTable")?.classList.toggle("hidden", e.target.checked);
+  window.toggleOpeningDays = (id) => {
+      const isChecked = document.getElementById(`immerCheck-${id}`).checked;
+      document.getElementById(`days-table-${id}`).classList.toggle('hidden', isChecked);
+  };
+
+  window.toggleTimeInputs = (checkbox) => {
+      const row = checkbox.closest("tr");
+      const fromInput = row.querySelector(".oh-from");
+      const toInput = row.querySelector(".oh-to");
+      fromInput.disabled = !checkbox.checked;
+      toInput.disabled = !checkbox.checked;
+      if (!checkbox.checked) {
+          fromInput.value = "";
+          toInput.value = "";
+      }
+  };
+
+  function collectOpeningHours(id) {
+    if (document.getElementById(`immerCheck-${id}`)?.checked) {
+      return "Immer geöffnet";
     }
-  });
-
-  function collectOpeningHours() {
-    const immer = document.getElementById("immerCheck")?.checked;
-    if (immer) { return "Immer geöffnet"; }
-
-    const wrapper = document.getElementById(`openhours-editor`);
-    if (!wrapper) return {};
-    const result = {};
+    const result = [];
+    const wrapper = document.getElementById(`openhours-${id}`);
+    if (!wrapper) return [];
+    
     DAY_LABELS.forEach(day => {
       const openCheckbox = wrapper.querySelector(`.oh-open[data-day="${day.key}"]`);
-      const fromInput = wrapper.querySelector(`.oh-from[data-day="${day.key}"]`);
-      const toInput = wrapper.querySelector(`.oh-to[data-day="${day.key}"]`);
-      const open = openCheckbox?.checked;
-      result[day.key] = {
-        open,
-        from: open ? fromInput.value : "",
-        to: open ? toInput.value : ""
-      };
-    });
-    return result; // Gibt ein sauberes Objekt zurück (besser für Firestore)
-  }
-
-  // --- NEW Smarter Photo Upload Logic ---
-  window.addPhotoFiles = function(files) {
-    editingData.photos = editingData.photos || [];
-    for(const file of files) {
-      if (editingData.photos.length >= 10) {
-        showToast("⚠️ Maximal 10 Fotos erlaubt.");
-        break;
+      if (openCheckbox && openCheckbox.checked) {
+          const from = wrapper.querySelector(`.oh-from[data-day="${day.key}"]`).value;
+          const to = wrapper.querySelector(`.oh-to[data-day="${day.key}"]`).value;
+          if (from && to) {
+              result.push({ tag: day.label.substring(0,2), von: from, bis: to });
+          }
       }
-      editingData.photos.push(file);
-    }
-    showGalleryFromEditingData();
-  }
-
-  function showGalleryFromEditingData() {
-    const preview = document.getElementById('smartUploadPreview');
-    if (!preview) return;
-    preview.innerHTML = '';
-    (editingData.photos || []).forEach((photo, index) => {
-      const url = photo instanceof File ? URL.createObjectURL(photo) : photo.url || photo;
-      const item = document.createElement('div');
-      item.className = 'relative group';
-      item.innerHTML = `
-        <img src="${url}" class="w-24 h-24 object-cover rounded-lg shadow cursor-pointer transition" />
-        <button onclick="removePhoto(${index})" class="absolute top-0 right-0 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition">✕</button>
-      `;
-      preview.appendChild(item);
     });
-  }
-
-  window.removePhoto = function(index) {
-    if (editingData.photos && editingData.photos[index]) {
-      const photo = editingData.photos[index];
-      if (photo instanceof File) URL.revokeObjectURL(photo);
-      editingData.photos.splice(index, 1);
-      showGalleryFromEditingData();
-      showToast("Foto entfernt", 1500);
-    }
+    return result;
   }
   
-  // --- Enhanced Editor Init ---
-  function initEnhancedEditor(containerId, data) {
-    if (quillEditor) quillEditor.destroy(); // Destroy previous instance
-    quillEditor = new Quill(`#${containerId}`, {
-      theme: 'snow',
-      placeholder: 'Eine ausführliche Beschreibung deines Angebots...',
-      modules: { toolbar: [['bold', 'italic', 'link'], [{ 'list': 'bullet' }]] }
-    });
-    // Set initial content
-    if (data.beschreibung) {
-        quillEditor.root.innerHTML = data.beschreibung;
-    }
-    // Update data on change
-    quillEditor.on('text-change', () => {
-      editingData.beschreibung = quillEditor.root.innerHTML;
-    });
-    editingData.beschreibung = editingData.beschreibung || quillEditor.root.innerHTML;
-  }
-
-  // --- Step Renderer ---
-  window.renderQuestion = function() {
-    const qa = document.getElementById('question-area');
-    qa.innerHTML = ''; // reset
-    updateProgress();
-    updateInfoBox();
-    document.getElementById("navBottom").classList.toggle("hidden", mode !== "entry");
-
-    try {
-      if (step === 0) { // Datenschutzerklärung
-        qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-          <h2 class="text-xl font-bold mb-3">🛡️ Datenschutzerklärung</h2>
-          <div id="dsScrollBox" class="h-60 mb-3 rounded-lg overflow-auto border border-gray-200">
-            <iframe src="https://radlmap.net/datenschutz.html" class="w-full h-[500px] border-0 bg-white" style="display:block; min-width:100%; overflow:auto;"></iframe>
-          </div>
-          <label class="inline-flex items-center gap-2 text-sm text-gray-700">
-            <input id="dsCheck" type="checkbox" class="w-4 h-4" ${editingData.datenschutz ? "checked" : ""} disabled />
-            Ich akzeptiere die Datenschutzerklärung
-          </label>
-          <div id="dsHint" class="text-xs text-red-500 mt-1">⬇️ Bitte bis ganz nach unten scrollen</div>
-        </div>`;
-        const scrollBox = document.getElementById("dsScrollBox");
-        const check = document.getElementById("dsCheck");
-        const hint = document.getElementById("dsHint");
-        scrollBox.addEventListener("scroll", () => {
-          if (scrollBox.scrollTop + scrollBox.clientHeight >= scrollBox.scrollHeight - 5) {
-            check.disabled = false;
-            hint.textContent = "✅ Du kannst nun die Datenschutzerklärung akzeptieren.";
-            hint.classList.remove("text-red-500");
-            hint.classList.add("text-green-600");
-          }
-        });
-        return;
-      }
-      if (step === 1) { // Typ-Auswahl
-        const opts = [
-          { emoji: '🥚', label: 'Eierhütte', key: 'Eierhütte' }, { emoji: '🏪', label: 'Hofladen', key: 'Hofladen' },
-          { emoji: '🏠', label: 'Selbstbedienungshäuschen', key: 'Selbstbedienung' }, { emoji: '🛝', label: 'Spielplatz', key: 'Spielplatz' },
-          { emoji: '🌄', label: 'Abenteuerhof', key: 'Abenteuerhof' }, { emoji: '🍶', label: 'Automat', key: 'Automat' }
-        ];
-        qa.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
-          ${opts.map(o => `<div class="bg-white p-6 rounded-xl shadow card-option text-center cursor-pointer ${editingData.typ === o.key ? 'selected' : ''}" onclick="selectOption('typ','${o.key}',this)">
-            <div class="text-3xl">${o.emoji}</div><div class="font-semibold mt-2">${o.label}</div>
-          </div>`).join('')}
-        </div>`;
-        return;
-      }
-      if (step === 2) { // Name
-        const { title, question } = typeTexts[editingData.typ] || { title: "🏷️ Name", question: "Wie soll dein Eintrag heißen?" };
-        qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-          <h2 class="text-lg font-bold mb-2">${title}</h2>
-          <p class="text-sm text-gray-600 mb-2">${question}</p>
-          <input id="nameInput" class="w-full border p-2 rounded" placeholder="Name eingeben" value="${editingData.name || ''}">
-        </div>`;
-        return;
-      }
-      if (step === 3) { // Sitzplätze
-        qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-          <h2 class="text-lg font-bold mb-2">🪑 Gibt es Sitzplätze?</h2>
-          <div class="flex gap-4">
-            <button class="flex-1 p-3 border rounded ${editingData.sitzplaetze === 'Ja' ? 'selected' : ''}" onclick="selectOption('sitzplaetze','Ja',this)">✅ Ja</button>
-            <button class="flex-1 p-3 border rounded ${editingData.sitzplaetze === 'Nein' || !editingData.sitzplaetze ? 'selected' : ''}" onclick="selectOption('sitzplaetze','Nein',this)">❌ Nein</button>
-          </div>
-        </div>`;
-        return;
-      }
-      if (step === 4) { // Strom
-        qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-          <h2 class="text-lg font-bold mb-2">🔌 Gibt es Strom?</h2>
-          <div class="flex gap-4">
-            <button class="flex-1 p-3 border rounded ${editingData.strom === 'Ja' ? 'selected' : ''}" onclick="selectOption('strom','Ja',this)">⚡ Ja</button>
-            <button class="flex-1 p-3 border rounded ${editingData.strom === 'Nein' || !editingData.strom ? 'selected' : ''}" onclick="selectOption('strom','Nein',this)">❌ Nein</button>
-          </div>
-        </div>`;
-        return;
-      }
-      if (step === 5) { // Öffnungszeiten (SMART Editor)
-        qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-          <h2 class="text-lg font-bold mb-3">🕒 Öffnungszeiten (Wochenplan)</h2>
-          ${renderOpeningHoursEditor(editingData.oeffnungszeiten)}
-        </div>`;
-        return;
-      }
-      if (step === 6) { // Extras
-        qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-          <h2 class="text-lg font-bold mb-2">✨ Extras (optional)</h2>
-          <input id="extrasInput" class="w-full border p-2 rounded" placeholder="z.B. Getränke, Kühlschrank" value="${editingData.extras || ''}">
-        </div>`;
-        return;
-      }
-      if (step === 7) { // Bilder (NEW SMARTER STEP)
-        qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-          <h2 class="text-lg font-bold mb-3">📸 Fotos hochladen (Max. 10)</h2>
-          <div id="smartUploadZone" 
-               class="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center text-gray-500 cursor-pointer flex flex-col items-center justify-center"
-               onclick="document.getElementById('fileInput').click()"
-               ondragover="event.preventDefault(); this.style.borderColor='#10b981';"
-               ondragleave="this.style.borderColor='';"
-               ondrop="event.preventDefault(); this.style.borderColor=''; addPhotoFiles(event.dataTransfer.files);">
-            <p class="font-semibold text-lg mb-1">Dateien hierher ziehen oder klicken</p>
-            <p class="text-sm">JPEG oder PNG. Max. 10 Bilder.</p>
-            <input type="file" id="fileInput" multiple accept="image/*" class="hidden" onchange="addPhotoFiles(this.files)">
-          </div>
-          <div id="smartUploadPreview" class="mt-4 flex flex-wrap gap-3">
-            </div>
-        </div>`;
-        showGalleryFromEditingData(); // Lade vorhandene Fotos (URLs oder File-Objekte)
-        return;
-      }
-      if (step === 8) { // Tiere
-        const animals = ["🐐 Ziege","🐄 Kuh","🐓 Huhn","🐕 Hund","🐇 Hase","🐈 Katze","Keine Tiere"];
-        qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-          <h2 class="text-lg font-bold mb-3">🐾 Welche Tiere gibt es?</h2>
-          <div id="tiereGrid" class="grid grid-cols-3 gap-2">
-            ${animals.map(t => {
-              const isSel = (editingData.tiere || []).includes(t);
-              return `<button type="button" class="p-2 border rounded text-sm ${isSel ? 'selected' : ''}" data-animal="${t}">${t}</button>`;
-            }).join('')}
-          </div>
-        </div>`;
-        // Event Listener für Tiere
-        document.querySelectorAll('#tiereGrid button').forEach(btn => {
-          btn.onclick = () => {
-            const t = btn.dataset.animal;
-            editingData.tiere = editingData.tiere || [];
-            if (t === 'Keine Tiere') {
-              editingData.tiere = ['Keine Tiere'];
-              document.querySelectorAll('#tiereGrid button').forEach(b => b.classList.remove('selected'));
-              btn.classList.add('selected');
-              return;
-            }
-            // Alle außer 'Keine Tiere'
-            editingData.tiere = editingData.tiere.filter(x => x !== 'Keine Tiere');
-            const idx = editingData.tiere.indexOf(t);
-            if (idx >= 0) {
-              editingData.tiere.splice(idx, 1);
-              btn.classList.remove('selected');
-            } else {
-              editingData.tiere.push(t);
-              btn.classList.add('selected');
-            }
-          };
-        });
-        return;
-      }
-      if (step === 9) { // Beschreibung
-        qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-          <h2 class="text-lg font-bold mb-2">📝 Beschreibung</h2>
-          <div id="quillContainer" class="bg-white h-48"></div>
-        </div>`;
-        setTimeout(() => { initEnhancedEditor("quillContainer", editingData); }, 120);
-        return;
-      }
-      if (step === 10) { // Schlagwörter
-        qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-          <h2 class="text-lg font-bold mb-2">🏷️ Schlagwörter (Komma getrennt)</h2>
-          <input id="tagsInput" class="w-full border p-2 rounded" placeholder="z.B. Frühstück,Schattig" value="${(editingData.tags||[]).join(', ')}">
-        </div>`;
-        return;
-      }
-      if (step === 11) { // Übersicht & Standort
-        mode = "list"; // Nav-Buttons ausblenden nach der Anzeige
-        document.getElementById("navBottom").classList.add("hidden");
-
-        qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-          <h2 class="text-xl font-bold mb-3">📋 Übersicht</h2>
-
-          <div class="mt-3 flex items-center gap-2">
-            <input type="checkbox" id="instantActive" class="w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500">
-            <label for="instantActive" class="text-sm font-medium text-gray-700">Sofort aktiv setzen (ohne Prüfung)</label>
-          </div>
-          <p class="text-xs text-red-500 mb-4">Nur für Betreiber/Admins: Eintrag wird sofort auf der Karte sichtbar.</p>
-
-          <h3 class="text-lg font-bold mt-4 mb-2">📍 Standort</h3>
-          <div class="relative mb-2">
-            <input id="addressSearch" class="w-full border p-2 rounded" placeholder="Adresse suchen…" />
-            <div id="addressSuggestions" class="absolute left-0 right-0 bg-white border rounded mt-1 hidden z-50 max-h-48 overflow-y-auto"></div>
-          </div>
-          <button id="gpsBtn" class="px-3 py-2 mb-3 bg-blue-600 text-white rounded">📡 Mein Standort</button>
-          <div id="overview-map" class="h-64 rounded border mb-4"></div>
-
-          <div class="flex gap-2">
-            <button id="submitBtn" class="px-4 py-2 bg-green-600 text-white rounded" onclick="submitEntry()">✅ Einreichen</button>
-            <button class="px-4 py-2 bg-gray-200 rounded" onclick="showMyEntries()">✖ Abbrechen</button>
-          </div>
-          <p class="text-xs text-gray-500 mt-3">Deine Eintragung wird geprüft und erst nach Freigabe sichtbar.</p>
-        </div>`;
-        
-        setTimeout(() => {
-          initOverviewMap();
-          document.getElementById("gpsBtn").addEventListener("click", locateGPS);
-          // Hier müsste die Logik für die Adresssuche mit Nominatim/Photon implementiert werden
-          // Die Adresssuche-Logik (addressSearch, suggestions etc.) ist aus Platzgründen hier weggelassen,
-          // muss aber aus deiner Originaldatei in separaten Funktionen implementiert werden.
-          // Beispiel: L.marker().on('click', e => overviewMarker.setLatLng(e.latlng))
-        }, 120);
-        return;
-      }
-
-    } catch (error) {
-      console.error("Render error at step " + step, error);
-      qa.innerHTML = `<div class="bg-red-100 p-4 rounded">❌ Fehler beim Laden des Schritts: ${error.message}</div>`;
-    }
-  }
-
-  // --- Navigation Controls ---
-  function validateAndCollectStepData(stepToValidate) {
-    if (stepToValidate === 0) {
-      const ok = document.getElementById('dsCheck') && document.getElementById('dsCheck').checked;
-      if (!ok) { showToast('Bitte Datenschutzerklärung akzeptieren'); return false; }
-      editingData.datenschutz = true;
-    } else if (stepToValidate === 1) {
-      if (!editingData.typ) { showToast("Bitte einen Typ auswählen."); return false; }
-    } else if (stepToValidate === 2) {
-      const v = document.getElementById('nameInput')?.value?.trim();
-      if (!v) { showToast('Bitte Namen eingeben'); return false; }
-      editingData.name = v;
-    } else if (stepToValidate === 5) {
-      const rawOeff = collectOpeningHours();
-      if (rawOeff !== "Immer geöffnet" && Object.values(rawOeff).every(d => !d.open)) {
-          showToast("Bitte Öffnungszeiten angeben oder 'Immer geöffnet' auswählen."); return false;
-      }
-      editingData.oeffnungszeiten = rawOeff;
-    } else if (stepToValidate === 6) {
-      editingData.extras = document.getElementById('extrasInput')?.value?.trim();
-    } else if (stepToValidate === 7) {
-      if ((editingData.photos || []).length === 0) { showToast("Bitte mindestens ein Foto hochladen."); return false; }
-    } else if (stepToValidate === 10) {
-      const raw = document.getElementById('tagsInput')?.value || '';
-      editingData.tags = raw.split(',').map(s=>s.trim()).filter(Boolean).slice(0, 10);
-    }
-    return true;
-  }
-
-  window.nextStep = function() {
-    if (validateAndCollectStepData(step)) {
-      if (step < stepsCount - 1) step++;
-      renderQuestion();
-    }
-  }
-
-  window.prevStep = function() {
-    if (step > 0) step--;
-    renderQuestion();
-  }
-
   /***********************
-   * Map & Submission
+   * Map & Geolocation
    ***********************/
-  function initOverviewMap(lat = FALLBACK_LOCATION[0], lng = FALLBACK_LOCATION[1], zoom = 6) {
-    if (overviewMap) overviewMap.remove(); // Vorhandene Karte entfernen
+  let overviewMap, overviewMarker;
+  function initOverviewMap(lat = 51.16, lng = 10.45, zoom = 6) {
+    if (!document.getElementById("overview-map")) return;
+    
+    if (overviewMap) overviewMap.remove();
     overviewMap = L.map("overview-map").setView([lat, lng], zoom);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(overviewMap);
-
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(overviewMap);
+    
     overviewMarker = L.marker([lat, lng], { draggable: true }).addTo(overviewMap);
     overviewMarker.on("dragend", ev => {
       const p = ev.target.getLatLng();
       editingData.location = { lat: p.lat, lng: p.lng };
     });
-    // Klick auf Karte setzt Marker
-    overviewMap.on("click", (e) => {
-        overviewMarker.setLatLng(e.latlng);
-        editingData.location = { lat: e.latlng.lat, lng: e.latlng.lng };
-    });
-
     editingData.location = { lat, lng };
+
+    document.getElementById("gpsBtn")?.addEventListener("click", locateGPS);
+    document.getElementById("addressSearch")?.addEventListener("input", handleAddressSearch);
   }
 
-  window.locateGPS = function() {
-    if (!navigator.geolocation) return showToast("❌ GPS nicht verfügbar");
+  function locateGPS() {
+    if (!navigator.geolocation) return showToast("GPS nicht verfügbar", 3000, true);
     navigator.geolocation.getCurrentPosition(
-      pos => {
-        const { latitude, longitude } = pos.coords;
-        initOverviewMap(latitude, longitude, 15);
-        showToast("📍 Standort gefunden!", 1500);
-      },
-      err => { showToast("❌ GPS-Fehler: " + err.message); }
+      pos => initOverviewMap(pos.coords.latitude, pos.coords.longitude, 15),
+      err => showToast("GPS-Fehler: " + err.message, 3000, true)
     );
   }
 
-  // --- Image Upload Helper (Simplified for example) ---
-  // In der Live-Anwendung müsste hier die Logik mit IMGBB_KEY oder Firebase Storage stehen
-  async function uploadFileWithProgress(file, onProgress) {
-    if (file.url) return file.url; // Already uploaded URL
-    
-    // Simplifizierte Mock-Antwort / Platzhalter für Firebase Storage Upload
-    const storageRef = storage.ref(`uploads/${currentUser.uid}/${Date.now()}_${file.name}`);
-    const snapshot = await storageRef.put(file);
-    const url = await snapshot.ref.getDownloadURL();
-    return url;
-    // return new Promise(resolve => {
-    //    // Hier wäre die echte Upload-Logik
-    //    console.log(`Mock-Upload: ${file.name}`);
-    //    setTimeout(() => resolve(`https://placeholder.com/img/${file.name}`), 1000);
-    // });
+  async function handleAddressSearch(e) {
+      const query = e.target.value.trim();
+      const suggestionBox = document.getElementById("addressSuggestions");
+      if (query.length < 3) {
+          suggestionBox.innerHTML = "";
+          suggestionBox.classList.add("hidden");
+          return;
+      }
+      try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`);
+          const data = await res.json();
+          suggestionBox.innerHTML = data.map(item => `<div class="p-2 hover:bg-gray-100 cursor-pointer" data-lat="${item.lat}" data-lon="${item.lon}">${item.display_name}</div>`).join("");
+          suggestionBox.classList.remove("hidden");
+          suggestionBox.querySelectorAll("div").forEach(div => {
+              div.addEventListener("click", () => {
+                  e.target.value = div.textContent;
+                  suggestionBox.classList.add("hidden");
+                  initOverviewMap(parseFloat(div.dataset.lat), parseFloat(div.dataset.lon), 15);
+              });
+          });
+      } catch (err) {
+          console.error("Nominatim search error:", err);
+      }
   }
 
-  window.submitEntry = async function() {
-    document.getElementById('submitBtn').disabled = true;
-    showToast("📤 Sende Eintragung...");
-
-    // 1. Fotos hochladen (wenn File-Objekte vorhanden)
-    try {
-      if (editingData.photos && editingData.photos.some(p => p instanceof File)) {
-        const filesToUpload = editingData.photos.filter(p => p instanceof File);
-        const uploadedUrls = editingData.photos.filter(p => typeof p === 'string'); // bereits hochgeladene URLs behalten
-        
-        for (const file of filesToUpload) {
-          // Im echten Code muss hier eine Progress-Anzeige für jedes Bild
-          const url = await uploadFileWithProgress(file, (pct) => { /* Update UI */ });
-          uploadedUrls.push({ url: url }); // Speichere als Objekt {url: ...}
-        }
-        editingData.photos = uploadedUrls;
-      }
-    } catch(err){ 
-      console.error("Foto-Upload Fehler", err); 
-      showToast("❌ Fehler beim Foto-Upload");
-      document.getElementById('submitBtn').disabled = false;
-      return; 
+  /***********************
+   * Data Submission
+   ***********************/
+  async function submitEntry() {
+    if (!editingData.name || !editingData.typ || !editingData.location) {
+      return showToast('Bitte Name, Typ und Standort ausfüllen.', 3000, true);
     }
 
-    // 2. Payload erstellen
     const payload = {
       userId: currentUser.uid,
       name: editingData.name,
@@ -830,121 +755,419 @@
       tiere: editingData.tiere || [],
       beschreibung: editingData.beschreibung || '',
       tags: editingData.tags || [],
-      oeffnungszeiten: editingData.oeffnungszeiten,
-      fotos: editingData.photos || [], // Array von { url: ... } oder strings
-      status: 'offen', // Standard-Status
+      oeffnungszeiten: editingData.oeffnungszeiten || [],
+      status: 'offen',
       erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
-      datenschutzZustimmung: { bestaetigtAm: firebase.firestore.FieldValue.serverTimestamp(), durch: currentUser.email || null }
+      location: new firebase.firestore.GeoPoint(editingData.location.lat, editingData.location.lng)
     };
-
-    if (editingData.location?.lat && editingData.location?.lng) {
-      payload.location = new firebase.firestore.GeoPoint(editingData.location.lat, editingData.location.lng);
-    }
-
-    // 3. Admin/Instant Feature prüfen
-    const instant = document.getElementById('instantActive')?.checked;
-    if (instant) {
-      payload.status = 'angenommen';
-      payload.active = true;
-      payload.pruefung = 'automatisch_aktiviert';
-    }
-
-
-    // 4. In Firestore speichern
+    
     try {
-      const docRef = await db.collection('eierhuetten').add(payload);
-      showToast('✅ Eintragung gesendet. Wird geprüft.');
-      
-      // Bei Instant-Aktivierung keine weitere Aktion notwendig, da im Payload gesetzt.
+      await db.collection('eierhuetten').add(payload);
+      showToast('✅ Eintragung gesendet und wird nun geprüft.');
       showMyEntries();
     } catch (err) {
       console.error('submitEntry error', err);
-      showToast('❌ Fehler beim Senden: ' + (err.message || "Unbekannt"));
-    } finally {
-      document.getElementById('submitBtn').disabled = false;
+      showToast('Fehler beim Senden: ' + err.message, 5000, true);
     }
   }
 
   /***********************
-   * Other Dashboard Functions (Stubs for full reconstruction)
+   * "My Entries" View
    ***********************/
-  window.showTutorial = function() {
-    const qa = document.getElementById("question-area"); mode = "tutorial";
-    qa.innerHTML = `<section class="bg-white p-8 rounded-2xl shadow-lg max-w-3xl mx-auto animate-fadeIn">...</section>`; // Original HTML hier einfügen
-    updateInfoBox();
-    document.getElementById("navBottom").classList.add("hidden");
+  async function showMyEntries() {
+    if (!currentUser) return showToast("Bitte zuerst einloggen.", 3000, true);
+    setMode("list");
+    const qa = document.getElementById("question-area");
+    qa.innerHTML = `<div class="max-w-6xl mx-auto">
+                      <h2 class="text-2xl font-bold mb-6 text-green-700">📋 Meine Eintragungen</h2>
+                      <div id="entriesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div class="col-span-3 text-gray-500">⏳ Lade Eintragungen…</div>
+                      </div>
+                    </div>`;
+    
+    try {
+        const snap = await db.collection("eierhuetten")
+          .where("userId", "==", currentUser.uid)
+          .orderBy("erstelltAm", "desc")
+          .get();
+
+        const grid = document.getElementById("entriesGrid");
+        if (snap.empty) {
+            grid.innerHTML = `<div class="bg-white p-6 rounded shadow text-center col-span-3">Du hast noch keine Eintragungen.</div>`;
+            return;
+        }
+
+        grid.innerHTML = '';
+        snap.forEach(doc => {
+            const d = doc.data();
+            const id = doc.id;
+            if (d.status === 'archiviert' || d.status === 'deleted') return;
+            
+            const img = (Array.isArray(d.fotos) && d.fotos.length > 0) ? (d.fotos[0].url || d.fotos[0]) : 'https://radlmap.net/img/noimg/1.jpg';
+            const card = document.createElement('div');
+            card.className = 'bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition cursor-pointer';
+            card.innerHTML = `
+                <div class="relative"><img src="${escapeAttr(img)}" alt="${escapeAttr(d.name)}" class="w-full h-48 object-cover"></div>
+                <div class="p-4 flex justify-between items-center">
+                  <div>
+                    <h3 class="font-bold text-lg text-gray-800 truncate">${d.name || 'Unbenannt'}</h3>
+                    <p class="text-xs text-gray-500 capitalize">${d.status || 'Unbekannt'}</p>
+                  </div>
+                  <div class="flex gap-3 text-lg">
+                    <button class="edit-btn text-blue-600 hover:text-blue-800" title="Bearbeiten" data-id="${id}">✏️</button>
+                    <button class="delete-btn text-red-600 hover:text-red-800" title="Löschen" data-id="${id}" data-name="${escapeAttr(d.name)}">❌</button>
+                  </div>
+                </div>`;
+                
+            card.addEventListener('click', (ev) => {
+                if (ev.target.closest('.edit-btn') || ev.target.closest('.delete-btn')) return;
+                openEditPage(id);
+            });
+            grid.appendChild(card);
+        });
+
+        grid.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); openEditPage(e.currentTarget.dataset.id); }));
+        grid.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); confirmDeleteEntry(e.currentTarget.dataset.id, e.currentTarget.dataset.name); }));
+
+    } catch (err) {
+        console.error('showMyEntries error', err);
+        document.getElementById("entriesGrid").innerHTML = `<div class="bg-red-100 p-4 rounded col-span-3">Fehler beim Laden: ${err.message}</div>`;
+    }
   }
 
-  window.showDashboard = function() {
-    const qa = document.getElementById("question-area"); mode = "dashboard";
-    qa.innerHTML = `<section class="bg-white p-8 rounded-2xl shadow-lg max-w-3xl mx-auto animate-fadeIn">📊 Hier kommt das Dashboard hin...</section>`;
-    setActive('btnDashboard');
-    updateInfoBox();
-    document.getElementById("navBottom").classList.add("hidden");
-  }
-
-  window.showMyEntries = async function() {
-    if (!currentUser) { showToast("Bitte zuerst einloggen"); return; }
-    const container = document.getElementById("question-area");
-    container.innerHTML = `<div class="max-w-6xl mx-auto"><h2 class="text-2xl font-bold mb-6 text-green-700">📋 Meine Eintragungen</h2><div id="entriesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div></div>`;
-    const grid = document.getElementById("entriesGrid");
-    grid.innerHTML = `<div class="col-span-3 text-gray-500">⏳ Lade Eintragungen…</div>`;
-    // Die gesamte Lade- und Render-Logik (wie in deinem Originalcode) müsste hier rein.
-    setActive('btnEntries');
-    updateInfoBox();
-    document.getElementById("navBottom").classList.add("hidden");
-    // ... Lade-Logik (await db.collection("eierhuetten").where("userId", "==", uid).get();)
-    grid.innerHTML = `<div class="col-span-3 text-gray-500">Hier werden deine Eintragungen als Cards angezeigt.</div>`;
+  function confirmDeleteEntry(id, name) {
+    if (!confirm(`⚠️ Möchtest du "${name || id}" wirklich löschen?`)) return;
+    db.collection('eierhuetten').doc(id).delete()
+      .then(() => {
+        showToast('✅ Eintragung gelöscht');
+        showMyEntries();
+      })
+      .catch(err => showToast('❌ Fehler beim Löschen: ' + err.message, 5000, true));
   }
   
-  window.openSupport = function() {
-    const qa = document.getElementById("question-area"); mode = "support";
-    qa.innerHTML = `<section class="bg-white p-8 rounded-2xl shadow-lg max-w-3xl mx-auto animate-fadeIn">💬 Support-Formular...</section>`;
-    setActive('btnSupport');
-    updateInfoBox();
-    document.getElementById("navBottom").classList.add("hidden");
-  }
+ /***********************
+   * Edit Page
+   ***********************/
+  async function openEditPage(id) {
+    setMode("edit");
+    const docRef = db.collection("eierhuetten").doc(id);
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) return showToast("❌ Eintrag nicht gefunden", 3000, true);
+    
+    const d = docSnap.data();
+    const qa = document.getElementById("question-area");
+    
+    qa.innerHTML = `
+      <div class="max-w-5xl mx-auto">
+        <button onclick="showMyEntries()" class="mb-4 text-sm text-blue-600 hover:underline">⬅️ Zurück zur Übersicht</button>
+        <div class="flex flex-col md:flex-row gap-6">
+          <div id="photoUploaderContainer" class="w-full md:w-1/3"></div>
+          <div class="w-full md:w-2/3 bg-white rounded-xl p-6 shadow space-y-4">
+              <h4 class="font-semibold text-lg mb-2">Eintrag bearbeiten</h4>
+              
+              <label class="block"><span class="text-gray-700 text-sm">Name</span>
+                <input id="editName" value="${escapeAttr(d.name)}" class="w-full border rounded p-2 mt-1">
+              </label>
 
-  window.showHutMessages = function() {
-    const qa = document.getElementById("question-area"); mode = "hutMessages";
-    qa.innerHTML = `<section class="bg-white p-6 rounded-2xl shadow-lg max-w-3xl mx-auto animate-fadeIn">🏡 Nachrichten-Liste...</section>`;
-    setActive('btnHutMessages');
-    updateInfoBox();
-    document.getElementById("navBottom").classList.add("hidden");
-    // Die Lade-Logik (ladeHutMessagesLive) müsste hier rein.
+              <label class="block"><span class="text-gray-700 text-sm">Beschreibung</span>
+                <div id="editQuill" class="bg-white border rounded mt-1 min-h-[150px]"></div>
+              </label>
+
+              <div id="openingEditorWrapper" class="mt-3">
+                 <span class="text-gray-700 text-sm">Öffnungszeiten</span>
+                 ${renderOpeningHoursEditor(id, d.oeffnungszeiten)}
+              </div>
+
+              <div class="grid grid-cols-2 gap-4">
+                <label><span class="text-gray-700 text-sm">Sitzplätze</span>
+                  <select id="editSitz" class="w-full border rounded p-2 mt-1">
+                    <option ${d.sitzplaetze === 'Ja' ? 'selected' : ''}>Ja</option>
+                    <option ${d.sitzplaetze !== 'Ja' ? 'selected' : ''}>Nein</option>
+                  </select>
+                </label>
+                <label><span class="text-gray-700 text-sm">Strom</span>
+                  <select id="editStrom" class="w-full border rounded p-2 mt-1">
+                    <option ${d.strom === 'Ja' ? 'selected' : ''}>Ja</option>
+                    <option ${d.strom !== 'Ja' ? 'selected' : ''}>Nein</option>
+                  </select>
+                </label>
+              </div>
+
+              <label class="block"><span class="text-gray-700 text-sm">Extras</span>
+                <input id="editExtras" value="${escapeAttr(d.extras)}" class="w-full border rounded p-2 mt-1">
+              </label>
+
+              <label class="block"><span class="text-gray-700 text-sm">Tiere</span>
+                 <div id="tiereButtons" class="flex flex-wrap gap-2 mt-2"></div>
+              </label>
+              
+              <label class="block"><span class="text-gray-700 text-sm">Tags</span>
+                <input id="editTags" value="${(d.tags || []).join(', ')}" class="w-full border rounded p-2 mt-1">
+              </label>
+
+              <div class="flex justify-end gap-3 pt-4">
+                <button onclick="confirmDeleteEntry('${id}', '${escapeAttr(d.name)}')" class="px-4 py-2 bg-red-600 text-white rounded">🗑️ Löschen</button>
+                <button onclick="saveEdit('${id}')" class="px-4 py-2 bg-green-600 text-white rounded">💾 Speichern</button>
+              </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Initialize Quill
+    const quill = new Quill('#editQuill', { theme: 'snow' });
+    quill.root.innerHTML = d.beschreibung || "";
+    
+    // Initialize Animal Buttons
+    const animals = ["🐐 Ziege","🐄 Kuh","🐓 Huhn","🐕 Hund","🐇 Hase","🐈 Katze","Keine Tiere"];
+    const tiereContainer = document.getElementById("tiereButtons");
+    let selectedTiere = d.tiere || [];
+    animals.forEach(t => {
+        const btn = document.createElement("button");
+        btn.className = `p-2 border rounded text-sm ${selectedTiere.includes(t) ? 'selected' : ''}`;
+        btn.textContent = t;
+        btn.onclick = () => {
+            btn.classList.toggle('selected');
+            // This is a simplified toggle; for full logic see new entry animal toggle
+            if (btn.classList.contains('selected')) {
+                if (!selectedTiere.includes(t)) selectedTiere.push(t);
+            } else {
+                selectedTiere = selectedTiere.filter(animal => animal !== t);
+            }
+        };
+        tiereContainer.appendChild(btn);
+    });
+
+    // Initialize Smart Image Uploader
+    renderSmartImageUploader(document.getElementById("photoUploaderContainer"), docRef, d.fotos || []);
+    
+    // Attach save function
+    window.saveEdit = async (hutId) => {
+        const payload = {
+            name: document.getElementById('editName').value.trim(),
+            beschreibung: quill.root.innerHTML,
+            oeffnungszeiten: collectOpeningHours(hutId),
+            sitzplaetze: document.getElementById('editSitz').value,
+            strom: document.getElementById('editStrom').value,
+            extras: document.getElementById('editExtras').value,
+            tiere: selectedTiere,
+            tags: document.getElementById('editTags').value.split(',').map(s=>s.trim()).filter(Boolean)
+        };
+        try {
+            await docRef.update(payload);
+            showToast('✅ Gespeichert!');
+        } catch (err) {
+            showToast('❌ Fehler beim Speichern: ' + err.message, 5000, true);
+        }
+    };
   }
   
-  // Funktion zum Aktualisieren der Info-Box (aus deinem Originalcode übernommen)
-  window.updateInfoBox = function() {
-    const boxDesktop = document.getElementById("infoBox");
-    const boxMobile = document.getElementById("infoBoxMobile");
-    let html = "";
-    const info = stepInfos[step];
-    if (mode === "entry" && info) {
-      html = `<h4 class="font-semibold">${info.title}</h4><p>${info.text}</p>`;
-    } else if (mode === "list") { html = `<h4 class="font-semibold">📋 Meine Eintragungen</h4><p>Übersicht über deine Einträge.</p>`; }
-    // ... weitere Modes ...
-    else { html = `<p>ℹ️ Wähle links eine Funktion aus.</p>`; }
+  /***********************
+   * Smart Image Uploader
+   ***********************/
+  async function renderSmartImageUploader(container, docRef, existingImages = []) {
+      container.innerHTML = `
+        <div class="bg-white rounded-xl shadow p-4">
+          <h3 class="text-sm font-semibold mb-3">📸 Fotos verwalten</h3>
+          <div id="smartUploadZone" class="relative border-2 border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition rounded-xl p-6 text-center cursor-pointer">
+            <p class="text-gray-600 text-sm">Bilder hierher ziehen oder klicken</p>
+            <input id="smartUploadInput" type="file" accept="image/*" multiple class="hidden">
+            <div id="smartUploadPreview" class="flex flex-wrap gap-3 justify-center mt-3"></div>
+          </div>
+        </div>`;
+        
+      const zone = container.querySelector("#smartUploadZone");
+      const input = container.querySelector("#smartUploadInput");
+      const preview = container.querySelector("#smartUploadPreview");
+      let currentImages = existingImages.map(img => typeof img === 'string' ? { url: img, title: '' } : img);
 
-    if (boxDesktop) boxDesktop.innerHTML = html;
-    // Der Mobile Overlay / Toggle ist im HTML vorhanden, aber die Logik hier weggelassen.
+      function renderPreview() {
+          preview.innerHTML = '';
+          if (!currentImages.length) {
+              preview.innerHTML = `<div class="text-gray-400 text-xs">Noch keine Bilder hochgeladen.</div>`;
+              return;
+          }
+          currentImages.forEach((img, idx) => {
+              const card = document.createElement('div');
+              card.className = "relative group w-32 h-32 border rounded overflow-hidden shadow-sm";
+              card.innerHTML = `
+                  <img src="${img.url}" class="object-cover w-full h-full">
+                  <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 p-1">
+                    <input class="imageTitleInput w-full bg-transparent text-white text-xs text-center outline-none" value="${img.title || ''}" placeholder="Titel..." data-idx="${idx}">
+                  </div>
+                  <button class="removeBtn absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition">&times;</button>`;
+              
+              card.querySelector('.imageTitleInput').addEventListener('change', (e) => {
+                  currentImages[idx].title = e.target.value.trim();
+                  docRef.update({ fotos: currentImages });
+              });
+              
+              card.querySelector('.removeBtn').addEventListener('click', () => {
+                  if (!confirm("Bild wirklich entfernen?")) return;
+                  currentImages.splice(idx, 1);
+                  docRef.update({ fotos: currentImages }).then(renderPreview);
+              });
+              
+              preview.appendChild(card);
+          });
+      }
+
+      async function handleFiles(files) {
+          for (const file of Array.from(files)) {
+              try {
+                  const formData = new FormData();
+                  formData.append("image", file);
+                  const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`, { method: "POST", body: formData });
+                  const data = await res.json();
+                  if (data.success) {
+                      currentImages.push({ url: data.data.url, title: file.name.split('.')[0] });
+                  } else {
+                      throw new Error('ImgBB API error');
+                  }
+              } catch (err) {
+                  showToast('Bild-Upload fehlgeschlagen.', 3000, true);
+                  console.error(err);
+              }
+          }
+          await docRef.update({ fotos: currentImages });
+          renderPreview();
+      }
+
+      zone.onclick = () => input.click();
+      input.onchange = (e) => handleFiles(e.target.files);
+      // Drag and drop listeners
+      zone.ondragover = (e) => { e.preventDefault(); zone.classList.add("bg-green-100"); };
+      zone.ondragleave = () => zone.classList.remove("bg-green-100");
+      zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove("bg-green-100"); handleFiles(e.dataTransfer.files); };
+      
+      renderPreview();
   }
 
-  // Stubs für Events
-  window.showMyEvents = () => { showToast("Events-Funktion noch nicht implementiert"); setActive('btnMyEvents'); };
-  window.showCreateEvent = () => { showToast("Event erstellen noch nicht implementiert"); setActive('btnCreateEvent'); };
-  
-  // Stubs für Badge Logik
-  window.initHutMessagesBadge = () => { /* Listener aus Originaldatei hier einfügen */ };
-  
-  // Start the application after all functions are defined
-  if (!currentUser) {
-    document.getElementById("loginScreen").classList.remove("hidden");
-  } else {
-     showTutorial();
+  /***********************
+   * Support System
+   ***********************/
+  function openSupport() {
+    if (!currentUser) return showToast("Bitte einloggen.", 3000, true);
+    setMode("support");
+    const qa = document.getElementById('question-area');
+    qa.innerHTML = `
+      <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+        <h2 class="text-xl font-bold mb-3">📨 Support</h2>
+        <form id="supportForm" class="space-y-4">
+            <textarea id="supMsg" class="w-full border p-2 rounded" rows="4" placeholder="Deine Nachricht an uns..." required></textarea>
+            <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded">Absenden</button>
+        </form>
+        <hr class="my-6" />
+        <h3 class="text-lg font-bold mb-2">📂 Deine bisherigen Support-Tickets</h3>
+        <div id="supportList" class="space-y-2 text-sm text-gray-700">⏳ Lade Tickets…</div>
+      </div>
+    `;
+    
+    document.getElementById('supportForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const msg = document.getElementById('supMsg').value.trim();
+        if (!msg) return;
+        await db.collection('support').add({
+            msg,
+            mail: currentUser.email,
+            uid: currentUser.uid,
+            status: 'offen',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        showToast('✅ Ticket gesendet!');
+        document.getElementById('supMsg').value = '';
+        loadSupportTickets();
+    });
+    
+    loadSupportTickets();
   }
+
+  async function loadSupportTickets() {
+      const list = document.getElementById("supportList");
+      if (!list || !currentUser) return;
+      
+      const snap = await db.collection("support").where("uid", "==", currentUser.uid).orderBy("createdAt", "desc").get();
+      if (snap.empty) {
+          list.innerHTML = "<p>Keine Support-Anfragen gefunden.</p>";
+          return;
+      }
+      list.innerHTML = snap.docs.map(doc => {
+          const d = doc.data();
+          const date = d.createdAt?.toDate().toLocaleString('de-DE') || '-';
+          return `<div class="bg-gray-50 p-3 rounded-lg">
+                    <p class="font-semibold">${d.msg}</p>
+                    <p class="text-xs text-gray-500">Status: <span class="capitalize">${d.status}</span> | ${date}</p>
+                  </div>`;
+      }).join('');
+  }
+  
+    /***********************
+     * Info Box Content
+     ***********************/
+    const stepInfos = {
+        0: { title: "Datenschutz", text: "Bitte lies die Datenschutzerklärung und bestätige sie, um fortzufahren." },
+        1: { title: "Art der Eintragung", text: "Wähle die passende Kategorie für deinen Ort aus." },
+        2: { title: "Name", text: "Verwende einen kurzen, prägnanten Namen, z.B. „Hofladen am Mühlenbach“." },
+        3: { title: "Sitzplätze", text: "Gibt es Bänke, Tische oder andere Gelegenheiten zum Verweilen?" },
+        4: { title: "Strom", text: "Ist eine Steckdose verfügbar, z.B. zum Laden von E-Bikes?" },
+        5: { title: "Öffnungszeiten", text: "Gib an, wann dein Angebot verfügbar ist. Wähle 'Immer geöffnet' für 24/7." },
+        6: { title: "Extras", text: "Besonderheiten wie Getränke, ein Kühlschrank oder ein Grill." },
+        7: { title: "Tiere", text: "Wähle alle Tiere aus, die Besucher vor Ort antreffen können." },
+        8: { title: "Beschreibung", text: "Beschreibe deinen Ort ausführlich. Was macht ihn besonders?" },
+        9: { title: "Schlagwörter", text: "Hilf anderen, deinen Ort zu finden. Z.B. 'regional, Bio, kinderfreundlich'." },
+        10: { title: "Standort", text: "Setze den Pin exakt auf der Karte. Nutze die Suche oder deinen GPS-Standort." },
+    };
+
+    function updateInfoBox() {
+        const boxDesktop = document.getElementById("infoBox");
+        const boxMobile = document.getElementById("infoBoxMobile");
+        let html = "";
+
+        if (mode === "entry") {
+            const info = stepInfos[step];
+            html = info ? `<h4 class="font-semibold">${info.title}</h4><p>${info.text}</p>` : "<p>Keine Info verfügbar.</p>";
+        } else if (mode === "list" || mode === "edit") {
+            html = `<h4 class="font-semibold">📋 Meine Eintragungen</h4><p>Hier siehst du deine Einträge. Klicke auf einen Eintrag, um ihn zu bearbeiten.</p>`;
+        } else if (mode === "tutorial") {
+            html = `<h4 class="font-semibold">👋 Willkommen</h4><p>Dies ist dein zentrales Dashboard. Wähle eine Aktion aus der Seitenleiste.</p>`;
+        } else if (mode === "support") {
+            html = `<h4 class="font-semibold">💬 Support</h4><p>Stelle hier deine Fragen oder melde Probleme. Deine Tickets werden gespeichert.</p>`;
+        } else if (mode === "hutMessages") {
+            html = `<h4 class="font-semibold">💌 Hütten-Nachrichten</h4><p>Hier siehst du Nachrichten von Besuchern. Die Ansicht aktualisiert sich automatisch.</p>`;
+        } else {
+            html = "<p>ℹ️ Wähle links eine Funktion aus.</p>";
+        }
+
+        if (boxDesktop) boxDesktop.innerHTML = html;
+        if (boxMobile) boxMobile.innerHTML = html;
+    }
+  
+  // Expose functions to global scope for onclick handlers
+  window.doGoogleLogin = doGoogleLogin;
+  window.logout = logout;
+  window.showMyEntries = showMyEntries;
+  window.startNewEntry = startNewEntry;
+  window.openSupport = openSupport;
+  window.nextStep = nextStep;
+  window.prevStep = prevStep;
+  window.toggleSidebar = toggleSidebar;
+  window.submitEntry = submitEntry;
+  
+  // Initial call
+  updateInfoBox();
+  
+  // Mobile info overlay logic
+  const toggleInfoBtn = document.getElementById("toggleInfo");
+  const infoOverlay = document.getElementById("infoOverlay");
+  const closeInfoBtn = document.getElementById("closeInfo");
+  if (toggleInfoBtn) toggleInfoBtn.addEventListener("click", () => infoOverlay.classList.remove("hidden"));
+  if (closeInfoBtn) closeInfoBtn.addEventListener("click", () => infoOverlay.classList.add("hidden"));
 
 })();
+// =================================================================================
+// SCRIPT END
+// =================================================================================
 </script>
+
 </body>
 </html>
