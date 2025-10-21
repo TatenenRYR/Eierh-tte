@@ -1,483 +1,640 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RadlMap Navigation</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>RadlMap Assistent</title>
 
-  <meta property="og:title" content="🏠🚲 Tourplaner" />
-  <meta property="og:description" content="Plane deine Radtour mit Hütten! Mit GPS, Tourenspeicher, Kommentaren & Abo-Verwaltung." />
-  <meta property="og:image" content="https://radlmap.net/img/preview.png" />
-  <meta property="og:url" content="https://radlmap.net" />
-  <meta name="twitter:card" content="summary_large_image" />
-  
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-  <link rel="stylesheet" href="https://unpkg.com/swiper/swiper-bundle.min.css"/>
+    <meta property="og:title" content="RadlMap Tourplaner" />
+    <meta property="og:description" content="Plane deine optimierte Radtour zu den besten regionalen Hütten!" />
+    <meta property="og:image" content="https://radlmap.net/img/preview.png" />
+    <meta property="og:url" content="https://radlmap.net" />
+    <meta name="twitter:card" content="summary_large_image" />
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-  <script src="https://unpkg.com/@mapbox/polyline"></script>
-  <script src="https://unpkg.com/swiper/swiper-bundle.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/leaflet-rotatedmarker@0.2.0/leaflet.rotatedMarker.min.js"></script>
-  <script src="https://unpkg.com/leaflet-geometryutil"></script>
-  
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-
-  <style>
-    /* Ihre Original-Styles mit Ergänzungen für den neuen User-Marker */
-    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
-    #map { position: absolute; top: 0; bottom: 0; left: 0; right: 0; }
-    .hidden { display: none !important; }
-
-    #loader {
-      position: fixed; inset: 0; background: white; display: flex;
-      align-items: center; justify-content: center; z-index: 9998;
-      flex-direction: column; gap: 1rem; text-align: center;
-    }
-    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    .spinner { width: 48px; height: 48px; border: 5px solid rgba(0,0,0,0.1); border-top-color: #4caf50; border-radius: 50%; animation: spin 1s linear infinite; }
-
-    /* Neuer User Marker (Google Style) */
-    .user-marker-icon { position: relative; display: flex; align-items: center; justify-content: center; }
-    .user-dot { width: 18px; height: 18px; background: #1d4ed8; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
-    @keyframes pulse-gps { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(2.5); opacity: 0; } }
-    .user-accuracy-circle { position: absolute; border-radius: 50%; background: rgba(59, 130, 246, 0.2); animation: pulse-gps 2s infinite ease-out; }
-    .user-chevron { position: absolute; width: 100%; height: 100%; transition: transform 0.5s linear; }
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet-rotatedmarker@0.2.0/leaflet.rotatedMarker.min.js"></script>
     
-    /* Alle weiteren Styles aus Ihrer Originaldatei bleiben hier erhalten */
-    #toolbar { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 1100; background: #fff; padding: 6px 10px; border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); display: flex; gap: 10px; }
-    #toolbar button { min-width: 48px; min-height: 48px; font-size: 16px; border: none; border-radius: 8px; cursor: pointer; background: #333; color: #fff; }
-    #toggleDashboardBtn { position: fixed; top: 20px; right: 20px; z-index: 1002; background: #333; color: white; border: none; font-size: 26px; border-radius: 50%; width: 50px; height: 50px; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
-    #dashboardPopup { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 9999; }
-    .dashboard-content { background: #fff; border-radius: 12px; padding: 20px; width: 90%; max-width: 480px; max-height: 80vh; overflow-y: auto; }
-    .sidebar-nav { position: fixed; top: 50%; left: 0; transform: translateY(-50%); display: flex; flex-direction: column; background-color: white; border-right: 1px solid #ddd; box-shadow: 2px 0 5px rgba(0,0,0,0.05); z-index: 1000; padding: 8px 4px; border-radius: 0 8px 8px 0; }
-    .sidebar-nav a { display: flex; justify-content: center; align-items: center; margin: 6px 0; width: 40px; height: 40px; text-decoration: none; color: #333; font-size: 18px; }
-    .sidebar-nav a:nth-child(2) { background: #4caf50; color: white; font-size: 24px; }
-    footer { position: fixed; bottom: 0; left: 0; right: 0; height: 36px; background: rgba(255, 255, 255, 0.95); font-size: 11px; text-align: center; line-height: 36px; z-index: 1000; border-top: 1px solid #ccc; }
-    footer a { color: #888; text-decoration: none; margin: 0 4px; }
-    .tab-btn { padding: 8px 14px; border-radius: 8px; background: #f0f0f0; margin: 0 4px; font-size: 16px; border: none; cursor: pointer; }
-    .tab-btn.active { background: #4caf50; color: white; font-weight: bold; }
-    .leaflet-popup-content-wrapper { border-radius: 16px; }
-    .leaflet-popup-content { margin: 0; width: 320px !important; }
-    .popup-card { max-height: 520px; overflow-y: auto; padding: 14px; }
-    .swiper-button-prev, .swiper-button-next { color: white !important; }
-    #toast { position: fixed; bottom: 150px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 10px 16px; border-radius: 8px; z-index: 1102; }
-    #navHint { position: fixed; top: 80px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.75); color: white; padding: 10px 16px; border-radius: 12px; font-size: 18px; z-index: 1100; text-align: center; }
-  </style>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        /* --- Base & Theming --- */
+        :root {
+            --bg-light: #ffffff;
+            --text-light: #222222;
+            --accent-light: #f9f9f9;
+            
+            --bg-dark: #121212;
+            --text-dark: #f0f0f0;
+            --accent-dark: #1f1f1f;
+
+            --color-primary: #22c55e;
+            --color-secondary: #3b82f6;
+            --color-danger: #ef4444;
+            --color-warning: #f59e0b;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-light);
+            color: var(--text-light);
+        }
+
+        body.dark-mode {
+            background-color: var(--bg-dark);
+            color: var(--text-dark);
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* --- Google Maps Style User Marker --- */
+        .user-marker-container {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .user-marker-dot {
+            width: 20px;
+            height: 20px;
+            background-color: #4285F4;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
+        .user-marker-accuracy {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            background-color: #4285F4;
+            border-radius: 50%;
+            opacity: 0.2;
+            animation: pulse 2s infinite ease-out;
+            transform-origin: center;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.8); opacity: 0.3; }
+            70% { transform: scale(1.6); opacity: 0.1; }
+            100% { transform: scale(2.2); opacity: 0; }
+        }
+        .user-marker-heading {
+            position: absolute;
+            top: -10px;
+            width: 0;
+            height: 0;
+            border-left: 12px solid transparent;
+            border-right: 12px solid transparent;
+            border-bottom: 20px solid #4285F4;
+            transition: transform 0.3s ease-out;
+            transform-origin: 50% 22px; /* Dreht um die Mitte des blauen Punktes */
+        }
+
+        /* --- UI Components --- */
+        .ui-element {
+            position: fixed;
+            z-index: 1001;
+            background: var(--bg-light);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            border-radius: 12px;
+            transition: background-color 0.3s;
+        }
+        body.dark-mode .ui-element {
+             background: var(--accent-dark);
+             color: var(--text-dark);
+             border: 1px solid #444;
+        }
+        
+        #loader {
+            position: fixed;
+            inset: 0;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            font-size: 1.5em;
+        }
+
+        #toast {
+            position: fixed;
+            bottom: 150px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0,0,0,0.8);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 25px;
+            z-index: 9000;
+            display: none;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            font-size: 14px;
+        }
+
+        /* --- Toolbar --- */
+        #toolbar {
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 8px;
+            display: flex;
+            gap: 8px;
+        }
+        #toolbar button {
+            width: 50px;
+            height: 50px;
+            font-size: 20px;
+            border-radius: 50%;
+            background-color: #f0f0f0;
+            color: #333;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s, color 0.2s;
+        }
+        #toolbar button:disabled {
+            background-color: #e0e0e0;
+            color: #aaa;
+            cursor: not-allowed;
+        }
+        #toolbar button.active {
+            background-color: var(--color-secondary);
+            color: white;
+        }
+        #toolbar #stopBtn {
+            background-color: var(--color-danger);
+            color: white;
+        }
+        #startBtn {
+            background-color: var(--color-primary) !important;
+            color: white !important;
+            width: auto !important;
+            padding: 0 20px;
+            border-radius: 25px !important;
+        }
+
+        /* --- Dashboard --- */
+        #dashboard {
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            z-index: 1002;
+            display: flex;
+            flex-direction: column;
+            max-height: calc(100vh - 40px);
+        }
+        #toggleDashboardBtn {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 1002;
+            background: white;
+            color: #333;
+            border: 1px solid #ccc;
+            font-size: 24px;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px;
+            border-bottom: 1px solid #eee;
+        }
+        body.dark-mode .dashboard-header { border-color: #444; }
+        
+        #selectedList li {
+            background: var(--accent-light);
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        body.dark-mode #selectedList li { background: var(--bg-dark); }
+        .action-button {
+            flex-grow: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .action-button.optimize { background-color: var(--color-secondary); }
+        .action-button.reset { background-color: var(--color-warning); }
+
+        .hidden { display: none !important; }
+        .leaflet-popup-content-wrapper { border-radius: 12px; }
+    </style>
 </head>
 <body>
 
-  <div id="loader">
-    <div class="spinner"></div>
-    <p id="loader-text">RadlMap wird geladen...</p>
-  </div>
+    <div id="map"></div>
 
-  <div id="map"></div>
+    <div id="loader">⏳ Lade Karte…</div>
+    <div id="toast"></div>
 
-  <div class="sidebar-nav">
-    <a href="index.html" title="Karte"><span>🔄</span></a>
-    <a href="assistent.html" title="Hütte eintragen"><span>➕</span></a>
-    <a href="#" id="helpBtn" onclick="showTutorial()" title="Hilfe"><span>❓</span></a>
-  </div>
-  
-  <button id="toggleDashboardBtn" onclick="toggleDashboard()">☰</button>
+    <button id="toggleDashboardBtn" class="ui-button">☰</button>
 
-  <div id="toolbar">
-    <button id="followBtn" onclick="toggleFollow()" style="display:none;">📍</button>
-    <button onclick="toggleVoice()">🔊</button>
-    <button id="startBtn" onclick="startRouteToNextHut()">▶️</button>
-    <button id="stopBtn" onclick="stopNavigation()" class="hidden">🛑</button>
-    <button onclick="resetRoute()">🗑️</button>
-    <button id="toggleThemeBtn" onclick="toggleMapTheme()">🌙</button>
-  </div>
-
-  <div id="dashboardPopup" class="dashboard-popup hidden">
-    <div class="dashboard-content">
-      <button id="dashboardClose" onclick="toggleDashboard()" style="float: right; border: none; background: transparent; font-size: 20px; cursor: pointer;">✖</button>
-      <h3>📊 Dashboard</h3>
-      <div>
-        <nav class="flex gap-3 py-3 border-b">
-          <button onclick="openTab('tab-auswahl', this)" class="tab-btn active">📋 Auswahl</button>
-          <button onclick="openTab('tab-nutzer', this)" class="tab-btn">👤 Nutzer</button>
-          <button onclick="openTab('tab-raum', this)" class="tab-btn">👥 Raum</button>
-        </nav>
-        <div class="p-4">
-          <section id="tab-auswahl" class="tab-panel"><ul id="selectedList" ondrop="drop(event)" ondragover="allowDrop(event)"></ul></section>
-          <section id="tab-nutzer" class="tab-panel hidden"><input id="usernameInput" placeholder="Dein Name..." class="border p-2 rounded w-full"><button onclick="saveUsername()" class="mt-2 w-full bg-blue-500 text-white p-2 rounded">Speichern</button></section>
-          <section id="tab-raum" class="tab-panel hidden"><input id="roomId" placeholder="Raum-ID..." class="border p-2 rounded w-full"><button onclick="joinRoom()" class="mt-2 w-full bg-green-500 text-white p-2 rounded">Beitreten</button><button onclick="leaveRoom()" class="mt-2 w-full bg-red-500 text-white p-2 rounded">Verlassen</button><p id="roomStatus" class="mt-2 text-sm"></p></section>
+    <div id="dashboard" class="ui-element hidden">
+        <div class="dashboard-header">
+            <h3 class="text-lg font-semibold">Tourplaner</h3>
+            <button id="dashboardClose" class="text-2xl">&times;</button>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <footer>
-    <a href="javascript:void(0)" onclick="openPopup('ueber')">Über</a> ·
-    <a href="javascript:void(0)" onclick="openPopup('datenschutz')">Datenschutz</a> ·
-    <a href="javascript:void(0)" onclick="openPopup('kontakt')">Kontakt</a>
-  </footer>
-  
-  <div id="toast" class="hidden"></div>
-  <div id="navHint" class="hidden"></div>
-
-  <div id="consent-modal" class="hidden" style="position:fixed; inset:0; z-index:10001; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.5);">
-      <div style="background:white; padding:20px; border-radius:12px; max-width:400px; width: 90%;">
-          <h2 class="text-xl font-bold mb-2">Datenschutz</h2>
-          <p class="text-sm mb-4">Wir nutzen Cookies für notwendige Funktionen und Statistiken. Mehr in der <a href="/datenschutz.html" target="_blank" class="text-blue-600">Datenschutzerklärung</a>.</p>
-          <label><input type="checkbox" id="consent-stats"> Statistik-Cookies (optional)</label><br>
-          <div class="mt-4 flex justify-end gap-2">
-              <button onclick="rejectConsent()" class="px-4 py-2 bg-gray-200 rounded">Nur Notwendige</button>
-              <button onclick="acceptConsent()" class="px-4 py-2 bg-blue-500 text-white rounded">Alle akzeptieren</button>
-          </div>
-      </div>
-  </div>
-
-  <script>
-    // ========================================================================
-    //  🚲 RADLMAP TOURPLANER v5.4 - REPARIERTE VERSION
-    // ========================================================================
-
-    // KORREKTE KONFIGURATION
-    const firebaseConfig = {
-        apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-        authDomain: "eierhuettentour.firebaseapp.com",
-        projectId: "eierhuettentour",
-    };
-    const ORS_API_KEY = "5b3af8b88e1a4f000179979725f05d58d98342468285703f925b4119";
-
-    // Globale Variablen aus Ihrer Datei
-    let map, userMarker, cluster, currentTileLayer, routeLine;
-    let isDarkTheme = false, follow = true, voice = true, navActiveFlag = false;
-    let huts = [], selected = [], groupMarkers = {};
-    let routeCoords = [], routeSteps = [], routeDistance = 0, routeDuration = 0;
-    let deviceHeading = 0, roomId = null, hutListener = null, navWatchId = null;
-    let alias = localStorage.aliasId || `user_${Math.random().toString(36).substr(2, 6)}`;
-    localStorage.aliasId = alias;
-    
-    // DOM Elemente
-    const loader = document.getElementById('loader');
-    const loaderText = document.getElementById('loader-text');
-    
-    // ========================================================================
-    //  🚀 APP INITIALIZATION (ROBUST)
-    // ========================================================================
-    
-    document.addEventListener('DOMContentLoaded', () => {
-        const consentGiven = localStorage.getItem("consentGiven");
-        if (!consentGiven) {
-            document.getElementById("consent-modal").classList.remove("hidden");
-        } else {
-            startRadlMap();
-        }
-    });
-
-    function acceptConsent() {
-        localStorage.setItem("consentGiven", "true");
-        document.getElementById("consent-modal").classList.add("hidden");
-        startRadlMap();
-    }
-    function rejectConsent() {
-        localStorage.setItem("consentGiven", "true"); // User hat entschieden
-        document.getElementById("consent-modal").classList.add("hidden");
-        startRadlMap();
-    }
-
-    async function startRadlMap() {
-        if (map) return;
-        try {
-            firebase.initializeApp(firebaseConfig);
-            window.db = firebase.firestore();
-
-            initMap();
-            startGpsTracking();
-            startCompassTracking();
-            await initHuettenListener();
-            
-            initUsername();
-            if (speechSynthesis.onvoiceschanged !== undefined) {
-                speechSynthesis.onvoiceschanged = populateVoiceDropdown;
-            }
-            populateVoiceDropdown();
-
-        } catch (err) {
-            console.error("Initialization failed:", err);
-            loader.classList.remove('hidden'); // Sicherstellen, dass der Loader sichtbar ist
-            loaderText.innerHTML = `<span style="color: red;">Fehler: ${err.message || 'Unbekannter Fehler'}.<br>Bitte Seite neu laden.</span>`;
-        }
-    }
-    
-    // ========================================================================
-    //  🗺️ MAP & MARKER SETUP
-    // ========================================================================
-    
-    function initMap() {
-      map = L.map("map", { center: [49.8, 10.5], zoom: 7, zoomControl: true });
-      cluster = L.markerClusterGroup({ maxClusterRadius: 40 });
-      map.addLayer(cluster);
-      isDarkTheme = localStorage.getItem("mapTheme") === "dark";
-      updateMapTheme();
-      map.on('dragstart zoomstart mousedown', () => { if (follow) setFollow(false, 'manual'); });
-      loader.classList.add('hidden');
-    }
-    
-    function createUserMarker(latlng) {
-        const icon = L.divIcon({
-            className: 'user-marker-icon',
-            html: `
-                <div class="user-accuracy-circle"></div>
-                <div class="user-chevron">
-                    <svg viewBox="0 0 24 24" fill="#1d4ed8" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));">
-                        <path d="M12 2L21 21L12 17L3 21L12 2Z"/>
-                    </svg>
+        <div class="p-4 overflow-y-auto">
+            <section id="tab-route">
+                <p class="text-sm text-gray-600 mb-4">Klicke auf eine Hütte, um sie zur Route hinzuzufügen.</p>
+                <ul id="selectedList" class="list-none p-0">
+                    </ul>
+                <div class="flex gap-2 mt-4">
+                     <button id="optimizeBtn" class="action-button optimize">🔄 Optimieren</button>
+                     <button id="resetRouteBtn" class="action-button reset">🗑️ Leeren</button>
                 </div>
-                <div class="user-dot"></div>`,
-            iconSize: [48, 48], iconAnchor: [24, 24]
-        });
-        userMarker = L.marker(latlng, { icon: icon, zIndexOffset: 1000, interactive: false }).addTo(map);
-    }
+            </section>
+        </div>
+    </div>
     
-    function updateUserPosition(pos) {
-        if (!map) return;
-        const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+    <div id="toolbar" class="ui-element">
+        <button id="startBtn" disabled>▶️ Start</button>
+        <button id="stopBtn" class="hidden">🛑 Stop</button>
+        <button id="followBtn" class="active">📍</button>
+        <button id="themeBtn">🌙</button>
+    </div>
 
-        if (!userMarker) {
-            createUserMarker(latlng);
-            if(follow) map.flyTo(latlng, 16);
+<script>
+// --- Smart RadlMap Assistant ---
+
+const RadlMap = {
+    // --- Configuration ---
+    config: {
+        orsApiKey: "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e16", // Ersetzen Sie dies sicher
+        firebase: {
+            apiKey: "YOUR_API_KEY", // Platzhalter
+            authDomain: "eierhuettentour.firebaseapp.com",
+            projectId: "eierhuettentour"
+        },
+        map: {
+            initialCenter: [49.9, 10.5],
+            initialZoom: 6
         }
+    },
 
-        let displayPosition = latlng;
-        let displayHeading = deviceHeading;
+    // --- Application State ---
+    state: {
+        map: null,
+        userMarker: null,
+        userMarkerHeading: 0,
+        routeLayer: null,
+        markerCluster: L.markerClusterGroup(),
+        selectedStops: [],
+        isNavigating: false,
+        isFollowing: true,
+        isDarkMode: false,
+    },
 
-        if (navActiveFlag && routeCoords.length > 1) {
-            displayPosition = snapToRoute(latlng);
-            displayHeading = getRouteBearingAt(displayPosition, routeCoords);
-        }
-        
-        userMarker.setLatLng(displayPosition);
-        
-        const chevron = userMarker.getElement()?.querySelector('.user-chevron');
-        if (chevron) chevron.style.transform = `rotate(${displayHeading}deg)`;
+    // --- Initialization ---
+    init() {
+        this.initFirebase();
+        this.initMap();
+        this.initUI();
+        this.loadHuts();
+        this.locateUser();
+        this.initOrientation();
+    },
 
-        if (follow) map.panTo(displayPosition, { animate: true, duration: 1, noMoveStart: true });
-        if (roomId) updateGroupPosition(displayPosition);
-    }
+    initFirebase() {
+        firebase.initializeApp(this.config.firebase);
+        this.db = firebase.firestore();
+    },
 
-    function updateMapTheme() {
-        if (currentTileLayer) map.removeLayer(currentTileLayer);
-        const url = isDarkTheme ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-        currentTileLayer = L.tileLayer(url, { attribution: '© OpenStreetMap © CARTO', maxZoom: 19 }).addTo(map);
-        document.body.classList.toggle("dark-mode", isDarkTheme);
-        document.getElementById('toggleThemeBtn').textContent = isDarkTheme ? '☀️' : '🌙';
-        localStorage.setItem("mapTheme", isDarkTheme ? "dark" : "light");
-    }
+    initMap() {
+        this.state.map = L.map('map', { zoomControl: false }).setView(this.config.map.initialCenter, this.config.map.initialZoom);
+        this.state.map.addLayer(this.state.markerCluster);
+        this.updateMapTheme();
+        this.state.map.on('dragstart', () => this.toggleFollow(false));
+    },
 
-    // ========================================================================
-    //  📍 GPS & COMPASS
-    // ========================================================================
-
-    function startGpsTracking() {
-      if (!navigator.geolocation) { return alert("GPS wird von diesem Browser nicht unterstützt."); }
-      navigator.geolocation.watchPosition(updateUserPosition, 
-        (err) => { console.error("GPS Error:", err); showToast("GPS-Signal verloren."); },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-    }
-
-    function startCompassTracking() {
-        const requestPermission = () => {
-             DeviceOrientationEvent.requestPermission().then(state => {
-                if (state === 'granted') window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-             }).catch(console.error);
+    initUI() {
+        this.ui = {
+            loader: document.getElementById('loader'),
+            toast: document.getElementById('toast'),
+            dashboard: document.getElementById('dashboard'),
+            toggleDashboardBtn: document.getElementById('toggleDashboardBtn'),
+            dashboardClose: document.getElementById('dashboardClose'),
+            selectedList: document.getElementById('selectedList'),
+            startBtn: document.getElementById('startBtn'),
+            stopBtn: document.getElementById('stopBtn'),
+            optimizeBtn: document.getElementById('optimizeBtn'),
+            resetRouteBtn: document.getElementById('resetRouteBtn'),
+            followBtn: document.getElementById('followBtn'),
+            themeBtn: document.getElementById('themeBtn'),
         };
-        if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
-            document.body.addEventListener('click', requestPermission, { once: true });
-        } else {
-            window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+
+        this.ui.toggleDashboardBtn.onclick = () => this.toggleDashboard();
+        this.ui.dashboardClose.onclick = () => this.toggleDashboard(false);
+        this.ui.startBtn.onclick = () => this.startNavigation();
+        this.ui.stopBtn.onclick = () => this.stopNavigation();
+        this.ui.optimizeBtn.onclick = () => this.optimizeAndDrawRoute();
+        this.ui.resetRouteBtn.onclick = () => this.resetRoute();
+        this.ui.followBtn.onclick = () => this.toggleFollow();
+        this.ui.themeBtn.onclick = () => this.toggleTheme();
+
+        this.state.isDarkMode = localStorage.getItem('radlmap_theme') === 'dark';
+        if (this.state.isDarkMode) document.body.classList.add('dark-mode');
+        this.ui.themeBtn.textContent = this.state.isDarkMode ? '☀️' : '🌙';
+        this.updateMapTheme();
+    },
+
+    initOrientation() {
+        const handleOrientation = (event) => {
+            if (event.webkitCompassHeading) { // iOS
+                this.state.userMarkerHeading = event.webkitCompassHeading;
+            } else if (event.alpha !== null) { // Android
+                this.state.userMarkerHeading = 360 - event.alpha;
+            }
+            if (this.state.userMarker) {
+                this.rotateUserMarker();
+            }
+        };
+
+        if (window.DeviceOrientationEvent) {
+             if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                // iOS 13+
+                DeviceOrientationEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            window.addEventListener('deviceorientation', handleOrientation);
+                        }
+                    });
+            } else {
+                // Android
+                window.addEventListener('deviceorientation', handleOrientation);
+            }
         }
-    }
-
-    function handleOrientation(event) { if (event.alpha !== null) deviceHeading = 360 - event.alpha; }
-
-    // ========================================================================
-    // 🧭 ALLE FUNKTIONEN AUS IHRER DATEI (angepasst & bereinigt)
-    // ========================================================================
-
-    // Data & Popups
-    async function initHuettenListener() {
-        return new Promise((resolve, reject) => {
-            if (hutListener) hutListener();
-            hutListener = db.collection("eierhuetten").where("status", "==", "angenommen").onSnapshot(snapshot => {
-                huts = []; // Array zurücksetzen
-                cluster.clearLayers();
-                snapshot.forEach(doc => {
-                    const hutData = { id: doc.id, ...doc.data() };
-                    if (!hutData.location) return;
-                    huts.push(hutData); // Huts-Array füllen
-                    const marker = createHutMarker(hutData);
-                    cluster.addLayer(marker);
-                });
-                resolve();
-            }, reject);
+    },
+    
+    // --- Core Functionality ---
+    loadHuts() {
+        this.db.collection("eierhuetten").where("status", "==", "angenommen").onSnapshot(snapshot => {
+            this.state.markerCluster.clearLayers();
+            snapshot.forEach(doc => {
+                const hut = { id: doc.id, ...doc.data() };
+                if (hut.location) {
+                    const marker = L.marker([hut.location.latitude, hut.location.longitude]);
+                    marker.on('click', () => this.addStop(hut));
+                    this.state.markerCluster.addLayer(marker);
+                }
+            });
+            this.ui.loader.classList.add('hidden');
+        }, err => {
+            console.error("Fehler beim Laden der Hütten:", err);
+            this.ui.loader.textContent = "Fehler beim Laden.";
         });
-    }
-    function createHutMarker(hut) {
-        const icon = L.icon({ iconUrl: "https://radlmap.net/img/huetten_icon.svg", iconSize: [30, 40], iconAnchor: [15, 40], popupAnchor: [0, -40] });
-        const marker = L.marker([hut.location.latitude, hut.location.longitude], { icon });
-        marker.bindPopup(() => createPopupHTML(hut), { minWidth: 320 });
-        marker.on('popupopen', () => trackView(hut.id));
-        return marker;
-    }
-    function createPopupHTML(hut) {
-      const isSelected = selected.some(h => h.id === hut.id);
-      const images = (hut.fotos || []).map(f => typeof f === 'string' ? f : f.url).filter(Boolean);
-      const slideshowHTML = images.length > 0
-        ? `<div class="swiper popup-swiper relative h-48 bg-gray-200"><div class="swiper-wrapper">${images.map(url => `<div class="swiper-slide"><img src="${url}" class="w-full h-full object-cover"></div>`).join('')}</div><div class="swiper-button-prev"></div><div class="swiper-button-next"></div></div>`
-        : `<img src="https://radlmap.net/img/noimg/1.jpg" class="w-full h-48 object-cover">`;
-      return `<div class="popup-card">${slideshowHTML}<div class="p-4"><h3 class="text-lg font-bold">${hut.name}</h3><p class="text-sm text-gray-500 mb-2">${hut.typ || ''}</p><p class="text-sm text-gray-700 mb-4 max-h-20 overflow-y-auto">${stripHtml(hut.beschreibung) || 'Keine Beschreibung.'}</p><button id="toggle-btn-${hut.id}" onclick="toggleSelect('hütte', '${hut.id}')" class="w-full py-2 font-semibold rounded-lg text-white ${isSelected ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}">${isSelected ? '❌ Entfernen' : '✅ Hinzufügen'}</button></div></div>`;
-    }
-    map.on('popupopen', (e) => {
-        const swiperEl = e.popup.getElement()?.querySelector('.popup-swiper');
-        if (swiperEl) new Swiper(swiperEl, { loop: true, navigation: { nextEl: '.swiper-button-next', prevEl: '.swiper-button-prev' } });
-    });
-    function trackView(hutId) { db.collection("eierhuetten").doc(hutId).update({ views: firebase.firestore.FieldValue.increment(1) }); }
-    function stripHtml(html) { const d = document.createElement("div"); d.innerHTML = html; return d.textContent || d.innerText || ""; }
-    
-    // UI & Logic
-    function toggleDashboard() { document.getElementById('dashboardPopup').classList.toggle('hidden'); }
-    function openTab(tabId, btn) {
-        document.querySelectorAll('.tab-panel').forEach(t => t.classList.add('hidden'));
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById(tabId)?.classList.remove('hidden');
-        btn?.classList.add('active');
-    }
-    function showToast(message) {
-      const t = document.getElementById('toast');
-      t.textContent = message; t.style.display = 'block';
-      setTimeout(() => t.style.display = 'none', 3000);
-    }
-    function setFollow(isFollowing, reason = '') {
-      follow = isFollowing;
-      const btn = document.getElementById('followBtn');
-      if(btn) btn.style.background = follow ? '#22c55e' : '#6b7280';
-      if(follow && userMarker) map.flyTo(userMarker.getLatLng(), Math.max(map.getZoom(), 16));
-      if(reason === 'manual') showToast("Folgen pausiert.");
-    }
-    function toggleFollow() { setFollow(!follow); }
-    function toggleVoice() { voice = !voice; showToast(voice ? "🔊 Sprachausgabe an" : "🔇 Sprachausgabe aus"); }
-    function toggleSelect(type, id) {
-        const place = huts.find(p => p.id === id);
-        if (!place) return;
-        const index = selected.findIndex(h => h.id === id);
-        if (index > -1) { selected.splice(index, 1); } 
-        else { selected.push({ id: place.id, name: place.name, lat: place.location.latitude, lng: place.location.longitude }); }
-        updateSelectedList();
-        const btn = document.getElementById(`toggle-btn-${id}`);
-        if(btn) {
-            const isSelectedNow = index === -1;
-            btn.textContent = isSelectedNow ? '❌ Entfernen' : '✅ Hinzufügen';
-            btn.className = `w-full py-2 font-semibold rounded-lg text-white ${isSelectedNow ? 'bg-red-500' : 'bg-green-500'}`;
-        }
-    }
-    function updateSelectedList() {
-        const list = document.getElementById('selectedList');
-        if (!list) return;
-        list.innerHTML = selected.length === 0 
-            ? `<li>Keine Stopps ausgewählt.</li>`
-            : selected.map((hut, index) => `<li data-index="${index}" draggable="true"><span class="drag-handle" style="cursor:grab;">⠿ </span><span>${index + 1}. ${hut.name}</span> <button onclick="removeSelected(${index})">❌</button></li>`).join('');
-    }
-    function removeSelected(index) {
-        const hutId = selected[index].id;
-        selected.splice(index, 1);
-        updateSelectedList();
-        const popupBtn = document.getElementById(`toggle-btn-${hutId}`);
-        if (popupBtn) {
-            popupBtn.textContent = '✅ Hinzufügen';
-            popupBtn.className = 'w-full py-2 font-semibold rounded-lg text-white bg-green-500';
-        }
-    }
-    function allowDrop(ev) { ev.preventDefault(); }
-    function drag(ev) { ev.dataTransfer.setData("text", ev.target.dataset.index); }
-    function drop(ev) {
-        ev.preventDefault();
-        const from = parseInt(ev.dataTransfer.getData("text"));
-        const toEl = ev.target.closest("li");
-        if (!toEl) return;
-        const to = parseInt(toEl.dataset.index);
-        if (from !== to) {
-            const moved = selected.splice(from, 1)[0];
-            selected.splice(to, 0, moved);
-            updateSelectedList();
-        }
-    }
-    function initUsername() { if (localStorage.username) document.getElementById('usernameInput').value = localStorage.username; }
-    function saveUsername() { localStorage.username = document.getElementById('usernameInput').value; showToast("Name gespeichert!"); }
-    
-    // Routing & Navigation
-    async function startRouteToNextHut() {
-      if (selected.length === 0) return stopNavigation();
-      navActiveFlag = true;
-      document.getElementById('startBtn').style.display = 'none';
-      document.getElementById('stopBtn').style.display = 'block';
-      try {
-        const startPos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(p => res(p.coords), rej));
-        const coords = [[startPos.longitude, startPos.latitude], ...selected.map(h => [h.lng, h.lat])];
-        await fetchAndDrawRoute(coords);
-        showToast("Navigation gestartet!"); setFollow(true);
-      } catch (err) {
-        stopNavigation();
-      }
-    }
-    async function fetchAndDrawRoute(coordinates) {
-        const res = await fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", { method: "POST", headers: { "Authorization": ORS_API_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ coordinates, instructions: true }) });
-        if (!res.ok) { showToast("Routen-Fehler"); throw new Error(`ORS API Error`); }
-        const data = await res.json();
-        const feature = data.features?.[0];
-        if (!feature) { showToast("Keine Route gefunden"); throw new Error("No route found."); }
-        if (routeLine) map.removeLayer(routeLine);
-        routeLine = L.geoJSON(feature, { style: { color: '#3b82f6', weight: 6, opacity: 0.8 } }).addTo(map);
-        map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
-        routeCoords = feature.geometry.coordinates.map(p => L.latLng(p[1], p[0]));
-        routeSteps = feature.properties.segments[0].steps;
-    }
-    function stopNavigation() {
-      if (routeLine) map.removeLayer(routeLine);
-      navActiveFlag = false; routeCoords = []; routeSteps = [];
-      document.getElementById('startBtn').style.display = 'block';
-      document.getElementById('stopBtn').style.display = 'none';
-      showToast("Navigation gestoppt.");
-    }
-    function resetRoute() { stopNavigation(); selected = []; updateSelectedList(); }
-    function snapToRoute(latlng) { return (routeLine) ? L.GeometryUtil.closest(map, routeLine, latlng) : latlng; }
-    function getRouteBearingAt(latlng, routePoints) {
-        let closestSegment = null, minDistance = Infinity;
-        for (let i = 0; i < routePoints.length - 1; i++) {
-            const distance = L.GeometryUtil.distanceSegment(map, latlng, routePoints[i], routePoints[i + 1]);
-            if (distance < minDistance) { minDistance = distance; closestSegment = [routePoints[i], routePoints[i + 1]]; }
-        }
-        return closestSegment ? L.GeometryUtil.bearing(closestSegment[0], closestSegment[1]) : deviceHeading;
-    }
+    },
 
-    // Gruppen & SOS Funktionen
-    async function sendSOS() { /* Ihre SOS-Funktion */ }
-    function joinRoom() { /* Ihre joinRoom-Funktion */ }
-    function leaveRoom() { /* Ihre leaveRoom-Funktion */ }
-    function updateRoomUI() { /* Ihre updateRoomUI-Funktion */ }
-    function updateGroupPosition(latlng) { /* Ihre updateGroupPosition-Funktion */ }
-    function listenToRoom() { /* Ihre listenToRoom-Funktion */ }
-    function populateVoiceDropdown() { /* Ihre Sprachauswahl-Funktion */ }
-    function showTutorial() { alert("Hilfe: Klicke auf Marker, um sie zur Route hinzuzufügen. Öffne das Dashboard ☰, um deine Route zu verwalten und zu starten."); }
-    function openPopup() { /* Ihre Popup-Funktion für Footer-Links */ }
+    locateUser() {
+        navigator.geolocation.watchPosition(
+            (pos) => {
+                const latlng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                if (!this.state.userMarker) { // On first location, center map
+                    this.state.map.setView(latlng, 16);
+                }
+                this.updateUserMarker(latlng);
+            },
+            () => this.showToast("Standort konnte nicht ermittelt werden.", "error"), 
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+    },
 
-    // Globale Verfügbarkeit für inline `onclick`
-    window.toggleSelect = toggleSelect; window.resetRoute = resetRoute; window.startRouteToNextHut = startRouteToNextHut;
-    window.stopNavigation = stopNavigation; window.toggleDashboard = toggleDashboard; window.openTab = openTab;
-    window.saveUsername = saveUsername; window.joinRoom = joinRoom; window.leaveRoom = leaveRoom;
-    window.toggleFollow = toggleFollow; window.toggleVoice = toggleVoice; window.toggleMapTheme = toggleMapTheme;
-    window.sendSOS = sendSOS; window.removeSelected = removeSelected; window.showTutorial = showTutorial; window.openPopup = openPopup;
-    window.drag = (ev) => ev.dataTransfer.setData("text", ev.target.dataset.index);
-    window.drop = drop; window.allowDrop = allowDrop;
-  </script>
+    updateUserMarker(latlng) {
+        if (!this.state.userMarker) {
+            const userIcon = L.divIcon({
+                className: 'user-marker-container',
+                html: `<div class="user-marker-accuracy"></div><div class="user-marker-dot"></div><div class="user-marker-heading"></div>`,
+                iconSize: [60, 60],
+                iconAnchor: [30, 30]
+            });
+            this.state.userMarker = L.marker(latlng, { icon: userIcon, rotationOrigin: 'center center' }).addTo(this.state.map);
+        } else {
+            this.state.userMarker.setLatLng(latlng);
+        }
+        if (this.state.isFollowing) {
+            this.state.map.panTo(latlng);
+        }
+    },
+    
+    rotateUserMarker() {
+        const headingElement = this.state.userMarker.getElement().querySelector('.user-marker-heading');
+        if (headingElement) {
+            headingElement.style.transform = `rotate(${this.state.userMarkerHeading}deg)`;
+        }
+    },
+    
+    addStop(hut) {
+        if (this.state.selectedStops.find(stop => stop.id === hut.id)) {
+            this.showToast("Dieser Stopp ist bereits auf der Route.", "warning");
+            return;
+        }
+        this.state.selectedStops.push(hut);
+        this.updateRouteDashboard();
+        this.drawPreviewRoute();
+    },
+
+    removeStop(hutId) {
+        this.state.selectedStops = this.state.selectedStops.filter(stop => stop.id !== hutId);
+        this.updateRouteDashboard();
+        this.drawPreviewRoute();
+    },
+
+    resetRoute() {
+        this.stopNavigation();
+        this.state.selectedStops = [];
+        if (this.state.routeLayer) {
+            this.state.map.removeLayer(this.state.routeLayer);
+            this.state.routeLayer = null;
+        }
+        this.updateRouteDashboard();
+    },
+
+    /**
+     * SMARTER ROUTING: Calculates the most efficient order to visit the selected stops.
+     */
+    async optimizeAndDrawRoute() {
+        if (this.state.selectedStops.length < 2) {
+            this.showToast("Bitte mindestens 2 Stopps auswählen.", "warning");
+            return;
+        }
+        this.showToast("Berechne optimale Route...");
+        
+        const startPoint = this.state.userMarker.getLatLng();
+        const optimizedStops = this.optimizeRouteOrder(startPoint, this.state.selectedStops);
+        this.state.selectedStops = optimizedStops;
+
+        this.updateRouteDashboard();
+        await this.drawPreviewRoute();
+        this.showToast("Optimale Route berechnet!", "success");
+    },
+
+    optimizeRouteOrder(start, stops) {
+        let remainingStops = [...stops];
+        let orderedStops = [];
+        let currentLocation = L.latLng(start);
+
+        while (remainingStops.length > 0) {
+            let nearestStop = null;
+            let minDistance = Infinity;
+            let nearestIndex = -1;
+
+            remainingStops.forEach((stop, index) => {
+                const stopLocation = L.latLng(stop.location.latitude, stop.location.longitude);
+                const distance = currentLocation.distanceTo(stopLocation);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    nearestStop = stop;
+                    nearestIndex = index;
+                }
+            });
+
+            if (nearestStop) {
+                orderedStops.push(nearestStop);
+                currentLocation = L.latLng(nearestStop.location.latitude, nearestStop.location.longitude);
+                remainingStops.splice(nearestIndex, 1);
+            }
+        }
+        return orderedStops;
+    },
+
+    async drawPreviewRoute() {
+        if (this.state.routeLayer) this.state.map.removeLayer(this.state.routeLayer);
+        if (this.state.selectedStops.length < 2) return;
+
+        const waypoints = [
+            this.state.userMarker.getLatLng(),
+            ...this.state.selectedStops.map(s => L.latLng(s.location.latitude, s.location.longitude))
+        ];
+        
+        const coordinates = waypoints.map(wp => [wp.lng, wp.lat]);
+
+        try {
+            const route = await this.fetchRoute(coordinates);
+            if (route) {
+                this.state.routeLayer = L.polyline(route.coords, { color: '#3b82f6', weight: 6, opacity: 0.8 }).addTo(this.state.map);
+                this.state.map.fitBounds(this.state.routeLayer.getBounds(), { padding: [50, 50] });
+            }
+        } catch (error) {
+            this.showToast("Routenberechnung fehlgeschlagen.", "error");
+        }
+    },
+
+    async fetchRoute(coordinates) {
+        const url = 'https://api.openrouteservice.org/v2/directions/cycling-regular/geojson';
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': this.config.orsApiKey,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ coordinates, instructions: false })
+        });
+        if (!response.ok) throw new Error("ORS request failed");
+        
+        const data = await response.json();
+        const coords = data.features[0].geometry.coordinates.map(p => [p[1], p[0]]); // Flip to Lat,Lng
+        return { coords };
+    },
+    
+    startNavigation() {
+        if (this.state.selectedStops.length === 0) return;
+        this.state.isNavigating = true;
+        this.toggleDashboard(false);
+        this.showToast("Navigation gestartet!", "success");
+        this.ui.startBtn.classList.add('hidden');
+        this.ui.stopBtn.classList.remove('hidden');
+        if (this.state.routeLayer) this.state.routeLayer.setStyle({ color: '#22c55e' });
+    },
+
+    stopNavigation() {
+        this.state.isNavigating = false;
+        this.showToast("Navigation gestoppt.");
+        this.ui.startBtn.classList.remove('hidden');
+        this.ui.stopBtn.classList.add('hidden');
+        if (this.state.routeLayer) this.state.routeLayer.setStyle({ color: '#3b82f6' });
+    },
+    
+    // --- UI Helpers ---
+    toggleDashboard(forceState) {
+        const shouldBeOpen = forceState !== undefined ? forceState : this.ui.dashboard.classList.contains('hidden');
+        this.ui.dashboard.classList.toggle('hidden', !shouldBeOpen);
+    },
+
+    updateRouteDashboard() {
+        this.ui.selectedList.innerHTML = this.state.selectedStops.length === 0
+            ? '<li class="text-gray-400">Keine Stopps ausgewählt.</li>'
+            : this.state.selectedStops.map((stop, index) => `
+                <li>
+                    <span class="font-medium"><b>${index + 1}.</b> ${stop.name}</span>
+                    <button onclick="RadlMap.removeStop('${stop.id}')" class="text-red-500 text-xl font-bold">&times;</button>
+                </li>`).join('');
+        
+        this.ui.startBtn.disabled = this.state.selectedStops.length < 1;
+    },
+    
+    toggleFollow(forceState) {
+        this.state.isFollowing = forceState !== undefined ? forceState : !this.state.isFollowing;
+        this.ui.followBtn.classList.toggle('active', this.state.isFollowing);
+        if (this.state.isFollowing && this.state.userMarker) {
+            this.state.map.panTo(this.state.userMarker.getLatLng());
+        }
+    },
+
+    toggleTheme() {
+        this.state.isDarkMode = !this.state.isDarkMode;
+        document.body.classList.toggle('dark-mode', this.state.isDarkMode);
+        this.ui.themeBtn.textContent = this.state.isDarkMode ? '☀️' : '🌙';
+        localStorage.setItem('radlmap_theme', this.state.isDarkMode ? 'dark' : 'light');
+        this.updateMapTheme();
+    },
+
+    updateMapTheme() {
+        if (this.tileLayer) this.state.map.removeLayer(this.tileLayer);
+        const url = this.state.isDarkMode 
+            ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+            : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+        this.tileLayer = L.tileLayer(url, { maxZoom: 19 }).addTo(this.state.map);
+    },
+
+    showToast(msg, type = 'info') {
+        const t = this.ui.toast;
+        t.textContent = msg;
+        t.style.backgroundColor = type === 'error' ? '#ef4444' : type === 'warning' ? '#f59e0b' : '#333';
+        t.style.display = "block";
+        setTimeout(() => t.style.display = "none", 3000);
+    }
+};
+
+// --- App Initialization ---
+document.addEventListener('DOMContentLoaded', () => {
+    RadlMap.init();
+});
+
+</script>
 </body>
 </html>
