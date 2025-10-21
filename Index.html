@@ -105,6 +105,10 @@
     }
     .modal-overlay.visible .modal-content { transform: scale(1); }
     body.dark-mode .modal-content { background: var(--sheet-dark); color: var(--text-dark); }
+    
+    #info-popup .modal-content { max-width: 600px; max-height: 80vh; display: flex; flex-direction: column; }
+    #info-popup-content { overflow-y: auto; }
+
 
     .user-marker-icon { position: relative; display: flex; align-items: center; justify-content: center; }
     .user-dot { width: 18px; height: 18px; background: #1d4ed8; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
@@ -123,6 +127,10 @@
     .leaflet-popup-content { margin: 0; width: 320px !important; }
     .popup-card { padding: 0; font-size: 14px; line-height: 1.5; max-height: 70vh; overflow-y: auto; }
     .swiper-button-prev, .swiper-button-next { color: white !important; }
+    footer { position: fixed; bottom: 0; left: 0; right: 0; height: 36px; background: rgba(255,255,255,0.8); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); font-size: 11px; text-align: center; line-height: 36px; z-index: 998; border-top: 1px solid rgba(0,0,0,0.1); }
+    body.dark-mode footer { background: rgba(30,30,30,0.8); border-top-color: rgba(255,255,255,0.1); }
+    footer a { color: #555; text-decoration: none; margin: 0 4px; }
+    body.dark-mode footer a { color: #aaa; }
   </style>
 </head>
 <body class="light-mode">
@@ -198,12 +206,20 @@
     </div>
   </div>
 
+  <div id="info-popup" class="modal-overlay">
+    <div class="modal-content">
+      <h2 id="info-popup-title" class="text-xl font-bold mb-4"></h2>
+      <div id="info-popup-content" class="text-sm"></div>
+      <button onclick="closeModal('info-popup')" class="w-full mt-6 py-2 bg-gray-200 text-sm rounded">Schließen</button>
+    </div>
+  </div>
+
   <div id="toast"></div>
   
   <div id="consent-modal" class="hidden" style="position:fixed; inset:0; z-index:10001; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.5);">
       <div style="background:white; padding:20px; border-radius:12px; max-width:400px; width: 90%;">
           <h2 class="text-xl font-bold mb-2">Datenschutz</h2>
-          <p class="text-sm mb-4">Wir nutzen Cookies für notwendige Funktionen und Statistiken. Mehr in der <a href="/datenschutz.html" target="_blank" class="text-blue-600">Datenschutzerklärung</a>.</p>
+          <p class="text-sm mb-4">Wir nutzen Cookies für notwendige Funktionen und Statistiken. Mehr in unserer <a href="#" onclick="openPopup('datenschutz')" class="text-blue-600">Datenschutzerklärung</a>.</p>
           <label><input type="checkbox" id="consent-stats"> Statistik-Cookies (optional)</label><br>
           <div class="mt-4 flex justify-end gap-2">
               <button onclick="rejectConsent()" class="px-4 py-2 bg-gray-200 rounded">Nur Notwendige</button>
@@ -212,9 +228,15 @@
       </div>
   </div>
 
+  <footer>
+    <a href="#" onclick="openPopup('ueber')">Über</a> ·
+    <a href="#" onclick="openPopup('datenschutz')">Datenschutz</a> ·
+    <a href="#" onclick="openPopup('kontakt')">Kontakt</a>
+  </footer>
+
   <script>
     // ========================================================================
-    //  🚲 RADLMAP TOURPLANER v5.5 - FINAL REPAIRED & UPGRADED
+    //  🚲 RADLMAP TOURPLANER v5.6 - FINAL REPAIRED & UPGRADED
     // ========================================================================
 
     const firebaseConfig = {
@@ -224,16 +246,14 @@
     };
     const ORS_API_KEY = "5b3af8b88e1a4f000179979725f05d58d98342468285703f925b4119";
 
-    // Global State
     let map, db, cluster, userMarker, currentTileLayer, routeLine;
-    let isDarkTheme = false, followUser = true, navActiveFlag = false, voice = true;
+    let isDarkTheme = false, followUser = true, navActiveFlag = false;
     let allHuts = new Map(), selectedHuts = [], groupMarkers = {};
     let routeCoords = [], routeSteps = [];
     let deviceHeading = 0, roomId = null, hutListener = null;
     let alias = localStorage.aliasId || `user_${Math.random().toString(36).substr(2, 6)}`;
     localStorage.aliasId = alias;
     
-    // DOM Elements
     const loader = document.getElementById('loader');
     const loaderText = document.getElementById('loader-text');
     const plannerSheet = document.getElementById('route-planner-sheet');
@@ -306,7 +326,9 @@
 
         map.on('popupopen', (e) => {
             const swiperEl = e.popup.getElement()?.querySelector('.popup-swiper');
-            if (swiperEl) new Swiper(swiperEl, { loop: true, navigation: { nextEl: '.swiper-button-next', prevEl: '.swiper-button-prev' } });
+            if (swiperEl && !swiperEl.swiper) { // prevent re-init
+                new Swiper(swiperEl, { loop: true, navigation: { nextEl: '.swiper-button-next', prevEl: '.swiper-button-prev' } });
+            }
         });
         
         let draggedItem = null;
@@ -322,9 +344,11 @@
         });
         selectedList.addEventListener('drop', e => {
             e.preventDefault();
+            if(!draggedItem) return;
             const newOrder = Array.from(selectedList.querySelectorAll('li')).map(li => li.dataset.id);
             selectedHuts.sort((a, b) => newOrder.indexOf(a.id) - newOrder.indexOf(b.id));
             updateSelectedList();
+            draggedItem = null;
         });
     }
 
@@ -333,12 +357,12 @@
     // ========================================================================
     
     function initMap() {
-      map = L.map("map", { center: [49.8, 10.5], zoom: 7, zoomControl: true });
+      map = L.map("map", { center: [49.8, 10.5], zoom: 7, zoomControl: true, zoomAnimation: false });
       cluster = L.markerClusterGroup({ maxClusterRadius: 40 });
       map.addLayer(cluster);
       isDarkTheme = localStorage.getItem("mapTheme") === "dark";
       updateMapTheme();
-      map.on('dragstart zoomstart mousedown', () => { if (followUser) setFollowUser(false, 'manual'); });
+      map.on('dragstart zoomstart mousedown', (e) => { if (e.originalEvent && followUser) setFollowUser(false, 'manual'); });
       loader.classList.add('hidden');
     }
     
@@ -397,7 +421,7 @@
     //  📥 DATA & POPUPS
     // ========================================================================
 
-    function initHuettenListener() {
+    async function initHuettenListener() {
         return new Promise((resolve, reject) => {
             if (hutListener) hutListener();
             hutListener = db.collection("eierhuetten").where("status", "==", "angenommen").onSnapshot(snapshot => {
@@ -415,12 +439,8 @@
                         cluster.addLayer(marker);
                     }
                 });
-
                 allHuts.forEach((value, id) => {
-                    if (!receivedIds.has(id)) {
-                        cluster.removeLayer(value.marker);
-                        allHuts.delete(id);
-                    }
+                    if (!receivedIds.has(id)) { cluster.removeLayer(value.marker); allHuts.delete(id); }
                 });
                 resolve();
             }, reject);
@@ -451,7 +471,7 @@
     // ========================================================================
 
     function startGpsTracking() {
-      if (!navigator.geolocation) return alert("GPS wird von diesem Browser nicht unterstützt.");
+      if (!navigator.geolocation) { return alert("GPS wird von diesem Browser nicht unterstützt."); }
       navigator.geolocation.watchPosition(updateUserPosition, 
         (err) => { console.error("GPS Error:", err); showToast("GPS-Signal verloren."); },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -474,8 +494,7 @@
     
     async function startRouteFromPlanner() {
       if (selectedHuts.length === 0) return showToast("Bitte füge zuerst Stopps hinzu.");
-      startRouteBtn.disabled = true;
-      startRouteBtn.innerHTML = 'Lade Route...';
+      startRouteBtn.disabled = true; startRouteBtn.innerHTML = 'Lade Route...';
       try {
         const startPos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(p => res(p.coords), rej, {enableHighAccuracy: true}));
         const coords = [[startPos.longitude, startPos.latitude], ...selectedHuts.map(h => [h.location.longitude, h.location.latitude])];
@@ -527,7 +546,7 @@
     }
     
     // ========================================================================
-    //  ⚙️ UI & APP LOGIC (beibehalten & angepasst)
+    //  ⚙️ UI & APP LOGIC
     // ========================================================================
     
     function togglePlannerSheet() { plannerSheet.classList.toggle('visible'); }
@@ -552,16 +571,17 @@
     function updateSelectedList() {
       selectedList.innerHTML = selectedHuts.length === 0 
         ? `<li class="italic text-gray-500 justify-center">Füge Stopps von der Karte hinzu.</li>`
-        : selectedHuts.map((hut, index) => `<li data-id="${hut.id}" draggable="true"><span class="drag-handle">⠿</span><span class="font-semibold flex-grow">${index + 1}. ${hut.name}</span><button onclick="removeHutFromPlanner('${hut.id}')" class="px-2 text-red-500">🗑️</button></li>`).join('');
+        : selectedHuts.map((hut, index) => `<li data-id="${hut.id}" draggable="true"><span class="drag-handle" style="touch-action: none;">⠿</span><span class="font-semibold flex-grow ml-2">${index + 1}. ${hut.name}</span><button onclick="removeHutFromPlanner('${hut.id}')" class="px-2 text-red-500">🗑️</button></li>`).join('');
     }
     
     function removeHutFromPlanner(hutId) { toggleHutSelection(hutId); }
+    function stripHtml(html) { const d = document.createElement("div"); d.innerHTML = html; return d.textContent || d.innerText || ""; }
 
     function setFollowUser(follow, reason = '') {
       followUser = follow;
       document.getElementById('recenter-btn').classList.toggle('active', follow);
       if(follow && userMarker) map.flyTo(userMarker.getLatLng(), Math.max(map.getZoom(), 16));
-      if(reason === 'manual') showToast("Folgen pausiert.");
+      if(reason === 'manual' && document.getElementById('recenter-btn')) showToast("Folgen pausiert.");
     }
     
     function showToast(message) {
@@ -571,27 +591,13 @@
     }
     
     // Alte UI-Funktionen aus Ihrer Datei
-    function toggleDashboard() { document.getElementById('dashboardPopup').classList.toggle('hidden'); }
-    function openTab(tabId, btn) {
-        document.querySelectorAll('.tab-panel').forEach(t => t.classList.add('hidden'));
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById(tabId)?.classList.remove('hidden');
-        btn?.classList.add('active');
-    }
-    function initUsername() { if (localStorage.username) document.getElementById('usernameInput').value = localStorage.username; }
-    function saveUsername() { localStorage.username = document.getElementById('usernameInput').value; showToast("Name gespeichert!"); }
-    
-    async function sendSOS() {
-        if (!confirm("NOTRUF: Standort per WhatsApp teilen?")) return;
-        try {
-            const pos = await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej));
-            const { latitude, longitude } = pos.coords;
-            const msg = `🚨 HILFE! Mein Standort: http://maps.google.com/maps?q=${latitude},${longitude}`;
-            window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
-        } catch (err) { alert("Standort konnte nicht ermittelt werden."); }
+    function setupGroupModal() {
+        document.getElementById('join-room-btn').onclick = joinRoom;
+        document.getElementById('leave-room-btn').onclick = leaveRoom;
+        updateRoomUI();
     }
     function joinRoom() {
-        const id = document.getElementById("roomId").value.trim();
+        const id = document.getElementById("room-id-input").value.trim();
         if (!id) return;
         roomId = id; localStorage.lastRoom = id;
         listenToRoom(); updateRoomUI(); showToast(`Raum "${id}" beigetreten.`);
@@ -602,8 +608,18 @@
         groupMarkers = {}; updateRoomUI(); showToast("Raum verlassen.");
     }
     function updateRoomUI() {
-        const status = document.getElementById('roomStatus');
-        if (roomId) { status.textContent = `Raum: ${roomId}`; } else { status.textContent = 'Kein Raum aktiv.'; }
+        const statusText = document.getElementById('room-status-text');
+        const joinSection = document.getElementById('join-room-section');
+        const leaveBtn = document.getElementById('leave-room-btn');
+        if (roomId) {
+            statusText.textContent = `Du bist in Raum: ${roomId}`;
+            joinSection.classList.add('hidden');
+            leaveBtn.classList.remove('hidden');
+        } else {
+            statusText.textContent = 'Teile deine Position live mit Freunden in einem Raum.';
+            joinSection.classList.remove('hidden');
+            leaveBtn.classList.add('hidden');
+        }
     }
     function updateGroupPosition(latlng) {
         if (!roomId || !latlng) return;
@@ -630,6 +646,16 @@
         });
     }
     
+    async function sendSOS() {
+        if (!confirm("NOTRUF: Standort per WhatsApp teilen?")) return;
+        try {
+            const pos = await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej));
+            const { latitude, longitude } = pos.coords;
+            const msg = `🚨 HILFE! Mein Standort: https://www.google.com/maps?q=${latitude},${longitude}`;
+            window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+        } catch (err) { alert("Standort konnte nicht ermittelt werden."); }
+    }
+    
     function populateVoiceDropdown() {
         const select = document.getElementById("voice-lang-select");
         if (!select) return;
@@ -640,31 +666,24 @@
         voices.forEach(v => {
             const shortLang = v.lang.slice(0, 2);
             if (allowedLangs[shortLang] && ![...select.options].some(o => o.value.slice(0,2) === shortLang)) {
-            select.add(new Option(allowedLangs[shortLang], v.lang));
+              select.add(new Option(allowedLangs[shortLang], v.lang));
             }
         });
         select.value = localStorage.lang || "de-DE";
         select.onchange = () => { localStorage.lang = select.value; showToast("Sprache geändert."); };
     }
-    function showTutorial() { alert("Hilfe: Klicke auf Marker, um sie zur Route hinzuzufügen. Öffne das Dashboard ☰, um deine Route zu verwalten und zu starten."); }
-    function openPopup() { alert(`Funktion nicht implementiert.`); }
-    
-    // Globale Verfügbarkeit für alte inline `onclick` Handler
-    window.toggleSelect = toggleSelect; window.resetRoute = resetRoute; window.startRouteToNextHut = startRouteToNextHut;
-    window.stopNavigation = stopNavigation; window.toggleDashboard = toggleDashboard; window.openTab = openTab;
-    window.saveUsername = saveUsername; window.joinRoom = joinRoom; window.leaveRoom = leaveRoom;
-    window.toggleFollow = toggleFollow; window.toggleVoice = toggleVoice; window.toggleMapTheme = toggleMapTheme;
-    window.sendSOS = sendSOS; window.removeSelected = removeSelected; window.showTutorial = showTutorial; window.openPopup = openPopup;
-    window.drag = (ev) => ev.dataTransfer.setData("text", ev.target.dataset.index);
-    window.drop = (ev) => {
-        ev.preventDefault();
-        const from = parseInt(ev.dataTransfer.getData("text"));
-        const toEl = ev.target.closest("li");
-        if (!toEl) return;
-        const to = parseInt(toEl.dataset.index);
-        if (from !== to) { const moved = selected.splice(from, 1)[0]; selected.splice(to, 0, moved); updateSelectedList(); }
+
+    // Globale Verfügbarkeit für alte/neue onclick Handler
+    window.openPopup = (page) => {
+        const titles = { datenschutz: "Datenschutz", kontakt: "Kontakt", ueber: "Über uns" };
+        const titleEl = document.getElementById('info-popup-title');
+        const contentEl = document.getElementById('info-popup-content');
+        titleEl.textContent = titles[page] || "Information";
+        contentEl.innerHTML = "Lade...";
+        openModal('info-popup');
+        fetch(`${page}.html`).then(res => res.text()).then(html => contentEl.innerHTML = html).catch(() => contentEl.innerHTML = "Inhalt konnte nicht geladen werden.");
     };
-    window.allowDrop = (ev) => ev.preventDefault();
+    
   </script>
 </body>
 </html>
