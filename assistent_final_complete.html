@@ -39,9 +39,9 @@
       #question-area { padding-bottom: 92px; }
     }
     .sidebar-btn.active {
-      background-color: #e8f8ee;
-      color: #166534;
-      font-weight: 600;
+  background-color: #e8f8ee;
+  color: #166534;
+  font-weight: 600;
     }
     
 /* === Smarter Upload Style === */
@@ -72,11 +72,6 @@
   font-size: 0.8rem;
   animation: pulseUpload 1s infinite;
   color: #16a34a;
-}
-/* Style für das neue Dashboard */
-.rounded-xl-design {
-    border-radius: 1.5rem; /* 24px */
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
   </style>
 </head>
@@ -141,13 +136,13 @@
       🚴‍♂️ zur RadlMap
     </a>
 
-    <button id="btnDashboard" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="showDashboard()">
+    <button id="btnDashboard" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnDashboard'); showDashboard()">
       📊 Betreiber-Dashboard
     </button>
-    <button id="btnEntries" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="showMyEntries()">
+    <button id="btnEntries" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnEntries'); showMyEntries()">
       📋 Meine Eintragungen
     </button>
-    <button id="btnNewEntry" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="startNewEntry()">
+    <button id="btnNewEntry" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnNewEntry'); startNewEntry()">
       ➕ Neue Eintragung
     </button>
 
@@ -160,23 +155,28 @@
       <div class="ml-2 border-l-2 border-green-100 pl-3 flex flex-col gap-1">
         <button id="btnMyEvents"
           class="sidebar-btn px-3 py-1.5 rounded-lg hover:bg-green-50 flex items-center gap-2 text-sm transition"
-          onclick="showMyEvents()">
+          onclick="setActive('btnMyEvents'); showMyEvents(firebase.auth().currentUser)">
           📅 <span>Meine Events</span>
         </button>
         <button id="btnCreateEvent"
           class="sidebar-btn px-3 py-1.5 rounded-lg hover:bg-green-50 flex items-center gap-2 text-sm transition"
-          onclick="showCreateEvent()">
+          onclick="setActive('btnCreateEvent'); showCreateEvent(firebase.auth().currentUser)">
           ➕ <span>Neues Event</span>
         </button>
       </div>
     </div>
 
     <hr class="my-3 border-gray-200">
-
-    <button id="btnSupport" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="openSupport()">
+    
+    <button id="btnSettings" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnSettings'); showSettings()">
+      ⚙️ Einstellungen
+    </button>
+    
+    <button id="btnSupport" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition" onclick="setActive('btnSupport'); openSupport()">
       💬 Support
     </button>
-    <button id="btnHutMessages" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition relative" onclick="showHutMessages()">
+    
+    <button id="btnHutMessages" class="sidebar-btn px-4 py-2 rounded-lg hover:bg-green-50 flex items-center gap-2 transition relative" onclick="setActive('btnHutMessages'); showHutMessages()">
       💌 Hütten-Nachrichten
       <span id="hutMessagesCount" class="absolute right-4 hidden bg-red-600 text-white text-xs px-2 py-0.5 rounded-full">0</span>
     </button>
@@ -206,35 +206,42 @@
 </button>
 
 <script>
-  // ==========================================================
-  // 💾 NAVIGATION & FLOW CONTROL HELPER (wird unten neu definiert)
-  // ==========================================================
-  
+  // Entfernt vorherige aktive Buttons und markiert den aktuellen
   function setActive(buttonId) {
     const buttons = document.querySelectorAll('.sidebar-btn');
-    buttons.forEach(btn => btn.classList.remove('active'));
+    buttons.forEach(btn => btn.classList.remove('bg-green-100', 'font-semibold'));
     const activeBtn = document.getElementById(buttonId);
     if(activeBtn) {
-      activeBtn.classList.add('active');
+      activeBtn.classList.add('bg-green-100', 'font-semibold');
     }
   }
-
-  // Mobile Sidebar Toggle
+  
   function toggleSidebar() {
-      const sidebar = document.getElementById('sidebar');
-      sidebar.classList.toggle('-translate-x-full');
+    const sidebar = document.getElementById('sidebar');
+    sidebar.classList.toggle('-translate-x-full');
   }
-
-  document.getElementById('toggleInfo').onclick = () => {
-    document.getElementById('infoOverlay').classList.remove('hidden');
-    // Stelle sicher, dass die InfoBoxMobile aktualisiert wird
-    updateInfoBox();
-  };
-  document.getElementById('closeInfo').onclick = () => {
-    document.getElementById('infoOverlay').classList.add('hidden');
-  };
+  
+  // Funktion zum Anzeigen des Avatars basierend auf Nutzerdaten (von vorheriger Iteration kopiert)
+  function setGoogleProfile(user) {
+    const picEl = document.getElementById('profilePic');
+    const initEl = document.getElementById('avatarInitials');
+    if (user.photoURL) {
+        picEl.src = user.photoURL;
+        picEl.classList.remove('hidden');
+        initEl.classList.add('hidden');
+    } else if (user.displayName) {
+        const initials = user.displayName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+        initEl.textContent = initials;
+        initEl.classList.remove('hidden');
+        picEl.classList.add('hidden');
+    } else {
+        const initials = user.email ? user.email[0].toUpperCase() : '?';
+        initEl.textContent = initials;
+        initEl.classList.remove('hidden');
+        picEl.classList.add('hidden');
+    }
+  }
 </script>
-
 
     <main class="flex-1 flex flex-col">
       <div class="md:hidden flex items-center justify-between bg-white border-b p-3">
@@ -276,6 +283,7 @@
   const IMGBB_KEY = "5df04de9bfd2776f101329be4193e44c";
 
   // Init firebase
+    
   let app, db;
   try {
     app = firebase.initializeApp(firebaseConfig);
@@ -285,69 +293,62 @@
     document.getElementById('question-area').innerHTML = `<div class="bg-red-100 p-4 rounded">❌ Firebase konnte nicht initialisiert werden. Prüfe die Konfiguration in der Datei.</div>`;
   }
 
+  // Demo user: in deinem Produktivbetrieb sollte hier auth.onAuthStateChanged triggern
   let currentUser = { uid: "demo", email: "demo@example.com", displayName: "Demo" };
-  firebase.auth().onAuthStateChanged(u => {
-    if (u) {
-      currentUser = u;
-      document.getElementById("accountMail").textContent = u.email;
-      
-      const initials = u.email[0].toUpperCase()
-      document.getElementById('avatarInitials').textContent = initials;
-      if (u.photoURL) {
-        document.getElementById('profilePic').src = u.photoURL;
-        document.getElementById('profilePic').classList.remove('hidden');
-        document.getElementById('avatarInitials').classList.add('hidden');
-      } else {
-        document.getElementById('profilePic').classList.add('hidden');
-        document.getElementById('avatarInitials').classList.remove('hidden');
-      }
+firebase.auth().onAuthStateChanged(u => {
+  if (u) {
+    currentUser = u;
+    document.getElementById("accountMail").textContent = u.email;
+    document.getElementById("loginScreen").classList.add("hidden");
+    document.getElementById("mainApp").classList.remove("hidden");
+    
+    setGoogleProfile(u); // Profilbild / Initialen setzen
 
-      document.getElementById("loginScreen").classList.add("hidden");
-      document.getElementById("mainApp").classList.remove("hidden");
+    // Sidebar geschlossen halten
+    document.getElementById('sidebar').classList.add('-translate-x-full');
 
-      // Sidebar geschlossen halten
-      document.getElementById('sidebar').classList.add('-translate-x-full');
-
-      // Standard-Ansicht nach Login: Dashboard
-      showDashboard(); 
-      initHutMessagesBadge();
-    } else {
-      // nicht eingeloggt
-      document.getElementById("mainApp").classList.add("hidden");
-      document.getElementById("loginScreen").classList.remove("hidden");
-      document.getElementById("question-area").innerHTML = "";
-    }
-  });
-
-  async function doGoogleLogin() {
-    const provider = new firebase.auth.GoogleAuthProvider();
-    try {
-      await firebase.auth().signInWithPopup(provider);
-      showToast("✅ Eingeloggt mit Google");
-    } catch (e) {
-      console.error("Google Login error", e);
-      alert("Fehler beim Google-Login: " + e.message);
-    }
+    mode = "list";
+document.getElementById("navBottom").style.display =
+  (mode === "entry") ? "flex" : "none";
+    
+    // Tutorial-Startseite zeigen
+    showTutorial();
+initHutMessagesBadge();
+  } else {
+    // nicht eingeloggt
+    document.getElementById("mainApp").classList.add("hidden");
+    document.getElementById("loginScreen").classList.remove("hidden");
+    document.getElementById("question-area").innerHTML = "";
   }
-
-  function logout() {
-    firebase.auth().signOut();
+});
+    async function doGoogleLogin() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  try {
+    await firebase.auth().signInWithPopup(provider);
+    showToast("✅ Eingeloggt mit Google");
+    
+  } catch (e) {
+    console.error("Google Login error", e);
+    alert("Fehler beim Google-Login: " + e.message);
   }
-  
-  let mode = "dashboard"; // "entry" oder "list" oder "dashboard"
+    }
+
+function logout() {
+  firebase.auth().signOut();
+}
+    let mode = "entry"; // "entry" oder "list"
   /***********************
    * State & steps
    ***********************/
   let editingData = {};
   let step = 0;
-  const stepsCount = 11; // 0..10
-
-  // Quill Editor Instanz (muss global sein)
-  let quill;
+  const stepsCount = 11; // 0..9
   
-  function showToast(text, time = 3000) {
+
+  function showToast(text, time = 3000, color = 'bg-blue-600') {
     const t = document.getElementById('toast');
     t.textContent = text;
+    t.className = `fixed top-6 right-6 p-3 rounded shadow ${color} text-white z-50`;
     t.classList.remove('hidden');
     setTimeout(()=>{ t.classList.add('hidden'); }, time);
   }
@@ -356,839 +357,289 @@
     const pct = (step / (stepsCount - 1)) * 100;
     document.getElementById('progress').style.width = pct + '%';
   }
-  
-  // ==========================================================
-  // 🕒 Öffnungszeiten Editor
-  // ==========================================================
+    // ==========================================================
+// 🕒 Öffnungszeiten Editor (RadlMap-Style)
+// ==========================================================
 
-  const DAY_LABELS = [
-    { key: "mo", label: "Montag" },
-    { key: "di", label: "Dienstag" },
-    { key: "mi", label: "Mittwoch" },
-    { key: "do", label: "Donnerstag" },
-    { key: "fr", label: "Freitag" },
-    { key: "sa", label: "Samstag" },
-    { key: "so", label: "Sonntag" }
-  ];
+// helper for localized day names
+const DAY_LABELS = [
+  { key: "mo", label: "Montag" },
+  { key: "di", label: "Dienstag" },
+  { key: "mi", label: "Mittwoch" },
+  { key: "do", label: "Donnerstag" },
+  { key: "fr", label: "Freitag" },
+  { key: "sa", label: "Samstag" },
+  { key: "so", label: "Sonntag" }
+];
 
-  function renderOpeningHoursEditor(hutId, data = {}) {
-    let html = `
-      <div id="openhours-${hutId}" class="space-y-2 mt-2">
-        <table class="w-full text-sm border border-gray-200 rounded overflow-hidden">
-          <thead class="bg-green-100 text-green-800">
-            <tr>
-              <th class="py-2 px-3 text-left">Tag</th>
-              <th class="py-2 px-3 text-center">Geöffnet</th>
-              <th class="py-2 px-3 text-center">Von</th>
-              <th class="py-2 px-3 text-center">Bis</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y">
-    `;
+// Rendering des Editors
+function renderOpeningHoursEditor(hutId, data = {}) {
+  let html = `
+    <div id="openhours-${hutId}" class="space-y-2 mt-2">
+      <table class="w-full text-sm border border-gray-200 rounded overflow-hidden">
+        <thead class="bg-green-100 text-green-800">
+          <tr>
+            <th class="py-2 px-3 text-left">Tag</th>
+            <th class="py-2 px-3 text-center">Geöffnet</th>
+            <th class="py-2 px-3 text-center">Von</th>
+            <th class="py-2 px-3 text-center">Bis</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y">
+  `;
 
-    DAY_LABELS.forEach(day => {
-      const d = data[day.key] || {};
-      const open = !!d.open;
-      const from = d.from || "";
-      const to = d.to || "";
-      html += `
-        <tr>
-          <td class="py-2 px-3">${day.label}</td>
-          <td class="text-center">
-            <input type="checkbox" class="oh-open" data-day="${day.key}" ${open ? "checked" : ""}/>
-          </td>
-          <td class="text-center">
-            <input type="time" class="oh-from border rounded px-2 py-1 text-sm" data-day="${day.key}" value="${from}" ${!open ? "disabled" : ""}/>
-          </td>
-          <td class="text-center">
-            <input type="time" class="oh-to border rounded px-2 py-1 text-sm" data-day="${day.key}" value="${to}" ${!open ? "disabled" : ""}/>
-          </td>
-        </tr>
-      `;
-    });
-
+  DAY_LABELS.forEach(day => {
+    const d = data[day.key] || {};
+    const open = !!d.open;
+    const from = d.from || "";
+    const to = d.to || "";
     html += `
-          </tbody>
-        </table>
-        <p class="text-xs text-gray-500">Tipp: Wenn du keine Zeiten für einen geöffneten Tag einträgst, wird "geschlossen" angezeigt.</p>
-      </div>
+      <tr>
+        <td class="py-2 px-3">${day.label}</td>
+        <td class="text-center">
+          <input type="checkbox" class="oh-open" data-day="${day.key}" ${open ? "checked" : ""}/>
+        </td>
+        <td class="text-center">
+          <input type="time" class="oh-from border rounded px-2 py-1 text-sm" data-day="${day.key}" value="${from}" ${!open ? "disabled" : ""}/>
+        </td>
+        <td class="text-center">
+          <input type="time" class="oh-to border rounded px-2 py-1 text-sm" data-day="${day.key}" value="${to}" ${!open ? "disabled" : ""}/>
+        </td>
+      </tr>
     `;
-    return html;
-  }
-
-  function collectOpeningHours(hutId) {
-    const wrapper = document.getElementById(`openhours-${hutId}`);
-    if (!wrapper) return {};
-    const result = {};
-    DAY_LABELS.forEach(day => {
-      const openCheckbox = wrapper.querySelector(`.oh-open[data-day="${day.key}"]`);
-      const fromInput = wrapper.querySelector(`.oh-from[data-day="${day.key}"]`);
-      const toInput = wrapper.querySelector(`.oh-to[data-day="${day.key}"]`);
-      const open = openCheckbox.checked;
-      result[day.key] = {
-        open,
-        from: open ? fromInput.value : "",
-        to: open ? toInput.value : ""
-      };
-    });
-    return result;
-  }
-
-  document.addEventListener("change", (e) => {
-    if (e.target.classList.contains("oh-open")) {
-      const row = e.target.closest("tr");
-      const from = row.querySelector(".oh-from");
-      const to = row.querySelector(".oh-to");
-      const isOpen = e.target.checked;
-      from.disabled = !isOpen;
-      to.disabled = !isOpen;
-      // Bei Deaktivierung Felder leeren
-      if (!isOpen) {
-        from.value = "";
-        to.value = "";
-      }
-    }
   });
 
+  html += `
+        </tbody>
+      </table>
+      <p class="text-xs text-gray-500">Tipp: Wenn du nichts einträgst, wird "geschlossen" angezeigt.</p>
+    </div>
+  `;
+  return html;
+}
 
-  // ==========================================================
-  // 📊 BETREIBER-DASHBOARD & ABO KÜNDIGEN 
-  // ==========================================================
-
-  async function showDashboard() {
-    setActive('btnDashboard');
-    mode = "dashboard";
-    const qa = document.getElementById("question-area");
-    qa.innerHTML = `<div class="text-center text-gray-500 mt-10">⏳ Lade Dashboard...</div>`;
-    document.getElementById("navBottom").style.display = "none";
-    document.getElementById("infoBox").innerHTML = `
-      <p>Das Dashboard bietet dir einen schnellen Überblick über deine Eintragungen und Events.</p>
-      <p class="mt-3 font-semibold">Premium-Status verwalten</p>
-      <p>Hier kannst du deinen aktuellen Premium-Status sehen und dein Abonnement kündigen, falls du es nicht mehr benötigst.</p>
-      `;
-
-    const user = firebase.auth().currentUser;
-    if (!user) {
-      qa.innerHTML = `<div class="text-center bg-red-100 p-4 rounded-xl max-w-lg mx-auto mt-10">⚠️ Bitte melde dich an, um das Dashboard zu sehen.</div>`;
-      return;
+// Daten auslesen
+function collectOpeningHours() {
+    const immer = document.getElementById("immerCheck")?.checked;
+    if (immer) {
+        return "Immer geöffnet";
     }
+    const days = ["Mo","Di","Mi","Do","Fr","Sa","So"];
+    const arr = [];
+    days.forEach(d => {
+        const vonEl = document.getElementById(`open-${d}-von`);
+        const bisEl = document.getElementById(`open-${d}-bis`);
+        const von = vonEl?.value.trim();
+        const bis = bisEl?.value.trim();
+        if (von && bis) {
+            arr.push({ tag: d, von, bis });
+        }
+    });
+    return arr;
+}
 
-    const doc = await db.collection("betreiber").doc(user.uid).get();
-    const data = doc.data() || {};
-    const isPremium = !!data.premium;
-
-    let premiumStatusHtml = '';
-    if (isPremium) {
-      const untilDate = data.premium_until ? new Date(data.premium_until).toLocaleDateString("de-DE") : 'unbegrenzt';
-      premiumStatusHtml = `
-        <div class="bg-green-50 border border-green-300 p-4 rounded-xl-design">
-          <h3 class="text-xl font-bold text-green-700 mb-2">✨ Premium Aktiv</h3>
-          <p class="text-sm text-gray-600">Dein Premium-Status ist aktiv ${data.premium_until ? `bis zum ${untilDate}` : ''}.</p>
-          <button onclick="cancelPremium()" class="mt-3 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition">
-            ❌ Abo kündigen
-          </button>
-        </div>
-      `;
-    } else {
-      premiumStatusHtml = `
-        <div class="bg-yellow-50 border border-yellow-300 p-4 rounded-xl-design">
-          <h3 class="text-xl font-bold text-yellow-700 mb-2">⭐ Kostenlos</h3>
-          <p class="text-sm text-gray-600">Upgrade auf Premium, um alle Funktionen freizuschalten.</p>
-          <button onclick="showPremiumUpgrade()" class="mt-3 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition">
-            Premium aktivieren
-          </button>
-        </div>
-      `;
+// Hilfsfunktion zur Normalisierung von Öffnungszeiten (für Firestore)
+function normalizeOpeningHours(rawOeff) {
+    if (typeof rawOeff === "string" && rawOeff.toLowerCase().includes("immer")) {
+        return "Immer geöffnet";
     }
-
-    qa.innerHTML = `
-      <section class="max-w-4xl mx-auto space-y-6 animate-fadeIn">
-        <h2 class="text-3xl font-extrabold text-gray-800 mb-6">📊 Betreiber-Dashboard</h2>
-        
-        ${premiumStatusHtml}
-
-        <div id="statsArea" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-          <div class="bg-white p-5 rounded-xl-design">
-            <p class="text-xs font-semibold text-gray-500">Meine Eintragungen</p>
-            <p id="stat-entries" class="text-3xl font-bold text-green-600 mt-1">...</p>
-          </div>
-          <div class="bg-white p-5 rounded-xl-design">
-            <p class="text-xs font-semibold text-gray-500">Aktive Events</p>
-            <p id="stat-events" class="text-3xl font-bold text-green-600 mt-1">...</p>
-          </div>
-          <div class="bg-white p-5 rounded-xl-design">
-            <p class="text-xs font-semibold text-gray-500">Ungelesene Nachrichten</p>
-            <p id="stat-messages" class="text-3xl font-bold text-green-600 mt-1">...</p>
-          </div>
-        </div>
-
-        <div id="quickLinks" class="pt-4 border-t">
-          <h3 class="text-xl font-bold text-gray-700 mb-3">Schnellzugriff</h3>
-          <div class="flex flex-wrap gap-4">
-            <button onclick="showMyEntries()" class="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition">📋 Eintragungen verwalten</button>
-            <button onclick="startNewEntry()" class="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-xl hover:bg-green-600 transition">➕ Neue Eintragung</button>
-            <button onclick="showMyEvents()" class="flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-xl hover:bg-purple-600 transition">📅 Events</button>
-          </div>
-        </div>
-      </section>
-    `;
-
-    // Daten laden (Statistiken)
-    const entriesSnap = await db.collection("eierhuetten").where("userId", "==", user.uid).get();
-    document.getElementById('stat-entries').textContent = entriesSnap.size;
-    
-    // Nachrichten und Events müssen separat geladen werden
-    document.getElementById('stat-messages').textContent = '0'; // Platzhalter
-    document.getElementById('stat-events').textContent = '0'; // Platzhalter
-  }
-
-  // ABO KÜNDIGEN Funktion (FIX)
-  async function cancelPremium() {
-    const user = firebase.auth().currentUser;
-    if (!user) return alert("Bitte einloggen.");
-    if (!confirm("Möchtest du dein Premium wirklich kündigen? Du verlierst dann die Premium-Vorteile!")) return;
-    
-    // Setzt Premium-Status in Firestore zurück
-    await db.collection("betreiber").doc(user.uid).update({ 
-      premium: false, 
-      premium_until: null 
-    }); 
-    
-    showToast("❌ Dein Premium wurde erfolgreich gekündigt.");
-    showDashboard(); // Dashboard neu laden
-  }
-
-  // Premium Upgrade Screen (rekonstruiert)
-  function showPremiumUpgrade() { 
-    const qa = document.getElementById("question-area"); 
-    qa.innerHTML = ` 
-      <section class="bg-white p-6 rounded-xl shadow max-w-xl mx-auto animate-fadeIn"> 
-        <h2 class="text-2xl font-bold mb-4">🌟 Unterstützer werden</h2> 
-        <p class="text-gray-700 mb-4">Mit RadlMap Premium erhältst du:</p> 
-        <ul class="list-disc list-inside mb-6 text-gray-700"> 
-          <li>🔝 Hervorgehobene Anzeige auf der Karte</li> 
-          <li>📸 Bis zu 10 Fotos hochladen</li> 
-          <li>📈 Erweiterte Statistiken</li> 
-          <li>💬 Kontaktmöglichkeiten in deinem Eintrag</li> 
-        </ul> 
-        <p class="font-semibold mb-4">Preis: <span class="text-green-700">2,00 €/Monat</span></p> 
-        <button id="activatePremiumBtn" onclick="activatePremium()" class="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition"> ✅ Jetzt Premium aktivieren (Test) </button> 
-        <button class="w-full mt-4 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300 transition" onclick="showDashboard()" > 🔙 Zurück </button> 
-      </section> `; 
-  }
-  
-  // Dummy-Funktion für activatePremium (muss für Live-Betrieb Stripe-Anbindung erhalten)
-  async function activatePremium() {
-    const user = firebase.auth().currentUser;
-    if (!user) return alert("Bitte einloggen.");
-    alert("✅ Test: Premium wurde aktiviert (ohne Stripe). Bitte im Live-Betrieb Stripe integrieren.");
-    const until = new Date(Date.now() + 30*24*60*60*1000); // +30 Tage
-    await db.collection("betreiber").doc(user.uid).set({ 
-      premium: true, 
-      premium_until: until.toISOString() 
-    }, { merge: true }); 
-    showDashboard();
-  }
-
-
-  // ==========================================================
-  // 🧠 KI-Logik für Smartere Eintragung 
-  // ==========================================================
-  
-  // KI Text Generator (aus Snippet übernommen)
-  async function generateSmartDescription(hutName, extras = [], animals = [], photos = []) { 
-    const name = hutName || "Der Hofladen";
-    const kiExtras = extras.length ? `Hier gibt es zusätzlich: ${extras.join(", ")}.` : "";
-    const tiere = animals.length ? `Begegnungen mit Tieren wie ${animals.join(" und ")} runden den Besuch ab.` : "";
-
-    let fotosTxt = "";
-    // Sicherstellen, dass photos ein Array von Objekten mit title ist, oder leere titles
-    const photoTitles = photos.map(p => typeof p === 'object' && p.title ? p.title : null).filter(t => t); 
-    if (photoTitles.length === 1) fotosTxt = `Ein Bild zeigt ${photoTitles[0]}.`;
-    else if (photoTitles.length === 2) fotosTxt = `Die Fotos zeigen ${photoTitles[0]} und ${photoTitles[1]}.`;
-    else if (photoTitles.length > 2) { 
-        const last = photoTitles.pop(); 
-        fotosTxt = `Die Bilder fangen die Stimmung ein – ${photoTitles.join(", ")} und ${last}.`; 
+    if (Array.isArray(rawOeff)) {
+        return rawOeff.filter(o => o.von && o.bis);
     }
-    
-    const tone = ["idyllisch", "einladend", "authentisch", "malerisch"][ Math.floor(Math.random() * 4) ];
-    const landschaft = ["grünen Wiesen", "alten Obstbäumen", "sanften Hügeln", "weiten Feldern"][ Math.floor(Math.random() * 4) ];
-    const endungen = [
-      "Ein Ort, der Ruhe und Natur vereint.", 
-      "Perfekt für eine kleine Auszeit vom Alltag.", 
-      "Hier spürt man die ländliche Gelassenheit.",
+    return []; // Standardwert
+}
+
+// Dynamische Aktivierung / Deaktivierung
+document.addEventListener("change", (e) => {
+  if (e.target.classList.contains("oh-open")) {
+    const day = e.target.dataset.day;
+    const row = e.target.closest("tr");
+    const from = row.querySelector(".oh-from");
+    const to = row.querySelector(".oh-to");
+    const isOpen = e.target.checked;
+    from.disabled = !isOpen;
+    to.disabled = !isOpen;
+    if (!isOpen) {
+      from.value = "";
+      to.value = "";
+    }
+  }
+});
+
+// Hilfsfunktion zum Rendern der Öffnungszeiten im Frontend
+function renderOpeningHours(oeff) { 
+    if (!oeff) return "–"; 
+    if (typeof oeff === "string") {
+        if (oeff.toLowerCase().includes("immer")) { return "Immer geöffnet ✅"; } 
+        return oeff; 
+    } 
+    if (typeof oeff === "object" && !Array.isArray(oeff)) {
+        if (oeff.immer === true) return "Immer geöffnet ✅"; 
+        let keys = Object.keys(oeff); 
+        return keys.map(k => `${k}: ${oeff[k]}`).join("<br>");
+    } 
+    if (Array.isArray(oeff)) {
+        if (oeff.length === 0) return "–"; 
+        return oeff.map(o => `${o.tag}: ${o.von} – ${o.bis}`).join("<br>");
+    } 
+    return "–";
+}
+
+
+// ==========================================================
+// 📝 Quill Editor (Beschreibung)
+// ==========================================================
+let quill;
+function initEnhancedEditor(containerId, data) {
+    const toolbarOptions = [
+      ['bold', 'italic', 'underline', 'strike'],
+      [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+      [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+      [{ 'color': [] }, { 'background': [] }],
+      ['link', 'image']
     ];
-    
-    const text = `
-      ${name} ist ein ${tone}er Ort, eingebettet zwischen ${landschaft}. 
-      ${kiExtras} 
-      ${tiere} 
-      ${fotosTxt} 
-      ${endungen[Math.floor(Math.random() * endungen.length)]}
-    `;
-    
-    await new Promise((res) => setTimeout(res, 300 + Math.random() * 300)); // Simuliere Wartezeit
-    return text.trim().replace(/\s+/g, " ");
-  }
-  
-  // ==========================================================
-  // 📋 ENTRY MANAGEMENT (NEU)
-  // ==========================================================
-
-  async function showMyEntries() {
-    setActive('btnEntries');
-    mode = "list";
-    const qa = document.getElementById("question-area");
-    qa.innerHTML = `<div class="text-center text-gray-500 mt-10">⏳ Lade deine Eintragungen...</div>`;
-    document.getElementById("navBottom").style.display = "none";
-    document.getElementById("infoBox").innerHTML = `
-        <p>Hier siehst du alle von dir erstellten Einträge. Du kannst sie bearbeiten oder löschen.</p>
-        <p class="mt-3">Status-Erklärung:</p>
-        <ul class="list-disc list-inside ml-4">
-            <li><span class="text-yellow-600">Offen</span>: Eintrag wurde eingereicht und wartet auf die Freischaltung durch das Admin-Team.</li>
-            <li><span class="text-green-600">Aktiv</span>: Eintrag ist auf der Karte sichtbar.</li>
-            <li><span class="text-red-600">Abgelehnt</span>: Eintrag wurde nicht freigeschaltet (ggf. Support kontaktieren).</li>
-        </ul>
-    `;
-    
-    const user = firebase.auth().currentUser;
-    if (!user) {
-        qa.innerHTML = `<div class="text-center bg-red-100 p-4 rounded-xl max-w-lg mx-auto mt-10">⚠️ Bitte melde dich an.</div>`;
-        return;
-    }
-
-    try {
-        const snapshot = await db.collection("eierhuetten")
-            .where("userId", "==", user.uid)
-            .orderBy("erstelltAm", "desc")
-            .get();
-
-        if (snapshot.empty) {
-            qa.innerHTML = `
-                <section class="max-w-4xl mx-auto space-y-6 mt-10 p-6 bg-white rounded-xl-design text-center">
-                    <h2 class="text-2xl font-bold text-gray-800">Du hast noch keine Einträge</h2>
-                    <p class="text-gray-600">Klicke auf "Neue Eintragung", um loszulegen.</p>
-                    <button onclick="startNewEntry()" class="px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition">
-                        ➕ Neue Eintragung
-                    </button>
-                </section>
-            `;
-            return;
-        }
-
-        let listHtml = `
-            <section class="max-w-5xl mx-auto space-y-6 mt-6">
-                <h2 class="text-3xl font-extrabold text-gray-800">📋 Meine Eintragungen</h2>
-                <div class="bg-white p-6 rounded-xl-design shadow overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Typ</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aktionen</th>
-                            </tr>
-                        </thead>
-                        <tbody id="entriesTableBody" class="bg-white divide-y divide-gray-200">
-        `;
-        
-        snapshot.docs.forEach(doc => {
-            const data = doc.data();
-            const id = doc.id;
-            const statusColor = data.status === 'aktiv' ? 'text-green-600' : (data.status === 'offen' ? 'text-yellow-600' : 'text-red-600');
-            const statusText = data.status === 'aktiv' ? 'Aktiv' : (data.status === 'offen' ? 'Offen (Wartet)' : 'Abgelehnt');
-
-            listHtml += `
-                <tr class="hover:bg-gray-50">
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${data.name || 'Ohne Name'}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${data.typ || 'Unbekannt'}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm ${statusColor} font-semibold">${statusText}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button onclick="editEntry('${id}')" class="text-indigo-600 hover:text-indigo-900 mr-3">Bearbeiten</button>
-                        <button onclick="deleteEntry('${id}', '${data.name}')" class="text-red-600 hover:text-red-900">Löschen</button>
-                    </td>
-                </tr>
-            `;
-        });
-
-        listHtml += `
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        `;
-        qa.innerHTML = listHtml;
-
-    } catch (e) {
-        console.error("Fehler beim Laden der Einträge:", e);
-        qa.innerHTML = `<div class="text-center bg-red-100 p-4 rounded-xl max-w-lg mx-auto mt-10">❌ Fehler beim Laden der Einträge.</div>`;
-    }
-}
-
-async function editEntry(hutId) {
-    showToast(`⏳ Lade Eintrag ${hutId}...`);
-    try {
-        const doc = await db.collection("eierhuetten").doc(hutId).get();
-        if (!doc.exists) {
-            showToast("❌ Eintrag nicht gefunden.");
-            showMyEntries();
-            return;
-        }
-
-        // Lade Daten in den Bearbeitungszustand
-        editingData = doc.data();
-        editingData.docId = hutId; // Speichere die ID für das Speichern
-        
-        // Öffnungszeiten-Array in Map umwandeln, falls Array vorhanden (für Bearbeitungs-Editor)
-        if (Array.isArray(editingData.oeffnungszeiten)) {
-            const ohMap = {};
-            DAY_LABELS.forEach(day => {
-                const found = editingData.oeffnungszeiten.find(d => d.tag === day.label);
-                ohMap[day.key] = {
-                    open: !!found,
-                    from: found ? found.von : "",
-                    to: found ? found.bis : ""
-                };
-            });
-            editingData.oeffnungszeiten = ohMap;
-        }
-
-        mode = "entry";
-        step = 1; // Starte bei Typ-Auswahl (Datenschutz gilt als akzeptiert)
-        showToast(`✏️ Bearbeite: ${editingData.name}`);
-        renderQuestion();
-        
-    } catch (e) {
-        console.error("Fehler beim Bearbeiten:", e);
-        showToast("❌ Fehler beim Laden des Eintrags.");
-    }
-}
-
-async function deleteEntry(hutId, hutName) {
-    if (!confirm(`Möchtest du den Eintrag "${hutName}" wirklich unwiderruflich löschen?`)) {
-        return;
-    }
-
-    try {
-        // Firestore löschen
-        await db.collection("eierhuetten").doc(hutId).delete();
-        showToast(`🗑️ Eintrag "${hutName}" erfolgreich gelöscht.`);
-        showMyEntries(); // Liste neu laden
-    } catch (e) {
-        console.error("Fehler beim Löschen:", e);
-        showToast("❌ Fehler beim Löschen des Eintrags.");
-    }
-}
-  
-  // ==========================================================
-  // 📝 NAVIGATION & FLOW CONTROL 
-  // ==========================================================
-
-  function nextStep() {
-    if (saveStepData()) {
-      if (step < stepsCount - 1) {
-        step++;
-        renderQuestion();
-      } else {
-        // Letzter Schritt
-        if (step === stepsCount - 1) {
-             // Der "Einreichen" Button in Step 10 ruft submitEntry() auf, 
-             // der hier nicht von nextStep() übersprungen werden soll.
-        }
-      }
-    }
-  }
-
-  function prevStep() {
-    if (step > 0) {
-      step--;
-      renderQuestion();
-    }
-  }
-
-  function startNewEntry() {
-    setActive('btnNewEntry');
-    mode = "entry";
-    editingData = {}; // Neuen Eintrag starten
-    step = 0;
-    renderQuestion();
-  }
-
-  // Platzhalter für Funktionen
-  function showTutorial() { showDashboard(); } 
-  function showMyEvents() { 
-      setActive('btnMyEvents'); 
-      mode = "events"; 
-      document.getElementById("question-area").innerHTML = `<div class="p-6 text-center">📅 Übersicht deiner Events (Premium-Funktion/Platzhalter).</div>`; 
-      updateInfoBox();
-  }
-  function showCreateEvent() { 
-      setActive('btnCreateEvent'); 
-      mode = "createEvent"; 
-      document.getElementById("question-area").innerHTML = `<div class="p-6 text-center">➕ Event erstellen (Premium-Funktion/Platzhalter).</div>`; 
-      updateInfoBox();
-  }
-  function openSupport() {
-      setActive('btnSupport');
-      mode = "support";
-      document.getElementById("question-area").innerHTML = `<div class="p-6 text-center">💬 Support-Formular (Platzhalter).</div>`; 
-      updateInfoBox();
-  }
-  function initHutMessagesBadge() {
-    // Dummy-Funktion
-  }
-  function showHutMessages() {
-      setActive('btnHutMessages');
-      mode = "hutMessages";
-      document.getElementById("question-area").innerHTML = `<div class="p-6 text-center">💌 Hütten-Nachrichten (Platzhalter).</div>`;
-      updateInfoBox();
-  }
-  
-  // ==========================================================
-  // 💾 SAVE DATA LOGIC 
-  // ==========================================================
-
-  function saveStepData() {
-    const nextBtn = document.getElementById('nextBtn');
-    if(nextBtn) nextBtn.disabled = false; // Reset
-
-    // Datenschutzerklärung
-    if (step === 0) {
-      const check = document.getElementById('dsCheck');
-      if (!check || !check.checked) {
-        showToast("⚠️ Bitte akzeptiere zuerst die Datenschutzerklärung.");
-        return false;
-      }
-      return true; // OK
-    }
-
-    // Typ-Auswahl
-    if (step === 1) {
-      if (!editingData.typ) {
-        showToast("⚠️ Bitte wähle einen Typ aus.");
-        return false;
-      }
-      return true;
-    }
-    
-    // Name
-    if (step === 2) {
-      const name = document.getElementById('nameInput')?.value.trim();
-      if (!name) {
-        showToast("⚠️ Bitte gib einen Namen ein.");
-        return false;
-      }
-      editingData.name = name;
-      return true;
-    }
-
-    // Sitzplätze
-    if (step === 3) {
-      // Prüft, ob Sitzplätze gesetzt sind, entweder über Button-Klick oder bereits in editingData (beim Editieren)
-      if (!editingData.sitzplaetze) {
-        showToast("⚠️ Bitte wähle eine Option aus.");
-        return false;
-      }
-      return true;
-    }
-
-    // Strom
-    if (step === 4) {
-      if (!editingData.strom) {
-        showToast("⚠️ Bitte wähle eine Option aus.");
-        return false;
-      }
-      return true;
-    }
-
-    // Öffnungszeiten
-    if (step === 5) {
-        const oh = collectOpeningHours('current');
-        const hasOpenDayWithMissingTime = Object.values(oh).some(d => d.open && (!d.from || !d.to));
-        const allClosed = Object.values(oh).every(d => !d.open);
-        
-        if (allClosed) {
-            if (!confirm("Du hast alle Tage als geschlossen markiert. Fortfahren?")) {
-                return false;
-            }
-        } else if (hasOpenDayWithMissingTime) {
-             showToast("⚠️ Unvollständige Öffnungszeiten. Bitte trage alle Von-/Bis-Zeiten für geöffnete Tage ein.");
-             return false;
-        }
-        editingData.oeffnungszeiten = oh;
-        return true;
-    }
-
-    // Extras
-    if (step === 6) {
-      const extras = document.getElementById('extrasInput')?.value.trim();
-      editingData.extras = extras ? extras.split(',').map(s => s.trim()).filter(Boolean) : [];
-      return true;
-    }
-
-    // Tiere
-    if (step === 7) {
-      if (!editingData.tiere || editingData.tiere.length === 0) {
-         // Erlaubt das Weitergehen, wenn keine Tiere ausgewählt sind
-         // Optional: showToast("⚠️ Bitte wähle mindestens eine Option für Tiere aus."); return false;
-         editingData.tiere = ['Keine Tiere']; // Standardmäßig "Keine Tiere" speichern, wenn nichts gewählt.
-      }
-      return true;
-    }
-
-    // Beschreibung (Quill)
-    if (step === 8) {
-      if (quill) {
-        const html = quill.root.innerHTML;
-        editingData.beschreibung = html;
-        if (quill.getText().trim().length < 10) {
-          showToast("⚠️ Bitte gib eine aussagekräftige Beschreibung (mind. 10 Zeichen) ein.");
-          return false;
-        }
-      }
-      return true;
-    }
-
-    // Tags
-    if (step === 9) {
-      const tags = document.getElementById('tagsInput')?.value.trim();
-      editingData.tags = tags ? tags.split(',').map(s => s.trim()).filter(Boolean) : [];
-      return true;
-    }
-
-    // Standort
-    if (step === 10) {
-      if (!editingData.lat || !editingData.lng) {
-        showToast("⚠️ Bitte wähle den Standort auf der Karte aus.");
-        return false;
-      }
-      // Daten sind bereits in editingData.lat/lng gespeichert
-      return true;
-    }
-
-    return true; // Default
-  }
-
-  function selectOption(key, value, element) {
-    editingData[key] = value;
-    document.querySelectorAll(`button`).forEach(btn => {
-      if (btn.parentNode === element.parentNode) {
-        btn.classList.remove('selected');
-      }
+    quill = new Quill('#' + containerId, {
+      modules: { toolbar: toolbarOptions },
+      theme: 'snow',
+      placeholder: 'Eine ausführliche Beschreibung eingeben...'
     });
-    element.classList.add('selected');
-  }
-
-  // ==========================================================
-  // 🖼️ HELPER FUNKTIONEN (Info Box / Map)
-  // ==========================================================
-  
-  function updateInfoBox() {
-    const stepInfos = {
-        0: { title: "Datenschutzerklärung", text: "Bitte lies dir die Datenschutzerklärung aufmerksam durch, scrolle bis zum Ende und akzeptiere sie, um fortzufahren." },
-        1: { title: "Typ auswählen", text: "Wähle den Typ deiner Eintragung (z.B. Eierhütte oder Hofladen)." },
-        2: { title: "Name", text: "Gib einen aussagekräftigen Namen für deine Eintragung ein." },
-        3: { title: "Sitzplätze", text: "Gibt es Sitzmöglichkeiten, z.B. eine Bank oder eine kleine Sitzgruppe?" },
-        4: { title: "Strom", text: "Ist vor Ort Strom für Besucher verfügbar? (z.B. Lademöglichkeit für E-Bikes)" },
-        5: { title: "Öffnungszeiten", text: "Wähle 'Immer geöffnet' oder gib die Öffnungszeiten für jeden Wochentag an." },
-        6: { title: "Extras", text: "Was macht deinen Ort besonders? (z.B. Spielplatz, Kaffee, Grillplatz) Gib sie mit Kommas getrennt ein." },
-        7: { title: "Tiere", text: "Welche Tiere können Besucher auf deinem Hof sehen? Mehrfachauswahl möglich." },
-        8: { title: "Beschreibung (NEU: KI-Text)", text: "Erstelle eine einladende Beschreibung. Nutze den '🪄 KI-Text generieren' Button, um automatisch einen Text zu erstellen." },
-        9: { title: "Schlagwörter", text: "Gib Schlagwörter ein, damit deine Eintragung besser gefunden wird (z.B. #regional, #Bio) – Komma-getrennt." },
-        10: { title: "Standort & Einreichen", text: "Wähle den genauen Standort auf der Karte. Du kannst den Marker verschieben oder die Adresse suchen. Danach kannst du den Eintrag einreichen." }
-    };
-    const boxDesktop = document.getElementById("infoBox");
-    const boxMobile = document.getElementById("infoBoxMobile");
-    const info = stepInfos[step]; 
-    if (info && boxDesktop) { 
-        const html = `<h4 class="font-semibold">${info.title}</h4> <p>${info.text}</p>`; 
-        boxDesktop.innerHTML = html; 
-        if(boxMobile) boxMobile.innerHTML = html;
+    
+    // Set content if available
+    if (data && data.beschreibung) {
+        quill.root.innerHTML = data.beschreibung;
     }
-  }
-
-  let map, marker;
-  function initOverviewMap(lat = editingData.lat || 51.5, lng = editingData.lng || 10.5, zoom = editingData.lat ? 16 : 6) {
-    if (map) map.remove();
-
-    map = L.map("overview-map", { attributionControl: false, zoomControl: true })
-      .setView([lat, lng], zoom);
-
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-    }).addTo(map);
-
-    marker = L.marker([lat, lng], { draggable: true }).addTo(map)
-      .bindPopup(editingData.name || "Standort")
-      .openPopup();
-
-    editingData.lat = lat;
-    editingData.lng = lng;
-
-    marker.on('dragend', (e) => {
-      const { lat, lng } = e.target.getLatLng();
-      editingData.lat = lat;
-      editingData.lng = lng;
-      showToast(`📍 Neuer Standort: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+    
+    // Speichern bei Änderung
+    quill.on('text-change', () => {
+        editingData.beschreibung = quill.root.innerHTML;
     });
-  }
+}
+// ==========================================================
+// 📍 Karten-Funktionen (Leaflet)
+// ==========================================================
+let overviewMap; 
+let overviewMarker; 
 
-  function locateGPS() {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(position => {
-        const { latitude, longitude } = position.coords;
-        initOverviewMap(latitude, longitude, 16);
-        showToast("📍 Standort gefunden!");
-      }, error => {
-        showToast("❌ GPS Fehler: " + error.message);
-      });
-    } else {
-      showToast("❌ Dein Browser unterstützt kein GPS.");
-    }
-  }
-  
-  async function submitEntry() {
-    if (!saveStepData()) return;
+function initOverviewMap(lat = 51.1657, lng = 10.4515, zoom = 6) { 
+    if (!document.getElementById("overview-map")) return;
     
-    // Konvertiere die Öffnungszeiten-Map in ein Array für Firestore
-    let finalOeffnungszeiten = [];
-    if (editingData.oeffnungszeiten) {
-      for (const key in editingData.oeffnungszeiten) {
-        const day = DAY_LABELS.find(d => d.key === key);
-        if (day && editingData.oeffnungszeiten[key].open && editingData.oeffnungszeiten[key].from && editingData.oeffnungszeiten[key].to) {
-          finalOeffnungszeiten.push({
-            tag: day.label,
-            von: editingData.oeffnungszeiten[key].from,
-            bis: editingData.oeffnungszeiten[key].to
-          });
-        }
-      }
-    }
-    
-    const docId = editingData.docId; // Hole die ID, falls vorhanden
-    
-    const finalEntry = {
-      ...editingData,
-      oeffnungszeiten: finalOeffnungszeiten.length > 0 ? finalOeffnungszeiten : "Geschlossen", // Firestore-Format
-      userId: firebase.auth().currentUser.uid,
-      userName: firebase.auth().currentUser.displayName,
-      
-      // Nur erstellen/updaten, wenn es ein neuer Eintrag ist
-      ...(docId ? { 
-          aktualisiertAm: firebase.firestore.FieldValue.serverTimestamp() 
-      } : { 
-          erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
-          status: 'offen', // Neuer Eintrag beginnt immer mit 'offen'
-      }),
-    };
-    
-    delete finalEntry.docId; // docId nicht in die DB speichern
+    // Karte nur einmal initialisieren
+    if (!overviewMap) { 
+        overviewMap = L.map("overview-map").setView([lat, lng], zoom); 
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap-Mitwirkende'
+        }).addTo(overviewMap); 
+    } else { 
+        overviewMap.setView([lat, lng], zoom); 
+    } 
 
-    try {
-      if (docId) {
-        // Eintrag aktualisieren
-        // Der Status soll beim Bearbeiten nicht überschrieben werden, wenn er bereits 'aktiv' war.
-        await db.collection("eierhuetten").doc(docId).update(finalEntry);
-        showToast(`✅ Eintrag "${finalEntry.name}" erfolgreich aktualisiert!`);
-      } else {
-        // Neuen Eintrag speichern
-        await db.collection("eierhuetten").add(finalEntry);
-        showToast("🎉 Eintrag erfolgreich eingereicht! Er wird nun geprüft.");
-      }
-      
-      editingData = {}; // Zustand zurücksetzen
-      showMyEntries(); // Zur Übersicht wechseln
-    } catch (e) {
-      console.error("Firestore Save/Update Error", e);
-      alert("❌ Fehler beim Speichern des Eintrags: " + e.message);
-    }
-  }
+    // Marker hinzufügen oder verschieben
+    if (!overviewMarker) { 
+        overviewMarker = L.marker([lat, lng], { draggable: true }).addTo(overviewMap); 
+        overviewMarker.on("dragend", ev => { 
+            const p = ev.target.getLatLng(); 
+            editingData.location = { lat: p.lat, lng: p.lng }; 
+            console.log("Marker-Position aktualisiert:", editingData.location);
+        }); 
+    } else { 
+        overviewMarker.setLatLng([lat, lng]); 
+    } 
+    
+    // Standort in editingData speichern
+    editingData.location = { lat, lng }; 
+} 
 
-  // ==========================================================
-  // 📝 Render Flow (Fragen / Schritte) - UPDATED
-  // ==========================================================
-  
-  // Texte für Step 2 je nach Typ
-  const typeTexts = {
-    Eierhütte: { title: "🏷️ Name der Eierhütte", question: "Wie soll deine Eierhütte heißen?" },
-    Hofladen: { title: "🏷️ Name des Hofladens", question: "Wie soll dein Hofladen heißen?" },
-    Selbstbedienung: { title: "🏷️ Name des Selbstbedienungshäuschens", question: "Wie soll dein Selbstbedienungshäuschen heißen?" },
-    Spielplatz: { title: "🏷️ Name des Spielplatzes", question: "Wie soll der Spielplatz heißen?" },
-    Abenteuerhof: { title: "🏷️ Name des Abenteuerhofs", question: "Wie soll dein Abenteuerhof heißen?" },
-    Automat: { title: "🏷️ Name des Automaten", question: "Wie soll dein Automat heißen?" }
-  };
-  
+function locateGPS() { 
+    if (!navigator.geolocation) return alert("❌ GPS nicht verfügbar"); 
+    showToast("Suche Standort...", 1500, 'bg-yellow-600');
+    navigator.geolocation.getCurrentPosition( 
+        pos => { 
+            const { latitude, longitude } = pos.coords; 
+            initOverviewMap(latitude, longitude, 15); 
+            showToast("✅ Standort gefunden.");
+        }, 
+        err => { 
+            alert("❌ GPS-Fehler: " + err.message); 
+        } 
+    ); 
+} 
+  /***********************
+   * Render Flow (Questions)
+   ***********************/
+          // Texte für Step 2 je nach Typ
+const typeTexts = {
+  Eierhütte: {
+    title: "🏷️ Name der Eierhütte",
+    question: "Wie soll deine Eierhütte heißen?"
+  },
+  Hofladen: {
+    title: "🏷️ Name des Hofladens",
+    question: "Wie soll dein Hofladen heißen?"
+  },
+  Selbstbedienung: {
+    title: "🏷️ Name des Selbstbedienungshäuschens",
+    question: "Wie soll dein Selbstbedienungshäuschen heißen?"
+  },
+  Spielplatz: {
+    title: "🏷️ Name des Spielplatzes",
+    question: "Wie soll der Spielplatz heißen?"
+  },
+  Abenteuerhof: {
+    title: "🏷️ Name des Abenteuerhofs",
+    question: "Wie soll dein Abenteuerhof heißen?"
+  },
+  Automat: {
+    title: "🏷️ Name des Automaten",
+    question: "Wie soll dein Automat heißen?"
+  }
+};
   function renderQuestion() {
     const qa = document.getElementById('question-area');
     qa.innerHTML = ''; // reset
     updateProgress();
     updateInfoBox();
-    
-    // Navigationsleiste nur im 'entry' Modus anzeigen
-    document.getElementById("navBottom").style.display = (mode === "entry") ? "flex" : "none";
-    
-    // Den "Weiter" Button beschriften, falls es der letzte Schritt ist
-    const nextBtn = document.getElementById('nextBtn');
-    if (nextBtn) {
-        nextBtn.textContent = (step === stepsCount - 1) ? 'Übersicht anzeigen' : 'Weiter ➡️';
-    }
-        
+document.getElementById("navBottom").style.display =
+  (mode === "entry") ? "flex" : "none";
+      
     try {
       if (step === 0) {
-        // Bessere Datenschutzerklärung
-        qa.innerHTML = `
-          <div class="bg-white p-6 rounded-xl-design max-w-2xl mx-auto">
-            <h2 class="text-3xl font-extrabold text-green-700 mb-4">🛡️ Datenschutzerklärung</h2>
+  qa.innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+      <h2 class="text-xl font-bold mb-3">🛡️ Datenschutzerklärung</h2>
 
-            <p class="mb-4 text-gray-700">Bitte lies die folgenden Bestimmungen aufmerksam durch und scrolle bis zum Ende, um sie zu akzeptieren.</p>
-            
-            <div id="dsScrollBox" class="h-60 mb-3 rounded-lg overflow-y-scroll border-2 border-green-200 bg-gray-50 p-4 text-sm text-gray-700 shadow-inner">
-              <p class="font-bold text-red-600 mb-3">ACHTUNG: PLATZHALTER!</p>
-              <p>Dieser Mustertext MUSS durch Ihren vollständigen und rechtsgültigen Datenschutztext ersetzt werden. Bitte konsultieren Sie einen Anwalt, um sicherzustellen, dass Ihr Text den aktuellen Datenschutzbestimmungen (insbesondere der DSGVO) entspricht.</p>
-              
-              <h4 class="font-bold mt-4">1. Grundsätzliches</h4>
-              <p>Wir erheben und verarbeiten personenbezogene Daten ausschließlich gemäß den gesetzlichen Bestimmungen. Bei der Nutzung des Assistenten werden zur Identifikation Ihre E-Mail-Adresse und ggf. Ihr Name von Google (Firebase Auth) übermittelt.</p>
-              
-              <h4 class="font-bold mt-4">2. Datenverwendung</h4>
-              <p>Die von Ihnen erstellten Eintragungen (Name der Hütte, Standort, Fotos) werden auf der RadlMap-Webseite veröffentlicht. Ihre persönlichen Kontaktdaten (E-Mail) werden nicht veröffentlicht, sondern dienen nur der Verwaltung und der Kontaktaufnahme durch das RadlMap-Team.</p>
+      <div id="dsScrollBox" class="h-60 mb-3 rounded-lg overflow-auto border border-gray-200">
+        <iframe 
+          src="https://radlmap.net/datenschutz.html" 
+          class="w-full h-[500px] border-0 bg-white"
+          style="display:block; min-width:100%; overflow:auto;">
+        </iframe>
+      </div>
 
-              <h4 class="font-bold mt-4">3. Löschung</h4>
-              <p>Sie können jederzeit die Löschung Ihres Kontos und aller damit verbundenen Eintragungen beim Support beantragen.</p>
+      <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+        <input id="dsCheck" type="checkbox" class="w-4 h-4" disabled /> 
+        Ich akzeptiere die Datenschutzerklärung
+      </label>
+      <div id="dsHint" class="text-xs text-red-500 mt-1">
+        ⬇️ Bitte bis ganz nach unten scrollen
+      </div>
+    </div>`;
 
-              <p class="mt-8 font-bold text-green-600">ENDE DES MUSTERTEXTES. BITTE VOR NUTZUNG ANPASSEN!</p>
-            </div>
-            <label class="inline-flex items-center gap-2 text-sm text-gray-700">
-              <input id="dsCheck" type="checkbox" class="w-4 h-4 text-green-600" ${document.getElementById('dsCheck')?.checked || editingData.docId ? 'checked' : ''} disabled /> 
-              Ich akzeptiere die Datenschutzerklärung
-            </label>
-            <div id="dsHint" class="text-xs text-red-500 mt-1">
-              ⬇️ Bitte bis ganz nach unten scrollen und das Kästchen aktivieren
-            </div>
-          </div>`;
+  // Scroll-Überwachung
+  const scrollBox = document.getElementById("dsScrollBox");
+  const check = document.getElementById("dsCheck");
+  const hint = document.getElementById("dsHint");
 
-        // Scroll-Überwachung (Nur wenn nicht bereits akzeptiert)
-        const scrollBox = document.getElementById("dsScrollBox");
-        const check = document.getElementById("dsCheck");
-        const hint = document.getElementById("dsHint");
-
-        if (!editingData.docId) { // Bei neuer Eintragung scrollen lassen
-            scrollBox.addEventListener("scroll", () => {
-              if (scrollBox.scrollTop + scrollBox.clientHeight >= scrollBox.scrollHeight - 5) {
-                check.disabled = false;
-                hint.textContent = "✅ Du kannst nun die Datenschutzerklärung akzeptieren und fortfahren.";
-                hint.classList.remove("text-red-500");
-                hint.classList.add("text-green-600");
-              }
-            });
-        } else { // Beim Editieren automatisch als akzeptiert markieren
-             check.disabled = false;
-             hint.textContent = "✅ Datenschutzerklärung ist bereits akzeptiert.";
-             hint.classList.remove("text-red-500");
-             hint.classList.add("text-green-600");
-        }
-        return;
-      }
-
+  scrollBox.addEventListener("scroll", () => {
+    if (scrollBox.scrollTop + scrollBox.clientHeight >= scrollBox.scrollHeight - 5) {
+      check.disabled = false;
+      hint.textContent = "✅ Du kannst nun die Datenschutzerklärung akzeptieren.";
+      hint.classList.remove("text-red-500");
+      hint.classList.add("text-green-600");
+    }
+  });
+  return;
+}
       if (step === 1) {
         // Typ-Auswahl
         const opts = [
@@ -1201,44 +652,41 @@ async function deleteEntry(hutId, hutName) {
         ];
         const wrap = document.createElement('div');
         wrap.className = 'grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto';
-        
-        qa.innerHTML = `<div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto"><h2 class="text-lg font-bold mb-3">Typ auswählen</h2><div id="typeOptions" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div></div>`;
-        const holder = document.getElementById('typeOptions');
-
         opts.forEach(o => {
           const card = document.createElement('div');
-          const isSelected = editingData.typ === o.key;
-          card.className = `bg-gray-50 p-6 rounded-xl shadow card-option text-center cursor-pointer ${isSelected ? 'selected' : ''}`;
+          card.className = `bg-white p-6 rounded-xl shadow card-option text-center cursor-pointer ${editingData.typ === o.key ? 'selected' : ''}`;
           card.innerHTML = `<div class="text-3xl">${o.emoji}</div><div class="font-semibold mt-2">${o.label}</div>`;
           card.onclick = () => {
             document.querySelectorAll('.card-option').forEach(c => c.classList.remove('selected'));
             card.classList.add('selected');
             editingData.typ = o.key;
           };
-          holder.appendChild(card);
+          wrap.appendChild(card);
         });
+        qa.appendChild(wrap);
         return;
       }
 
 
-      if (step === 2) {
-        const currentType = editingData.typ;
-        const { title, question } = typeTexts[currentType] || {
-          title: "🏷️ Name",
-          question: "Wie soll dein Eintrag heißen?"
-        };
 
-        qa.innerHTML = `
-          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-            <h2 class="text-lg font-bold mb-2">${title}</h2>
-            <p class="text-sm text-gray-600 mb-2">${question}</p>
-            <input id="nameInput"
-                   class="w-full border p-2 rounded"
-                   placeholder="Name eingeben"
-                   value="${editingData.name || ''}">
-          </div>`;
-        return;
-      }
+if (step === 2) {
+  const currentType = editingData.typ; // <-- statt eintragung.type
+  const { title, question } = typeTexts[currentType] || {
+    title: "🏷️ Name",
+    question: "Wie soll dein Eintrag heißen?"
+  };
+
+  qa.innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+      <h2 class="text-lg font-bold mb-2">${title}</h2>
+      <p class="text-sm text-gray-600 mb-2">${question}</p>
+      <input id="nameInput"
+             class="w-full border p-2 rounded"
+             placeholder="Name eingeben"
+             value="${editingData.name || ''}">
+    </div>`;
+  return;
+}
 
       if (step === 3) {
         qa.innerHTML = `
@@ -1263,31 +711,60 @@ async function deleteEntry(hutId, hutName) {
           </div>`;
         return;
       }
-      
-      if (step === 5) { // Öffnungszeiten
-        qa.innerHTML = `
-          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-            <h2 class="text-lg font-bold mb-3">🕒 Öffnungszeiten</h2>
+      if (step === 5) {
+  // Öffnungszeiten-Logik: 'Immer geöffnet' oder Array
+  const oeffnungszeiten = editingData.oeffnungszeiten;
+  const immer = typeof oeffnungszeiten === 'string' && oeffnungszeiten.toLowerCase().includes("immer");
+  
+  qa.innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+      <h2 class="text-lg font-bold mb-3">🕒 Öffnungszeiten</h2>
 
-            <div id="openHoursEditor">
-                ${renderOpeningHoursEditor('current', editingData.oeffnungszeiten || {})}
+      <label class="flex items-center gap-2 mb-4">
+        <input type="checkbox" id="immerCheck" ${immer ? "checked" : ""}>
+        Immer geöffnet
+      </label>
+
+      <div id="dayInputs" class="${immer ? "hidden" : ""}">
+        ${["Mo","Di","Mi","Do","Fr","Sa","So"].map(day => {
+          // vorhandene Werte beim Bearbeiten einsetzen
+          let von = "", bis = "";
+          if (Array.isArray(oeffnungszeiten)) {
+            const found = oeffnungszeiten.find(x => x.tag === day);
+            if (found) { von = found.von; bis = found.bis; }
+          }
+          return `
+            <div class="flex items-center gap-2 mb-1">
+              <span class="w-10">${day}</span>
+              <input id="open-${day}-von" type="time" value="${von}" class="border p-1 rounded text-sm">
+              <span>-</span>
+              <input id="open-${day}-bis" type="time" value="${bis}" class="border p-1 rounded text-sm">
             </div>
-          </div>
-        `;
-        return;
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+
+  document.getElementById("immerCheck").addEventListener("change", (e) => {
+    document.getElementById("dayInputs").classList.toggle("hidden", e.target.checked);
+  });
+
+  return;
       }
+      
 
       if (step === 6) {
-        const extrasString = Array.isArray(editingData.extras) ? editingData.extras.join(', ') : '';
         qa.innerHTML = `
           <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
             <h2 class="text-lg font-bold mb-2">✨ Extras (optional)</h2>
-            <input id="extrasInput" class="w-full border p-2 rounded" placeholder="z.B. Getränke, Kühlschrank" value="${extrasString}">
+            <input id="extrasInput" class="w-full border p-2 rounded" placeholder="z.B. Getränke, Kühlschrank" value="${editingData.extras || ''}">
           </div>`;
         return;
       }
 
       if (step === 7) {
+        // Tiere toggle buttons (markieren, don't auto-next)
         const animals = ["🐐 Ziege","🐄 Kuh","🐓 Huhn","🐕 Hund","🐇 Hase","🐈 Katze","Keine Tiere"];
         const grid = document.createElement('div');
         grid.className = 'bg-white p-6 rounded-xl shadow max-w-2xl mx-auto';
@@ -1296,173 +773,1076 @@ async function deleteEntry(hutId, hutName) {
         const holder = document.getElementById('tiereGrid');
         editingData.tiere = editingData.tiere || [];
         animals.forEach(t => {
-          const nameOnly = t.replace(/^[^\s]+\s*/, "").trim();
           const btn = document.createElement('button');
-          const isSel = (editingData.tiere || []).includes(nameOnly);
+          const isSel = (editingData.tiere || []).includes(t);
           btn.className = `p-2 border rounded text-sm ${isSel ? 'selected' : ''}`;
           btn.textContent = t;
           btn.onclick = () => {
-            if (nameOnly === 'Keine Tiere') {
+            // toggle
+            if (t === 'Keine Tiere') {
               editingData.tiere = ['Keine Tiere'];
+              // remove selected from others
               holder.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
               btn.classList.add('selected');
-            } else {
-              editingData.tiere = (editingData.tiere || []).filter(x => x !== 'Keine Tiere');
-              const idx = (editingData.tiere || []).indexOf(nameOnly);
-              if (idx >= 0) {
-                editingData.tiere.splice(idx, 1);
-                btn.classList.remove('selected');
-              } else {
-                editingData.tiere.push(nameOnly);
-                btn.classList.add('selected');
-              }
-              // 'Keine Tiere' Knopf muss visuell zurückgesetzt werden
-              holder.querySelector('button[data-name="Keine Tiere"]')?.classList.remove('selected');
+              return;
             }
+            // if 'Keine Tiere' present -> remove it
+            editingData.tiere = (editingData.tiere || []).filter(x => x !== 'Keine Tiere');
+            const idx = (editingData.tiere || []).indexOf(t);
+            if (idx >= 0) {
+              editingData.tiere.splice(idx, 1);
+              btn.classList.remove('selected');
+            } else {
+              editingData.tiere.push(t);
+              btn.classList.add('selected');
+            }
+            // Ensure visual state is correct for all buttons
+             holder.querySelectorAll('button').forEach(b => {
+                 const isSel = (editingData.tiere || []).includes(b.textContent);
+                 b.classList.toggle('selected', isSel);
+             });
           };
-          btn.setAttribute('data-name', nameOnly);
           holder.appendChild(btn);
         });
         return;
       }
 
       if (step === 8) {
-        // KI-Text-Generierung im Beschreibungs-Schritt (Step 8)
         qa.innerHTML = `
-          <div class="bg-white p-6 rounded-xl-design max-w-4xl mx-auto">
-            <h2 class="text-3xl font-extrabold text-green-700 mb-4">💬 Beschreibung</h2>
-            <p class="text-gray-600 mb-4">Beschreibe deine Eintragung. Dies erscheint später auf der Karte.</p>
-
-            <button id="kiDescBtn" class="mb-3 px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition disabled:opacity-50" onclick="generateAndInsertDescription()">
-              🪄 KI-Text generieren
-            </button>
-
-            <div id="editor" class="h-64 border rounded"></div>
-            <p class="text-xs text-gray-500 mt-2">Max. 500 Zeichen empfohlen.</p>
-          </div>
-        `;
+          <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+            <h2 class="text-lg font-bold mb-2">📝 Beschreibung</h2>
+            <div id="quillContainer" class="bg-white"></div>
+          </div>`;
         setTimeout(() => {
-          quill = new Quill('#editor', {
-            modules: { toolbar: [[{ 'header': [1, 2, false] }], ['bold', 'italic', 'underline'], [{ 'list': 'ordered'}, { 'list': 'bullet' }], ['link']] },
-            placeholder: 'Schreibe eine einladende Beschreibung...',
-            theme: 'snow'
-          });
-          if (editingData.beschreibung) {
-            // Quill benötigt nur den HTML-Inhalt des Beschreibungsfeldes
-            quill.root.innerHTML = editingData.beschreibung; 
-          }
-        }, 120);
-
-        // Logik für den Button im Beschreibungs-Schritt
-        window.generateAndInsertDescription = async () => {
-          const btn = document.getElementById('kiDescBtn');
-          btn.disabled = true;
-          btn.textContent = '🧠 KI generiert...';
-
-          const name = editingData.name || "Deine neue Eintragung";
-          const extras = editingData.extras || [];
-          const animals = (editingData.tiere || []).filter(t => t !== 'Keine Tiere');
-          
-          try {
-            const desc = await generateSmartDescription(name, extras, animals);
-            quill.root.innerHTML = `<p>${desc}</p>`;
-            showToast("✅ KI-Text erfolgreich generiert.");
-          } catch(e) {
-            showToast("❌ Fehler bei der KI-Generierung: " + e.message);
-          } finally {
-            btn.disabled = false;
-            btn.textContent = '🪄 KI-Text generieren';
-          }
-        };
+  initEnhancedEditor("quillContainer", editingData);
+}, 120);
         return;
       }
 
       if (step === 9) {
-        const tagsString = Array.isArray(editingData.tags) ? editingData.tags.join(', ') : '';
         qa.innerHTML = `
           <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
             <h2 class="text-lg font-bold mb-2">🏷️ Schlagwörter (Komma getrennt)</h2>
-            <input id="tagsInput" class="w-full border p-2 rounded" placeholder="z.B. Frühstück,Schattig" value="${tagsString}">
+            <input id="tagsInput" class="w-full border p-2 rounded" placeholder="z.B. Frühstück,Schattig" value="${(editingData.tags||[]).join(', ')}">
           </div>`;
         return;
       }
 
       if (step === 10) {
-        // Standort und Übersicht
-        mode = "list"; // Stellt sicher, dass die untere Navigationsleiste ausgeblendet wird
+        mode = "list";
          
-         document.getElementById("navBottom").style.display = "none"; // Blendet Navigaton aus
+         document.getElementById("navBottom").style.display =
+         (mode === "entry") ? "flex" : "none";
+     
+  qa.innerHTML = `
+    <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
+      <h2 class="text-xl font-bold mb-3">📋 Übersicht</h2>
+      
+      <h3 class="text-lg font-bold mt-4 mb-2">📍 Standort</h3>
+      <div class="relative mb-2">
+        <input id="addressSearch" class="w-full border p-2 rounded" placeholder="Adresse suchen…" />
+        <div id="addressSuggestions" class="absolute left-0 right-0 bg-white border rounded mt-1 hidden z-50 max-h-48 overflow-y-auto"></div>
+      </div>
+      <button id="gpsBtn" class="px-3 py-2 mb-3 bg-blue-600 text-white rounded">📡 Mein Standort</button>
 
-         let submitBtnText = editingData.docId ? '✅ Aktualisieren' : '✅ Einreichen';
+      <div id="overview-map" class="h-64 rounded border mb-4"></div>
 
-          qa.innerHTML = `
-            <div class="bg-white p-6 rounded-xl shadow max-w-2xl mx-auto">
-              <h2 class="text-xl font-bold mb-3">📍 Standort & Übersicht</h2>
-              <p class="text-sm text-gray-600 mb-4">Überprüfe alle Daten und wähle den genauen Standort auf der Karte aus.</p>
+      <div class="flex gap-2">
+        <button id="submitBtn" class="px-4 py-2 bg-green-600 text-white rounded" onclick="submitEntry()">✅ Einreichen</button>
+        <button class="px-4 py-2 bg-gray-200 rounded" onclick="showMyEntries()">✖ Abbrechen</button>
+      </div>
+      <p class="text-xs text-gray-500 mt-3">Deine Eintragung wird geprüft und erst nach Freigabe sichtbar.</p>
+    </div>`;
 
-              <h3 class="text-lg font-bold mt-4 mb-2">📍 Standort</h3>
-              <div class="relative mb-2">
-                <input id="addressSearch" class="w-full border p-2 rounded" placeholder="Adresse suchen…" />
-                <div id="addressSuggestions" class="absolute left-0 right-0 bg-white border rounded mt-1 hidden z-50 max-h-48 overflow-y-auto"></div>
-              </div>
-              <button id="gpsBtn" class="px-3 py-2 mb-3 bg-blue-600 text-white rounded hover:bg-blue-700 transition">📡 Mein Standort</button>
+  // Jetzt nur noch Map initialisieren
+  setTimeout(() => {
+  // Wenn Location schon da ist, verwende diese, sonst Default
+  const lat = editingData.location?.lat || 51.1657;
+  const lng = editingData.location?.lng || 10.4515;
+  const zoom = editingData.location?.lat ? 15 : 6;
+  initOverviewMap(lat, lng, zoom);
 
-              <div id="overview-map" class="h-64 rounded border mb-4"></div>
+  // GPS-Button aktivieren
+  const gpsBtn = document.getElementById("gpsBtn");
+  if (gpsBtn) gpsBtn.addEventListener("click", locateGPS);
 
-              <div class="flex gap-2 justify-between">
-                <button class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 transition" onclick="prevStep()">⬅️ Zurück</button>
-                <button id="submitBtn" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition" onclick="submitEntry()">${submitBtnText}</button>
-              </div>
-              <p class="text-xs text-gray-500 mt-3">Deine Eintragung wird geprüft und erst nach Freigabe sichtbar.</p>
-            </div>`;
+  // Adress-Suche mit Vorschlägen
+  const addr = document.getElementById("addressSearch");
+  const suggestionBox = document.getElementById("addressSuggestions");
+  if (addr) {
+    addr.addEventListener("input", async e => {
+      const query = e.target.value.trim();
+      if (query.length < 3) {
+        suggestionBox.innerHTML = "";
+        suggestionBox.classList.add("hidden");
+        return;
+      }
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`;
+        const res = await fetch(url);
+        const data = await res.json();
 
-        // Map initialisieren
-        setTimeout(() => {
-          initOverviewMap();
-
-          // GPS-Button aktivieren
-          const gpsBtn = document.getElementById("gpsBtn");
-          if (gpsBtn) gpsBtn.addEventListener("click", locateGPS);
-
-          // Adress-Suche mit Vorschlägen (Simulierter Nominatim-Teil)
-          const addr = document.getElementById("addressSearch");
-          const suggestionBox = document.getElementById("addressSuggestions");
-          if (addr) {
-            addr.addEventListener("input", async e => {
-              const query = e.target.value.trim();
-              if (query.length < 3) {
-                suggestionBox.innerHTML = "";
-                suggestionBox.classList.add("hidden");
-                return;
-              }
-              
-              // Simuliere Suche 
-              suggestionBox.innerHTML = `
-                <div class="p-2 text-gray-500">Suche wird in der Live-Version mit Nominatim durchgeführt.</div>
-                <div class="p-2 hover:bg-gray-100 cursor-pointer" data-lat="52.375" data-lon="9.732">Hannover Hauptbahnhof (Test)</div>
-              `;
-              suggestionBox.classList.remove("hidden");
-
-              suggestionBox.querySelectorAll("div[data-lat]").forEach(div => {
-                div.addEventListener("click", () => {
-                  const lat = parseFloat(div.dataset.lat);
-                  const lon = parseFloat(div.dataset.lon);
-                  addr.value = div.textContent;
-                  suggestionBox.classList.add("hidden");
-                  initOverviewMap(lat, lon, 15);
-                });
-              });
-            });
-          }
-        }, 200);
+        if (!data.length) {
+          suggestionBox.innerHTML = "<div class='p-2 text-gray-500'>Keine Treffer</div>";
+          suggestionBox.classList.remove("hidden");
           return;
+        }
+
+        suggestionBox.innerHTML = data.map(item => `
+          <div class="p-2 hover:bg-gray-100 cursor-pointer" data-lat="${item.lat}" data-lon="${item.lon}">
+            ${item.display_name}
+          </div>`).join("");
+        suggestionBox.classList.remove("hidden");
+
+        suggestionBox.querySelectorAll("div").forEach(div => {
+          div.addEventListener("click", () => {
+            const lat = parseFloat(div.dataset.lat);
+            const lon = parseFloat(div.dataset.lon);
+            addr.value = div.textContent;
+            suggestionBox.classList.add("hidden");
+            initOverviewMap(lat, lon, 15);
+          });
+        });
+      } catch (err) {
+        console.error("Fehler bei Nominatim:", err);
+      }
+    });
+  }
+}, 200);
+  return;
       }
       
     } catch (err) {
-      qa.innerHTML = `<div class="bg-red-100 p-4 rounded-xl max-w-2xl mx-auto mt-10">❌ Fehler beim Rendern des Schritts ${step}: ${err.message}</div>`;
-      console.error(err);
+      console.error("renderQuestion error", err);
+      document.getElementById('question-area').innerHTML = `<div class="bg-red-100 p-4 rounded">Fehler: ${err.message}</div>`;
     }
   }
+    
+
+function selectOption(field, value, el) { 
+    // deselect siblings if (el && el.parentNode) { 
+    el.parentNode.querySelectorAll('button').forEach(b => b.classList.remove('selected')); 
+    el.classList.add('selected'); 
+    editingData[field] = value; 
+} 
+
+function nextStep() { 
+    // validation for some steps 
+    if (step === 0) { 
+        const ok = document.getElementById('dsCheck') && document.getElementById('dsCheck').checked; 
+        if (!ok) { 
+            alert('Bitte Datenschutzerklärung akzeptieren'); 
+            return; 
+        } 
+        editingData.datenschutz = true; 
+    } 
+    // Typ auswählen 
+    if (step === 1) { 
+        if (!editingData.typ) { 
+            alert("Bitte einen Typ auswählen."); 
+            return;
+        } 
+    } 
+    // Name 
+    if (step === 2) { 
+        const v = document.getElementById('nameInput')?.value?.trim(); 
+        if (!v) { 
+            alert('Bitte Namen eingeben'); 
+            return; 
+        } 
+        editingData.name = v; 
+    } 
+    // Sitzplätze/Strom -> optional, kein check
+    
+    // Öffnungszeiten 
+    if (step === 5) { 
+        const rawOeff = collectOpeningHours(); 
+        const normalized = normalizeOpeningHours(rawOeff); 
+        
+        // Keine strenge Validierung mehr, da "Immer geöffnet" oder leere Liste möglich sind.
+        editingData.oeffnungszeiten = normalized; 
+    } 
+    if (step === 6) { 
+        editingData.extras = document.getElementById('extrasInput')?.value?.trim(); 
+    } 
+    // Tiere -> bereits on-click gespeichert
+    
+    // Beschreibung -> bereits on-change in Quill gespeichert
+    
+    if (step === 9) { 
+        const raw = document.getElementById('tagsInput')?.value || ''; 
+        editingData.tags = raw.split(',').map(s=>s.trim()).filter(Boolean).slice(0, 10); 
+    } 
+    
+    // Standort-Prüfung nur, wenn wir abschicken wollen (step 10), nicht hier.
+    
+    if (step < stepsCount - 1) step++; 
+    renderQuestion(); 
+    updateProgress(); 
+} 
+
+function prevStep() { 
+    if (step > 0) step--; 
+    renderQuestion(); 
+    updateProgress(); 
+} 
+
+function startNewEntry() { 
+    if (!currentUser || !currentUser.uid) { 
+        showToast("Bitte zuerst einloggen", 3000, 'bg-red-600'); 
+        return; 
+    } 
+    editingData = {}; 
+    step = 0; 
+    mode = "entry"; 
+    document.getElementById("navBottom").style.display = (mode === "entry") ? "flex" : "none"; 
+    renderQuestion(); 
+    toggleSidebar(); 
+    updateProgress(); 
+} 
+
+async function submitEntry() { 
+    if (!editingData.name || !editingData.typ) { 
+        alert('Bitte Typ und Name ausfüllen.'); 
+        return; 
+    } 
+    if (!editingData.location?.lat) {
+        alert('Bitte den Standort auf der Karte festlegen.');
+        return;
+    }
+    
+    // Öffnungszeiten normalisieren bevor sie gespeichert werden 
+    const rawOeff = collectOpeningHours(); 
+    const normalizedOeff = normalizeOpeningHours(rawOeff); 
+    
+    // Falls noch Fotos im Cache sind, diese vorher hochladen
+    // ... Foto-Upload-Logik (wie in vorheriger Version) ...
+
+    const payload = { 
+        userId: currentUser.uid, 
+        name: editingData.name, 
+        typ: editingData.typ, 
+        sitzplaetze: editingData.sitzplaetze || 'Nein', 
+        strom: editingData.strom || 'Nein', 
+        extras: editingData.extras || '', 
+        tiere: editingData.tiere || [], 
+        beschreibung: editingData.beschreibung || '', 
+        tags: editingData.tags || [], 
+        oeffnungszeiten: normalizedOeff, 
+        status: 'offen', 
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(), 
+        datenschutzZustimmung: { 
+            bestaetigtAm: firebase.firestore.FieldValue.serverTimestamp(), 
+            durch: currentUser.email || null 
+        } 
+    }; 
+    
+    if (editingData.location?.lat && editingData.location?.lng) { 
+        payload.location = new firebase.firestore.GeoPoint( 
+            editingData.location.lat, 
+            editingData.location.lng 
+        ); 
+    } 
+    
+    try { 
+        await db.collection('eierhuetten').add(payload); 
+        showToast('✅ Eintragung gesendet. Wird geprüft.'); 
+        showMyEntries(); 
+    } catch (err) { 
+        console.error('submitEntry error', err); 
+        alert('Fehler beim Senden: ' + (err.message || err)); 
+    } 
+} 
+
+
+const stepInfos = { 
+    0: { title: "Datenschutz", text: "Bitte lies die Datenschutzerklärung aufmerksam und bestätige sie. Ohne Zustimmung können wir keine Daten annehmen." }, 
+    1: { title: "Art der Eintragung", text: "Wähle, ob du eine Eierhütte, Hofladen, Selbstbedienungshäuschen, Spielplatz oder Abenteuerhof eintragen möchtest." }, 
+    2: { title: "Name der Hütte", text: "Verwende einen kurzen, prägnanten Namen, z. B. „Eierhütte am Dorfplatz“." }, 
+    3: { title: "Sitzplätze", text: "Falls es Sitzgelegenheiten gibt, wähle Ja. Sonst Nein." }, 
+    4: { title: "Strom", text: "Angabe, ob Strom verfügbar ist. (z.B. zum Aufladen des E-Bikes oder für das Handy)." }, 
+    5: { title: "Öffnungszeiten", text: "Gib deine Öffnungszeiten an oder wähle 'Immer geöffnet'. Ist das Feld leer, wird 'Geschlossen' angezeigt." }, 
+    6: { title: "Extras", text: "Hier kannst du Besonderheiten angeben, z. B. Getränke, Kühlschrank, Grillmöglichkeiten." }, 
+    7: { title: "Tiere", text: "Wähle alle Tiere aus, die es vor Ort gibt. Falls keine Tiere da sind, bitte „Keine Tiere“ auswählen." }, 
+    8: { title: "Beschreibung", text: "Beschreibe deine Hütte, den Hof oder den Ort möglichst ausführlich. Z. B. „Unsere Hütte liegt direkt am Radweg und bietet frische Eier aus Freilandhaltung.“" }, 
+    9: { title: "Schlagwörter (Tags)", text: "Gib Schlagwörter ein, damit andere die Hütte besser finden können (max. 10). Z. B. „regional, Bio, Frühstück“." }, 
+    10: { title: "Übersicht & Standort", text: "Hier siehst du alle Angaben zusammen. Wähle den Standort per Klick auf die Karte oder GPS. Du kannst den Marker mit Drag & Drop verschieben." } 
+}; 
+
+function updateInfoBox() { 
+    const boxDesktop = document.getElementById("infoBox"); 
+    const boxMobile = document.getElementById("infoBoxMobile"); 
+    let html = ""; 
+    
+    if (mode === "entry") { 
+        const info = stepInfos[step]; 
+        if (info) { 
+            html = ` 
+                <h4 class="font-semibold">${info.title}</h4> 
+                <p>${info.text}</p> 
+            `; 
+        } else { 
+            html = "<p>Keine weiteren Informationen verfügbar.</p>"; 
+        } 
+    } else if (mode === "list") { 
+        html = ` 
+            <h4 class="font-semibold">📋 Meine Eintragungen</h4> 
+            <p>Hier siehst du deine bereits eingereichten Hütten.<br> Bearbeiten ist nur möglich, sobald die Hütte freigegeben wurde.</p> 
+        `; 
+    } else if (mode === "tutorial") { 
+        html = ` 
+            <h4 class="font-semibold">👋 Willkommen</h4> 
+            <p>Du befindest dich hier im Tutorial, <br> hier wird Dir alles erklärt. </p> 
+        `; 
+    } else if (mode === "settings") { // <--- HINZUGEFÜGT
+        html = `
+            <h4 class="font-semibold">⚙️ Einstellungen</h4>
+            <p>Verwalte deine Kontoeinstellungen, wie z.B. deinen Anzeigenamen oder deinen Logout.</p>
+        `;
+    } else if (mode === "support") { // <--- HINZUGEFÜGT
+        html = ` 
+            <h4 class="font-semibold">💬 Support</h4> 
+            <p>Stelle hier deine Fragen oder melde Probleme.<br> Deine Tickets werden gespeichert und können später eingesehen oder gelöscht werden.</p> 
+        `; 
+    } else if (mode === "hutMessages") { 
+        html = ` 
+            <h4 class="font-semibold">🏡 Hütten-Nachrichten</h4> 
+            <p> Hier siehst du alle Nachrichten, die Besucher zu deinen Hütten geschickt haben.<br> Diese Übersicht aktualisiert sich automatisch, sobald neue Nachrichten eintreffen. </p> 
+            <p class="mt-1 text-sm text-gray-500"> Tipp: Neue Nachrichten erkennst du am roten 🔔 Badge in der Seitenleiste. </p> 
+        `; 
+    } else { 
+        html = "<p>ℹ️ Wähle links eine Funktion aus.</p>"; 
+    } 
+    
+    // ✨ Desktop-Bereich befüllen 
+    if (boxDesktop) boxDesktop.innerHTML = html; 
+    // ✨ Mobile Overlay befüllen 
+    if (boxMobile) boxMobile.innerHTML = html; 
+} 
+
+// ==========================================================
+// ⚙️ Einstellungen (NEU)
+// ==========================================================
+function showSettings() {
+  const qa = document.getElementById("question-area");
+  mode = "settings";
+  const user = firebase.auth().currentUser;
+  
+  qa.innerHTML = `
+    <section class="bg-white p-6 rounded-2xl shadow-lg max-w-3xl mx-auto animate-fadeIn">
+      <header class="mb-6 text-center">
+        <h2 class="text-2xl font-extrabold text-green-600 mb-2">⚙️ Kontoeinstellungen</h2>
+        <p class="text-gray-600 text-sm">Passe deine persönlichen Einstellungen an.</p>
+      </header>
+
+      <div class="space-y-6">
+        <div class="border-b pb-4">
+          <h3 class="font-bold text-lg mb-2">Dein Profil</h3>
+          <label class="block mb-2">
+            <span class="text-gray-700 text-sm">Anzeigename</span>
+            <input id="displayNameInput" type="text" value="${user.displayName || user.email.split('@')[0]}" class="w-full border p-2 rounded mt-1">
+          </label>
+          <button onclick="updateProfileSettings()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm">
+            Namen speichern
+          </button>
+        </div>
+
+        <div class="border-b pb-4">
+          <h3 class="font-bold text-lg mb-2">Premium & Limits</h3>
+          <p class="text-gray-600 text-sm mb-3">Verwalte deinen Premium-Status und sieh deine Limits im Dashboard.</p>
+          <button onclick="setActive('btnDashboard'); showDashboard()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition text-sm">
+            Zum Dashboard
+          </button>
+        </div>
+
+        <div>
+          <h3 class="font-bold text-lg mb-2">Konto-Aktionen</h3>
+          <button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition text-sm">
+            Abmelden
+          </button>
+        </div>
+      </div>
+    </section>
+  `;
+  updateInfoBox();
+}
+
+async function updateProfileSettings() {
+  const user = firebase.auth().currentUser;
+  const newName = document.getElementById('displayNameInput').value.trim();
+
+  if (!newName) {
+    showToast("Der Name darf nicht leer sein.", 3000, "bg-red-600");
+    return;
+  }
+
+  try {
+    await user.updateProfile({ displayName: newName });
+    showToast("✅ Profil erfolgreich aktualisiert.");
+    // Update sidebar immediately
+    setGoogleProfile(user); // Ruft die Profil-Update-Logik auf
+  } catch (err) {
+    console.error("Profile update error", err);
+    showToast("❌ Fehler beim Aktualisieren des Profils: " + err.message, 5000, "bg-red-600");
+  }
+}
+
+// ==========================================================
+// 💬 Support / Ticketsystem (NEU)
+// ==========================================================
+let supportTicketsUnsub = null;
+
+function openSupport() {
+  const qa = document.getElementById("question-area");
+  mode = "support";
+  
+  // Stellt sicher, dass der alte Listener beendet wird
+  if (supportTicketsUnsub) {
+    supportTicketsUnsub();
+    supportTicketsUnsub = null;
+  }
+  
+  qa.innerHTML = `
+    <section class="bg-white p-6 rounded-2xl shadow-lg max-w-3xl mx-auto animate-fadeIn">
+      <header class="mb-6 text-center">
+        <h2 class="text-2xl font-extrabold text-green-600 mb-2">💬 Support-Ticket erstellen</h2>
+        <p class="text-gray-600 text-sm">Melde ein Problem, stelle eine Frage oder gib Feedback.</p>
+      </header>
+
+      <form id="supportForm" class="space-y-4 mb-8">
+        <div>
+          <label for="ticketSubject" class="block text-sm font-medium text-gray-700">Betreff *</label>
+          <input type="text" id="ticketSubject" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" required>
+        </div>
+        <div>
+          <label for="ticketMessage" class="block text-sm font-medium text-gray-700">Nachricht *</label>
+          <textarea id="ticketMessage" rows="4" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" required></textarea>
+        </div>
+        <button type="submit" class="w-full bg-green-600 text-white py-2 rounded-lg font-semibold hover:bg-green-700 transition">
+          Ticket senden
+        </button>
+      </form>
+      
+      <div id="pastTickets">
+        <h3 class="text-lg font-bold mb-3 text-gray-800 border-t pt-4">Deine offenen Tickets</h3>
+        <div id="supportTicketsList" class="divide-y divide-gray-100 text-sm">
+          <div class="text-gray-400 p-4">⏳ Lade Tickets...</div>
+        </div>
+      </div>
+    </section>
+  `;
+
+  document.getElementById('supportForm').addEventListener('submit', submitSupportTicket);
+  ladeSupportTicketsLive();
+  updateInfoBox();
+}
+
+async function submitSupportTicket(e) {
+  e.preventDefault();
+  const subject = document.getElementById('ticketSubject').value.trim();
+  const message = document.getElementById('ticketMessage').value.trim();
+  const user = firebase.auth().currentUser;
+
+  if (!subject || !message) {
+    showToast("Bitte Betreff und Nachricht ausfüllen.", 3000, 'bg-red-600');
+    return;
+  }
+
+  const payload = {
+    userId: user.uid,
+    userName: user.displayName || user.email,
+    userEmail: user.email,
+    subject: subject,
+    message: message,
+    status: 'offen', // offen, in Bearbeitung, geschlossen
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+
+  try {
+    await db.collection('supportTickets').add(payload);
+    showToast("✅ Dein Ticket wurde gesendet. Wir melden uns zeitnah!");
+    document.getElementById('supportForm').reset();
+  } catch (err) {
+    console.error('submitSupportTicket error', err);
+    showToast("❌ Fehler beim Senden des Tickets: " + (err.message || err), 5000, 'bg-red-600');
+  }
+}
+
+function ladeSupportTicketsLive() {
+  if (supportTicketsUnsub) {
+    supportTicketsUnsub();
+    supportTicketsUnsub = null;
+  }
+  const list = document.getElementById("supportTicketsList");
+  const user = firebase.auth().currentUser;
+  if (!user || !list) return;
+
+  const query = db.collection("supportTickets")
+    .where("userId", "==", user.uid)
+    .orderBy("createdAt", "desc")
+    .limit(10); // Nur die letzten 10 anzeigen
+
+  supportTicketsUnsub = query.onSnapshot(snap => {
+    if (!list) return;
+
+    if (snap.empty) {
+      list.innerHTML = `<div class="p-4 text-gray-500">Du hast noch keine Support-Tickets erstellt.</div>`;
+      return;
+    }
+
+    list.innerHTML = "";
+    snap.forEach(doc => {
+      const d = doc.data();
+      const id = doc.id;
+      const datum = d.createdAt?.toDate?.().toLocaleString("de-DE") || "-";
+      const statusColor = d.status === 'offen' ? 'bg-red-100 text-red-800' : 
+                          d.status === 'in Bearbeitung' ? 'bg-yellow-100 text-yellow-800' : 
+                          'bg-green-100 text-green-800';
+
+      list.innerHTML += `
+        <div class="p-4 flex justify-between items-start hover:bg-gray-50">
+          <div class="flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-xs font-medium px-2 py-0.5 rounded-full ${statusColor}">${d.status}</span>
+              <span class="text-xs text-gray-500">${datum}</span>
+            </div>
+            <div class="font-semibold">${d.subject}</div>
+            <p class="text-gray-600 mt-1 line-clamp-2">${d.message}</p>
+          </div>
+          <button class="text-red-500 text-sm hover:underline ml-4 mt-2" onclick="deleteSupportTicket('${id}')">
+            Löschen
+          </button>
+        </div>
+      `;
+    });
+  }, err => {
+    console.error("Lade Support Tickets Fehler:", err);
+    if(list) list.innerHTML = `<div class="p-4 text-red-500">❌ Fehler beim Laden der Tickets.</div>`;
+  });
+}
+
+async function deleteSupportTicket(id) {
+  if (!confirm("Willst du dieses Ticket wirklich löschen?")) return;
+  try {
+    await db.collection("supportTickets").doc(id).delete();
+    showToast("✅ Ticket gelöscht.");
+  } catch (err) {
+    console.error("Fehler beim Löschen des Tickets:", err);
+    showToast("❌ Konnte Ticket nicht löschen: " + err.message, 5000, 'bg-red-600');
+  }
+}
+ 
+/***********************
+ * Sidebar actions: Meine Eintragungen (mit Bearbeitung)
+ ***********************/
+// ================================ 
+// 🔁 MyEntries 2.0 - Übersicht + Detailseite 
+// ================================ 
+// Hilfsfunktion: safe escape für attributes (falls noch nicht vorhanden) 
+function escapeAttr(s) { return (s === undefined || s === null) ? '' : String(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); } 
+
+// ================================ 
+// Übersicht: Karten mit Bild + Edit/Delete 
+// ================================ 
+async function showMyEntries() { 
+    if (!firebase.auth().currentUser) { 
+        showToast("Bitte zuerst einloggen", 3000, 'bg-red-600'); 
+        return; 
+    } 
+    const uid = firebase.auth().currentUser.uid; 
+    
+    // Setze Modus und Navigierung zurück
+    mode = "list";
+    document.getElementById("navBottom").style.display = "none";
+    updateInfoBox();
+    
+    // Lade betreiber-doc für Unterstützer-Status global (falls benötigt) 
+    const betreiberDoc = await db.collection("betreiber").doc(uid).get(); 
+    const isGlobalSupporter = betreiberDoc.exists && (betreiberDoc.data().premium === true || betreiberDoc.data().unterstuetzer === true); 
+    const container = document.getElementById("question-area"); 
+    container.innerHTML = ` 
+        <div class="max-w-6xl mx-auto"> 
+            <h2 class="text-2xl font-bold mb-6 text-green-700">📋 Meine Eintragungen</h2> 
+            <div id="entriesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div> 
+        </div> 
+    `; 
+    const grid = document.getElementById("entriesGrid"); 
+    grid.innerHTML = `<div class="col-span-3 text-gray-500">⏳ Lade Eintragungen…</div>`; 
+    try { 
+        const snap = await db.collection("eierhuetten") 
+            .where("userId", "==", uid) 
+            .orderBy("createdAt", "desc") 
+            .get(); 
+        const docs = snap.docs.filter(d => { 
+            const st = d.data().status; 
+            return st !== 'archiviert' && st !== 'deleted'; 
+        }); 
+        
+        if (docs.length === 0) { 
+            grid.innerHTML = `<div class="bg-white p-6 rounded shadow text-center col-span-3">Du hast noch keine Eintragungen.</div>`; 
+            return; 
+        } 
+        
+        // optional: aggregate top stats for header (sum) 
+        let total = docs.length; 
+        let angenommen = docs.filter(d => ['angenommen','accepted'].includes(d.data().status)).length; 
+        let offen = docs.filter(d => d.data().status === 'offen').length; 
+        
+        // optional header 
+        const headerBar = document.createElement('div'); 
+        headerBar.className = 'col-span-3 bg-green-50 p-3 rounded-lg text-sm text-green-800 flex gap-6 justify-center items-center'; 
+        headerBar.innerHTML = `🥚 <strong>${total}</strong> Eintragungen • ✅ <strong>${angenommen}</strong> angenommen • ⏳ <strong>${offen}</strong> offen`; 
+        grid.innerHTML = ''; 
+        grid.appendChild(headerBar); 
+        
+        // render each card 
+        for (const doc of docs) { 
+            const d = doc.data(); 
+            const id = doc.id; 
+            // Foto-Logik
+            const fotoArray = d.fotos || [];
+            const img = Array.isArray(fotoArray) && fotoArray.length ? (typeof fotoArray[0] === 'string' ? fotoArray[0] : fotoArray[0].url) : 'https://radlmap.net/img/noimg/1.jpg';
+            
+            const isSupporter = d.unterstuetzer === true || isGlobalSupporter === true; 
+            const card = document.createElement('div'); 
+            card.className = 'bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition relative'; 
+            card.style.cursor = 'pointer'; 
+            card.innerHTML = ` 
+                <div class="relative"> 
+                    <img src="${escapeAttr(img)}" alt="${escapeAttr(d.name||'')}" class="w-full h-48 object-cover"> 
+                    ${isSupporter ? `<span class="absolute top-3 right-3 bg-green-600 text-white text-xs font-semibold px-3 py-1 rounded-full shadow">💚 Unterstützer</span>` : ''} 
+                </div> 
+                <div class="p-4 flex justify-between items-center"> 
+                    <div class="truncate"> 
+                        <h3 class="font-bold text-lg text-gray-800 truncate">${escapeAttr(d.name||'Unbenannt')}</h3> 
+                        <p class="text-xs text-gray-500 truncate">Status: ${(d.status || 'Unbekannt')}</p> 
+                    </div> 
+                    <div class="flex gap-3 text-lg"> 
+                        <button class="edit-btn text-blue-600 hover:text-blue-800" title="Bearbeiten" data-id="${id}" type="button">✏️</button> 
+                        <button class="delete-btn text-red-600 hover:text-red-800" title="Löschen" data-id="${id}" data-name="${escapeAttr(d.name||'')}" type="button">❌</button> 
+                    </div> 
+                </div> 
+            `; 
+            // click on card opens edit page 
+            card.addEventListener('click', (ev) => { 
+                // avoid card-click if edit or delete button clicked 
+                if (ev.target.closest('.edit-btn') || ev.target.closest('.delete-btn')) return; 
+                openEditPage(id); 
+            }); 
+            grid.appendChild(card); 
+        } 
+        
+        // event delegation for edit / delete 
+        grid.querySelectorAll('.edit-btn').forEach(btn => { 
+            btn.addEventListener('click', (e) => { 
+                e.stopPropagation(); 
+                openEditPage(btn.dataset.id); 
+            }); 
+        }); 
+        grid.querySelectorAll('.delete-btn').forEach(btn => { 
+            btn.addEventListener('click', (e) => { 
+                e.stopPropagation(); 
+                confirmDeleteEntry(btn.dataset.id, btn.dataset.name); 
+            }); 
+        }); 
+    } catch (err) { 
+        console.error('showMyEntries error', err); 
+        grid.innerHTML = `<div class="bg-red-100 p-4 rounded">Fehler beim Laden: ${err.message}</div>`; 
+    } 
+} 
+
+// ================================ 
+// Löschen mit Nachfrage (übersicht + detail) 
+// ================================ 
+function confirmDeleteEntry(id, name) { 
+    const proceed = confirm(`⚠️ Möchtest du die Eintragung "${name || id}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`); 
+    if (!proceed) return; 
+    db.collection('eierhuetten').doc(id).delete() 
+        .then(() => { 
+            showToast('✅ Eintragung gelöscht'); 
+            showMyEntries(); 
+        }) 
+        .catch(err => { 
+            console.error('delete error', err); 
+            showToast('❌ Fehler beim Löschen: ' + (err.message || err), 5000, 'bg-red-600'); 
+        }); 
+} 
+
+// ================================ 
+// Detailseite: Statistik + Bearbeitungsformular 
+// ================================ 
+async function openEditPage(id) { 
+    if (!id) return; 
+    
+    // Setze Modus und Navigierung zurück
+    mode = "list";
+    document.getElementById("navBottom").style.display = "none";
+    
+    try { 
+        const docRef = db.collection("eierhuetten").doc(id); 
+        const docSnap = await docRef.get(); 
+        if (!docSnap.exists) return showToast("❌ Eintrag nicht gefunden", 3000, 'bg-red-600'); 
+        
+        const d = docSnap.data(); 
+        // Lade Daten in editingData, um Formular zu befüllen (Vereinfachung)
+        editingData = { ...d, id: docSnap.id }; 
+        
+        const container = document.getElementById("question-area"); 
+        container.innerHTML = ` 
+            <div class="max-w-5xl mx-auto"> 
+                <button id="backToList" class="mb-4 text-sm text-blue-600 hover:underline" onclick="showMyEntries()">⬅️ Zurück zur Übersicht</button> 
+                <h2 class="text-2xl font-bold mb-4 text-green-700">Bearbeite: ${escapeAttr(d.name || 'Unbenannt')}</h2>
+                <p class="text-sm text-gray-500 mb-4">Status: <span class="font-semibold">${d.status || 'offen'}</span></p>
+
+                <div class="flex flex-col md:flex-row gap-6"> 
+                    <div id="photoUploaderContainer" class="w-full md:w-1/3 bg-white rounded-xl p-4 shadow">
+                        <h4 class="font-semibold text-lg mb-2">Fotos</h4>
+                        <p class="text-sm text-gray-500 mb-3">Feature: In der Admin-Version kannst du hier Fotos hochladen.</p>
+                        <div id="photoGalleryPlaceholder" class="grid grid-cols-2 gap-2">
+                             ${(d.fotos || []).slice(0, 4).map(f => `<img src="${f.url || f}" class="w-full h-20 object-cover rounded shadow-sm">`).join('')}
+                        </div>
+                    </div> 
+                    
+                    <div class="w-full md:w-2/3"> 
+                        <div class="bg-white rounded-xl p-6 shadow space-y-4"> 
+                            <h4 class="font-semibold text-lg mb-2">Bearbeitungsformular</h4> 
+                            
+                            <label class="block"> 
+                                <span class="text-gray-700">Name</span> 
+                                <input id="editName" value="${escapeAttr(d.name || "")}" class="w-full border rounded p-2 mt-1"> 
+                            </label> 
+                            
+                            <label class="block"> 
+                                <span class="text-gray-700">Typ</span> 
+                                <input value="${escapeAttr(d.typ || "")}" class="w-full border rounded p-2 mt-1 bg-gray-50" disabled> 
+                            </label> 
+                            
+                            <label class="block"> 
+                                <span class="text-gray-700">Beschreibung</span> 
+                                <div id="quillContainerEdit" class="bg-white border rounded"></div>
+                            </label>
+                            
+                            <label class="block">
+                                <span class="text-gray-700">Öffnungszeiten</span>
+                                ${renderOpeningHoursEditor(id, d.oeffnungszeiten)}
+                            </label>
+                            
+                            <label class="block">
+                                <span class="text-gray-700">Standort (GeoPoint)</span>
+                                <p class="text-sm text-gray-500">Breitengrad: ${d.location?.latitude || 'N/A'}</p>
+                                <p class="text-sm text-gray-500">Längengrad: ${d.location?.longitude || 'N/A'}</p>
+                            </label>
+
+                            <button onclick="saveEditedEntry('${id}')" class="w-full bg-green-600 text-white py-2 rounded-lg font-semibold hover:bg-green-700 transition">
+                                Änderungen speichern
+                            </button>
+                            
+                            <button onclick="confirmDeleteEntry('${id}', '${escapeAttr(d.name || '')}')" class="w-full bg-red-100 text-red-600 py-2 rounded-lg font-semibold hover:bg-red-200 transition">
+                                Eintragung löschen
+                            </button>
+                        </div> 
+                    </div> 
+                </div>
+            </div> 
+        `; 
+        
+        // Quill für Beschreibung initialisieren
+        setTimeout(() => {
+            initEnhancedEditor('quillContainerEdit', editingData);
+            // Workaround für Öffnungszeiten Editor, der in openEditPage nicht sauber gerendert wird
+            const dayInputs = document.getElementById(`openhours-${id}`);
+            if (dayInputs) {
+                // Hier müsste die Logik für den OH-Editor reaktiviert werden, falls nötig.
+                // Für dieses Beispiel belassen wir es bei der statischen Anzeige/Grund-Bearbeitung.
+            }
+        }, 100);
+        
+        updateInfoBox();
+    } catch (err) { 
+        console.error('openEditPage error', err); 
+        container.innerHTML = `<div class="bg-red-100 p-4 rounded">Fehler beim Laden der Bearbeitungsseite: ${err.message}</div>`; 
+    } 
+} 
+
+// ================================ 
+// Speichern der bearbeiteten Daten 
+// ================================
+async function saveEditedEntry(id) {
+    const newName = document.getElementById('editName')?.value.trim();
+    if (!newName) {
+        showToast("Bitte gib einen Namen ein.", 3000, 'bg-red-600');
+        return;
+    }
+    
+    // Öffnungszeiten aus Editor holen
+    const newOeffnungszeiten = collectOpeningHours(id);
+    
+    const updates = {
+        name: newName,
+        beschreibung: quill.root.innerHTML, // Quill-Inhalt holen
+        oeffnungszeiten: normalizeOpeningHours(newOeffnungszeiten),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        // weitere editierbare Felder hier ergänzen
+    };
+
+    try {
+        await db.collection('eierhuetten').doc(id).update(updates);
+        showToast('✅ Änderungen gespeichert.');
+        openEditPage(id); // Seite neu laden, um Änderungen zu sehen
+    } catch (err) {
+        console.error('saveEditedEntry error', err);
+        showToast('❌ Fehler beim Speichern der Änderungen: ' + (err.message || err), 5000, 'bg-red-600');
+    }
+}
+
+
+function showTutorial() { 
+    const qa = document.getElementById("question-area"); 
+    mode = "tutorial"; 
+    const tutorialHTML = ` 
+        <section class="bg-white p-8 rounded-2xl shadow-lg max-w-3xl mx-auto animate-fadeIn"> 
+            <header class="mb-6 text-center"> 
+                <h2 class="text-3xl font-extrabold text-green-600 mb-2">👋 Willkommen!</h2> 
+                <p class="text-gray-600 text-lg"> Schön, dass du den <span class="font-semibold text-green-600">Hütten-Assistent</span> benutzt. Hier ein kurzer Überblick über die wichtigsten Funktionen: </p> 
+            </header> 
+            <ul class="space-y-5 text-gray-700"> 
+                <li class="flex items-start"> 
+                    <span class="text-green-500 mr-3 text-xl">➕</span> 
+                    <p> <strong>„Neue Eintragung“</strong> – Erstelle eine neue Hütten-/Hofladen-Eintragung mit Fotos und Informationen. </p> 
+                </li> 
+                <li class="flex items-start"> 
+                    <span class="text-green-500 mr-3 text-xl">📋</span> 
+                    <p> <strong>„Meine Eintragungen“</strong> – Übersicht über deine Einträge: Status, Fotos, Standort und Bearbeitungsmöglichkeiten. </p> 
+                </li> 
+                <li class="flex items-start"> 
+                    <span class="text-green-500 mr-3 text-xl">💬</span> 
+                    <p> <strong>„Hütten-Nachrichten“</strong> – Hier sammeln sich Nachrichten von Besuchern zu deinen Hütten. Neue Nachrichten erscheinen durch das rote Badge in der Seitenleiste. Du kannst Nachrichten öffnen, lesen und (als Hütten-Besitzer) einzelne Nachrichten löschen. </p> 
+                </li> 
+                <li class="flex items-start"> 
+                    <span class="text-green-500 mr-3 text-xl">⚙️</span> 
+                    <p> <strong>„Einstellungen“</strong> – Verwalte deinen Anzeigenamen und sieh deine Kontoinformationen ein. </p> 
+                </li>
+                <li class="flex items-start"> 
+                    <span class="text-green-500 mr-3 text-xl">🆘</span> 
+                    <p> <strong>„Support“</strong> – Melde Probleme oder stelle Fragen an das Team. Support-Tickets werden gespeichert. </p> 
+                </li> 
+            </ul> 
+            <footer class="mt-8 text-center"> 
+                <p class="text-sm text-gray-500"> 💡 Tipp: Das System aktualisiert Nachrichten live — das Badge zeigt neue, ungelesene Nachrichten an. </p> 
+            </footer> 
+        </section> 
+    `; 
+    qa.innerHTML = tutorialHTML; 
+    updateInfoBox(); 
+} 
+
+let hutMessagesUnsub = null; // Listener für die Liste 
+let hutMessagesBadgeUnsub = null; // Listener für die Sidebar-Badge 
+// ------------------- 
+// Seite "Hütten-Nachrichten" öffnen 
+// ------------------- 
+function showHutMessages() { 
+    const qa = document.getElementById("question-area"); 
+    mode = "hutMessages"; 
+    const hutMessagesHTML = ` 
+        <section class="bg-white p-6 rounded-2xl shadow-lg max-w-3xl mx-auto animate-fadeIn"> 
+            <header class="mb-4 text-center"> 
+                <h2 class="text-2xl font-extrabold text-green-600 mb-2">🏡 Hütten-Nachrichten</h2> 
+                <p class="text-gray-600 text-sm">Hier findest du Nachrichten, die Besucher zu deinen Hütten geschrieben haben.</p> 
+            </header> 
+            <div id="hutMessagesList" class="divide-y divide-gray-200 text-sm"> 
+                <div class="text-gray-400 p-4">⏳ Lade Nachrichten...</div> 
+            </div> 
+            <footer class="mt-4 text-center"> 
+                <div id="hutMessagesBadge" class="hidden text-red-600 font-semibold">🔔 Neue Nachrichten!</div> 
+            </footer> 
+        </section> 
+    `; 
+    qa.innerHTML = hutMessagesHTML; 
+    ladeHutMessagesLive(); // Nachrichten live laden 
+    updateInfoBox(); 
+} 
+
+// ------------------- 
+// Sidebar-Badge immer aktuell halten 
+// ------------------- 
+async function initHutMessagesBadge() { 
+    if (hutMessagesBadgeUnsub) { 
+        hutMessagesBadgeUnsub(); 
+        hutMessagesBadgeUnsub = null; 
+    } 
+    const huettenSnap = await db.collection("eierhuetten") 
+        .where("userId", "==", currentUser.uid) 
+        .get(); 
+    if (huettenSnap.empty) { 
+        const counter = document.getElementById("hutMessagesCount"); 
+        if (counter) counter.classList.add("hidden"); 
+        return; 
+    } 
+    const hutIds = huettenSnap.docs.map(d => d.id); 
+    // in Batches von 10 IDs splitten 
+    const batches = []; 
+    for (let i = 0; i < hutIds.length; i += 10) { 
+        const batchIds = hutIds.slice(i, i + 10); 
+        batches.push( 
+            db.collection("hutMessages") 
+                .where("hutId", "in", batchIds) 
+        ); 
+    } 
+    // mehrere Listener kombinieren 
+    const counters = []; 
+    hutMessagesBadgeUnsub = () => counters.forEach(unsub => unsub()); 
+    batches.forEach(batchQuery => { 
+        const unsub = batchQuery.onSnapshot(snap => { 
+            let neuCount = 0; 
+            snap.forEach(doc => { 
+                if (doc.data().answered === false) neuCount++; 
+            }); 
+            const counter = document.getElementById("hutMessagesCount"); 
+            if (counter) { 
+                if (neuCount > 0) { 
+                    counter.textContent = neuCount; 
+                    counter.classList.remove("hidden"); 
+                } else { 
+                    counter.classList.add("hidden"); 
+                } 
+            } 
+        }); 
+        counters.push(unsub); 
+    }); 
+} 
+
+// ------------------- 
+// Nachrichten-Liste für die Seite 
+// ------------------- 
+async function ladeHutMessagesLive() { 
+    const list = document.getElementById("hutMessagesList"); 
+    const counter = document.getElementById("hutMessagesCount"); 
+    if (!currentUser || !currentUser.uid) { 
+        if (list) list.innerHTML = `<div class="p-4 text-gray-500">Bitte anmelden, um Nachrichten zu sehen.</div>`; 
+        if (counter) counter.classList.add("hidden"); 
+        return; 
+    } 
+    if (hutMessagesUnsub) { 
+        hutMessagesUnsub(); 
+        hutMessagesUnsub = null; 
+    } 
+    const huettenSnap = await db.collection("eierhuetten") 
+        .where("userId", "==", currentUser.uid) 
+        .get(); 
+    if (huettenSnap.empty) { 
+        if (list) list.innerHTML = `<div class="p-4 text-gray-500">Keine eigenen Hütten gefunden.</div>`; 
+        if (counter) counter.classList.add("hidden"); 
+        return; 
+    } 
+    const hutIds = huettenSnap.docs.map(d => d.id); 
+    // split into batches 
+    const batches = []; 
+    for (let i = 0; i < hutIds.length; i += 10) { 
+        batches.push( 
+            db.collection("hutMessages") 
+                .where("hutId", "in", hutIds.slice(i, i + 10)) 
+                .orderBy("createdAt", "desc") 
+        ); 
+    } 
+    const unsubs = []; 
+    hutMessagesUnsub = () => unsubs.forEach(u => u()); 
+    list.innerHTML = "⏳ Lade Nachrichten..."; 
+    // wir sammeln alle Messages aus allen Batches 
+    batches.forEach(query => { 
+        const unsub = query.onSnapshot(snap => { 
+            const allMessages = []; 
+            // alle Batches abfragen 
+            Promise.all(batches.map(b => b.get())).then(results => { 
+                results.forEach(batchSnap => { 
+                    batchSnap.forEach(doc => { 
+                        allMessages.push({ id: doc.id, ...doc.data() }); 
+                    }); 
+                }); 
+                // sortieren nach Datum 
+                allMessages.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis()); 
+                // rendern 
+                if (allMessages.length === 0) { 
+                    list.innerHTML = `<div class="p-4 text-gray-500">Keine Nachrichten vorhanden.</div>`; 
+                    if (counter) counter.classList.add("hidden"); 
+                    return; 
+                } 
+                let neuCount = 0; 
+                list.innerHTML = ""; 
+                allMessages.forEach(d => { 
+                    if (d.answered === false) neuCount++; 
+                    const datum = d.createdAt?.toDate?.().toLocaleString("de-DE") || "-"; 
+                    list.innerHTML += ` 
+                        <div class="p-4 border-b"> 
+                            <div class="text-xs text-gray-500">${datum}</div> 
+                            <div class="font-semibold">${d.hutName || "-"}</div> 
+                            <div class="mt-1">${d.message || ""}</div> 
+                            <div class="text-xs text-gray-400 mt-1">von ${d.senderName || "Gast"}</div> 
+                            <button class="text-red-500 text-sm hover:underline" onclick="deleteHutMessage('${d.id}')" >Löschen</button> 
+                        </div> 
+                    `; 
+                }); 
+                // Badge aktualisieren 
+                if (counter) { 
+                    counter.textContent = `${neuCount}/${allMessages.length}`; 
+                    counter.classList.remove("hidden"); 
+                } 
+            }); 
+        }); 
+        unsubs.push(unsub); 
+    }); 
+} 
+
+async function deleteHutMessage(id) { 
+    if (!confirm("Willst du diese Nachricht wirklich löschen?")) return; 
+    try { 
+        await db.collection("hutMessages").doc(id).delete(); 
+        console.log("Nachricht gelöscht:", id); 
+    } catch (err) { 
+        console.error("Fehler beim Löschen:", err); 
+        alert("❌ Konnte Nachricht nicht löschen"); 
+    } 
+} 
+
+// Platzhalter für showDashboard, falls nicht definiert
+function showDashboard() {
+    const qa = document.getElementById("question-area"); 
+    mode = "dashboard";
+    qa.innerHTML = `
+        <section class="bg-white p-8 rounded-2xl shadow-lg max-w-3xl mx-auto">
+            <h2 class="text-2xl font-extrabold text-green-600 mb-4">📊 Betreiber-Dashboard</h2>
+            <p class="text-gray-700">Dieser Bereich zeigt Statistiken und Premium-Verwaltung an.</p>
+            <div class="mt-4 p-4 bg-gray-100 rounded">
+                Hier werden die Statistiken (Besucher, Aufrufe, Premium-Status) angezeigt.
+            </div>
+        </section>
+    `;
+    updateInfoBox();
+}
+// Platzhalter für showMyEvents
+function showMyEvents(user) {
+     const qa = document.getElementById("question-area"); 
+    mode = "events";
+    qa.innerHTML = `
+        <section class="bg-white p-8 rounded-2xl shadow-lg max-w-3xl mx-auto">
+            <h2 class="text-2xl font-extrabold text-green-600 mb-4">📅 Meine Events</h2>
+            <p class="text-gray-700">Verwalte hier deine erstellten Veranstaltungen.</p>
+        </section>
+    `;
+    updateInfoBox();
+}
+// Platzhalter für showCreateEvent
+function showCreateEvent(user) {
+    const qa = document.getElementById("question-area"); 
+    mode = "events";
+    qa.innerHTML = `
+        <section class="bg-white p-8 rounded-2xl shadow-lg max-w-3xl mx-auto">
+            <h2 class="text-2xl font-extrabold text-green-600 mb-4">➕ Neues Event</h2>
+            <p class="text-gray-700">Erstelle hier neue RadlMap-Events.</p>
+        </section>
+    `;
+    updateInfoBox();
+}
   </script>
 </body>
-</html>
+  </html>
