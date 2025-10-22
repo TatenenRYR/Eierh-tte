@@ -96,7 +96,13 @@
       background: var(--ui-bg) !important;
       color: var(--text-color) !important;
       backdrop-filter: blur(10px);
+      border-radius: 12px; /* Rounded popups */
     }
+     .leaflet-popup-content {
+        margin: 14px 20px; /* More padding inside popup */
+        line-height: 1.5;
+    }
+
 
     /* Toast-Nachrichten */
     #toast {
@@ -207,9 +213,14 @@
     .popup-card {
         max-height: 520px;
         overflow-y: auto;
+        font-size: 0.9rem; /* Slightly smaller text */
+        padding: 0 !important; /* Remove default padding for card design */
     }
+    .leaflet-popup-content-wrapper { padding: 0 !important; overflow: hidden; } /* Ensure card design takes full space */
+
     .popup-swiper img {
-        border-radius: 8px;
+        border-top-left-radius: 12px;
+        border-top-right-radius: 12px;
         width: 100%;
         height: 150px;
         object-fit: cover;
@@ -235,6 +246,11 @@
         color: #f9fafb;
     }
     .warning-icon {
+        background: none;
+        border: none;
+        font-size: 20px; /* Make warning icon slightly larger */
+    }
+     .leaflet-div-icon {
         background: none;
         border: none;
     }
@@ -411,7 +427,7 @@
     </div>
   </div>
 
-  <!-- NEU: Modal zum Melden einer Gefahr -->
+  <!-- Modal zum Melden einer Gefahr -->
     <div id="add-warning-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-[9990] flex items-center justify-center p-4">
         <div class="bg-[var(--bg-color)] rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
             <h3 class="font-bold text-lg">Gefahr an dieser Stelle melden</h3>
@@ -650,21 +666,23 @@
             }, 8000);
         },
         
-        getTurnIcon(type) {
-             switch (type) {
-                case 'turn': return '➡️';
-                case 'new name': return '⬆️';
-                case 'depart': return '🏁';
-                case 'arrive': return '📍';
-                case 'merge': return '➦';
-                case 'ramp': return '➦';
-                case 'fork': return '⑂';
-                case 'end of road': return '🔚';
-                case 'roundabout': return '🔄';
-                default: return '➡️';
+       getTurnIcon(type) { // Angepasst für OSRM instruction types
+            if (type.includes('left')) {
+                if (type.includes('sharp')) return '↙️';
+                if (type.includes('slight')) return '↖️';
+                return '⬅️';
             }
+            if (type.includes('right')) {
+                 if (type.includes('sharp')) return '↘️';
+                 if (type.includes('slight')) return '↗️';
+                return '➡️';
+            }
+            if (type.includes('roundabout')) return '🔄';
+            if (type.includes('arrive')) return '🏁';
+            if (type.includes('depart')) return '🏁'; // Start considered finish of prev leg
+            return '⬆️'; // continue, new name, etc.
         },
-        
+
         updateRoomUI(roomData, users = []) {
             const inRoom = !!roomData.id;
             document.getElementById('room-active-view').classList.toggle('hidden', !inRoom);
@@ -722,6 +740,7 @@
         },
         hideAddWarningModal() {
             document.getElementById('add-warning-modal').classList.add('hidden');
+            document.getElementById('warning-description').value = ''; // Clear description
         },
     };
 
@@ -748,7 +767,7 @@
             this.map.addLayer(this.clusterGroup);
 
             this.map.on('dragstart', () => { if(appState.isFollowing) appState.toggleFollow() });
-            this.map.on('contextmenu', (e) => uiManager.showAddWarningModal(e.latlng));
+            this.map.on('contextmenu', (e) => uiManager.showAddWarningModal(e.latlng)); // Right-click or long-press
             
             this.map.on('popupopen', (e) => {
               const swiperEl = e.popup.getElement().querySelector('.popup-swiper');
@@ -819,6 +838,13 @@
                 .bindPopup(`<b>${warning.type}</b><br>${warning.description || ''}`)
                 .addTo(this.map);
             this.warningMarkers[warning.id] = marker;
+        },
+
+        removeWarningMarker(warningId) {
+             if (this.warningMarkers[warningId]) {
+                this.map.removeLayer(this.warningMarkers[warningId]);
+                delete this.warningMarkers[warningId];
+            }
         },
 
         removeGroupMarker(userId) {
@@ -934,12 +960,17 @@
                 const step = this.routeData.steps[i];
                 let instructionText = step.maneuver.instruction;
 
-                if (!instructionText) {
+                // Fallback for missing instruction text - corrected logic
+                if (!instructionText || instructionText.trim() === '') {
                     const type = step.maneuver.type;
                     const modifier = step.maneuver.modifier || '';
                     const road = step.name ? ` auf ${step.name}` : '';
-                    if (type === 'continue') instructionText = `Weiter geradeaus ${road}`;
-                    else instructionText = `${type} ${modifier}${road}`;
+                    
+                    if (type === 'continue' || type === 'new name') instructionText = `Weiter geradeaus ${road}`;
+                    else if (type === 'arrive') instructionText = `Sie haben Ihr Ziel erreicht${road}`;
+                    else if (type === 'depart') instructionText = `Starten Sie ${road}`;
+                    else instructionText = `${modifier.replace(/_/g, ' ')}${road}`; // More generic for turns etc.
+                    instructionText = instructionText.charAt(0).toUpperCase() + instructionText.slice(1); // Capitalize
                 }
 
 
@@ -984,10 +1015,14 @@
             const now = Date.now();
             if (now - this.lastRecalcTime < config.routing.recalcDebounceMs) return;
 
-            const closestPoint = L.GeometryUtil.closest(mapManager.map, mapManager.routeLine.getLatLngs(), userPos);
-            if (!closestPoint) return;
-            
-            const distance = userPos.distanceTo(closestPoint);
+            // Ensure routeLine has coordinates
+            const routeLatLngs = mapManager.routeLine.getLatLngs();
+            if (!routeLatLngs || routeLatLngs.length < 2) return; 
+
+            const closestPoint = L.GeometryUtil.closest(mapManager.map, routeLatLngs, userPos);
+             if (!closestPoint || !closestPoint.latlng) return; // Check if closest point is valid
+
+            const distance = userPos.distanceTo(closestPoint.latlng);
 
             if (distance > config.routing.deviationThresholdMeters) {
                 this.lastRecalcTime = now;
@@ -1046,7 +1081,7 @@
         },
 
         async startNavigation() {
-            if (appState.currentRoom.id && appState.currentRoom.guideId !== userManager.userId) {
+            if (appState.currentRoom.id && appState.currentRoom.guideId && appState.currentRoom.guideId !== userManager.userId) {
                 uiManager.showToast("Nur der Guide kann die Navigation starten.");
                 return;
             }
@@ -1071,7 +1106,14 @@
                 uiManager.showToast("Navigation gestartet!");
                 
                 if (appState.currentRoom.id && appState.currentRoom.guideId === userManager.userId) {
-                    firebaseManager.updateGuidedRoute(true, route);
+                     // Pass only serializable data
+                    const serializableRoute = {
+                        coords: route.coords,
+                        distance: route.distance,
+                        duration: route.duration,
+                        steps: route.steps // steps should be serializable
+                    };
+                    firebaseManager.updateGuidedRoute(true, serializableRoute);
                 }
             }
         },
@@ -1189,6 +1231,7 @@
                         ttsManager.speak(message);
                         uiManager.showToast(message);
                         this.warnedAbout.add(warning.id);
+                        // Optionally remove from warnedAbout after some time if needed
                     }
                 }
             }
@@ -1373,6 +1416,12 @@
                                     </div>
 
                                     ${hut.beschreibung ? `<p class="text-sm text-gray-600 dark:text-gray-300 border-t border-b border-[var(--border-color)] py-2">${hut.beschreibung}</p>` : ''}
+                                    
+                                     <div class="text-sm border-t border-[var(--border-color)] pt-2">
+                                        <h4 class="font-semibold text-xs uppercase text-gray-500 mb-1">Öffnungszeiten</h4>
+                                        <p>${hut.oeffnungszeiten || 'Keine Angabe'}</p>
+                                    </div>
+
 
                                     <div class="grid grid-cols-2 gap-2 text-sm">
                                         <div class="flex items-center gap-2">
@@ -1496,13 +1545,13 @@
                          uiManager.showToast("Tour im Raum wurde aktualisiert!");
                     }
                     // Sync navigation for non-guides
-                    if(roomData.isNavigating && !appState.isNavigating) {
+                     if(roomData.isNavigating && !appState.isNavigating && roomData.guidedRoute) {
                         routeManager.routeData = roomData.guidedRoute;
                         mapManager.drawRoute(roomData.guidedRoute.coords);
                         uiManager.setNavigationState(true);
-                        userManager.startWatchingPosition();
-                    } else if (!roomData.isNavigating && appState.isNavigating) {
-                        routeManager.stopNavigation();
+                        userManager.startWatchingPosition(); // Start watching to follow guide
+                    } else if (!roomData.isNavigating && appState.isNavigating && !isSelfGuide) {
+                        routeManager.stopNavigation(); // Stop navigation if guide stops
                     }
                 }
                 uiManager.updateRoomUI(appState.currentRoom);
@@ -1521,7 +1570,7 @@
                     const userId = doc.id;
                     currentMemberIds.add(userId);
 
-                    if (userId !== userManager.userId && (now - user.timestamp) < 60000) { // Not me & active within 60s
+                    if (userId !== userManager.userId && user.timestamp && (now - user.timestamp) < 60000) { // Check timestamp existence
                         mapManager.updateGroupMarker({ id: userId, ...user });
                         activeUsers.push(user);
                     } else if (userId !== userManager.userId) {
@@ -1565,10 +1614,12 @@
             let newGuideId = userManager.userId;
             let newGuideName = localStorage.getItem('username') || 'Anonym';
 
-            // If I am already the guide, relinquish the role
             if (appState.currentRoom.guideId === userManager.userId) {
                 newGuideId = null;
                 newGuideName = null;
+            } else if (appState.currentRoom.guideId) {
+                uiManager.showToast("Es gibt bereits einen Guide.");
+                return; // Only allow setting if no guide or self
             }
             this.db.collection("rooms").doc(appState.currentRoom.id).set({ guideId: newGuideId, guideName: newGuideName }, { merge: true });
         },
@@ -1577,7 +1628,7 @@
             if(!appState.currentRoom.id) return;
             this.db.collection("rooms").doc(appState.currentRoom.id).set({
                 isNavigating: isNavigating,
-                guidedRoute: routeData ? JSON.parse(JSON.stringify(routeData)) : null,
+                guidedRoute: routeData ? JSON.parse(JSON.stringify(routeData)) : null, // Ensure serializability
             }, { merge: true });
         },
 
@@ -1601,16 +1652,28 @@
         },
 
         listenToWarnings() {
-            this.db.collection('warnings').onSnapshot(snapshot => {
-                appState.allWarnings = [];
-                snapshot.forEach(doc => {
-                    appState.allWarnings.push({ id: doc.id, ...doc.data() });
-                });
-                // Clear old warning markers
-                Object.values(mapManager.warningMarkers).forEach(marker => marker.remove());
-                mapManager.warningMarkers = {};
-                // Add new ones
-                appState.allWarnings.forEach(warning => mapManager.addWarningMarker(warning));
+            const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+            this.db.collection('warnings')
+               .where('createdAt', '>', new Date(twentyFourHoursAgo)) // Query directly in Firestore
+               .onSnapshot(snapshot => {
+                    const currentWarningIds = new Set();
+                    appState.allWarnings = [];
+
+                    snapshot.forEach(doc => {
+                        const warning = { id: doc.id, ...doc.data() };
+                        appState.allWarnings.push(warning);
+                        currentWarningIds.add(warning.id);
+                        if (!mapManager.warningMarkers[warning.id]) {
+                           mapManager.addWarningMarker(warning);
+                        }
+                    });
+
+                    // Remove markers for expired or deleted warnings
+                    Object.keys(mapManager.warningMarkers).forEach(markerId => {
+                        if (!currentWarningIds.has(markerId)) {
+                            mapManager.removeWarningMarker(markerId);
+                        }
+                    });
             });
         }
     };
