@@ -23,6 +23,8 @@
   <script src="https://unpkg.com/@mapbox/polyline"></script>
   <link rel="stylesheet" href="https://unpkg.com/swiper/swiper-bundle.min.css"/>
   <script src="https://unpkg.com/swiper/swiper-bundle.min.js"></script>
+  <script src="https://unpkg.com/leaflet-geometryutil"></script>
+
 
   <style>
     /* Inter Schriftart für ein modernes UI */
@@ -408,7 +410,7 @@
   
   <script>
     // ==========================================================
-    //  🚲 RADLMAP - V5.2 - FINAL
+    //  🚲 RADLMAP - V5.3 - FINAL
     // ==========================================================
 
     // ----------------------------------------------------------
@@ -421,7 +423,6 @@
         authDomain: "eierhuettentour.firebaseapp.com",
         projectId: "eierhuettentour"
       },
-      // HINWEIS: Der OpenRouteService API Key wurde entfernt, da er nicht mehr benötigt wird.
       map: {
         defaultCenter: [47.3, 11.4],
         defaultZoom: 13,
@@ -429,8 +430,8 @@
       },
       routing: {
         profile: 'cycling-regular',
-        deviationThresholdMeters: 30,
-        recalcDebounceMs: 5000,
+        deviationThresholdMeters: 10,
+        recalcDebounceMs: 8000,
       },
       noImagePlaceholders: [
         "https://radlmap.net/img/noimg/1.jpg",
@@ -815,6 +816,7 @@
         routeData: null,
         recalcTimer: null,
         announcedSteps: {},
+        lastRecalcTime: 0,
 
         async fetchRoute(startCoords, waypoints) {
             const coordinatesString = [
@@ -850,6 +852,24 @@
         
             for (let i = 0; i < this.routeData.steps.length; i++) {
                 const step = this.routeData.steps[i];
+                let instructionText = step.maneuver.instruction;
+
+                // Fallback for missing instruction text
+                if (!instructionText) {
+                    const type = step.maneuver.type;
+                    const modifier = step.maneuver.modifier || '';
+                    const road = step.name ? ` auf ${step.name}` : '';
+                    
+                    if (type === 'arrive') instructionText = `Sie haben Ihr Ziel erreicht${road}`;
+                    else if (type === 'depart') instructionText = `Starten Sie ${road}`;
+                    else if (type.includes('turn') || modifier) {
+                         instructionText = `${modifier.replace(' ', ' ')}${road}`;
+                    } else {
+                         instructionText = `Fahren Sie weiter auf ${step.name}`;
+                    }
+                }
+
+
                 const stepLocation = L.latLng(step.maneuver.location[1], step.maneuver.location[0]);
                 const distance = userPos.distanceTo(stepLocation);
         
@@ -857,7 +877,7 @@
         
                 if (distance < 150 && distance > 40 && !this.announcedSteps[i].pre) {
                     this.announcedSteps[i].pre = true;
-                    const instruction = `In ${Math.round(distance/10)*10} Metern ${step.maneuver.instruction}`;
+                    const instruction = `In ${Math.round(distance/10)*10} Metern ${instructionText}`;
                     const icon = uiManager.getTurnIcon(step.maneuver.type);
                     uiManager.showNavHint(icon, instruction);
                     ttsManager.speak(instruction);
@@ -866,7 +886,7 @@
         
                 if (distance < 25 && !this.announcedSteps[i].imminent) {
                     this.announcedSteps[i].imminent = true;
-                    const instruction = `Jetzt ${step.maneuver.instruction}`;
+                    const instruction = `Jetzt ${instructionText}`;
                     const icon = uiManager.getTurnIcon(step.maneuver.type);
                     uiManager.showNavHint(icon, instruction);
                     ttsManager.speak(instruction);
@@ -882,6 +902,24 @@
                     }
                     break; 
                 }
+            }
+        },
+
+        checkDeviation(userPos) {
+            if (!appState.isNavigating || !mapManager.routeLine) return;
+
+            const now = Date.now();
+            if (now - this.lastRecalcTime < config.routing.recalcDebounceMs) return;
+
+            const closestPoint = L.GeometryUtil.closest(mapManager.map, mapManager.routeLine, userPos);
+            if (!closestPoint) return;
+            
+            const distance = userPos.distanceTo(closestPoint.latlng);
+
+            if (distance > config.routing.deviationThresholdMeters) {
+                this.lastRecalcTime = now;
+                uiManager.showToast("Route verlassen, neue Route wird berechnet...");
+                this.startNavigation(); // Recalculate from current position
             }
         },
         
@@ -1019,7 +1057,10 @@
                     mapManager.updateUserMarker(currentPos, pos.coords.accuracy, bearing);
                     if (appState.isFollowing) mapManager.map.panTo(currentPos);
                     
-                    if(appState.isNavigating) routeManager.checkNextManeuver(currentPos);
+                    if(appState.isNavigating) {
+                        routeManager.checkNextManeuver(currentPos);
+                        routeManager.checkDeviation(currentPos);
+                    }
                     if(appState.currentRoomId) firebaseManager.updateUserPositionInRoom(currentPos);
 
                     weatherManager.fetchWeather(currentPos.lat, currentPos.lng);
