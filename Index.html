@@ -282,6 +282,27 @@
       0%, 100% { opacity: 1; }
       50% { opacity: 0.5; }
     }
+    
+    /* NEU: CSS für Öffnungszeiten-Liste */
+    .oeffnungszeiten-list {
+        list-style: none;
+        padding-left: 0;
+        margin: 0;
+        font-size: 0.85rem;
+    }
+    .oeffnungszeiten-list li {
+        padding: 2px 0;
+        display: flex;
+    }
+    .oeffnungszeiten-list li .tag {
+        font-weight: 600;
+        width: 3rem; /* 48px */
+        display: inline-block;
+        flex-shrink: 0;
+    }
+    .oeffnungszeiten-list li .zeit {
+        display: inline-block;
+    }
 
   </style>
 </head>
@@ -386,9 +407,14 @@
                 <canvas id="elevation-chart"></canvas>
             </div>
 
+            <!-- HINWEIS: Dieser Button wird jetzt nicht mehr benötigt, da die Aktualisierung
+                 automatisch beim Hinzufügen/Entfernen von Stopps passiert.
+                 Ich lasse ihn hier, falls du ihn für eine manuelle Aktualisierung behalten willst.
             <button onclick="routeManager.recalculatePreviewRoute()" class="w-full bg-gray-500 text-white p-2 rounded-lg text-sm font-medium hover:bg-gray-600 transition">
                 🔄 Vorschau aktualisieren
             </button>
+            -->
+            
             <button id="summarize-tour-btn" onclick="geminiManager.summarizeTour()" class="w-full bg-purple-500 text-white p-2 rounded-lg text-sm font-medium hover:bg-purple-600 transition">
                 ✨ Tour-Zusammenfassung
             </button>
@@ -521,12 +547,12 @@
   
   <script>
     // ==========================================================
-    //  🚲 RADLMAP - V5.7 - KI Fix, KMH, FlyZoom, Translate
+    //  🚲 RADLMAP - V5.8 - Live Route Update & Öffnungszeiten Fix
     // ==========================================================
 
     // WICHTIG: Füge hier deinen Google AI Studio API-Schlüssel ein!
     // Ohne diesen Schlüssel funktionieren die KI-Funktionen (Übersetzung, Tour-Vorschlag) nicht.
-    const GEMINI_API_KEY = "AIzaSyB3FT8CdN9WkNjfQ5vutbjLCEibGSl3nnQ"; 
+    const GEMINI_API_KEY = "DEIN_API_KEY_HIER"; 
 
     // ----------------------------------------------------------
     //  1. KONFIGURATION & ZUSTAND
@@ -725,7 +751,8 @@
                 widget.classList.remove('hidden');
                 widget.querySelector('span').textContent = `${speed.toFixed(0)} km/h`;
             } else {
-                widget.classList.add('hidden'); // Verstecken bei 0 km/h oder null
+                 widget.querySelector('span').textContent = `0 km/h`; // Zeige 0 an, statt zu verstecken
+                // widget.classList.add('hidden'); // Verstecken bei 0 km/h oder null
             }
         },
 
@@ -738,6 +765,10 @@
             document.getElementById('stopBtn').classList.toggle('hidden', !isNavigating || guidedTourActive);
             document.getElementById('resetBtn').disabled = guidedTourActive;
             document.getElementById('follow-toggle').classList.toggle('hidden', !isNavigating);
+            
+            // NEU: Speed-Widget bei Start/Stopp der Navigation ein/ausblenden
+            document.getElementById('speed-widget').classList.toggle('hidden', !isNavigating);
+
             if(!isNavigating) {
                  document.getElementById('navHint').classList.add('hidden');
                  this.updateSpeedWidget(null); // NEU: Speed-Widget bei Stopp ausblenden
@@ -1107,6 +1138,12 @@
             select.value = localStorage.getItem('voiceLang') || 'de-DE';
             
             select.onchange = () => localStorage.setItem('voiceLang', select.value);
+            
+            // Sicherstellen, dass die Stimmen geladen sind (wichtig für einige Browser)
+            if (speechSynthesis.onvoiceschanged !== undefined) {
+                speechSynthesis.onvoiceschanged = () => {}; // Leerer Handler, um das Laden zu triggern
+            }
+            speechSynthesis.getVoices();
         },
         
         /**
@@ -1122,7 +1159,7 @@
 
             try {
                 // Übersetzen, wenn die Zielsprache nicht Deutsch ist
-                if (targetLang !== 'de-DE') {
+                if (targetLang !== 'de-DE' && navigator.onLine) {
                     textToSpeak = await geminiManager.translateText(text, targetLang);
                 }
             } catch (e) {
@@ -1130,6 +1167,8 @@
                 // Fallback: Originaltext verwenden
                 textToSpeak = text; 
             }
+            
+            if (!textToSpeak) textToSpeak = text; // Sicherheitsnetz
 
             const utterance = new SpeechSynthesisUtterance(textToSpeak);
             utterance.lang = targetLang; // Die Sprache der Stimme/Übersetzung festlegen
@@ -1274,7 +1313,15 @@
                 appState.selectedHuts.push(hut);
             }
             uiManager.updateSelectedList();
-            this.recalculatePreviewRoute(); // Automatische Neuberechnung
+            
+            // *** ÄNDERUNG HIER: Live-Neuberechnung ***
+            if (appState.isNavigating) {
+                uiManager.showToast("Route wird aktualisiert...");
+                this.startNavigation(); // Live-Update der Navigation
+            } else {
+                this.recalculatePreviewRoute(); // Nur Vorschau aktualisieren
+            }
+            
             if(appState.currentRoom.id) {
                 firebaseManager.updateRoomHuts();
             }
@@ -1283,8 +1330,16 @@
         removeSelected(index) {
             appState.selectedHuts.splice(index, 1);
             uiManager.updateSelectedList();
-            this.recalculatePreviewRoute(); // Automatische Neuberechnung
-             if(appState.currentRoom.id) {
+            
+            // *** ÄNDERUNG HIER: Live-Neuberechnung ***
+            if (appState.isNavigating) {
+                 uiManager.showToast("Route wird aktualisiert...");
+                this.startNavigation(); // Live-Update der Navigation
+            } else {
+                this.recalculatePreviewRoute(); // Nur Vorschau aktualisieren
+            }
+             
+            if(appState.currentRoom.id) {
                 firebaseManager.updateRoomHuts();
             }
         },
@@ -1311,7 +1366,11 @@
             
             if(route) {
                 mapManager.drawRoute(route.coords, true);
-                mapManager.map.fitBounds(mapManager.previewLine.getBounds(), {padding: [50,50]});
+                
+                // *** ÄNDERUNG HIER: Nur zoomen, wenn NICHT navigiert wird ***
+                if (!appState.isNavigating) {
+                    mapManager.map.fitBounds(mapManager.previewLine.getBounds(), {padding: [50,50]});
+                }
                 
                 const distanceKm = (route.distance / 1000).toFixed(1);
                 const durationMin = Math.round(route.duration / 60);
@@ -1349,7 +1408,6 @@
                 mapManager.drawRoute(route.coords);
                 
                 // *** ÄNDERUNG HIER: ***
-                // mapManager.map.setView(startPos, config.map.navigationZoom); // ALT: Harter Zoom
                 mapManager.map.flyTo(startPos, config.map.navigationZoom, { 
                     duration: 2.5, // 2.5 Sekunden für einen weichen Flug
                     easeLinearity: 0.5
@@ -1663,7 +1721,11 @@
                 };
 
                 const resultText = await this.callGemini(prompt, schema);
-                if (!resultText) return; // Fehler wurde bereits in callGemini angezeigt
+                if (!resultText) { // Fehler wurde bereits in callGemini angezeigt
+                    btn.disabled = false;
+                    btn.textContent = 'Vorschlagen';
+                    return; 
+                }
 
                 const resultJson = JSON.parse(resultText);
                 uiManager.openPopup(`KI-Vorschlag: ${resultJson.title}`, `<p>${resultJson.description}</p><p class="mt-2 text-sm">Die Stopps wurden deiner Tour hinzugefügt.</p>`);
@@ -1770,14 +1832,37 @@
                         const isSelected = appState.selectedHuts.some(h => h.id === hut.id);
                         const bilderUrls = (hut.fotos || []).filter(f => typeof f === 'string' || f.status === 'freigegeben').map(f => typeof f === 'string' ? f : f.url);
                         
-                        // *** ÄNDERUNG HIER: Öffnungszeiten flexibel formatieren ***
-                        let oeffnungszeitenText = 'Keine Angabe';
-                        if (Array.isArray(hut.oeffnungszeiten) && hut.oeffnungszeiten.length > 0) {
-                            oeffnungszeitenText = hut.oeffnungszeiten.join('<br>'); // Zeigt jeden Array-Eintrag in einer neuen Zeile
-                        } else if (typeof hut.oeffnungszeiten === 'string' && hut.oeffnungszeiten.trim()) {
-                            oeffnungszeitenText = hut.oeffnungszeiten.replace(/\n/g, '<br>'); // Ersetzt auch Newlines in Strings
+                        // *** NEUE ÖFFNUNGSZEITEN-LOGIK (von dir bereitgestellt) ***
+                        let oeffnungszeitenHTML = '<p>Keine Angabe</p>';
+                        if (hut.immerGeoeffnet === true) {
+                            oeffnungszeitenHTML = "<p>Immer geöffnet ✅</p>";
+                        } else if (Array.isArray(hut.oeffnungszeiten) && hut.oeffnungszeiten.length > 0) {
+                            // Prüfen, ob es das {tag, von, bis} Format ist
+                            if (typeof hut.oeffnungszeiten[0] === 'object' && hut.oeffnungszeiten[0] !== null && 'tag' in hut.oeffnungszeiten[0]) {
+                                oeffnungszeitenHTML = "<ul class='oeffnungszeiten-list'>" +
+                                    hut.oeffnungszeiten
+                                    .map(e => `<li><span class="tag">${e.tag}:</span> <span class="zeit">${e.von || '–'} - ${e.bis || '–'}</span></li>`)
+                                    .join("") +
+                                "</ul>";
+                            } else {
+                                // Fallback für einfaches String-Array
+                                oeffnungszeitenHTML = "<ul class='oeffnungszeiten-list'>" + hut.oeffnungszeiten.map(e => `<li>${e}</li>`).join("") + "</ul>";
+                            }
+                        } else if (typeof hut.oeffnungszeiten === "object" && hut.oeffnungszeiten !== null && !Array.isArray(hut.oeffnungszeiten)) {
+                            // Handling für Map-Objekt {Mo: {start: "...", ende: "..."}}
+                            const tage = Object.entries(hut.oeffnungszeiten);
+                            if (tage.length > 0) {
+                                oeffnungszeitenHTML = "<ul class='oeffnungszeiten-list'>" +
+                                    tage.map(([tag, val]) =>
+                                    `<li><span class="tag">${tag}:</span> <span class="zeit">${(val.start || "–")} - ${(val.ende || "–")}</span></li>`
+                                    ).join("") +
+                                    "</ul>";
+                            }
+                        } else if (typeof hut.oeffnungszeiten === "string" && hut.oeffnungszeiten.trim()) {
+                            // Fallback für den alten String-Typ
+                            oeffnungszeitenHTML = `<p>${hut.oeffnungszeiten.replace(/\n/g, '<br>')}</p>`;
                         }
-                        // *** ENDE DER ÄNDERUNG ***
+                        // *** ENDE ÖFFNUNGSZEITEN-LOGIK ***
 
                         const popupContent = `
                             <div class="popup-card overflow-hidden">
@@ -1800,7 +1885,7 @@
                                     
                                      <div class="text-sm border-t border-[var(--border-color)] pt-2">
                                         <h4 class="font-semibold text-xs uppercase text-gray-500 mb-1">Öffnungszeiten</h4>
-                                        <p>${oeffnungszeitenText}</p> <!-- Variable hier eingefügt -->
+                                        <div>${oeffnungszeitenHTML}</div> <!-- Variable hier eingefügt -->
                                     </div>
 
 
@@ -2108,7 +2193,15 @@
 
             this.draggedIndex = null;
             uiManager.updateSelectedList();
-            routeManager.recalculatePreviewRoute(); // Automatische Neuberechnung
+            
+            // *** ÄNDERUNG HIER: Live-Neuberechnung ***
+            if (appState.isNavigating) {
+                uiManager.showToast("Route wird aktualisiert...");
+                routeManager.startNavigation(); // Live-Update der Navigation
+            } else {
+                routeManager.recalculatePreviewRoute(); // Nur Vorschau aktualisieren
+            }
+            
             if (appState.currentRoom.id) {
                 firebaseManager.updateRoomHuts();
             }
