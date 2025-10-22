@@ -234,6 +234,10 @@
         background: rgba(31, 41, 55, 0.8);
         color: #f9fafb;
     }
+    .warning-icon {
+        background: none;
+        border: none;
+    }
 
   </style>
 </head>
@@ -337,6 +341,10 @@
         <h3 class="font-bold">👥 Raum-Verwaltung</h3>
         <div id="room-active-view" class="hidden space-y-2">
             <p class="text-sm">Du bist im Raum: <strong id="current-room-id" class="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded"></strong></p>
+            <p id="guide-info" class="text-sm"></p>
+            <button id="guide-btn" onclick="firebaseManager.setGuide()" class="w-full bg-blue-500 text-white p-2 rounded-lg text-sm font-medium">Guide werden</button>
+            <div id="guided-tour-info" class="hidden text-sm p-2 bg-yellow-100 dark:bg-yellow-900 rounded-lg text-center">Eine geführte Tour ist aktiv.</div>
+
             <button onclick="firebaseManager.leaveRoom()" class="w-full bg-red-500 text-white p-2 rounded-lg text-sm font-medium">Raum verlassen</button>
             <div class="mt-4">
                 <h4 class="font-semibold text-sm mb-2">Aktive Nutzer im Raum:</h4>
@@ -403,6 +411,30 @@
     </div>
   </div>
 
+  <!-- NEU: Modal zum Melden einer Gefahr -->
+    <div id="add-warning-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-[9990] flex items-center justify-center p-4">
+        <div class="bg-[var(--bg-color)] rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
+            <h3 class="font-bold text-lg">Gefahr an dieser Stelle melden</h3>
+            <div>
+                <label for="warning-type" class="text-sm font-medium">Art der Gefahr</label>
+                <select id="warning-type" class="w-full mt-1 p-2 border border-[var(--border-color)] rounded-lg bg-transparent">
+                    <option>Schlagloch</option>
+                    <option>Hindernis</option>
+                    <option>Gefährliche Kreuzung</option>
+                    <option>Sonstiges</option>
+                </select>
+            </div>
+            <div>
+                <label for="warning-description" class="text-sm font-medium">Kurze Beschreibung (optional)</label>
+                <input id="warning-description" type="text" class="w-full mt-1 p-2 border border-[var(--border-color)] rounded-lg bg-transparent" placeholder="z.B. Tiefe Spurrille">
+            </div>
+            <div class="flex gap-2 justify-end">
+                <button onclick="uiManager.hideAddWarningModal()" class="px-4 py-2 rounded-lg">Abbrechen</button>
+                <button onclick="firebaseManager.addWarning()" class="px-4 py-2 bg-blue-500 text-white rounded-lg">Melden</button>
+            </div>
+        </div>
+    </div>
+
 
   <!-- Scripte: Firebase & Logik -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -448,7 +480,9 @@
       isSidebarOpen: false,
       selectedHuts: [],
       allHuts: [],
-      currentRoomId: null,
+      allWarnings: [],
+      warnedAbout: new Set(),
+      currentRoom: { id: null, guideId: null },
       roomUnsubscribe: null,
       userPositionsUnsubscribe: null,
       visitedStops: new Set(),
@@ -477,7 +511,7 @@
             this.initTabs();
             this.updateVoiceButton();
             this.updateFollowButton();
-            ttsManager.init(); // Stimmen laden
+            ttsManager.init();
         },
 
         toggleSidebar() {
@@ -576,9 +610,13 @@
         },
 
         setNavigationState(isNavigating) {
+            const isGuide = appState.currentRoom.guideId === userManager.userId;
+            const guidedTourActive = !!appState.currentRoom.guideId && !isGuide;
+
             appState.isNavigating = isNavigating;
-            document.getElementById('startBtn').classList.toggle('hidden', isNavigating);
-            document.getElementById('stopBtn').classList.toggle('hidden', !isNavigating);
+            document.getElementById('startBtn').classList.toggle('hidden', isNavigating || guidedTourActive);
+            document.getElementById('stopBtn').classList.toggle('hidden', !isNavigating || guidedTourActive);
+            document.getElementById('resetBtn').disabled = guidedTourActive;
             document.getElementById('follow-toggle').classList.toggle('hidden', !isNavigating);
             if(!isNavigating) document.getElementById('navHint').classList.add('hidden');
         },
@@ -614,25 +652,45 @@
         
         getTurnIcon(type) {
              switch (type) {
-                case 0: return '⬆️'; // Straight
-                case 1: return '↖️'; // Slight Left
-                case 2: return '⬅️'; // Left
-                case 3: return '↙️'; // Sharp Left
-                case 4: return '↗️'; // Slight Right
-                case 5: return '➡️'; // Right
-                case 6: return '↘️'; // Sharp Right
-                case 11: return '🔄'; // Roundabout
-                case 10: return '🏁'; // Arrive
+                case 'turn': return '➡️';
+                case 'new name': return '⬆️';
+                case 'depart': return '🏁';
+                case 'arrive': return '📍';
+                case 'merge': return '➦';
+                case 'ramp': return '➦';
+                case 'fork': return '⑂';
+                case 'end of road': return '🔚';
+                case 'roundabout': return '🔄';
                 default: return '➡️';
             }
         },
-
-        updateRoomUI(users = []) {
-            const inRoom = !!appState.currentRoomId;
+        
+        updateRoomUI(roomData, users = []) {
+            const inRoom = !!roomData.id;
             document.getElementById('room-active-view').classList.toggle('hidden', !inRoom);
             document.getElementById('room-join-view').classList.toggle('hidden', inRoom);
+
             if(inRoom) {
-                document.getElementById('current-room-id').textContent = appState.currentRoomId;
+                document.getElementById('current-room-id').textContent = roomData.id;
+                
+                const guideInfo = document.getElementById('guide-info');
+                const guideBtn = document.getElementById('guide-btn');
+                const isSelfGuide = roomData.guideId === userManager.userId;
+
+                if (roomData.guideId) {
+                    guideInfo.textContent = isSelfGuide ? "Du bist der Guide." : `Guide: ${roomData.guideName || 'Unbekannt'}`;
+                    guideBtn.textContent = isSelfGuide ? "Guide-Rolle abgeben" : "Guide werden";
+                    guideBtn.disabled = !isSelfGuide && !!roomData.guideId;
+                } else {
+                    guideInfo.textContent = "Niemand führt die Tour.";
+                    guideBtn.textContent = "Guide werden";
+                    guideBtn.disabled = false;
+                }
+                
+                const guidedTourInfo = document.getElementById('guided-tour-info');
+                guidedTourInfo.classList.toggle('hidden', !roomData.isNavigating || isSelfGuide);
+
+
                 const userListEl = document.getElementById('room-user-list');
                 if(users.length > 0) {
                     userListEl.innerHTML = users.map(user => `<li>- ${user.name || 'Anonym'}</li>`).join('');
@@ -656,7 +714,15 @@
 
         closePopup() {
             document.getElementById("popupOverlay").classList.add("hidden");
-        }
+        },
+
+        showAddWarningModal(latlng) {
+            this.tempWarningLatLng = latlng;
+            document.getElementById('add-warning-modal').classList.remove('hidden');
+        },
+        hideAddWarningModal() {
+            document.getElementById('add-warning-modal').classList.add('hidden');
+        },
     };
 
     // ----------------------------------------------------------
@@ -671,6 +737,7 @@
         previewLine: null,
         pastRouteLine: null,
         groupMarkers: {},
+        warningMarkers: {},
 
         init(center, zoom) {
             this.map = L.map('map', { center, zoom, zoomControl: false });
@@ -681,6 +748,7 @@
             this.map.addLayer(this.clusterGroup);
 
             this.map.on('dragstart', () => { if(appState.isFollowing) appState.toggleFollow() });
+            this.map.on('contextmenu', (e) => uiManager.showAddWarningModal(e.latlng));
             
             this.map.on('popupopen', (e) => {
               const swiperEl = e.popup.getElement().querySelector('.popup-swiper');
@@ -739,6 +807,18 @@
             } else {
                 this.groupMarkers[user.id] = L.marker([user.lat, user.lng], { icon }).addTo(this.map);
             }
+        },
+        
+        addWarningMarker(warning) {
+            const icon = L.divIcon({
+                className: 'warning-icon',
+                html: '⚠️',
+                iconSize: [24, 24]
+            });
+            const marker = L.marker([warning.lat, warning.lng], { icon: icon })
+                .bindPopup(`<b>${warning.type}</b><br>${warning.description || ''}`)
+                .addTo(this.map);
+            this.warningMarkers[warning.id] = marker;
         },
 
         removeGroupMarker(userId) {
@@ -854,19 +934,12 @@
                 const step = this.routeData.steps[i];
                 let instructionText = step.maneuver.instruction;
 
-                // Fallback for missing instruction text
                 if (!instructionText) {
                     const type = step.maneuver.type;
                     const modifier = step.maneuver.modifier || '';
                     const road = step.name ? ` auf ${step.name}` : '';
-                    
-                    if (type === 'arrive') instructionText = `Sie haben Ihr Ziel erreicht${road}`;
-                    else if (type === 'depart') instructionText = `Starten Sie ${road}`;
-                    else if (type.includes('turn') || modifier) {
-                         instructionText = `${modifier.replace(' ', ' ')}${road}`;
-                    } else {
-                         instructionText = `Fahren Sie weiter auf ${step.name}`;
-                    }
+                    if (type === 'continue') instructionText = `Weiter geradeaus ${road}`;
+                    else instructionText = `${type} ${modifier}${road}`;
                 }
 
 
@@ -911,10 +984,10 @@
             const now = Date.now();
             if (now - this.lastRecalcTime < config.routing.recalcDebounceMs) return;
 
-            const closestPoint = L.GeometryUtil.closest(mapManager.map, mapManager.routeLine, userPos);
+            const closestPoint = L.GeometryUtil.closest(mapManager.map, mapManager.routeLine.getLatLngs(), userPos);
             if (!closestPoint) return;
             
-            const distance = userPos.distanceTo(closestPoint.latlng);
+            const distance = userPos.distanceTo(closestPoint);
 
             if (distance > config.routing.deviationThresholdMeters) {
                 this.lastRecalcTime = now;
@@ -932,7 +1005,7 @@
             }
             uiManager.updateSelectedList();
             this.recalculatePreviewRoute();
-            if(appState.currentRoomId) {
+            if(appState.currentRoom.id) {
                 firebaseManager.updateRoomHuts();
             }
         },
@@ -941,7 +1014,7 @@
             appState.selectedHuts.splice(index, 1);
             uiManager.updateSelectedList();
             this.recalculatePreviewRoute();
-             if(appState.currentRoomId) {
+             if(appState.currentRoom.id) {
                 firebaseManager.updateRoomHuts();
             }
         },
@@ -973,6 +1046,11 @@
         },
 
         async startNavigation() {
+            if (appState.currentRoom.id && appState.currentRoom.guideId !== userManager.userId) {
+                uiManager.showToast("Nur der Guide kann die Navigation starten.");
+                return;
+            }
+
             if(appState.selectedHuts.length < 1) {
                 uiManager.showToast("Bitte wähle zuerst mindestens einen Stopp.");
                 return;
@@ -991,16 +1069,29 @@
                 uiManager.setNavigationState(true);
                 userManager.startWatchingPosition();
                 uiManager.showToast("Navigation gestartet!");
+                
+                if (appState.currentRoom.id && appState.currentRoom.guideId === userManager.userId) {
+                    firebaseManager.updateGuidedRoute(true, route);
+                }
             }
         },
 
         stopNavigation() {
+            if (appState.currentRoom.id && appState.currentRoom.guideId && appState.currentRoom.guideId !== userManager.userId) {
+                uiManager.showToast("Nur der Guide kann die Navigation beenden.");
+                return;
+            }
+
             userManager.stopWatchingPosition();
             mapManager.clearRoute();
             this.routeData = null;
             this.announcedSteps = {};
             uiManager.setNavigationState(false);
             uiManager.showToast("Navigation beendet.");
+
+            if (appState.currentRoom.id && appState.currentRoom.guideId === userManager.userId) {
+                firebaseManager.updateGuidedRoute(false, null);
+            }
         },
         
         resetRoute() {
@@ -1008,7 +1099,7 @@
             appState.selectedHuts = [];
             appState.visitedStops.clear();
             uiManager.updateSelectedList();
-            if(appState.currentRoomId) {
+            if(appState.currentRoom.id) {
                 firebaseManager.updateRoomHuts();
             }
         }
@@ -1018,6 +1109,7 @@
         watchId: null,
         lastPosition: null,
         userId: localStorage.getItem('radlMapUserId') || `user_${Math.random().toString(36).substring(2, 9)}`,
+        warnedAbout: new Set(),
 
         init() {
             localStorage.setItem('radlMapUserId', this.userId);
@@ -1061,9 +1153,10 @@
                         routeManager.checkNextManeuver(currentPos);
                         routeManager.checkDeviation(currentPos);
                     }
-                    if(appState.currentRoomId) firebaseManager.updateUserPositionInRoom(currentPos);
+                    if(appState.currentRoom.id) firebaseManager.updateUserPositionInRoom(currentPos);
 
                     weatherManager.fetchWeather(currentPos.lat, currentPos.lng);
+                    this.checkProximityToWarnings(currentPos);
 
                     this.lastPosition = currentPos;
                 },
@@ -1084,6 +1177,21 @@
             const y = Math.sin(dLon) * Math.cos(lat2);
             const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
             return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+        },
+
+        checkProximityToWarnings(userPos) {
+            for (const warning of appState.allWarnings) {
+                if (!this.warnedAbout.has(warning.id)) {
+                    const warningPos = L.latLng(warning.lat, warning.lng);
+                    const distance = userPos.distanceTo(warningPos);
+                    if (distance < 100) {
+                        const message = `Achtung, in ${Math.round(distance/10)*10} Metern gemeldete Gefahr: ${warning.type}.`;
+                        ttsManager.speak(message);
+                        uiManager.showToast(message);
+                        this.warnedAbout.add(warning.id);
+                    }
+                }
+            }
         },
 
         saveUsername() {
@@ -1173,7 +1281,7 @@
                 
                 uiManager.updateSelectedList();
                 routeManager.recalculatePreviewRoute();
-                if (appState.currentRoomId) {
+                if (appState.currentRoom.id) {
                     firebaseManager.updateRoomHuts();
                 }
 
@@ -1220,6 +1328,7 @@
                 firebase.initializeApp(config.firebase);
                 this.db = firebase.firestore();
                 this.loadHuts();
+                this.listenToWarnings();
             } catch(e) {
                 console.error("Firebase Init Fehler:", e);
                 uiManager.showToast("Firebase konnte nicht geladen werden.");
@@ -1338,14 +1447,14 @@
             let roomId = id || document.getElementById('roomIdInput').value.trim();
             if(!roomId) roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
             
-            appState.currentRoomId = roomId;
+            appState.currentRoom.id = roomId;
             localStorage.setItem('lastRoomId', roomId);
             
             this.listenToRoom(roomId);
             this.listenToUsersInRoom(roomId);
             userManager.startWatchingPosition(); 
             
-            uiManager.updateRoomUI();
+            uiManager.updateRoomUI(appState.currentRoom);
             uiManager.showToast(`Raum ${roomId} beigetreten.`);
         },
         
@@ -1355,23 +1464,29 @@
             
             localStorage.removeItem('lastRoomId');
             
-            if(appState.currentRoomId) {
-                this.db.collection('room_positions').doc(appState.currentRoomId).collection('users').doc(userManager.userId).delete();
+            if(appState.currentRoom.id) {
+                this.db.collection('room_positions').doc(appState.currentRoom.id).collection('users').doc(userManager.userId).delete();
             }
 
-            appState.currentRoomId = null;
+            appState.currentRoom.id = null;
+            appState.currentRoom.guideId = null;
             
             Object.keys(mapManager.groupMarkers).forEach(id => mapManager.removeGroupMarker(id));
 
-            uiManager.updateRoomUI();
+            uiManager.updateRoomUI(appState.currentRoom);
             uiManager.showToast("Raum verlassen.");
         },
         
         listenToRoom(roomId) {
             if(appState.roomUnsubscribe) appState.roomUnsubscribe();
             appState.roomUnsubscribe = this.db.collection("rooms").doc(roomId).onSnapshot(doc => {
-                if(doc.exists) {
-                    const roomData = doc.data();
+                const roomData = doc.data() || {};
+                appState.currentRoom = {id: roomId, ...roomData};
+                
+                const isSelfGuide = userManager.userId === roomData.guideId;
+
+                // Sync tour for non-guides
+                if (!isSelfGuide) {
                     const hutIds = roomData.hutIds || [];
                     const localIds = appState.selectedHuts.map(h => h.id).join(',');
                     if (hutIds.join(',') !== localIds) {
@@ -1380,7 +1495,17 @@
                         routeManager.recalculatePreviewRoute();
                          uiManager.showToast("Tour im Raum wurde aktualisiert!");
                     }
+                    // Sync navigation for non-guides
+                    if(roomData.isNavigating && !appState.isNavigating) {
+                        routeManager.routeData = roomData.guidedRoute;
+                        mapManager.drawRoute(roomData.guidedRoute.coords);
+                        uiManager.setNavigationState(true);
+                        userManager.startWatchingPosition();
+                    } else if (!roomData.isNavigating && appState.isNavigating) {
+                        routeManager.stopNavigation();
+                    }
                 }
+                uiManager.updateRoomUI(appState.currentRoom);
             });
         },
         
@@ -1410,17 +1535,17 @@
                     }
                 });
 
-                uiManager.updateRoomUI(activeUsers);
+                uiManager.updateRoomUI(appState.currentRoom, activeUsers);
             });
         },
         
         updateUserPositionInRoom(pos) {
-            if(!appState.currentRoomId) return;
+            if(!appState.currentRoom.id) return;
             const name = localStorage.getItem('username') || 'Anonym';
             const colors = ['#e11d48', '#2563eb', '#16a34a', '#f97316', '#9333ea'];
             const color = colors[Math.abs(userManager.userId.charCodeAt(0) % colors.length)];
             
-            this.db.collection('room_positions').doc(appState.currentRoomId).collection('users').doc(userManager.userId).set({
+            this.db.collection('room_positions').doc(appState.currentRoom.id).collection('users').doc(userManager.userId).set({
                 lat: pos.lat,
                 lng: pos.lng,
                 name: name,
@@ -1430,9 +1555,63 @@
         },
         
         updateRoomHuts() {
-            if(!appState.currentRoomId) return;
+            if(!appState.currentRoom.id) return;
             const hutIds = appState.selectedHuts.map(h => h.id);
-            this.db.collection("rooms").doc(appState.currentRoomId).set({ hutIds }, { merge: true });
+            this.db.collection("rooms").doc(appState.currentRoom.id).set({ hutIds }, { merge: true });
+        },
+
+        setGuide() {
+            if(!appState.currentRoom.id) return;
+            let newGuideId = userManager.userId;
+            let newGuideName = localStorage.getItem('username') || 'Anonym';
+
+            // If I am already the guide, relinquish the role
+            if (appState.currentRoom.guideId === userManager.userId) {
+                newGuideId = null;
+                newGuideName = null;
+            }
+            this.db.collection("rooms").doc(appState.currentRoom.id).set({ guideId: newGuideId, guideName: newGuideName }, { merge: true });
+        },
+
+        updateGuidedRoute(isNavigating, routeData) {
+            if(!appState.currentRoom.id) return;
+            this.db.collection("rooms").doc(appState.currentRoom.id).set({
+                isNavigating: isNavigating,
+                guidedRoute: routeData ? JSON.parse(JSON.stringify(routeData)) : null,
+            }, { merge: true });
+        },
+
+        addWarning() {
+            const type = document.getElementById('warning-type').value;
+            const description = document.getElementById('warning-description').value;
+            const latlng = uiManager.tempWarningLatLng;
+            if(!latlng) return;
+
+            this.db.collection('warnings').add({
+                lat: latlng.lat,
+                lng: latlng.lng,
+                type: type,
+                description: description,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                userId: userManager.userId,
+            }).then(() => {
+                uiManager.showToast("Gefahr gemeldet!");
+                uiManager.hideAddWarningModal();
+            });
+        },
+
+        listenToWarnings() {
+            this.db.collection('warnings').onSnapshot(snapshot => {
+                appState.allWarnings = [];
+                snapshot.forEach(doc => {
+                    appState.allWarnings.push({ id: doc.id, ...doc.data() });
+                });
+                // Clear old warning markers
+                Object.values(mapManager.warningMarkers).forEach(marker => marker.remove());
+                mapManager.warningMarkers = {};
+                // Add new ones
+                appState.allWarnings.forEach(warning => mapManager.addWarningMarker(warning));
+            });
         }
     };
     
@@ -1452,7 +1631,7 @@
             this.draggedIndex = null;
             uiManager.updateSelectedList();
             routeManager.recalculatePreviewRoute();
-            if (appState.currentRoomId) {
+            if (appState.currentRoom.id) {
                 firebaseManager.updateRoomHuts();
             }
         }
