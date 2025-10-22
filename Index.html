@@ -23,7 +23,7 @@
   <script src="https://unpkg.com/@mapbox/polyline"></script>
   <link rel="stylesheet" href="https://unpkg.com/swiper/swiper-bundle.min.css"/>
   <script src="https://unpkg.com/swiper/swiper-bundle.min.js"></script>
-  <script src="https://unpkg.com/leaflet-geometryutil"></script>
+  <script src="https://unpkg.com/leaflet-geometryutil"></script> <!-- Library for distance calculations -->
 
 
   <style>
@@ -99,8 +99,9 @@
       border-radius: 12px; /* Rounded popups */
     }
      .leaflet-popup-content {
-        margin: 14px 20px; /* More padding inside popup */
+        margin: 0 !important; /* Remove default margin for card design */
         line-height: 1.5;
+        width: 300px !important; /* Fixed width for popup */
     }
 
 
@@ -211,12 +212,21 @@
 
     /* Popup Styling */
     .popup-card {
-        max-height: 520px;
-        overflow-y: auto;
         font-size: 0.9rem; /* Slightly smaller text */
-        padding: 0 !important; /* Remove default padding for card design */
+        overflow: hidden; /* Prevent content spill */
     }
-    .leaflet-popup-content-wrapper { padding: 0 !important; overflow: hidden; } /* Ensure card design takes full space */
+    .popup-content-area { /* Scrollbarer Bereich */
+        max-height: 250px; /* Maximale Höhe für den Inhaltsbereich */
+        overflow-y: auto;
+        padding: 1rem; /* Padding für den Inhalt */
+        scrollbar-width: thin; /* Firefox scrollbar */
+        scrollbar-color: #888 transparent; /* Firefox scrollbar color */
+    }
+     .popup-content-area::-webkit-scrollbar { width: 5px; } /* Chrome/Safari scrollbar */
+    .popup-content-area::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+     .dark .popup-content-area::-webkit-scrollbar-thumb { background: #555; }
+    .dark .popup-content-area { scrollbar-color: #555 transparent; }
+
 
     .popup-swiper img {
         border-top-left-radius: 12px;
@@ -225,6 +235,12 @@
         height: 150px;
         object-fit: cover;
     }
+     .popup-button-container { /* Button Container */
+        padding: 0.5rem 1rem 1rem 1rem; /* Padding um den Button */
+        border-top: 1px solid var(--border-color); /* Trennlinie */
+        background: var(--ui-bg); /* Hintergrund, damit Inhalt nicht durchscheint */
+    }
+
     .group-marker {
         text-align: center;
         font-weight: bold;
@@ -458,7 +474,7 @@
   
   <script>
     // ==========================================================
-    //  🚲 RADLMAP - V5.3 - FINAL
+    //  🚲 RADLMAP - V5.4 - FINAL
     // ==========================================================
 
     // ----------------------------------------------------------
@@ -478,8 +494,8 @@
       },
       routing: {
         profile: 'cycling-regular',
-        deviationThresholdMeters: 10,
-        recalcDebounceMs: 8000,
+        deviationThresholdMeters: 10, // Geändert auf 10 Meter
+        recalcDebounceMs: 8000,      // Verzögerung für Neuberechnung
       },
       noImagePlaceholders: [
         "https://radlmap.net/img/noimg/1.jpg",
@@ -604,7 +620,7 @@
             }
 
             listEl.innerHTML = appState.selectedHuts.map((hut, index) => `
-                <li draggable="true" ondragstart="dragAndDrop.start(event, ${index})" ondrop="dragAndDrop.drop(event, ${index})" class="flex items-center justify-between p-2 rounded-lg bg-gray-100 dark:bg-gray-700 cursor-grab" data-index="${index}">
+                <li draggable="true" ondragstart="dragAndDrop.start(event, ${index})" ondrop="dragAndDrop.drop(event, ${index})" ondragover="event.preventDefault()" class="flex items-center justify-between p-2 rounded-lg bg-gray-100 dark:bg-gray-700 cursor-grab" data-index="${index}">
                     <span class="font-medium text-sm">#${index + 1}: ${hut.name}</span>
                     <button onclick="routeManager.removeSelected(${index})" class="p-1 text-red-500 hover:text-red-700">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -865,8 +881,14 @@
             } else {
                 if(this.routeLine) this.map.removeLayer(this.routeLine);
                 this.routeLine = L.polyline(coordinates, options).addTo(this.map);
-                if(this.pastRouteLine) this.map.removeLayer(this.pastRouteLine);
-                this.pastRouteLine = L.polyline([], { color: 'gray', weight: 4 }).addTo(this.map);
+                if(this.pastRouteLine) this.map.removeLayer(this.pastRouteLine); // Clear previous track
+                this.pastRouteLine = L.polyline([], { color: 'gray', weight: 4, opacity: 0.7 }).addTo(this.map); // Initialize new track
+            }
+        },
+        
+        addPointToPastRoute(latlng) {
+            if (this.pastRouteLine) {
+                this.pastRouteLine.addLatLng(latlng);
             }
         },
 
@@ -1020,9 +1042,12 @@
             if (!routeLatLngs || routeLatLngs.length < 2) return; 
 
             const closestPoint = L.GeometryUtil.closest(mapManager.map, routeLatLngs, userPos);
-             if (!closestPoint || !closestPoint.latlng) return; // Check if closest point is valid
+             if (!closestPoint || !closestPoint.latlng) { // Check if closest point is valid and has latlng
+                 console.warn("Could not find closest point on route.");
+                 return; 
+             }
 
-            const distance = userPos.distanceTo(closestPoint.latlng);
+            const distance = userPos.distanceTo(closestPoint.latlng); // Use latlng property
 
             if (distance > config.routing.deviationThresholdMeters) {
                 this.lastRecalcTime = now;
@@ -1069,6 +1094,9 @@
             uiManager.setLoading(true, 'Routenvorschau wird berechnet...');
             const startPos = await userManager.getCurrentPosition();
             const route = await this.fetchRoute(startPos, appState.selectedHuts);
+             // Save route to local storage for offline use
+            if(route) localStorage.setItem('lastRouteData', JSON.stringify(route));
+            
             if(route) {
                 mapManager.drawRoute(route.coords, true);
                 mapManager.map.fitBounds(mapManager.previewLine.getBounds(), {padding: [50,50]});
@@ -1096,6 +1124,7 @@
             uiManager.setLoading(false);
 
             if(route) {
+                localStorage.setItem('lastRouteData', JSON.stringify(route)); // Save for offline
                 this.announcedSteps = {};
                 appState.visitedStops.clear();
                 uiManager.updateChallengeStatus();
@@ -1106,13 +1135,7 @@
                 uiManager.showToast("Navigation gestartet!");
                 
                 if (appState.currentRoom.id && appState.currentRoom.guideId === userManager.userId) {
-                     // Pass only serializable data
-                    const serializableRoute = {
-                        coords: route.coords,
-                        distance: route.distance,
-                        duration: route.duration,
-                        steps: route.steps // steps should be serializable
-                    };
+                    const serializableRoute = { coords: route.coords, distance: route.distance, duration: route.duration, steps: route.steps };
                     firebaseManager.updateGuidedRoute(true, serializableRoute);
                 }
             }
@@ -1141,6 +1164,7 @@
             appState.selectedHuts = [];
             appState.visitedStops.clear();
             uiManager.updateSelectedList();
+             localStorage.removeItem('lastRouteData'); // Clear offline route
             if(appState.currentRoom.id) {
                 firebaseManager.updateRoomHuts();
             }
@@ -1158,7 +1182,7 @@
             const savedName = localStorage.getItem('username');
             if(savedName) document.getElementById('usernameInput').value = savedName;
             
-            this.getCurrentPosition().then(pos => {
+            this.getCurrentPosition(true).then(pos => { // Initial position with high accuracy
                 mapManager.updateUserMarker(pos, 20, 0);
                 mapManager.map.setView(pos, config.map.defaultZoom);
                 weatherManager.fetchWeather(pos.lat, pos.lng);
@@ -1167,16 +1191,22 @@
             firebaseManager.rejoinLastRoom();
         },
         
-        getCurrentPosition() {
-            return new Promise((resolve) => {
+        getCurrentPosition(highAccuracy = false) {
+             return new Promise((resolve) => {
                 navigator.geolocation.getCurrentPosition(
                     pos => resolve(L.latLng(pos.coords.latitude, pos.coords.longitude)),
-                    err => {
+                    async err => { // Make error handler async
                         console.warn("GPS Fehler:", err);
-                        uiManager.showToast("GPS nicht verfügbar. Nutze Fallback-Position.");
-                        resolve(L.latLng(config.map.defaultCenter[0], config.map.defaultCenter[1]));
+                        // Try fallback if high accuracy failed
+                        if(highAccuracy) {
+                            uiManager.showToast("Hohe GPS-Genauigkeit fehlgeschlagen, versuche Standard...");
+                            resolve(await this.getCurrentPosition(false)); // Await the fallback call
+                        } else {
+                            uiManager.showToast("GPS nicht verfügbar. Nutze Fallback-Position.");
+                            resolve(L.latLng(config.map.defaultCenter[0], config.map.defaultCenter[1]));
+                        }
                     },
-                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+                    { enableHighAccuracy: highAccuracy, timeout: highAccuracy ? 10000 : 5000, maximumAge: 60000 }
                 );
             });
         },
@@ -1194,6 +1224,7 @@
                     if(appState.isNavigating) {
                         routeManager.checkNextManeuver(currentPos);
                         routeManager.checkDeviation(currentPos);
+                        mapManager.addPointToPastRoute(currentPos); // Add point to grey track
                     }
                     if(appState.currentRoom.id) firebaseManager.updateUserPositionInRoom(currentPos);
 
@@ -1258,6 +1289,12 @@
         apiKey: "", 
 
         async callGemini(prompt, jsonSchema = null) {
+            // Check if online before making API call
+            if (!navigator.onLine) {
+                 uiManager.showToast("Offline. KI-Funktionen nicht verfügbar.");
+                 return null;
+            }
+            
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${this.apiKey}`;
             const payload = { contents: [{ parts: [{ text: prompt }] }] };
 
@@ -1287,6 +1324,10 @@
         },
 
         async suggestTour() {
+             if (!navigator.onLine) {
+                 uiManager.showToast("Offline. KI-Funktionen nicht verfügbar.");
+                 return;
+            }
             const btn = document.getElementById('suggest-tour-btn');
             btn.disabled = true;
             btn.textContent = 'Denke...';
@@ -1339,6 +1380,10 @@
         },
 
         async summarizeTour() {
+             if (!navigator.onLine) {
+                 uiManager.showToast("Offline. KI-Funktionen nicht verfügbar.");
+                 return;
+            }
             if (appState.selectedHuts.length < 1) return;
              const btn = document.getElementById('summarize-tour-btn');
             btn.disabled = true;
@@ -1370,36 +1415,54 @@
             try {
                 firebase.initializeApp(config.firebase);
                 this.db = firebase.firestore();
-                this.loadHuts();
+                this.loadHuts(); // Attempt to load from Firestore first
                 this.listenToWarnings();
             } catch(e) {
                 console.error("Firebase Init Fehler:", e);
-                uiManager.showToast("Firebase konnte nicht geladen werden.");
+                uiManager.showToast("Firebase konnte nicht geladen werden. Lade Offline-Daten...");
+                this.loadOfflineHuts(); // Load offline huts if Firebase fails
             }
         },
         
-        loadHuts() {
-            this.db.collection("eierhuetten").where("status", "==", "angenommen").onSnapshot(snapshot => {
-                appState.allHuts = [];
-                mapManager.clusterGroup.clearLayers();
+        loadOfflineHuts() { // Function to load huts from localStorage
+            const offlineHuts = localStorage.getItem('allHutsData');
+            if (offlineHuts) {
+                try {
+                    appState.allHuts = JSON.parse(offlineHuts);
+                    this.displayHuts(appState.allHuts);
+                    uiManager.showToast("Offline-Hütten geladen.");
+                } catch (e) {
+                    console.error("Fehler beim Laden der Offline-Hütten:", e);
+                }
+            } else {
+                 uiManager.showToast("Keine Offline-Hütten gefunden.");
+            }
+             // Load last route if offline
+            const lastRoute = localStorage.getItem('lastRouteData');
+             if(lastRoute && appState.selectedHuts.length > 1){
+                 try {
+                     routeManager.routeData = JSON.parse(lastRoute);
+                     mapManager.drawRoute(routeManager.routeData.coords, true); // Show as preview
+                     uiManager.showToast("Zuletzt geplante Route (offline) geladen.");
+                 } catch(e){
+                     console.error("Fehler beim Laden der Offline-Route:", e);
+                 }
+             }
+        },
 
-                snapshot.forEach(doc => {
-                    const data = doc.data();
-                    if (!data.location) return;
-                    
-                    const hut = { id: doc.id, ...data, lat: data.location.latitude, lng: data.location.longitude };
-                    appState.allHuts.push(hut);
-                    
-                    const marker = L.marker([hut.lat, hut.lng]);
-                    marker.bindTooltip(hut.name, { permanent: true, direction: 'bottom', className: 'hutten-bubble', offset: [0, 10] });
-                    marker.bindPopup("Lade...", {minWidth: 300});
-                    
-                    marker.on('click', () => {
+        displayHuts(huts) { // Helper to display huts (used by online and offline load)
+            mapManager.clusterGroup.clearLayers();
+             huts.forEach(hut => {
+                  const marker = L.marker([hut.lat, hut.lng]);
+                  marker.bindTooltip(hut.name, { permanent: true, direction: 'bottom', className: 'hutten-bubble', offset: [0, 10] });
+                  marker.bindPopup("Lade...", {minWidth: 300});
+
+                  marker.on('click', () => {
                         const isSelected = appState.selectedHuts.some(h => h.id === hut.id);
                         const bilderUrls = (hut.fotos || []).filter(f => typeof f === 'string' || f.status === 'freigegeben').map(f => typeof f === 'string' ? f : f.url);
                         
                         const popupContent = `
-                            <div class="popup-card p-0 overflow-hidden" style="width: 300px;">
+                            <div class="popup-card overflow-hidden">
                                 ${bilderUrls.length > 0 ? `
                                 <div class="swiper popup-swiper">
                                   <div class="swiper-wrapper">
@@ -1409,7 +1472,7 @@
                                 </div>
                                 ` : `<img src="${config.noImagePlaceholders[0]}" class="popup-swiper-img">`}
                                 
-                                <div class="p-4 space-y-3">
+                                <div class="popup-content-area space-y-3"> 
                                     <div class="flex justify-between items-start">
                                         <h3 class="font-bold text-lg leading-tight pr-2">${hut.name}</h3>
                                         ${hut.premium ? `<span class="text-xs font-bold text-yellow-800 bg-yellow-200 dark:bg-yellow-800 dark:text-yellow-200 px-2 py-1 rounded-full flex-shrink-0">PREMIUM</span>` : ''}
@@ -1445,8 +1508,9 @@
                                             ${hut.website ? `<p>🌐 <a href="${hut.website}" target="_blank" rel="noopener" class="text-blue-500 hover:underline">Website</a></p>`: ''}
                                         </div>
                                     `: ''}
-
-                                    <button id="btn-${hut.id}" class="w-full mt-2 p-2 rounded-lg font-semibold text-white ${isSelected ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'} transition-colors">
+                                </div> 
+                                <div class="popup-button-container">
+                                    <button id="btn-${hut.id}" class="w-full p-2 rounded-lg font-semibold text-white ${isSelected ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'} transition-colors">
                                         ${isSelected ? 'Von Tour entfernen' : 'Zur Tour hinzufügen'}
                                     </button>
                                 </div>
@@ -1462,7 +1526,7 @@
                                     marker.closePopup();
                                 };
                            }
-                            const swiperEl = marker.getPopup().getElement().querySelector('.popup-swiper');
+                            const swiperEl = marker.getPopup()?.getElement()?.querySelector('.popup-swiper');
                             if (swiperEl && !swiperEl.swiper) {
                                 new Swiper(swiperEl, {
                                     loop: true,
@@ -1475,11 +1539,28 @@
                             }
                         }, 0);
                     });
-                    mapManager.clusterGroup.addLayer(marker);
+                  mapManager.clusterGroup.addLayer(marker);
+             });
+        },
+
+
+        loadHuts() {
+            this.db.collection("eierhuetten").where("status", "==", "angenommen").onSnapshot(snapshot => {
+                const huts = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (data.location) {
+                       huts.push({ id: doc.id, ...data, lat: data.location.latitude, lng: data.location.longitude });
+                    }
                 });
+                appState.allHuts = huts;
+                this.displayHuts(huts); // Use helper to display
+                // Save huts to localStorage for offline use
+                 localStorage.setItem('allHutsData', JSON.stringify(huts));
             }, err => {
                 console.error("Fehler beim Laden der Hütten:", err);
-                uiManager.showToast("Hütten konnten nicht geladen werden.");
+                uiManager.showToast("Hütten konnten nicht geladen werden. Versuche Offline-Daten...");
+                this.loadOfflineHuts(); // Attempt offline load on error
             });
         },
         
@@ -1617,6 +1698,7 @@
             if (appState.currentRoom.guideId === userManager.userId) {
                 newGuideId = null;
                 newGuideName = null;
+                 firebaseManager.updateGuidedRoute(false, null); // Stop navigation if relinquishing guide role
             } else if (appState.currentRoom.guideId) {
                 uiManager.showToast("Es gibt bereits einen Guide.");
                 return; // Only allow setting if no guide or self
@@ -1651,16 +1733,25 @@
             });
         },
 
-        listenToWarnings() {
-            const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+       listenToWarnings() {
+            const twentyFourHoursAgoTimestamp = firebase.firestore.Timestamp.fromMillis(Date.now() - (24 * 60 * 60 * 1000));
+            
             this.db.collection('warnings')
-               .where('createdAt', '>', new Date(twentyFourHoursAgo)) // Query directly in Firestore
+               .where('createdAt', '>', twentyFourHoursAgoTimestamp) // Query directly in Firestore
                .onSnapshot(snapshot => {
                     const currentWarningIds = new Set();
                     appState.allWarnings = [];
 
                     snapshot.forEach(doc => {
                         const warning = { id: doc.id, ...doc.data() };
+                        // Ensure createdAt is a Date object for comparison if needed client-side
+                        if (warning.createdAt && warning.createdAt.toDate) {
+                           warning.createdAt = warning.createdAt.toDate();
+                        } else {
+                            // Handle cases where createdAt might not be a Firestore timestamp
+                            warning.createdAt = new Date(); // Fallback to now if missing/invalid
+                        }
+
                         appState.allWarnings.push(warning);
                         currentWarningIds.add(warning.id);
                         if (!mapManager.warningMarkers[warning.id]) {
@@ -1672,6 +1763,12 @@
                     Object.keys(mapManager.warningMarkers).forEach(markerId => {
                         if (!currentWarningIds.has(markerId)) {
                             mapManager.removeWarningMarker(markerId);
+                        }
+                    });
+                    // Reset warnedAbout set for potentially expired warnings
+                    userManager.warnedAbout.forEach(warnedId => {
+                        if (!currentWarningIds.has(warnedId)) {
+                            userManager.warnedAbout.delete(warnedId);
                         }
                     });
             });
