@@ -180,6 +180,8 @@
         transition: transform 0.4s ease, opacity 0.4s ease;
         transform: translate(-50%, 50px);
         opacity: 0;
+        font-size: 1.2rem;
+        font-weight: 600;
     }
      #navHint.visible {
         transform: translate(-50%, 0);
@@ -427,6 +429,7 @@
             this.initTabs();
             this.updateVoiceButton();
             this.updateFollowButton();
+            ttsManager.init(); // Stimmen laden
         },
 
         toggleSidebar() {
@@ -488,7 +491,7 @@
 
         showToast(message) {
             const toast = document.getElementById('toast');
-            if (!toast) return; // Guard clause to prevent error
+            if (!toast) return;
             toast.textContent = message;
             toast.classList.add('show');
             setTimeout(() => toast.classList.remove('show'), 3000);
@@ -519,13 +522,13 @@
             document.getElementById('startBtn').classList.toggle('hidden', isNavigating);
             document.getElementById('stopBtn').classList.toggle('hidden', !isNavigating);
             document.getElementById('follow-toggle').classList.toggle('hidden', !isNavigating);
+            if(!isNavigating) document.getElementById('navHint').classList.add('hidden');
         },
         
         initTabs() {
             const tabButtons = document.querySelectorAll('.tab-btn');
             const tabPanels = document.querySelectorAll('.tab-panel');
             
-            // Default active tab
             tabButtons[0].classList.add('bg-gray-200', 'dark:bg-gray-700');
             tabPanels[0].classList.remove('hidden');
 
@@ -533,7 +536,6 @@
                 button.addEventListener('click', () => {
                     tabButtons.forEach(btn => btn.classList.remove('bg-gray-200', 'dark:bg-gray-700'));
                     button.classList.add('bg-gray-200', 'dark:bg-gray-700');
-
                     tabPanels.forEach(panel => panel.classList.add('hidden'));
                     document.getElementById(button.dataset.tab).classList.remove('hidden');
                 });
@@ -542,14 +544,26 @@
 
         showNavHint(icon, text) {
             const hintEl = document.getElementById('navHint');
-            hintEl.innerHTML = `${icon} <span class="text-sm">${text}</span>`;
+            hintEl.innerHTML = `${icon} <span class="text-sm font-semibold">${text}</span>`;
             hintEl.classList.remove('hidden');
             hintEl.classList.add('visible');
 
             if (this.navHintTimer) clearTimeout(this.navHintTimer);
             this.navHintTimer = setTimeout(() => {
                 hintEl.classList.remove('visible');
-            }, 6000);
+            }, 8000);
+        },
+        
+        getTurnIcon(modifier) {
+            if (!modifier) return '⬆️';
+            if (modifier.includes('sharp right')) return '↘️';
+            if (modifier.includes('right')) return '➡️';
+            if (modifier.includes('slight right')) return '↗️';
+            if (modifier.includes('sharp left')) return '↙️';
+            if (modifier.includes('left')) return '⬅️';
+            if (modifier.includes('slight left')) return '↖️';
+            if (modifier.includes('uturn')) return '🔄';
+            return '⬆️'; // default for straight, etc.
         },
 
         updateRoomUI() {
@@ -673,20 +687,58 @@
     };
     
     // ----------------------------------------------------------
-    //  4. WEITERE MANAGER (Routing, Gemini, Firebase, Nutzer)
+    //  4. WEITERE MANAGER (Routing, Gemini, Firebase, Nutzer, TTS)
     // ----------------------------------------------------------
+
+    const ttsManager = { // NEU: Text-to-Speech Manager
+        init() {
+            // Füllt die Sprachauswahl im Dropdown-Menü
+            const select = document.getElementById("voiceLang");
+            if (!select || !window.speechSynthesis) return;
+
+            const populateVoices = () => {
+                const voices = speechSynthesis.getVoices();
+                select.innerHTML = '';
+                voices.forEach(voice => {
+                    if (voice.lang.startsWith('de')) { // Nur deutsche Stimmen
+                        const option = document.createElement('option');
+                        option.textContent = `${voice.name} (${voice.lang})`;
+                        option.value = voice.lang;
+                        select.appendChild(option);
+                    }
+                });
+                select.value = localStorage.getItem('voiceLang') || 'de-DE';
+            };
+            
+            populateVoices();
+            if (speechSynthesis.onvoiceschanged !== undefined) {
+                speechSynthesis.onvoiceschanged = populateVoices;
+            }
+            select.onchange = () => localStorage.setItem('voiceLang', select.value);
+        },
+
+        speak(text) {
+            if (!appState.isVoiceOn || !text) return;
+            speechSynthesis.cancel(); // Bricht vorherige Ansagen ab
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = document.getElementById("voiceLang").value || 'de-DE';
+            speechSynthesis.speak(utterance);
+        }
+    };
 
     const routeManager = {
         routeData: null,
         recalcTimer: null,
+        announcedSteps: {}, // NEU: Verfolgt bereits angesagte Anweisungen
 
         async fetchRoute(startCoords, waypoints) {
+            // URL um detaillierte Anweisungen erweitert
             const coordinatesString = [
                 `${startCoords.lng},${startCoords.lat}`,
                 ...waypoints.map(h => `${h.lng},${h.lat}`)
             ].join(';');
             
-            const url = `https://router.project-osrm.org/route/v1/bicycle/${coordinatesString}?overview=full&geometries=geojson`;
+            const url = `https://router.project-osrm.org/route/v1/bicycle/${coordinatesString}?overview=full&geometries=geojson&steps=true`;
 
             try {
                 const response = await fetch(url);
@@ -699,13 +751,46 @@
                     coords: route.geometry.coordinates.map(p => [p[1], p[0]]),
                     distance: route.distance,
                     duration: route.duration,
-                    steps: [] 
+                    steps: route.legs[0].steps // Wichtig für Turn-by-Turn
                 };
                 return this.routeData;
             } catch (error) {
                 console.error("Fehler bei der Routenberechnung:", error);
                 uiManager.showToast("Route konnte nicht berechnet werden.");
                 return null;
+            }
+        },
+        
+        checkNextManeuver(userPos) { // NEU: Kernlogik für Turn-by-Turn
+            if (!this.routeData || !this.routeData.steps) return;
+        
+            for (let i = 0; i < this.routeData.steps.length; i++) {
+                const step = this.routeData.steps[i];
+                const stepLocation = L.latLng(step.maneuver.location[1], step.maneuver.location[0]);
+                const distance = userPos.distanceTo(stepLocation);
+        
+                // Zustand für diesen Schritt initialisieren
+                if (!this.announcedSteps[i]) this.announcedSteps[i] = { pre: false, imminent: false };
+        
+                // Vor-Ankündigung (z.B. 150m vorher)
+                if (distance < 150 && distance > 40 && !this.announcedSteps[i].pre) {
+                    this.announcedSteps[i].pre = true;
+                    const instruction = `In ${Math.round(distance/10)*10} Metern ${step.maneuver.instruction}`;
+                    const icon = uiManager.getTurnIcon(step.maneuver.modifier);
+                    uiManager.showNavHint(icon, instruction);
+                    ttsManager.speak(instruction);
+                    break; // Nur die nächste Anweisung anzeigen
+                }
+        
+                // Direkte Ankündigung (z.B. 25m vorher)
+                if (distance < 25 && !this.announcedSteps[i].imminent) {
+                    this.announcedSteps[i].imminent = true;
+                    const instruction = `Jetzt ${step.maneuver.instruction}`;
+                    const icon = uiManager.getTurnIcon(step.maneuver.modifier);
+                    uiManager.showNavHint(icon, instruction);
+                    ttsManager.speak(instruction);
+                    break; 
+                }
             }
         },
         
@@ -769,6 +854,7 @@
             uiManager.setLoading(false);
 
             if(route) {
+                this.announcedSteps = {}; // Anweisungen zurücksetzen
                 mapManager.drawRoute(route.coords);
                 mapManager.map.fitBounds(mapManager.routeLine.getBounds(), {padding: [50,50]});
                 uiManager.setNavigationState(true);
@@ -781,6 +867,7 @@
             userManager.stopWatchingPosition();
             mapManager.clearRoute();
             this.routeData = null;
+            this.announcedSteps = {};
             uiManager.setNavigationState(false);
             uiManager.showToast("Navigation beendet.");
         },
@@ -812,11 +899,11 @@
         getCurrentPosition() {
             return new Promise((resolve) => {
                 navigator.geolocation.getCurrentPosition(
-                    pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                    pos => resolve(L.latLng(pos.coords.latitude, pos.coords.longitude)),
                     err => {
                         console.warn("GPS Fehler:", err);
                         uiManager.showToast("GPS nicht verfügbar. Nutze Fallback-Position.");
-                        resolve({ lat: config.map.defaultCenter[0], lng: config.map.defaultCenter[1] });
+                        resolve(L.latLng(config.map.defaultCenter[0], config.map.defaultCenter[1]));
                     },
                     { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
                 );
@@ -828,10 +915,14 @@
             const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
             this.watchId = navigator.geolocation.watchPosition(
                 pos => {
-                    const currentPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                    const currentPos = L.latLng(pos.coords.latitude, pos.coords.longitude);
                     let bearing = this.lastPosition ? this.getBearing(this.lastPosition, currentPos) : 0;
                     mapManager.updateUserMarker(currentPos, pos.coords.accuracy, bearing);
                     if (appState.isFollowing) mapManager.map.panTo(currentPos);
+                    
+                    // NEU: Bei jeder Positionsänderung die nächste Anweisung prüfen
+                    routeManager.checkNextManeuver(currentPos);
+
                     this.lastPosition = currentPos;
                 },
                 err => console.error("GPS Watch Fehler:", err),
@@ -1004,7 +1095,7 @@
                     
                     const hut = {
                         id: doc.id,
-                        ...data, // alle Daten übernehmen
+                        ...data,
                         lat: data.location.latitude,
                         lng: data.location.longitude,
                     };
@@ -1074,7 +1165,6 @@
                     const roomData = doc.data();
                     const hutIds = roomData.hutIds || [];
                     
-                    // Nur aktualisieren, wenn es einen Unterschied gibt, um Endlosschleifen zu vermeiden
                     const localIds = appState.selectedHuts.map(h => h.id).join(',');
                     if (hutIds.join(',') !== localIds) {
                         appState.selectedHuts = hutIds
