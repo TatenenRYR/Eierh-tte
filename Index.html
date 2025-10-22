@@ -309,11 +309,17 @@
     </button>
   </div>
   
-  <!-- Wetter Widget -->
-  <div id="weather-widget" class="absolute top-4 left-4 z-10 bg-[var(--ui-bg)] backdrop-blur-md shadow-lg rounded-full p-3 border border-[var(--border-color)] flex items-center gap-2 text-lg font-semibold">
-      <span>-</span><span>-°C</span>
-      <!-- SMARTER: Offline-Indikator -->
-      <span id="offline-indicator" class="hidden text-xs text-red-500 font-bold">OFFLINE</span>
+  <!-- Wetter Widget & NEU: KMH Anzeige -->
+  <div class="absolute top-4 left-4 z-10 flex gap-2">
+      <div id="weather-widget" class="bg-[var(--ui-bg)] backdrop-blur-md shadow-lg rounded-full p-3 border border-[var(--border-color)] flex items-center gap-2 text-lg font-semibold">
+          <span>-</span><span>-°C</span>
+          <!-- SMARTER: Offline-Indikator -->
+          <span id="offline-indicator" class="hidden text-xs text-red-500 font-bold">OFFLINE</span>
+      </div>
+      <!-- NEU: KMH Anzeige -->
+      <div id="speed-widget" class="hidden bg-[var(--ui-bg)] backdrop-blur-md shadow-lg rounded-full px-4 py-3 border border-[var(--border-color)] flex items-center gap-2 text-lg font-semibold">
+          <span>-- km/h</span>
+      </div>
   </div>
   
   <!-- Schnellnavigation -->
@@ -448,8 +454,9 @@
           </select>
         </div>
 
+        <!-- NEU: Übersetzungs- und Sprachauswahl -->
         <div>
-          <label for="voiceLang" class="block text-sm font-medium mb-1">🗣️ Sprachausgabe</label>
+          <label for="voiceLang" class="block text-sm font-medium mb-1">🗣️ Sprache (Sprachausgabe & Übersetzung)</label>
           <select id="voiceLang" class="w-full p-2 border border-[var(--border-color)] rounded-lg bg-transparent"></select>
         </div>
         <div>
@@ -514,8 +521,12 @@
   
   <script>
     // ==========================================================
-    //  🚲 RADLMAP - V5.6 - SMARTER (Zoom & Popup Fix)
+    //  🚲 RADLMAP - V5.7 - KI Fix, KMH, FlyZoom, Translate
     // ==========================================================
+
+    // WICHTIG: Füge hier deinen Google AI Studio API-Schlüssel ein!
+    // Ohne diesen Schlüssel funktionieren die KI-Funktionen (Übersetzung, Tour-Vorschlag) nicht.
+    const GEMINI_API_KEY = "DEIN_API_KEY_HIER"; 
 
     // ----------------------------------------------------------
     //  1. KONFIGURATION & ZUSTAND
@@ -566,7 +577,7 @@
         uiManager.updateFollowButton();
         uiManager.showToast(`Follow-Modus ${this.isFollowing ? 'aktiviert' : 'pausiert'}`);
         if(this.isFollowing && mapManager.userMarker) {
-            mapManager.map.setView(mapManager.userMarker.getLatLng(), config.map.navigationZoom);
+            mapManager.map.flyTo(mapManager.userMarker.getLatLng(), config.map.navigationZoom); // Weicher Zoom
         }
       },
       toggleVoice() {
@@ -703,6 +714,20 @@
                 statusEl.textContent = '';
             }
         },
+        
+        /**
+         * NEU: Aktualisiert die km/h-Anzeige.
+         * @param {number | null} speed - Geschwindigkeit in km/h oder null.
+         */
+        updateSpeedWidget(speed) {
+            const widget = document.getElementById('speed-widget');
+            if (speed !== null && speed > 0.5) { // Kleine Schwelle, um "Zittern" bei 0 zu vermeiden
+                widget.classList.remove('hidden');
+                widget.querySelector('span').textContent = `${speed.toFixed(0)} km/h`;
+            } else {
+                widget.classList.add('hidden'); // Verstecken bei 0 km/h oder null
+            }
+        },
 
         setNavigationState(isNavigating) {
             const isGuide = appState.currentRoom.guideId === userManager.userId;
@@ -713,7 +738,10 @@
             document.getElementById('stopBtn').classList.toggle('hidden', !isNavigating || guidedTourActive);
             document.getElementById('resetBtn').disabled = guidedTourActive;
             document.getElementById('follow-toggle').classList.toggle('hidden', !isNavigating);
-            if(!isNavigating) document.getElementById('navHint').classList.add('hidden');
+            if(!isNavigating) {
+                 document.getElementById('navHint').classList.add('hidden');
+                 this.updateSpeedWidget(null); // NEU: Speed-Widget bei Stopp ausblenden
+            }
         },
         
         initTabs() {
@@ -1049,35 +1077,75 @@
     // ----------------------------------------------------------
 
     const ttsManager = {
+        /**
+         * NEU: Füllt die Sprachauswahl mit gängigen Zielsprachen für die Übersetzung.
+         */
         init() {
             const select = document.getElementById("voiceLang");
             if (!select || !window.speechSynthesis) return;
 
-            const populateVoices = () => {
-                const voices = speechSynthesis.getVoices();
-                select.innerHTML = '';
-                voices.forEach(voice => {
-                    if (voice.lang.startsWith('de')) {
-                        const option = document.createElement('option');
-                        option.textContent = `${voice.name} (${voice.lang})`;
-                        option.value = voice.lang;
-                        select.appendChild(option);
-                    }
-                });
-                select.value = localStorage.getItem('voiceLang') || 'de-DE';
+            // Feste Liste gängiger Sprachen für die Übersetzung
+            const commonLangs = {
+                "de-DE": "Deutsch",
+                "en-US": "English (US)",
+                "en-GB": "English (UK)",
+                "es-ES": "Español",
+                "fr-FR": "Français",
+                "it-IT": "Italiano",
+                "nl-NL": "Nederlands"
             };
-            
-            populateVoices();
-            if (speechSynthesis.onvoiceschanged !== undefined) {
-                speechSynthesis.onvoiceschanged = populateVoices;
+
+            select.innerHTML = '';
+            for (const [code, name] of Object.entries(commonLangs)) {
+                const option = document.createElement('option');
+                option.textContent = name;
+                option.value = code;
+                select.appendChild(option);
             }
+            
+            // Gespeicherte Sprache ODER Deutsch als Standard
+            select.value = localStorage.getItem('voiceLang') || 'de-DE';
+            
             select.onchange = () => localStorage.setItem('voiceLang', select.value);
         },
-        speak(text) {
+        
+        /**
+         * NEU: Übersetzt den Text bei Bedarf vor der Sprachausgabe.
+         * @param {string} text - Der deutsche Originaltext.
+         */
+        async speak(text) {
             if (!appState.isVoiceOn || !text) return;
             speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = document.getElementById("voiceLang").value || 'de-DE';
+            
+            const targetLang = document.getElementById("voiceLang").value || 'de-DE';
+            let textToSpeak = text;
+
+            try {
+                // Übersetzen, wenn die Zielsprache nicht Deutsch ist
+                if (targetLang !== 'de-DE') {
+                    textToSpeak = await geminiManager.translateText(text, targetLang);
+                }
+            } catch (e) {
+                console.error("Fehler beim Übersetzen:", e);
+                // Fallback: Originaltext verwenden
+                textToSpeak = text; 
+            }
+
+            const utterance = new SpeechSynthesisUtterance(textToSpeak);
+            utterance.lang = targetLang; // Die Sprache der Stimme/Übersetzung festlegen
+            
+            // Versuchen, eine passende Stimme zu finden (optional, aber besser)
+            const voices = speechSynthesis.getVoices();
+            // Priorisiere Stimmen, die exakt zur Sprache passen
+            let voice = voices.find(v => v.lang === targetLang); 
+            if (!voice) {
+                // Fallback: Finde eine Stimme, die zumindest die Hauptsprache spricht (z.B. 'en' statt 'en-US')
+                 voice = voices.find(v => v.lang.startsWith(targetLang.split('-')[0]));
+            }
+            if (voice) {
+                utterance.voice = voice;
+            }
+
             speechSynthesis.speak(utterance);
         }
     };
@@ -1206,7 +1274,7 @@
                 appState.selectedHuts.push(hut);
             }
             uiManager.updateSelectedList();
-            this.recalculatePreviewRoute();
+            this.recalculatePreviewRoute(); // Automatische Neuberechnung
             if(appState.currentRoom.id) {
                 firebaseManager.updateRoomHuts();
             }
@@ -1215,7 +1283,7 @@
         removeSelected(index) {
             appState.selectedHuts.splice(index, 1);
             uiManager.updateSelectedList();
-            this.recalculatePreviewRoute();
+            this.recalculatePreviewRoute(); // Automatische Neuberechnung
              if(appState.currentRoom.id) {
                 firebaseManager.updateRoomHuts();
             }
@@ -1281,8 +1349,11 @@
                 mapManager.drawRoute(route.coords);
                 
                 // *** ÄNDERUNG HIER: ***
-                // mapManager.map.fitBounds(mapManager.routeLine.getBounds(), {padding: [50,50]}); // ALT: Zeigt ganze Route
-                mapManager.map.setView(startPos, config.map.navigationZoom); // NEU: Zoomt nah auf User
+                // mapManager.map.setView(startPos, config.map.navigationZoom); // ALT: Harter Zoom
+                mapManager.map.flyTo(startPos, config.map.navigationZoom, { 
+                    duration: 2.5, // 2.5 Sekunden für einen weichen Flug
+                    easeLinearity: 0.5
+                }); // NEU: Weicher "Fly-To" Zoom
                 
                 uiManager.setNavigationState(true);
                 userManager.startWatchingPosition();
@@ -1379,6 +1450,14 @@
                 pos => {
                     const currentPos = L.latLng(pos.coords.latitude, pos.coords.longitude);
                     let bearing = this.lastPosition ? this.getBearing(this.lastPosition, currentPos) : 0;
+                    
+                    // NEU: Geschwindigkeit verarbeiten
+                    let speedKmh = null;
+                    if (pos.coords.speed !== null && pos.coords.speed >= 0) { // pos.coords.speed ist in m/s
+                        speedKmh = pos.coords.speed * 3.6;
+                    }
+                    uiManager.updateSpeedWidget(speedKmh); // km/h-Anzeige aktualisieren
+                    
                     mapManager.updateUserMarker(currentPos, pos.coords.accuracy, bearing);
                     if (appState.isFollowing) mapManager.map.panTo(currentPos);
                     
@@ -1403,6 +1482,7 @@
         stopWatchingPosition() {
             if(this.watchId) navigator.geolocation.clearWatch(this.watchId);
             this.watchId = null;
+            uiManager.updateSpeedWidget(null); // km/h-Anzeige ausblenden
         },
         
         getBearing(from, to) {
@@ -1466,7 +1546,7 @@
     };
     
     const geminiManager = {
-        apiKey: "", 
+        // API Key wird von der globalen Konstante oben geholt
 
         async callGemini(prompt, jsonSchema = null) {
             // Check if online before making API call
@@ -1474,8 +1554,14 @@
                  uiManager.showToast("Offline. KI-Funktionen nicht verfügbar.");
                  return null;
             }
+            // KI-Schlüssel-Prüfung
+            if (GEMINI_API_KEY === "DEIN_API_KEY_HIER" || !GEMINI_API_KEY) {
+                console.error("Gemini API Key fehlt.");
+                uiManager.showToast("KI-Funktion fehlgeschlagen: API-Schlüssel nicht konfiguriert.");
+                return null;
+            }
             
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${this.apiKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
             const payload = { contents: [{ parts: [{ text: prompt }] }] };
 
             if (jsonSchema) {
@@ -1500,6 +1586,29 @@
                 console.error("Fehler bei der Gemini-API-Anfrage:", error);
                 uiManager.showToast("Ein Fehler mit der KI-Funktion ist aufgetreten.");
                 return null;
+            }
+        },
+        
+        /**
+         * NEU: Übersetzt Text mit der Gemini API für die Sprachausgabe.
+         * @param {string} text - Der deutsche Originaltext.
+         * @param {string} targetLang - Der Ziel-Sprachcode (z.B. "en-US").
+         * @returns {string} Der übersetzte Text oder der Originaltext bei Fehler.
+         */
+        async translateText(text, targetLang) {
+            if (!text || !targetLang || targetLang === 'de-DE' || !navigator.onLine) {
+                return text; // Nichts zu tun
+            }
+            
+            const prompt = `Übersetze den folgenden deutschen Text für eine Navigations-App in die Zielsprache "${targetLang}". Behalte Eigennamen (Straßen, Orte) bei. Antworte nur mit der reinen Übersetzung, ohne Einleitung. Text: "${text}"`;
+            
+            try {
+                // Hier *kein* JSON-Schema, wir wollen reinen Text
+                const translation = await this.callGemini(prompt); 
+                return translation || text; // Fallback auf Originaltext bei Fehler
+            } catch (error) {
+                console.error("Übersetzungsfehler:", error);
+                return text; // Fallback
             }
         },
 
@@ -1554,7 +1663,7 @@
                 };
 
                 const resultText = await this.callGemini(prompt, schema);
-                if (!resultText) return;
+                if (!resultText) return; // Fehler wurde bereits in callGemini angezeigt
 
                 const resultJson = JSON.parse(resultText);
                 uiManager.openPopup(`KI-Vorschlag: ${resultJson.title}`, `<p>${resultJson.description}</p><p class="mt-2 text-sm">Die Stopps wurden deiner Tour hinzugefügt.</p>`);
@@ -1564,7 +1673,7 @@
                     .filter(Boolean);
                 
                 uiManager.updateSelectedList();
-                routeManager.recalculatePreviewRoute();
+                routeManager.recalculatePreviewRoute(); // Automatische Neuberechnung
                 if (appState.currentRoom.id) {
                     firebaseManager.updateRoomHuts();
                 }
@@ -1999,7 +2108,7 @@
 
             this.draggedIndex = null;
             uiManager.updateSelectedList();
-            routeManager.recalculatePreviewRoute();
+            routeManager.recalculatePreviewRoute(); // Automatische Neuberechnung
             if (appState.currentRoom.id) {
                 firebaseManager.updateRoomHuts();
             }
