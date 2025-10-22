@@ -2,688 +2,1016 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>RadlMap Tourplaner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>RadlMap Navigation 🚲</title>
 
-  <meta property="og:title" content="🚲 RadlMap Tourplaner" />
-  <meta property="og:description" content="Plane deine perfekte Radtour zu den schönsten Hütten und Orten!" />
+  <!-- Meta Tags für Social Media Vorschau -->
+  <meta property="og:title" content="🏠🚲 RadlMap Tourplaner" />
+  <meta property="og:description" content="Plane deine nächste Radtour mit Hütten! Mit Live-GPS, Tourenspeicher, Gruppenfunktion & mehr." />
   <meta property="og:image" content="https://radlmap.net/img/preview.png" />
   <meta property="og:url" content="https://radlmap.net" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚲</text></svg>">
 
+  <!-- Externe Bibliotheken -->
+  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-rotatedmarker@0.2.0/leaflet.rotatedMarker.min.js"></script>
   <script src="https://unpkg.com/@mapbox/polyline"></script>
-  <script src="https://unpkg.com/leaflet-geometryutil"></script>
   <link rel="stylesheet" href="https://unpkg.com/swiper/swiper-bundle.min.css"/>
   <script src="https://unpkg.com/swiper/swiper-bundle.min.js"></script>
-  
-  <script src="https://cdn.tailwindcss.com"></script>
-
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 
   <style>
-    :root {
-      --bg-light: #f8f9fa; --text-light: #212529; --sheet-light: #ffffff;
-      --bg-dark: #121212; --text-dark: #e9ecef; --sheet-dark: #1e1e1e;
-      --accent-color: #22c55e; --accent-dark: #16a34a;
-      --blue-color: #3b82f6; --red-color: #ef4444;
-    }
+    /* Inter Schriftart für ein modernes UI */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    
     html, body {
-      margin: 0; padding: 0; height: 100%; width: 100%;
-      overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background-color: var(--bg-light);
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      font-family: 'Inter', sans-serif;
+      -webkit-tap-highlight-color: transparent;
     }
-    body.dark-mode { background-color: var(--bg-dark); }
-    #map { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1; background-color: #f0f0f0; }
-    body.dark-mode #map { background-color: var(--bg-dark); }
+
+    #map {
+      height: 100%;
+      width: 100%;
+      background: #f0f0f0;
+      z-index: 1;
+    }
+
+    /* Lade-Overlay */
     #loader {
-        position: fixed; inset: 0; background: var(--sheet-light); display: flex;
-        align-items: center; justify-content: center; z-index: 10000; flex-direction: column; gap: 1rem;
-        transition: opacity 0.5s ease;
+      position: fixed;
+      inset: 0;
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(8px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.5s ease;
     }
-    body.dark-mode #loader { background: var(--sheet-dark); color: var(--text-dark); }
-    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    .spinner { width: 48px; height: 48px; border: 5px solid rgba(0,0,0,0.1); border-top-color: var(--accent-color); border-radius: 50%; animation: spin 1s linear infinite; }
-    
-    .ui-element {
-        position: fixed; z-index: 1000; background: var(--sheet-light);
-        border-radius: 999px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-        border: 1px solid rgba(0,0,0,0.05);
+    .loader-spinner {
+      border: 4px solid rgba(0,0,0,0.1);
+      border-left-color: #2563eb;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
     }
-    body.dark-mode .ui-element { background: var(--sheet-dark); box-shadow: 0 4px 20px rgba(0,0,0,0.4); border-color: rgba(255,255,255,0.1); }
-    
-    #bottom-nav { bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; padding: 8px; }
-    #top-right-nav { top: 16px; right: 16px; display: flex; gap: 8px; padding: 4px; }
-    
-    .nav-btn {
-      display: flex; align-items: center; justify-content: center;
-      width: 56px; height: 56px; border-radius: 50%; border: none;
-      background: transparent; color: var(--text-light); font-size: 24px; cursor: pointer;
-      transition: background-color 0.2s, color 0.2s;
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
-    body.dark-mode .nav-btn { color: var(--text-dark); }
-    .nav-btn:hover { background-color: rgba(0,0,0,0.05); }
-    body.dark-mode .nav-btn:hover { background-color: rgba(255,255,255,0.1); }
-    .nav-btn.active { background-color: var(--accent-color); color: white; }
 
-    #sos-btn {
-        width: 48px; height: 48px; font-size: 20px;
-        background: var(--red-color); color: white; animation: pulse-danger 2s infinite;
+    /* Dark Mode Variablen & Übergänge */
+    :root {
+      --bg-color: #ffffff;
+      --text-color: #1f2937;
+      --ui-bg: rgba(255, 255, 255, 0.85);
+      --border-color: #e5e7eb;
+      --shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     }
-    @keyframes pulse-danger { 0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } }
-
-    #route-planner-sheet {
-      position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
-      background: var(--sheet-light); color: var(--text-light);
-      border-top-left-radius: 20px; border-top-right-radius: 20px;
-      box-shadow: 0 -5px 30px rgba(0,0,0,0.1);
-      transform: translateY(100%); transition: transform 0.4s ease-out;
-      padding-bottom: 90px; max-height: 80vh; display: flex; flex-direction: column;
+    .dark {
+      --bg-color: #111827;
+      --text-color: #f9fafb;
+      --ui-bg: rgba(31, 41, 55, 0.85);
+      --border-color: #374151;
+      --shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
-    body.dark-mode #route-planner-sheet { background: var(--sheet-dark); color: var(--text-dark); box-shadow: 0 -5px 30px rgba(0,0,0,0.3); }
-    #route-planner-sheet.visible { transform: translateY(0); }
-    #sheet-handle { width: 40px; height: 5px; background: #d1d5db; border-radius: 999px; margin: 8px auto; cursor: grab; }
-    #selected-list { flex-grow: 1; overflow-y: auto; padding: 0 16px; }
-    #selected-list li { display: flex; align-items: center; padding: 12px 8px; border-bottom: 1px solid rgba(0,0,0,0.08); cursor: grab; }
-    body.dark-mode #selected-list li { border-bottom-color: rgba(255,255,255,0.1); }
-    #selected-list li:last-child { border-bottom: none; }
-    
-    .modal-overlay {
-        position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000;
-        display: flex; align-items: center; justify-content: center;
-        opacity: 0; transition: opacity 0.3s ease; pointer-events: none;
+    body, .ui-element {
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      transition: background-color 0.3s ease, color 0.3s ease;
     }
-    .modal-overlay.visible { opacity: 1; pointer-events: auto; }
-    .modal-content {
-        background: var(--sheet-light); color: var(--text-light);
-        border-radius: 16px; padding: 24px; width: 90%; max-width: 400px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        transform: scale(0.95); transition: transform 0.3s ease;
+    .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+      background: var(--ui-bg) !important;
+      color: var(--text-color) !important;
+      backdrop-filter: blur(10px);
     }
-    .modal-overlay.visible .modal-content { transform: scale(1); }
-    body.dark-mode .modal-content { background: var(--sheet-dark); color: var(--text-dark); }
-    
-    #info-popup .modal-content { max-width: 600px; max-height: 80vh; display: flex; flex-direction: column; }
-    #info-popup-content { overflow-y: auto; }
 
-
-    .user-marker-icon { position: relative; display: flex; align-items: center; justify-content: center; }
-    .user-dot { width: 18px; height: 18px; background: #1d4ed8; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
-    @keyframes pulse-gps { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(2.5); opacity: 0; } }
-    .user-accuracy-circle { position: absolute; border-radius: 50%; background: rgba(59, 130, 246, 0.2); animation: pulse-gps 2s infinite ease-out; }
-    .user-chevron { position: absolute; width: 100%; height: 100%; transition: transform 0.5s linear; }
-
+    /* Toast-Nachrichten */
     #toast {
-        position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-        background: rgba(0,0,0,0.8); color: white; padding: 10px 20px; border-radius: 999px;
-        font-size: 14px; z-index: 10001; opacity: 0; transition: opacity 0.3s, top 0.3s; pointer-events: none;
+      position: fixed;
+      bottom: 100px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #1f2937;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 9999px;
+      font-size: 14px;
+      z-index: 9000;
+      box-shadow: var(--shadow);
+      opacity: 0;
+      transition: transform 0.4s ease, opacity 0.4s ease;
+      pointer-events: none;
     }
-    #toast.show { opacity: 1; top: 30px; }
+    #toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
 
-    .leaflet-popup-content-wrapper { border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
-    .leaflet-popup-content { margin: 0; width: 320px !important; }
-    .popup-card { padding: 0; font-size: 14px; line-height: 1.5; max-height: 70vh; overflow-y: auto; }
-    .swiper-button-prev, .swiper-button-next { color: white !important; }
-    footer { position: fixed; bottom: 0; left: 0; right: 0; height: 36px; background: rgba(255,255,255,0.8); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); font-size: 11px; text-align: center; line-height: 36px; z-index: 998; border-top: 1px solid rgba(0,0,0,0.1); }
-    body.dark-mode footer { background: rgba(30,30,30,0.8); border-top-color: rgba(255,255,255,0.1); }
-    footer a { color: #555; text-decoration: none; margin: 0 4px; }
-    body.dark-mode footer a { color: #aaa; }
+    /* Haupt-Toolbar */
+    #toolbar {
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+      background: var(--ui-bg);
+      border: 1px solid var(--border-color);
+    }
+    #toolbar button {
+      transition: background-color 0.2s, transform 0.1s;
+    }
+    #toolbar button:active {
+      transform: scale(0.95);
+    }
+
+    /* Seitenleisten-Panel (Dashboard) */
+    #sidebar-panel {
+        position: fixed;
+        top: 0;
+        right: 0;
+        height: 100%;
+        width: 320px;
+        max-width: 90vw;
+        background: var(--bg-color);
+        z-index: 5000;
+        transform: translateX(100%);
+        transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+        box-shadow: -10px 0 25px rgba(0,0,0,0.1);
+        border-left: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+    }
+    #sidebar-panel.open {
+        transform: translateX(0);
+    }
+    #sidebar-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.4);
+        z-index: 4999;
+        opacity: 0;
+        transition: opacity 0.4s ease;
+        pointer-events: none;
+    }
+    #sidebar-panel.open + #sidebar-overlay {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    /* Verbesserte Scrollbars */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+    .dark ::-webkit-scrollbar-thumb { background: #555; }
+
+    /* Navigations-Hinweise */
+    #navHint {
+        backdrop-filter: blur(10px);
+        box-shadow: var(--shadow);
+        border: 1px solid var(--border-color);
+        transition: transform 0.4s ease, opacity 0.4s ease;
+        transform: translate(-50%, 50px);
+        opacity: 0;
+    }
+     #navHint.visible {
+        transform: translate(-50%, 0);
+        opacity: 1;
+    }
+
+    /* User Marker SVG mit Animation */
+    @keyframes pulse {
+      0% { r: 0; opacity: 0.6; }
+      100% { r: 40; opacity: 0; }
+    }
+    .pulse-circle {
+      animation: pulse 2s infinite ease-out;
+    }
+
   </style>
 </head>
-<body class="light-mode">
+<body class="antialiased">
 
+  <!-- Ladebildschirm -->
   <div id="loader">
-    <div class="spinner"></div>
-    <p id="loader-text">RadlMap wird geladen...</p>
+    <div class="loader-spinner"></div>
+    <p class="mt-4 text-gray-600">Karte wird geladen...</p>
   </div>
 
+  <!-- Karten-Container -->
   <div id="map"></div>
 
-  <nav id="bottom-nav" class="ui-element">
-    <button id="recenter-btn" title="Mein Standort" class="nav-btn">📍</button>
-    <button id="planner-btn" title="Tourenplaner" class="nav-btn">🗺️</button>
-    <button id="group-btn" title="Gruppenfahrt" class="nav-btn">👥</button>
-    <button id="settings-btn" title="Einstellungen" class="nav-btn">⚙️</button>
-  </nav>
-
-  <div id="top-right-nav" class="ui-element">
-    <a href="assistent.html" title="Hütte eintragen" class="nav-btn" style="width:48px; height:48px; background-color: var(--accent-color); color: white;">➕</a>
-    <button id="sos-btn" title="SOS Notruf" class="nav-btn">❗</button>
-  </div>
-  
-  <div id="route-planner-sheet">
-    <div id="sheet-handle" title="Schließen"></div>
-    <div class="px-4 pb-2">
-        <h2 class="text-xl font-bold">Tourenplaner</h2>
-        <p class="text-sm text-gray-500">Stelle deine Route per Drag & Drop zusammen.</p>
-    </div>
-    <ul id="selected-list"></ul>
-    <div class="p-4 bg-inherit border-t border-gray-200/50">
-      <div class="flex gap-2">
-        <button onclick="resetRoute()" class="w-1/3 py-3 text-sm font-semibold bg-gray-200 text-gray-700 rounded-xl">Löschen</button>
-        <button id="start-route-btn" onclick="startRouteFromPlanner()" class="w-2/3 py-3 text-sm font-semibold bg-green-500 text-white rounded-xl">▶️ Route starten</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="group-modal" class="modal-overlay">
-      <div class="modal-content">
-          <h2 class="text-xl font-bold mb-4">Gruppenfahrt</h2>
-          <p id="room-status-text" class="text-sm mb-4"></p>
-          <div id="join-room-section">
-              <input id="room-id-input" type="text" placeholder="Raum-ID eingeben..." class="w-full border p-2 rounded mb-2">
-              <button id="join-room-btn" class="w-full py-2 bg-blue-500 text-white font-semibold rounded">Beitreten / Erstellen</button>
-          </div>
-          <button id="leave-room-btn" class="w-full py-2 bg-red-500 text-white font-semibold rounded hidden">Raum verlassen</button>
-          <button onclick="closeModal('group-modal')" class="w-full mt-4 py-2 text-sm text-gray-600">Schließen</button>
-      </div>
-  </div>
-
-  <div id="settings-modal" class="modal-overlay">
-    <div class="modal-content">
-      <h2 class="text-xl font-bold mb-4">Einstellungen</h2>
-      <div class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium mb-1">Dein Name</label>
-          <div class="flex gap-2">
-            <input id="username-input" type="text" class="w-full border p-2 rounded">
-            <button id="save-username-btn" class="px-4 bg-blue-500 text-white rounded">💾</button>
-          </div>
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">Sprachausgabe</label>
-          <select id="voice-lang-select" class="w-full border p-2 rounded"></select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">Design</label>
-          <button id="theme-btn-modal" class="w-full py-2 border rounded"></button>
-        </div>
-      </div>
-      <button onclick="closeModal('settings-modal')" class="w-full mt-6 py-2 text-sm text-gray-600">Schließen</button>
-    </div>
-  </div>
-
-  <div id="info-popup" class="modal-overlay">
-    <div class="modal-content">
-      <h2 id="info-popup-title" class="text-xl font-bold mb-4"></h2>
-      <div id="info-popup-content" class="text-sm"></div>
-      <button onclick="closeModal('info-popup')" class="w-full mt-6 py-2 bg-gray-200 text-sm rounded">Schließen</button>
-    </div>
-  </div>
-
+  <!-- Toast Element -->
   <div id="toast"></div>
-  
-  <div id="consent-modal" class="hidden" style="position:fixed; inset:0; z-index:10001; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.5);">
-      <div style="background:white; padding:20px; border-radius:12px; max-width:400px; width: 90%;">
-          <h2 class="text-xl font-bold mb-2">Datenschutz</h2>
-          <p class="text-sm mb-4">Wir nutzen Cookies für notwendige Funktionen und Statistiken. Mehr in unserer <a href="#" onclick="openPopup('datenschutz')" class="text-blue-600">Datenschutzerklärung</a>.</p>
-          <label><input type="checkbox" id="consent-stats"> Statistik-Cookies (optional)</label><br>
-          <div class="mt-4 flex justify-end gap-2">
-              <button onclick="rejectConsent()" class="px-4 py-2 bg-gray-200 rounded">Nur Notwendige</button>
-              <button onclick="acceptConsent()" class="px-4 py-2 bg-blue-500 text-white rounded">Alle akzeptieren</button>
-          </div>
-      </div>
+
+  <!-- UI Elemente über der Karte -->
+  <div class="absolute top-0 left-0 right-0 p-4 z-10 pointer-events-none">
+     <!-- Navigationshinweise oben -->
+    <div id="navHint" class="hidden items-center gap-3 bg-[var(--ui-bg)] text-[var(--text-color)] rounded-full px-4 py-2 max-w-sm mx-auto">
+        <!-- Inhalt wird per JS gefüllt -->
+    </div>
   </div>
 
-  <footer>
-    <a href="#" onclick="openPopup('ueber')">Über</a> ·
-    <a href="#" onclick="openPopup('datenschutz')">Datenschutz</a> ·
-    <a href="#" onclick="openPopup('kontakt')">Kontakt</a>
-  </footer>
+  <!-- Dashboard/Seitenleiste -->
+  <aside id="sidebar-panel">
+    <div class="flex items-center justify-between p-4 border-b border-[var(--border-color)]">
+        <h2 class="text-xl font-bold">Dashboard</h2>
+        <button onclick="uiManager.toggleSidebar()" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+    </div>
+    
+    <!-- Tab Navigation -->
+    <nav class="flex border-b border-[var(--border-color)] p-2">
+      <button data-tab="tab-tour" class="tab-btn flex-1 p-2 text-sm font-semibold rounded-md text-center">Tour</button>
+      <button data-tab="tab-raum" class="tab-btn flex-1 p-2 text-sm font-semibold rounded-md text-center">Raum</button>
+      <button data-tab="tab-nutzer" class="tab-btn flex-1 p-2 text-sm font-semibold rounded-md text-center">Profil</button>
+      <button data-tab="tab-einstellungen" class="tab-btn flex-1 p-2 text-sm font-semibold rounded-md text-center">Setup</button>
+    </nav>
+    
+    <div class="flex-1 overflow-y-auto p-4 space-y-6">
+      <!-- Tour Tab -->
+      <section id="tab-tour" class="tab-panel space-y-4">
+        <!-- Gemini Tour Suggestion -->
+        <div class="p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <h3 class="font-bold text-blue-800 dark:text-blue-300">✨ KI Tour-Planer</h3>
+            <p class="text-xs text-blue-600 dark:text-blue-400 mt-1 mb-3">Keine Idee? Lass dir eine Tour vorschlagen!</p>
+            <div class="flex gap-2">
+                <select id="tour-difficulty" class="flex-1 p-2 border border-[var(--border-color)] rounded-lg bg-transparent text-sm">
+                    <option value="einfache">Leicht</option>
+                    <option value="mittelschwere">Mittel</option>
+                    <option value="anspruchsvolle">Anspruchsvoll</option>
+                </select>
+                <button id="suggest-tour-btn" onclick="geminiManager.suggestTour()" class="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-600 transition">Vorschlagen</button>
+            </div>
+        </div>
+        
+        <h3 class="font-bold">📋 Ausgewählte Stopps</h3>
+        <ul id="selectedList" class="space-y-2"></ul>
+        <div id="tour-actions" class="hidden space-y-2">
+            <p id="tour-stats" class="text-sm text-gray-500 my-2 text-center"></p>
+            <button onclick="routeManager.recalculatePreviewRoute()" class="w-full bg-gray-500 text-white p-2 rounded-lg text-sm font-medium hover:bg-gray-600 transition">
+                🔄 Vorschau aktualisieren
+            </button>
+            <button id="summarize-tour-btn" onclick="geminiManager.summarizeTour()" class="w-full bg-purple-500 text-white p-2 rounded-lg text-sm font-medium hover:bg-purple-600 transition">
+                ✨ Tour-Zusammenfassung
+            </button>
+        </div>
+      </section>
+      
+      <!-- Raum Tab -->
+      <section id="tab-raum" class="tab-panel hidden space-y-4">
+        <h3 class="font-bold">👥 Raum-Verwaltung</h3>
+        <div id="room-active-view" class="hidden space-y-2">
+            <p class="text-sm">Du bist im Raum: <strong id="current-room-id" class="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded"></strong></p>
+            <button onclick="firebaseManager.leaveRoom()" class="w-full bg-red-500 text-white p-2 rounded-lg text-sm font-medium">Raum verlassen</button>
+        </div>
+        <div id="room-join-view" class="space-y-2">
+            <input id="roomIdInput" type="text" placeholder="Raum-ID eingeben oder leer lassen" class="w-full p-2 border border-[var(--border-color)] rounded-lg bg-transparent">
+            <button onclick="firebaseManager.joinRoom()" class="w-full bg-green-500 text-white p-2 rounded-lg text-sm font-medium">Beitreten / Erstellen</button>
+        </div>
+      </section>
 
+      <!-- Nutzer Tab -->
+      <section id="tab-nutzer" class="tab-panel hidden space-y-4">
+          <h3 class="font-bold">👤 Mein Profil</h3>
+          <div>
+              <label class="text-sm font-medium">Dein Name</label>
+              <div class="flex gap-2 mt-1">
+                  <input id="usernameInput" type="text" class="flex-1 p-2 border border-[var(--border-color)] rounded-lg bg-transparent" placeholder="Dein Anzeigename">
+                  <button onclick="userManager.saveUsername()" class="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium">Speichern</button>
+              </div>
+          </div>
+           <button onclick="userManager.sendSOS()" class="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-3 rounded-lg font-bold shadow-lg transition">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            SOS Notruf
+          </button>
+      </section>
+
+      <!-- Einstellungen Tab -->
+      <section id="tab-einstellungen" class="tab-panel hidden space-y-4">
+        <h3 class="font-bold">⚙️ Einstellungen</h3>
+        <div>
+          <label for="voiceLang" class="block text-sm font-medium mb-1">🗣️ Sprachausgabe</label>
+          <select id="voiceLang" class="w-full p-2 border border-[var(--border-color)] rounded-lg bg-transparent"></select>
+        </div>
+        <div>
+            <a href="#" onclick="uiManager.openPopup('Datenschutz', 'Hier stehen die Datenschutzbestimmungen...')" class="text-blue-500 hover:underline text-sm">Datenschutz & Impressum</a>
+        </div>
+      </section>
+    </div>
+  </aside>
+  <div id="sidebar-overlay" onclick="uiManager.toggleSidebar()"></div>
+  
+  <!-- Buttons über der Karte -->
+  <div class="absolute top-4 right-4 z-10 space-y-3">
+    <button onclick="uiManager.toggleSidebar()" class="bg-[var(--ui-bg)] backdrop-blur-md shadow-lg rounded-full p-3 border border-[var(--border-color)]">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+    </button>
+     <button id="theme-toggle-btn" onclick="uiManager.toggleTheme()" class="bg-[var(--ui-bg)] backdrop-blur-md shadow-lg rounded-full p-3 border border-[var(--border-color)]">
+        <!-- Icon wird per JS gesetzt -->
+    </button>
+  </div>
+  
+  <!-- Haupt-Toolbar unten -->
+  <div id="toolbar" class="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 p-2 rounded-full">
+    <button id="startBtn" onclick="routeManager.startNavigation()" class="bg-green-500 text-white rounded-full px-6 py-3 font-bold text-lg">Start</button>
+    <button id="stopBtn" onclick="routeManager.stopNavigation()" class="bg-red-500 text-white rounded-full px-6 py-3 font-bold text-lg hidden">Stop</button>
+    <button id="resetBtn" onclick="routeManager.resetRoute()" class="bg-gray-200 dark:bg-gray-600 rounded-full p-3">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+    </button>
+    <button id="voice-toggle" onclick="appState.toggleVoice()" class="bg-gray-200 dark:bg-gray-600 rounded-full p-3">
+        <!-- Icon wird per JS gesetzt -->
+    </button>
+    <button id="follow-toggle" onclick="appState.toggleFollow()" class="bg-gray-200 dark:bg-gray-600 rounded-full p-3 hidden">
+        <!-- Icon wird per JS gesetzt -->
+    </button>
+  </div>
+
+  <!-- Popup für Datenschutz, KI-Ergebnisse etc. -->
+  <div id="popupOverlay" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-[9990] flex items-center justify-center p-4" onclick="uiManager.closePopup()">
+    <div id="popupContent" class="bg-[var(--bg-color)] rounded-2xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto p-6 relative" onclick="event.stopPropagation()">
+        <!-- Inhalt wird dynamisch geladen -->
+    </div>
+  </div>
+
+
+  <!-- Scripte: Firebase & Logik -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  
   <script>
-    // ========================================================================
-    //  🚲 RADLMAP TOURPLANER v5.6 - FINAL REPAIRED & UPGRADED
-    // ========================================================================
+    // ==========================================================
+    //  🚲 RADLMAP - REFAKTORED & SMART VERSION
+    // ==========================================================
 
-    const firebaseConfig = {
-        apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
+    // ----------------------------------------------------------
+    //  1. KONFIGURATION & ZUSTAND
+    // ----------------------------------------------------------
+
+    const config = {
+      firebase: {
+        apiKey: "YOUR_API_KEY", // Platzhalter
         authDomain: "eierhuettentour.firebaseapp.com",
-        projectId: "eierhuettentour",
+        projectId: "eierhuettentour"
+      },
+      map: {
+        defaultCenter: [47.3, 11.4],
+        defaultZoom: 13,
+        navigationZoom: 18,
+      },
+      routing: {
+        profile: 'cycling-regular',
+        deviationThresholdMeters: 30,
+        recalcDebounceMs: 5000,
+      },
+      noImagePlaceholders: [
+        "https://radlmap.net/img/noimg/1.jpg",
+        "https://radlmap.net/img/noimg/2.jpg",
+        "https://radlmap.net/img/noimg/3.jpg",
+      ]
     };
-    const ORS_API_KEY = "5b3af8b88e1a4f000179979725f05d58d98342468285703f925b4119";
-
-    let map, db, cluster, userMarker, currentTileLayer, routeLine;
-    let isDarkTheme = false, followUser = true, navActiveFlag = false;
-    let allHuts = new Map(), selectedHuts = [], groupMarkers = {};
-    let routeCoords = [], routeSteps = [];
-    let deviceHeading = 0, roomId = null, hutListener = null;
-    let alias = localStorage.aliasId || `user_${Math.random().toString(36).substr(2, 6)}`;
-    localStorage.aliasId = alias;
     
-    const loader = document.getElementById('loader');
-    const loaderText = document.getElementById('loader-text');
-    const plannerSheet = document.getElementById('route-planner-sheet');
-    const selectedList = document.getElementById('selected-list');
-    const startRouteBtn = document.getElementById('start-route-btn');
-    
-    // ========================================================================
-    //  🚀 APP INITIALIZATION
-    // ========================================================================
-    
-    document.addEventListener('DOMContentLoaded', () => {
-        const consentGiven = localStorage.getItem("consentGiven");
-        if (!consentGiven) {
-            document.getElementById("consent-modal").classList.remove("hidden");
-        } else {
-            startRadlMap();
+    const appState = {
+      isFollowing: true,
+      isVoiceOn: true,
+      isDarkTheme: false,
+      isNavigating: false,
+      isSidebarOpen: false,
+      selectedHuts: [],
+      allHuts: [],
+      currentRoomId: null,
+      
+      toggleFollow() {
+        this.isFollowing = !this.isFollowing;
+        uiManager.updateFollowButton();
+        uiManager.showToast(`Follow-Modus ${this.isFollowing ? 'aktiviert' : 'pausiert'}`);
+        if(this.isFollowing && mapManager.userMarker) {
+            mapManager.map.setView(mapManager.userMarker.getLatLng(), config.map.navigationZoom);
         }
+      },
+      toggleVoice() {
+        this.isVoiceOn = !this.isVoiceOn;
+        uiManager.updateVoiceButton();
+        uiManager.showToast(`Sprachansagen ${this.isVoiceOn ? 'aktiviert' : 'deaktiviert'}`);
+      },
+    };
+
+    // ----------------------------------------------------------
+    //  2. UI MANAGER - Alles was die Oberfläche betrifft
+    // ----------------------------------------------------------
+    const uiManager = {
+        init() {
+            this.initTheme();
+            this.initTabs();
+            this.updateVoiceButton();
+            this.updateFollowButton();
+        },
+
+        toggleSidebar() {
+            appState.isSidebarOpen = !appState.isSidebarOpen;
+            document.getElementById('sidebar-panel').classList.toggle('open', appState.isSidebarOpen);
+            if(mapManager.map) {
+                setTimeout(() => mapManager.map.invalidateSize(), 400);
+            }
+        },
+
+        initTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            appState.isDarkTheme = savedTheme === 'dark';
+            document.body.classList.toggle('dark', appState.isDarkTheme);
+            this.updateThemeButton();
+        },
+
+        toggleTheme() {
+            appState.isDarkTheme = !appState.isDarkTheme;
+            localStorage.setItem('theme', appState.isDarkTheme ? 'dark' : 'light');
+            document.body.classList.toggle('dark', appState.isDarkTheme);
+            this.updateThemeButton();
+            if(mapManager.tileLayer) {
+                mapManager.map.removeLayer(mapManager.tileLayer);
+                mapManager.addTileLayer();
+            }
+        },
+        
+        updateThemeButton() {
+            const icon = appState.isDarkTheme ? '☀️' : '🌙';
+            document.getElementById('theme-toggle-btn').textContent = icon;
+        },
+
+        updateVoiceButton() {
+            const icon = appState.isVoiceOn 
+                ? `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`
+                : `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v-2a7 7 0 0 0-11.21-.83"></path></svg>`;
+            document.getElementById('voice-toggle').innerHTML = icon;
+        },
+
+        updateFollowButton() {
+            const icon = appState.isFollowing 
+                ? `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8.25a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5Z M12 2.25a.75.75 0 0 1 .75.75v.31A9.743 9.743 0 0 1 21.435 12a.75.75 0 0 1-1.493.102 8.243 8.243 0 0 0-7.942-7.942A.75.75 0 0 1 12 2.25Z"/></svg>` 
+                : `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>`;
+            document.getElementById('follow-toggle').innerHTML = icon;
+        },
+        
+        setLoading(isLoading, text = 'Lade...') {
+            const loader = document.getElementById('loader');
+            if (isLoading) {
+                loader.querySelector('p').textContent = text;
+                loader.style.display = 'flex';
+                loader.style.opacity = '1';
+            } else {
+                loader.style.opacity = '0';
+                setTimeout(() => loader.style.display = 'none', 500);
+            }
+        },
+
+        showToast(message) {
+            const toast = document.getElementById('toast');
+            if (!toast) return; // Guard clause to prevent error
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        },
+
+        updateSelectedList() {
+            const listEl = document.getElementById('selectedList');
+            if (appState.selectedHuts.length === 0) {
+                listEl.innerHTML = `<li class="text-sm text-gray-500">Noch keine Stopps ausgewählt. Klicke auf der Karte auf eine Hütte oder lass dir eine Tour vorschlagen.</li>`;
+                document.getElementById('tour-actions').classList.add('hidden');
+                return;
+            }
+
+            listEl.innerHTML = appState.selectedHuts.map((hut, index) => `
+                <li class="flex items-center justify-between p-2 rounded-lg bg-gray-100 dark:bg-gray-700" data-index="${index}">
+                    <span class="font-medium text-sm">#${index + 1}: ${hut.name}</span>
+                    <button onclick="routeManager.removeSelected(${index})" class="p-1 text-red-500 hover:text-red-700">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                </li>
+            `).join('');
+            
+            document.getElementById('tour-actions').classList.toggle('hidden', appState.selectedHuts.length < 1);
+        },
+
+        setNavigationState(isNavigating) {
+            appState.isNavigating = isNavigating;
+            document.getElementById('startBtn').classList.toggle('hidden', isNavigating);
+            document.getElementById('stopBtn').classList.toggle('hidden', !isNavigating);
+            document.getElementById('follow-toggle').classList.toggle('hidden', !isNavigating);
+        },
+        
+        initTabs() {
+            const tabButtons = document.querySelectorAll('.tab-btn');
+            const tabPanels = document.querySelectorAll('.tab-panel');
+            
+            // Default active tab
+            tabButtons[0].classList.add('bg-gray-200', 'dark:bg-gray-700');
+            tabPanels[0].classList.remove('hidden');
+
+            tabButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    tabButtons.forEach(btn => btn.classList.remove('bg-gray-200', 'dark:bg-gray-700'));
+                    button.classList.add('bg-gray-200', 'dark:bg-gray-700');
+
+                    tabPanels.forEach(panel => panel.classList.add('hidden'));
+                    document.getElementById(button.dataset.tab).classList.remove('hidden');
+                });
+            });
+        },
+
+        showNavHint(icon, text) {
+            const hintEl = document.getElementById('navHint');
+            hintEl.innerHTML = `${icon} <span class="text-sm">${text}</span>`;
+            hintEl.classList.remove('hidden');
+            hintEl.classList.add('visible');
+
+            if (this.navHintTimer) clearTimeout(this.navHintTimer);
+            this.navHintTimer = setTimeout(() => {
+                hintEl.classList.remove('visible');
+            }, 6000);
+        },
+
+        updateRoomUI() {
+            const inRoom = !!appState.currentRoomId;
+            document.getElementById('room-active-view').classList.toggle('hidden', !inRoom);
+            document.getElementById('room-join-view').classList.toggle('hidden', inRoom);
+            if(inRoom) {
+                document.getElementById('current-room-id').textContent = appState.currentRoomId;
+            }
+        },
+        
+        openPopup(title, htmlContent) {
+            const overlay = document.getElementById("popupOverlay");
+            const content = document.getElementById("popupContent");
+            overlay.classList.remove("hidden");
+            content.innerHTML = `
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">${title}</h2>
+                    <button onclick="uiManager.closePopup()" class="p-2 -mr-2 text-2xl">&times;</button>
+                </div>
+                <div>${htmlContent}</div>`;
+        },
+
+        closePopup() {
+            document.getElementById("popupOverlay").classList.add("hidden");
+        }
+    };
+
+    // ----------------------------------------------------------
+    //  3. KARTEN MANAGER - Alles rund um Leaflet
+    // ----------------------------------------------------------
+    const mapManager = {
+        map: null,
+        userMarker: null,
+        tileLayer: null,
+        clusterGroup: null,
+        routeLine: null,
+        previewLine: null,
+        pastRouteLine: null,
+
+        init(center, zoom) {
+            this.map = L.map('map', { center, zoom, zoomControl: false });
+            L.control.zoom({ position: 'bottomright' }).addTo(this.map);
+            this.addTileLayer();
+
+            this.clusterGroup = L.markerClusterGroup();
+            this.map.addLayer(this.clusterGroup);
+
+            this.map.on('dragstart', () => { if(appState.isFollowing) appState.toggleFollow() });
+        },
+
+        addTileLayer() {
+            const url = appState.isDarkTheme
+                ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+                : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+            const attr = '&copy; OpenStreetMap &copy; CARTO';
+            
+            this.tileLayer = L.tileLayer(url, { attribution: attr, maxZoom: 19 });
+            this.tileLayer.addTo(this.map);
+        },
+        
+        updateUserMarker(latlng, accuracy, bearing) {
+            const iconHtml = `
+                <svg width="48" height="48" viewBox="0 0 48 48" style="transform: rotate(${bearing}deg); transition: transform 0.2s linear;">
+                    <circle cx="24" cy="24" r="20" fill="#4285F4" fill-opacity="0.2" class="pulse-circle"/>
+                    <path d="M24 4 L34 28 H14 Z" fill="#4285F4" stroke="white" stroke-width="2" style="filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.4));"/>
+                </svg>
+            `;
+            const userIcon = L.divIcon({
+                html: iconHtml,
+                className: '',
+                iconSize: [48, 48],
+                iconAnchor: [24, 24]
+            });
+
+            if (!this.userMarker) {
+                this.userMarker = L.marker(latlng, { icon: userIcon }).addTo(this.map);
+            } else {
+                this.userMarker.setLatLng(latlng).setIcon(userIcon);
+            }
+        },
+
+        drawRoute(coordinates, isPreview = false) {
+            const options = isPreview
+                ? { color: "#9ca3af", weight: 5, dashArray: "10, 10" }
+                : { color: "#3b82f6", weight: 6, opacity: 0.8 };
+
+            if(isPreview) {
+                if(this.previewLine) this.map.removeLayer(this.previewLine);
+                this.previewLine = L.polyline(coordinates, options).addTo(this.map);
+            } else {
+                if(this.routeLine) this.map.removeLayer(this.routeLine);
+                this.routeLine = L.polyline(coordinates, options).addTo(this.map);
+                if(this.pastRouteLine) this.map.removeLayer(this.pastRouteLine);
+                this.pastRouteLine = L.polyline([], { color: 'gray', weight: 4 }).addTo(this.map);
+            }
+        },
+
+        clearRoute() {
+            if(this.routeLine) this.map.removeLayer(this.routeLine);
+            if(this.previewLine) this.map.removeLayer(this.previewLine);
+            if(this.pastRouteLine) this.map.removeLayer(this.pastRouteLine);
+            this.routeLine = null;
+            this.previewLine = null;
+            this.pastRouteLine = null;
+        }
+    };
+    
+    // ----------------------------------------------------------
+    //  4. WEITERE MANAGER (Routing, Gemini, Firebase, Nutzer)
+    // ----------------------------------------------------------
+
+    const routeManager = {
+        routeData: null,
+        recalcTimer: null,
+
+        async fetchRoute(startCoords, waypoints) {
+            const coordinatesString = [
+                `${startCoords.lng},${startCoords.lat}`,
+                ...waypoints.map(h => `${h.lng},${h.lat}`)
+            ].join(';');
+            
+            const url = `https://router.project-osrm.org/route/v1/bicycle/${coordinatesString}?overview=full&geometries=geojson`;
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`OSRM API Fehler: ${response.status}`);
+                const data = await response.json();
+                if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) throw new Error('OSRM konnte keine Route finden.');
+                
+                const route = data.routes[0];
+                this.routeData = {
+                    coords: route.geometry.coordinates.map(p => [p[1], p[0]]),
+                    distance: route.distance,
+                    duration: route.duration,
+                    steps: [] 
+                };
+                return this.routeData;
+            } catch (error) {
+                console.error("Fehler bei der Routenberechnung:", error);
+                uiManager.showToast("Route konnte nicht berechnet werden.");
+                return null;
+            }
+        },
+        
+        toggleSelect(hut) {
+            const index = appState.selectedHuts.findIndex(h => h.id === hut.id);
+            if (index > -1) {
+                appState.selectedHuts.splice(index, 1);
+            } else {
+                appState.selectedHuts.push(hut);
+            }
+            uiManager.updateSelectedList();
+            this.recalculatePreviewRoute();
+        },
+        
+        removeSelected(index) {
+            appState.selectedHuts.splice(index, 1);
+            uiManager.updateSelectedList();
+            this.recalculatePreviewRoute();
+        },
+
+        async recalculatePreviewRoute() {
+            if (appState.selectedHuts.length < 1) {
+                mapManager.clearRoute();
+                document.getElementById('tour-stats').textContent = '';
+                return;
+            }
+            if (appState.selectedHuts.length < 2) {
+                if(mapManager.previewLine) mapManager.map.removeLayer(mapManager.previewLine);
+                document.getElementById('tour-stats').textContent = 'Füge einen weiteren Stopp für eine Route hinzu.';
+                return;
+            }
+            
+            uiManager.setLoading(true, 'Routenvorschau wird berechnet...');
+            const startPos = await userManager.getCurrentPosition();
+            const route = await this.fetchRoute(startPos, appState.selectedHuts);
+            if(route) {
+                mapManager.drawRoute(route.coords, true);
+                mapManager.map.fitBounds(mapManager.previewLine.getBounds(), {padding: [50,50]});
+                
+                const distanceKm = (route.distance / 1000).toFixed(1);
+                const durationMin = Math.round(route.duration / 60);
+                document.getElementById('tour-stats').textContent = `Tour: ${distanceKm} km, ca. ${durationMin} min`;
+            }
+            uiManager.setLoading(false);
+        },
+
+        async startNavigation() {
+            if(appState.selectedHuts.length < 1) {
+                uiManager.showToast("Bitte wähle zuerst mindestens einen Stopp.");
+                return;
+            }
+            uiManager.setLoading(true, 'Navigation wird gestartet...');
+            const startPos = await userManager.getCurrentPosition();
+            const route = await this.fetchRoute(startPos, appState.selectedHuts);
+            uiManager.setLoading(false);
+
+            if(route) {
+                mapManager.drawRoute(route.coords);
+                mapManager.map.fitBounds(mapManager.routeLine.getBounds(), {padding: [50,50]});
+                uiManager.setNavigationState(true);
+                userManager.startWatchingPosition();
+                uiManager.showToast("Navigation gestartet!");
+            }
+        },
+
+        stopNavigation() {
+            userManager.stopWatchingPosition();
+            mapManager.clearRoute();
+            this.routeData = null;
+            uiManager.setNavigationState(false);
+            uiManager.showToast("Navigation beendet.");
+        },
+        
+        resetRoute() {
+            this.stopNavigation();
+            appState.selectedHuts = [];
+            uiManager.updateSelectedList();
+        }
+    };
+
+    const userManager = {
+        watchId: null,
+        lastPosition: null,
+
+        init() {
+            const savedName = localStorage.getItem('username');
+            if(savedName) document.getElementById('usernameInput').value = savedName;
+            
+            this.getCurrentPosition().then(pos => {
+                mapManager.updateUserMarker(pos, 20, 0);
+                mapManager.map.setView(pos, config.map.defaultZoom);
+            }).finally(() => uiManager.setLoading(false));
+        },
+        
+        getCurrentPosition() {
+            return new Promise((resolve) => {
+                navigator.geolocation.getCurrentPosition(
+                    pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                    err => {
+                        console.warn("GPS Fehler:", err);
+                        uiManager.showToast("GPS nicht verfügbar. Nutze Fallback-Position.");
+                        resolve({ lat: config.map.defaultCenter[0], lng: config.map.defaultCenter[1] });
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+                );
+            });
+        },
+
+        startWatchingPosition() {
+            if (this.watchId) return;
+            const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
+            this.watchId = navigator.geolocation.watchPosition(
+                pos => {
+                    const currentPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                    let bearing = this.lastPosition ? this.getBearing(this.lastPosition, currentPos) : 0;
+                    mapManager.updateUserMarker(currentPos, pos.coords.accuracy, bearing);
+                    if (appState.isFollowing) mapManager.map.panTo(currentPos);
+                    this.lastPosition = currentPos;
+                },
+                err => console.error("GPS Watch Fehler:", err),
+                options
+            );
+        },
+
+        stopWatchingPosition() {
+            if(this.watchId) navigator.geolocation.clearWatch(this.watchId);
+            this.watchId = null;
+        },
+        
+        getBearing(from, to) {
+            const lat1 = from.lat * Math.PI / 180;
+            const lat2 = to.lat * Math.PI / 180;
+            const dLon = (to.lng - from.lng) * Math.PI / 180;
+            const y = Math.sin(dLon) * Math.cos(lat2);
+            const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+            return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+        },
+
+        saveUsername() {
+            const name = document.getElementById('usernameInput').value.trim();
+            if(name) {
+                localStorage.setItem('username', name);
+                uiManager.showToast('Name gespeichert!');
+            }
+        },
+
+        async sendSOS() {
+            if (!confirm("Sicher, dass du einen SOS-Notruf per WhatsApp senden möchtest?")) return;
+            const pos = await this.getCurrentPosition();
+            const link = `https://maps.google.com/?q=${pos.lat},${pos.lng}`;
+            const message = `🚨 NOTRUF 🚨 Ich brauche Hilfe! Mein Standort: ${link}`;
+            window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
+        }
+    };
+    
+    const geminiManager = {
+        apiKey: "", // Wird zur Laufzeit von der Umgebung bereitgestellt
+
+        async callGemini(prompt, jsonSchema = null) {
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${this.apiKey}`;
+            const payload = { contents: [{ parts: [{ text: prompt }] }] };
+
+            if (jsonSchema) {
+                payload.generationConfig = {
+                    responseMimeType: "application/json",
+                    responseSchema: jsonSchema,
+                };
+            }
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) throw new Error(`API Error: ${response.status} ${await response.text()}`);
+                const result = await response.json();
+                const candidate = result.candidates?.[0];
+                if (!candidate?.content?.parts?.[0]?.text) throw new Error("Invalid API response structure.");
+                return candidate.content.parts[0].text;
+            } catch (error) {
+                console.error("Fehler bei der Gemini-API-Anfrage:", error);
+                uiManager.showToast("Ein Fehler mit der KI-Funktion ist aufgetreten.");
+                return null;
+            }
+        },
+
+        async suggestTour() {
+            const btn = document.getElementById('suggest-tour-btn');
+            btn.disabled = true;
+            btn.textContent = 'Denke...';
+
+            try {
+                const userPos = await userManager.getCurrentPosition();
+                if (!appState.allHuts.length) {
+                    uiManager.showToast("Hütten werden noch geladen. Bitte kurz warten.");
+                    return;
+                }
+                const difficulty = document.getElementById('tour-difficulty').value;
+                const hutsString = appState.allHuts.map(h => `${h.name} (bei ${h.lat.toFixed(3)},${h.lng.toFixed(3)})`).join('; ');
+
+                const prompt = `Ich bin ein Radfahrer bei Position ${userPos.lat},${userPos.lng}. Schlage mir eine ${difficulty} Fahrradtour vor. Hier ist eine Liste verfügbarer Hütten: ${hutsString}. Schlage eine Route mit 3 bis 5 Stopps vor, liste die Hüttennamen in der richtigen Reihenfolge auf und gib der Tour einen eingängigen Titel und eine kurze, motivierende Beschreibung (auf Deutsch). Gib die Antwort ausschließlich im folgenden JSON-Format zurück:`;
+                
+                const schema = {
+                    type: "OBJECT",
+                    properties: {
+                        "title": { "type": "STRING" },
+                        "description": { "type": "STRING" },
+                        "stops": { "type": "ARRAY", "items": { "type": "STRING" } }
+                    },
+                    required: ["title", "description", "stops"]
+                };
+
+                const resultText = await this.callGemini(prompt, schema);
+                if (!resultText) return;
+
+                const resultJson = JSON.parse(resultText);
+                uiManager.showToast(`Tour-Vorschlag: ${resultJson.title}`);
+                
+                appState.selectedHuts = resultJson.stops
+                    .map(stopName => appState.allHuts.find(h => h.name === stopName))
+                    .filter(Boolean); // Filtere nicht gefundene Hütten heraus
+                
+                uiManager.updateSelectedList();
+                routeManager.recalculatePreviewRoute();
+
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Vorschlagen';
+            }
+        },
+
+        async summarizeTour() {
+            if (appState.selectedHuts.length < 1) return;
+             const btn = document.getElementById('summarize-tour-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<div class="loader-spinner !w-5 !h-5 !border-2 mx-auto"></div>';
+
+
+            try {
+                const stops = appState.selectedHuts.map(h => h.name).join(', ');
+                const distance = routeManager.routeData ? (routeManager.routeData.distance / 1000).toFixed(1) + " km" : "unbekannter Distanz";
+                
+                const prompt = `Schreibe eine lustige und abenteuerliche Zusammenfassung (ca. 2 Absätze) für eine Fahrradtour auf Deutsch. Die Tour hat folgende Stopps: ${stops}. Die Gesamtdistanz beträgt ca. ${distance}. Die Zusammenfassung soll Lust aufs Radfahren machen.`;
+
+                const summary = await this.callGemini(prompt);
+                if (summary) {
+                    const formattedSummary = summary.replace(/\n/g, '<br>');
+                    uiManager.openPopup("✨ Deine Tour-Zusammenfassung", `<p>${formattedSummary}</p>`);
+                }
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '✨ Tour-Zusammenfassung';
+            }
+        }
+    };
+
+    const firebaseManager = {
+        db: null,
+        
+        init() {
+            firebase.initializeApp(config.firebase);
+            this.db = firebase.firestore();
+            this.loadHuts();
+        },
+        
+        loadHuts() {
+            this.db.collection("eierhuetten").where("status", "==", "angenommen").onSnapshot(snapshot => {
+                appState.allHuts = [];
+                mapManager.clusterGroup.clearLayers();
+
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (!data.location) return;
+                    
+                    const hut = {
+                        id: doc.id,
+                        name: data.name,
+                        lat: data.location.latitude,
+                        lng: data.location.longitude,
+                    };
+                    appState.allHuts.push(hut);
+                    
+                    const isSelected = appState.selectedHuts.some(h => h.id === hut.id);
+
+                    const popupContent = `
+                        <div class="p-1">
+                            <h3 class="font-bold text-lg mb-2">${hut.name}</h3>
+                            <p class="text-sm mb-4">Details zur Hütte hier...</p>
+                            <button id="btn-${hut.id}" class="w-full p-2 rounded-lg font-semibold text-white ${isSelected ? 'bg-red-500' : 'bg-green-500'}">
+                                ${isSelected ? 'Von Tour entfernen' : 'Zur Tour hinzufügen'}
+                            </button>
+                        </div>
+                    `;
+
+                    const marker = L.marker([hut.lat, hut.lng]).bindPopup(popupContent, { minWidth: 250 });
+                    marker.on('popupopen', () => {
+                        document.getElementById(`btn-${hut.id}`).onclick = () => {
+                            routeManager.toggleSelect(hut);
+                            marker.closePopup();
+                        };
+                    });
+                    mapManager.clusterGroup.addLayer(marker);
+                });
+            });
+        },
+        
+        joinRoom() {
+            let id = document.getElementById('roomIdInput').value.trim();
+            if(!id) id = Math.random().toString(36).substring(2, 8).toUpperCase();
+            appState.currentRoomId = id;
+            uiManager.updateRoomUI();
+            uiManager.showToast(`Raum ${id} beigetreten.`);
+        },
+        
+        leaveRoom() {
+            appState.currentRoomId = null;
+            uiManager.updateRoomUI();
+            uiManager.showToast("Raum verlassen.");
+        }
+    };
+
+    // ----------------------------------------------------------
+    //  5. INITIALISIERUNG
+    // ----------------------------------------------------------
+    document.addEventListener('DOMContentLoaded', () => {
+        uiManager.setLoading(true);
+        uiManager.init();
+        mapManager.init(config.map.defaultCenter, config.map.defaultZoom);
+        firebaseManager.init();
+        userManager.init();
     });
 
-    function acceptConsent() {
-        localStorage.setItem("consentGiven", "true");
-        document.getElementById("consent-modal").classList.add("hidden");
-        startRadlMap();
-    }
-    function rejectConsent() {
-        localStorage.setItem("consentGiven", "true");
-        document.getElementById("consent-modal").classList.add("hidden");
-        startRadlMap();
-    }
-
-    async function startRadlMap() {
-        if (map) return;
-        try {
-            firebase.initializeApp(firebaseConfig);
-            db = firebase.firestore();
-
-            initMap();
-            setupEventListeners();
-            startGpsTracking();
-            startCompassTracking();
-            await initHuettenListener();
-            
-        } catch (err) {
-            console.error("Initialization failed:", err);
-            loader.classList.remove('hidden');
-            loaderText.innerHTML = `<span style="color: red;">Fehler: ${err.message || 'Unbekannter Fehler'}.<br>Bitte Seite neu laden.</span>`;
-        }
-    }
-    
-    function setupEventListeners() {
-        document.getElementById('recenter-btn').onclick = () => setFollowUser(true);
-        document.getElementById('planner-btn').onclick = togglePlannerSheet;
-        document.getElementById('group-btn').onclick = () => openModal('group-modal');
-        document.getElementById('settings-btn').onclick = () => openModal('settings-modal');
-        document.getElementById('sos-btn').onclick = sendSOS;
-        document.getElementById('sheet-handle').onclick = togglePlannerSheet;
-        
-        document.getElementById('theme-btn-modal').onclick = () => { isDarkTheme = !isDarkTheme; updateMapTheme(); };
-        document.getElementById('username-input').value = localStorage.username || '';
-        document.getElementById('save-username-btn').onclick = () => {
-            localStorage.username = document.getElementById('username-input').value;
-            showToast("Name gespeichert!");
-        };
-        populateVoiceDropdown();
-        if (speechSynthesis.onvoiceschanged !== undefined) {
-            speechSynthesis.onvoiceschanged = populateVoiceDropdown;
-        }
-
-        setupGroupModal();
-
-        map.on('popupopen', (e) => {
-            const swiperEl = e.popup.getElement()?.querySelector('.popup-swiper');
-            if (swiperEl && !swiperEl.swiper) { // prevent re-init
-                new Swiper(swiperEl, { loop: true, navigation: { nextEl: '.swiper-button-next', prevEl: '.swiper-button-prev' } });
-            }
-        });
-        
-        let draggedItem = null;
-        selectedList.addEventListener('dragstart', e => { draggedItem = e.target.closest('li'); });
-        selectedList.addEventListener('dragover', e => {
-            e.preventDefault();
-            const target = e.target.closest('li');
-            if (target && target !== draggedItem) {
-                const rect = target.getBoundingClientRect();
-                const isAfter = e.clientY > rect.top + rect.height / 2;
-                target.parentNode.insertBefore(draggedItem, isAfter ? target.nextSibling : target);
-            }
-        });
-        selectedList.addEventListener('drop', e => {
-            e.preventDefault();
-            if(!draggedItem) return;
-            const newOrder = Array.from(selectedList.querySelectorAll('li')).map(li => li.dataset.id);
-            selectedHuts.sort((a, b) => newOrder.indexOf(a.id) - newOrder.indexOf(b.id));
-            updateSelectedList();
-            draggedItem = null;
-        });
-    }
-
-    // ========================================================================
-    //  🗺️ MAP & MARKER SETUP
-    // ========================================================================
-    
-    function initMap() {
-      map = L.map("map", { center: [49.8, 10.5], zoom: 7, zoomControl: true, zoomAnimation: false });
-      cluster = L.markerClusterGroup({ maxClusterRadius: 40 });
-      map.addLayer(cluster);
-      isDarkTheme = localStorage.getItem("mapTheme") === "dark";
-      updateMapTheme();
-      map.on('dragstart zoomstart mousedown', (e) => { if (e.originalEvent && followUser) setFollowUser(false, 'manual'); });
-      loader.classList.add('hidden');
-    }
-    
-    function createUserMarker(latlng) {
-        const icon = L.divIcon({
-            className: 'user-marker-icon',
-            html: `
-                <div class="user-accuracy-circle"></div>
-                <div class="user-chevron">
-                    <svg viewBox="0 0 24 24" fill="#1d4ed8" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));">
-                        <path d="M12 2L21 21L12 17L3 21L12 2Z"/>
-                    </svg>
-                </div>
-                <div class="user-dot"></div>`,
-            iconSize: [48, 48], iconAnchor: [24, 24]
-        });
-        userMarker = L.marker(latlng, { icon: icon, zIndexOffset: 1000, interactive: false }).addTo(map);
-    }
-    
-    function updateUserPosition(pos) {
-        if (!map) return;
-        const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
-
-        if (!userMarker) {
-            createUserMarker(latlng);
-            if(followUser) map.flyTo(latlng, 16);
-        }
-
-        let displayPosition = latlng;
-        let displayHeading = deviceHeading;
-
-        if (navActiveFlag && routeCoords.length > 1) {
-            displayPosition = snapToRoute(latlng);
-            displayHeading = getRouteBearingAt(displayPosition, routeCoords);
-        }
-        
-        userMarker.setLatLng(displayPosition);
-        
-        const chevron = userMarker.getElement()?.querySelector('.user-chevron');
-        if (chevron) chevron.style.transform = `rotate(${displayHeading}deg)`;
-
-        if (followUser) map.panTo(displayPosition, { animate: true, duration: 1, noMoveStart: true });
-        if (roomId) updateGroupPosition(displayPosition);
-    }
-
-    function updateMapTheme() {
-        if (currentTileLayer) map.removeLayer(currentTileLayer);
-        const url = isDarkTheme ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-        currentTileLayer = L.tileLayer(url, { attribution: '© OpenStreetMap © CARTO', maxZoom: 19 }).addTo(map);
-        document.body.className = isDarkTheme ? 'dark-mode' : 'light-mode';
-        document.getElementById('theme-btn-modal').textContent = isDarkTheme ? '☀️ Light Mode' : '🌙 Dark Mode';
-        localStorage.setItem("mapTheme", isDarkTheme ? "dark" : "light");
-    }
-
-    // ========================================================================
-    //  📥 DATA & POPUPS
-    // ========================================================================
-
-    async function initHuettenListener() {
-        return new Promise((resolve, reject) => {
-            if (hutListener) hutListener();
-            hutListener = db.collection("eierhuetten").where("status", "==", "angenommen").onSnapshot(snapshot => {
-                const receivedIds = new Set();
-                snapshot.forEach(doc => {
-                    const hutData = { id: doc.id, ...doc.data() };
-                    if (!hutData.location) return;
-                    receivedIds.add(doc.id);
-
-                    if (allHuts.has(doc.id)) {
-                        allHuts.get(doc.id).marker.setPopupContent(() => createPopupHTML(hutData));
-                    } else {
-                        const marker = createHutMarker(hutData);
-                        allHuts.set(doc.id, { data: hutData, marker });
-                        cluster.addLayer(marker);
-                    }
-                });
-                allHuts.forEach((value, id) => {
-                    if (!receivedIds.has(id)) { cluster.removeLayer(value.marker); allHuts.delete(id); }
-                });
-                resolve();
-            }, reject);
-        });
-    }
-
-    function createHutMarker(hut) {
-        const icon = L.icon({ iconUrl: "https://radlmap.net/img/huetten_icon.svg", iconSize: [30, 40], iconAnchor: [15, 40], popupAnchor: [0, -40] });
-        const marker = L.marker([hut.location.latitude, hut.location.longitude], { icon });
-        marker.bindPopup(() => createPopupHTML(hut), { minWidth: 320, closeButton: false });
-        marker.on('popupopen', () => trackView(hut.id));
-        return marker;
-    }
-
-    function createPopupHTML(hut) {
-      const isSelected = selectedHuts.some(h => h.id === hut.id);
-      const images = (hut.fotos || []).map(f => typeof f === 'string' ? f : f.url).filter(Boolean);
-      const slideshowHTML = images.length > 0
-        ? `<div class="swiper popup-swiper relative h-48 bg-gray-200"><div class="swiper-wrapper">${images.map(url => `<div class="swiper-slide"><img src="${url}" class="w-full h-full object-cover" loading="lazy"></div>`).join('')}</div><div class="swiper-button-prev"></div><div class="swiper-button-next"></div></div>`
-        : `<img src="https://radlmap.net/img/noimg/1.jpg" class="w-full h-48 object-cover">`;
-      return `<div class="popup-card">${slideshowHTML}<div class="p-4"><h3 class="text-lg font-bold">${hut.name}</h3><p class="text-sm text-gray-500 mb-2">${hut.typ || ''}</p><p class="text-sm text-gray-700 mb-4 max-h-20 overflow-y-auto">${stripHtml(hut.beschreibung) || 'Keine Beschreibung.'}</p><button id="toggle-btn-${hut.id}" onclick="toggleHutSelection('${hut.id}')" class="w-full py-2 font-semibold rounded-lg text-white ${isSelected ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}">${isSelected ? '❌ Von Route entfernen' : '✅ Zur Route hinzufügen'}</button></div></div>`;
-    }
-
-    function trackView(hutId) { db.collection("eierhuetten").doc(hutId).update({ views: firebase.firestore.FieldValue.increment(1) }).catch(()=>{}); }
-    
-    // ========================================================================
-    //  📍 GPS & COMPASS
-    // ========================================================================
-
-    function startGpsTracking() {
-      if (!navigator.geolocation) { return alert("GPS wird von diesem Browser nicht unterstützt."); }
-      navigator.geolocation.watchPosition(updateUserPosition, 
-        (err) => { console.error("GPS Error:", err); showToast("GPS-Signal verloren."); },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-    }
-
-    function startCompassTracking() {
-        const requestPermission = () => DeviceOrientationEvent.requestPermission().then(state => { if (state === 'granted') window.addEventListener('deviceorientationabsolute', handleOrientation, true); }).catch(console.error);
-        if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
-            document.body.addEventListener('click', requestPermission, { once: true });
-        } else {
-            window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-        }
-    }
-    function handleOrientation(event) { if (event.alpha !== null) deviceHeading = 360 - event.alpha; }
-
-    // ========================================================================
-    //  🧭 ROUTING & NAVIGATION
-    // ========================================================================
-    
-    async function startRouteFromPlanner() {
-      if (selectedHuts.length === 0) return showToast("Bitte füge zuerst Stopps hinzu.");
-      startRouteBtn.disabled = true; startRouteBtn.innerHTML = 'Lade Route...';
-      try {
-        const startPos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(p => res(p.coords), rej, {enableHighAccuracy: true}));
-        const coords = [[startPos.longitude, startPos.latitude], ...selectedHuts.map(h => [h.location.longitude, h.location.latitude])];
-        await fetchAndDrawRoute(coords);
-        navActiveFlag = true;
-        showToast("Navigation gestartet!");
-        setFollowUser(true);
-        plannerSheet.classList.remove('visible');
-        startRouteBtn.textContent = '🛑 Route stoppen';
-        startRouteBtn.onclick = stopNavigation;
-      } catch (err) {
-        showToast("Route konnte nicht berechnet werden.");
-        stopNavigation();
-      } finally {
-        startRouteBtn.disabled = false;
-      }
-    }
-    
-    async function fetchAndDrawRoute(coordinates) {
-        const res = await fetch("https://api.openrouteservice.org/v2/directions/cycling-regular/geojson", { method: "POST", headers: { "Authorization": ORS_API_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ coordinates }) });
-        if (!res.ok) throw new Error(`ORS API Error`);
-        const data = await res.json();
-        const feature = data.features?.[0];
-        if (!feature) throw new Error("Keine Route gefunden.");
-        if (routeLine) map.removeLayer(routeLine);
-        routeLine = L.geoJSON(feature, { style: { color: '#3b82f6', weight: 6, opacity: 0.8 } }).addTo(map);
-        map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
-        routeCoords = feature.geometry.coordinates.map(p => L.latLng(p[1], p[0]));
-    }
-
-    function stopNavigation() {
-      if (routeLine) map.removeLayer(routeLine);
-      navActiveFlag = false; routeCoords = [];
-      startRouteBtn.textContent = '▶️ Route starten';
-      startRouteBtn.onclick = startRouteFromPlanner;
-      showToast("Navigation gestoppt.");
-    }
-    
-    function resetRoute() { stopNavigation(); selectedHuts = []; updateSelectedList(); }
-    function snapToRoute(latlng) { return (routeLine) ? L.GeometryUtil.closest(map, routeLine, latlng) : latlng; }
-    
-    function getRouteBearingAt(latlng, routePoints) {
-        let closestSegment = null, minDistance = Infinity;
-        for (let i = 0; i < routePoints.length - 1; i++) {
-            const distance = L.GeometryUtil.distanceSegment(map, latlng, routePoints[i], routePoints[i + 1]);
-            if (distance < minDistance) { minDistance = distance; closestSegment = [routePoints[i], routePoints[i + 1]]; }
-        }
-        return closestSegment ? L.GeometryUtil.bearing(closestSegment[0], closestSegment[1]) : deviceHeading;
-    }
-    
-    // ========================================================================
-    //  ⚙️ UI & APP LOGIC
-    // ========================================================================
-    
-    function togglePlannerSheet() { plannerSheet.classList.toggle('visible'); }
-    function openModal(modalId) { document.getElementById(modalId).classList.add('visible'); }
-    function closeModal(modalId) { document.getElementById(modalId).classList.remove('visible'); }
-
-    function toggleHutSelection(hutId) {
-        const hutData = allHuts.get(hutId)?.data;
-        if (!hutData) return;
-        const index = selectedHuts.findIndex(h => h.id === hutId);
-        if (index > -1) { selectedHuts.splice(index, 1); } 
-        else { selectedHuts.push(hutData); }
-        updateSelectedList();
-        const btn = document.getElementById(`toggle-btn-${hutId}`);
-        if(btn) {
-            const isSelectedNow = index === -1;
-            btn.textContent = isSelectedNow ? '❌ Von Route entfernen' : '✅ Zur Route hinzufügen';
-            btn.className = `w-full py-2 font-semibold rounded-lg text-white ${isSelectedNow ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}`;
-        }
-    }
-
-    function updateSelectedList() {
-      selectedList.innerHTML = selectedHuts.length === 0 
-        ? `<li class="italic text-gray-500 justify-center">Füge Stopps von der Karte hinzu.</li>`
-        : selectedHuts.map((hut, index) => `<li data-id="${hut.id}" draggable="true"><span class="drag-handle" style="touch-action: none;">⠿</span><span class="font-semibold flex-grow ml-2">${index + 1}. ${hut.name}</span><button onclick="removeHutFromPlanner('${hut.id}')" class="px-2 text-red-500">🗑️</button></li>`).join('');
-    }
-    
-    function removeHutFromPlanner(hutId) { toggleHutSelection(hutId); }
-    function stripHtml(html) { const d = document.createElement("div"); d.innerHTML = html; return d.textContent || d.innerText || ""; }
-
-    function setFollowUser(follow, reason = '') {
-      followUser = follow;
-      document.getElementById('recenter-btn').classList.toggle('active', follow);
-      if(follow && userMarker) map.flyTo(userMarker.getLatLng(), Math.max(map.getZoom(), 16));
-      if(reason === 'manual' && document.getElementById('recenter-btn')) showToast("Folgen pausiert.");
-    }
-    
-    function showToast(message) {
-      const t = document.getElementById('toast');
-      t.textContent = message; t.classList.add('show');
-      setTimeout(() => t.classList.remove('show'), 3000);
-    }
-    
-    // Alte UI-Funktionen aus Ihrer Datei
-    function setupGroupModal() {
-        document.getElementById('join-room-btn').onclick = joinRoom;
-        document.getElementById('leave-room-btn').onclick = leaveRoom;
-        updateRoomUI();
-    }
-    function joinRoom() {
-        const id = document.getElementById("room-id-input").value.trim();
-        if (!id) return;
-        roomId = id; localStorage.lastRoom = id;
-        listenToRoom(); updateRoomUI(); showToast(`Raum "${id}" beigetreten.`);
-    }
-    function leaveRoom() {
-        roomId = null; localStorage.removeItem('lastRoom');
-        Object.values(groupMarkers).forEach(m => map.removeLayer(m));
-        groupMarkers = {}; updateRoomUI(); showToast("Raum verlassen.");
-    }
-    function updateRoomUI() {
-        const statusText = document.getElementById('room-status-text');
-        const joinSection = document.getElementById('join-room-section');
-        const leaveBtn = document.getElementById('leave-room-btn');
-        if (roomId) {
-            statusText.textContent = `Du bist in Raum: ${roomId}`;
-            joinSection.classList.add('hidden');
-            leaveBtn.classList.remove('hidden');
-        } else {
-            statusText.textContent = 'Teile deine Position live mit Freunden in einem Raum.';
-            joinSection.classList.remove('hidden');
-            leaveBtn.classList.add('hidden');
-        }
-    }
-    function updateGroupPosition(latlng) {
-        if (!roomId || !latlng) return;
-        db.collection("live").doc(alias).set({ name: localStorage.username || alias, lat: latlng.lat, lng: latlng.lng, room: roomId, ts: Date.now() });
-    }
-    function listenToRoom() {
-        if (!roomId) return;
-        db.collection("live").where("room", "==", roomId).onSnapshot(snap => {
-            const now = Date.now(), seen = new Set();
-            snap.forEach(doc => {
-                if (doc.id === alias) return; seen.add(doc.id);
-                const data = doc.data();
-                if (now - (data.ts || 0) > 30000) {
-                    if (groupMarkers[doc.id]) map.removeLayer(groupMarkers[doc.id]);
-                    delete groupMarkers[doc.id]; return;
-                }
-                const icon = L.divIcon({ className: '', html: `<div class="text-center">👥<br><span class="text-xs font-semibold bg-white/70 px-1 rounded">${data.name || ''}</span></div>`});
-                if (groupMarkers[doc.id]) { groupMarkers[doc.id].setLatLng([data.lat, data.lng]); } 
-                else { groupMarkers[doc.id] = L.marker([data.lat, data.lng], { icon }).addTo(map); }
-            });
-            Object.keys(groupMarkers).forEach(id => {
-                if(!seen.has(id)) { map.removeLayer(groupMarkers[id]); delete groupMarkers[id]; }
-            });
-        });
-    }
-    
-    async function sendSOS() {
-        if (!confirm("NOTRUF: Standort per WhatsApp teilen?")) return;
-        try {
-            const pos = await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej));
-            const { latitude, longitude } = pos.coords;
-            const msg = `🚨 HILFE! Mein Standort: https://www.google.com/maps?q=${latitude},${longitude}`;
-            window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
-        } catch (err) { alert("Standort konnte nicht ermittelt werden."); }
-    }
-    
-    function populateVoiceDropdown() {
-        const select = document.getElementById("voice-lang-select");
-        if (!select) return;
-        const voices = speechSynthesis.getVoices();
-        if (!voices.length && 'speechSynthesis' in window) return setTimeout(populateVoiceDropdown, 100);
-        const allowedLangs = { "de": "🇩🇪 Deutsch", "en": "🇬🇧 Englisch", "fr": "🇫🇷 Französisch", "it": "🇮🇹 Italienisch", "es": "🇪🇸 Spanisch" };
-        select.innerHTML = '';
-        voices.forEach(v => {
-            const shortLang = v.lang.slice(0, 2);
-            if (allowedLangs[shortLang] && ![...select.options].some(o => o.value.slice(0,2) === shortLang)) {
-              select.add(new Option(allowedLangs[shortLang], v.lang));
-            }
-        });
-        select.value = localStorage.lang || "de-DE";
-        select.onchange = () => { localStorage.lang = select.value; showToast("Sprache geändert."); };
-    }
-
-    // Globale Verfügbarkeit für alte/neue onclick Handler
-    window.openPopup = (page) => {
-        const titles = { datenschutz: "Datenschutz", kontakt: "Kontakt", ueber: "Über uns" };
-        const titleEl = document.getElementById('info-popup-title');
-        const contentEl = document.getElementById('info-popup-content');
-        titleEl.textContent = titles[page] || "Information";
-        contentEl.innerHTML = "Lade...";
-        openModal('info-popup');
-        fetch(`${page}.html`).then(res => res.text()).then(html => contentEl.innerHTML = html).catch(() => contentEl.innerHTML = "Inhalt konnte nicht geladen werden.");
-    };
-    
   </script>
 </body>
 </html>
+
