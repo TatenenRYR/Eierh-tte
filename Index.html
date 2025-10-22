@@ -174,6 +174,9 @@
 
     /* Navigations-Hinweise */
     #navHint {
+        position: absolute;
+        top: 80px; /* Angepasste Position */
+        left: 50%;
         backdrop-filter: blur(10px);
         box-shadow: var(--shadow);
         border: 1px solid var(--border-color);
@@ -182,6 +185,7 @@
         opacity: 0;
         font-size: 1.2rem;
         font-weight: 600;
+        pointer-events: auto;
     }
      #navHint.visible {
         transform: translate(-50%, 0);
@@ -208,7 +212,11 @@
         height: 150px;
         object-fit: cover;
     }
-
+    .group-marker {
+        text-align: center;
+        font-weight: bold;
+        color: #fff;
+    }
 
   </style>
 </head>
@@ -269,8 +277,10 @@
         </div>
         
         <h3 class="font-bold">📋 Ausgewählte Stopps</h3>
-        <ul id="selectedList" class="space-y-2"></ul>
+        <p class="text-xs text-gray-500 -mt-3">Reihenfolge per Drag & Drop ändern.</p>
+        <ul id="selectedList" class="space-y-2" ondragover="event.preventDefault()"></ul>
         <div id="tour-actions" class="hidden space-y-2">
+            <p id="challenge-status" class="text-sm font-semibold text-center text-green-600"></p>
             <p id="tour-stats" class="text-sm text-gray-500 my-2 text-center"></p>
             <button onclick="routeManager.recalculatePreviewRoute()" class="w-full bg-gray-500 text-white p-2 rounded-lg text-sm font-medium hover:bg-gray-600 transition">
                 🔄 Vorschau aktualisieren
@@ -287,9 +297,13 @@
         <div id="room-active-view" class="hidden space-y-2">
             <p class="text-sm">Du bist im Raum: <strong id="current-room-id" class="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded"></strong></p>
             <button onclick="firebaseManager.leaveRoom()" class="w-full bg-red-500 text-white p-2 rounded-lg text-sm font-medium">Raum verlassen</button>
+            <div class="mt-4">
+                <h4 class="font-semibold text-sm mb-2">Aktive Nutzer im Raum:</h4>
+                <ul id="room-user-list" class="space-y-1 text-sm text-gray-600 dark:text-gray-300"></ul>
+            </div>
         </div>
         <div id="room-join-view" class="space-y-2">
-            <input id="roomIdInput" type="text" placeholder="Raum-ID eingeben oder leer lassen" class="w-full p-2 border border-[var(--border-color)] rounded-lg bg-transparent">
+            <input id="roomIdInput" type="text" placeholder="Raum-ID (leer für neu)" class="w-full p-2 border border-[var(--border-color)] rounded-lg bg-transparent">
             <button onclick="firebaseManager.joinRoom()" class="w-full bg-green-500 text-white p-2 rounded-lg text-sm font-medium">Beitreten / Erstellen</button>
         </div>
       </section>
@@ -364,7 +378,7 @@
   
   <script>
     // ==========================================================
-    //  🚲 RADLMAP - REFAKTORED & SMART VERSION
+    //  🚲 RADLMAP - V5 - FINAL
     // ==========================================================
 
     // ----------------------------------------------------------
@@ -372,8 +386,8 @@
     // ----------------------------------------------------------
 
     const config = {
-      firebase: { // WIEDERHERGESTELLT: Ihre ursprüngliche Firebase Konfiguration
-        apiKey: "", // Ist für dieses Projekt nicht zwingend erforderlich
+      firebase: { 
+        apiKey: "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87",
         authDomain: "eierhuettentour.firebaseapp.com",
         projectId: "eierhuettentour"
       },
@@ -404,6 +418,8 @@
       allHuts: [],
       currentRoomId: null,
       roomUnsubscribe: null,
+      userPositionsUnsubscribe: null,
+      visitedStops: new Set(),
       
       toggleFollow() {
         this.isFollowing = !this.isFollowing;
@@ -506,7 +522,7 @@
             }
 
             listEl.innerHTML = appState.selectedHuts.map((hut, index) => `
-                <li class="flex items-center justify-between p-2 rounded-lg bg-gray-100 dark:bg-gray-700" data-index="${index}">
+                <li draggable="true" ondragstart="dragAndDrop.start(event, ${index})" ondrop="dragAndDrop.drop(event, ${index})" class="flex items-center justify-between p-2 rounded-lg bg-gray-100 dark:bg-gray-700 cursor-grab" data-index="${index}">
                     <span class="font-medium text-sm">#${index + 1}: ${hut.name}</span>
                     <button onclick="routeManager.removeSelected(${index})" class="p-1 text-red-500 hover:text-red-700">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -514,7 +530,17 @@
                 </li>
             `).join('');
             
+            this.updateChallengeStatus();
             document.getElementById('tour-actions').classList.toggle('hidden', appState.selectedHuts.length < 1);
+        },
+
+        updateChallengeStatus() {
+            const statusEl = document.getElementById('challenge-status');
+            if (appState.selectedHuts.length > 0) {
+                statusEl.textContent = `🏆 Stopps besucht: ${appState.visitedStops.size} / ${appState.selectedHuts.length}`;
+            } else {
+                statusEl.textContent = '';
+            }
         },
 
         setNavigationState(isNavigating) {
@@ -566,12 +592,18 @@
             return '⬆️'; // default for straight, etc.
         },
 
-        updateRoomUI() {
+        updateRoomUI(users = []) {
             const inRoom = !!appState.currentRoomId;
             document.getElementById('room-active-view').classList.toggle('hidden', !inRoom);
             document.getElementById('room-join-view').classList.toggle('hidden', inRoom);
             if(inRoom) {
                 document.getElementById('current-room-id').textContent = appState.currentRoomId;
+                const userListEl = document.getElementById('room-user-list');
+                if(users.length > 0) {
+                    userListEl.innerHTML = users.map(user => `<li>- ${user.name || 'Anonym'}</li>`).join('');
+                } else {
+                    userListEl.innerHTML = `<li>Keine anderen Nutzer aktiv.</li>`;
+                }
             }
         },
         
@@ -603,6 +635,7 @@
         routeLine: null,
         previewLine: null,
         pastRouteLine: null,
+        groupMarkers: {},
 
         init(center, zoom) {
             this.map = L.map('map', { center, zoom, zoomControl: false });
@@ -659,6 +692,26 @@
                 this.userMarker.setLatLng(latlng).setIcon(userIcon);
             }
         },
+        
+        updateGroupMarker(user) {
+            const icon = L.divIcon({
+                className: 'group-marker',
+                html: `<div style="background-color: ${user.color};" class="p-1 rounded-full shadow-lg">🚴</div><div class="text-xs -mt-1" style="color: ${user.color};">${user.name.substring(0,5)}</div>`
+            });
+
+            if (this.groupMarkers[user.id]) {
+                this.groupMarkers[user.id].setLatLng([user.lat, user.lng]);
+            } else {
+                this.groupMarkers[user.id] = L.marker([user.lat, user.lng], { icon }).addTo(this.map);
+            }
+        },
+
+        removeGroupMarker(userId) {
+            if (this.groupMarkers[userId]) {
+                this.map.removeLayer(this.groupMarkers[userId]);
+                delete this.groupMarkers[userId];
+            }
+        },
 
         drawRoute(coordinates, isPreview = false) {
             const options = isPreview
@@ -687,12 +740,11 @@
     };
     
     // ----------------------------------------------------------
-    //  4. WEITERE MANAGER (Routing, Gemini, Firebase, Nutzer, TTS)
+    //  4. WEITERE MANAGER (Routing, Gemini, Firebase, Nutzer, TTS, DragDrop)
     // ----------------------------------------------------------
 
-    const ttsManager = { // NEU: Text-to-Speech Manager
+    const ttsManager = {
         init() {
-            // Füllt die Sprachauswahl im Dropdown-Menü
             const select = document.getElementById("voiceLang");
             if (!select || !window.speechSynthesis) return;
 
@@ -700,7 +752,7 @@
                 const voices = speechSynthesis.getVoices();
                 select.innerHTML = '';
                 voices.forEach(voice => {
-                    if (voice.lang.startsWith('de')) { // Nur deutsche Stimmen
+                    if (voice.lang.startsWith('de')) {
                         const option = document.createElement('option');
                         option.textContent = `${voice.name} (${voice.lang})`;
                         option.value = voice.lang;
@@ -716,10 +768,9 @@
             }
             select.onchange = () => localStorage.setItem('voiceLang', select.value);
         },
-
         speak(text) {
             if (!appState.isVoiceOn || !text) return;
-            speechSynthesis.cancel(); // Bricht vorherige Ansagen ab
+            speechSynthesis.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = document.getElementById("voiceLang").value || 'de-DE';
             speechSynthesis.speak(utterance);
@@ -729,10 +780,9 @@
     const routeManager = {
         routeData: null,
         recalcTimer: null,
-        announcedSteps: {}, // NEU: Verfolgt bereits angesagte Anweisungen
+        announcedSteps: {},
 
         async fetchRoute(startCoords, waypoints) {
-            // URL um detaillierte Anweisungen erweitert
             const coordinatesString = [
                 `${startCoords.lng},${startCoords.lat}`,
                 ...waypoints.map(h => `${h.lng},${h.lat}`)
@@ -751,7 +801,7 @@
                     coords: route.geometry.coordinates.map(p => [p[1], p[0]]),
                     distance: route.distance,
                     duration: route.duration,
-                    steps: route.legs.flatMap(leg => leg.steps) // Wichtig für Turn-by-Turn
+                    steps: route.legs.flatMap(leg => leg.steps)
                 };
                 return this.routeData;
             } catch (error) {
@@ -761,7 +811,7 @@
             }
         },
         
-        checkNextManeuver(userPos) { // NEU: Kernlogik für Turn-by-Turn
+        checkNextManeuver(userPos) {
             if (!this.routeData || !this.routeData.steps) return;
         
             for (let i = 0; i < this.routeData.steps.length; i++) {
@@ -769,26 +819,33 @@
                 const stepLocation = L.latLng(step.maneuver.location[1], step.maneuver.location[0]);
                 const distance = userPos.distanceTo(stepLocation);
         
-                // Zustand für diesen Schritt initialisieren
                 if (!this.announcedSteps[i]) this.announcedSteps[i] = { pre: false, imminent: false };
         
-                // Vor-Ankündigung (z.B. 150m vorher)
                 if (distance < 150 && distance > 40 && !this.announcedSteps[i].pre) {
                     this.announcedSteps[i].pre = true;
                     const instruction = `In ${Math.round(distance/10)*10} Metern ${step.maneuver.instruction}`;
-                    const icon = uiManager.getTurnIcon(step.maneuver.type + " " + step.maneuver.modifier);
+                    const icon = uiManager.getTurnIcon(step.maneuver.type + " " + (step.maneuver.modifier || ''));
                     uiManager.showNavHint(icon, instruction);
                     ttsManager.speak(instruction);
-                    break; // Nur die nächste Anweisung anzeigen
+                    break;
                 }
         
-                // Direkte Ankündigung (z.B. 25m vorher)
                 if (distance < 25 && !this.announcedSteps[i].imminent) {
                     this.announcedSteps[i].imminent = true;
                     const instruction = `Jetzt ${step.maneuver.instruction}`;
-                    const icon = uiManager.getTurnIcon(step.maneuver.type + " " + step.maneuver.modifier);
+                    const icon = uiManager.getTurnIcon(step.maneuver.type + " " + (step.maneuver.modifier || ''));
                     uiManager.showNavHint(icon, instruction);
                     ttsManager.speak(instruction);
+                    
+                    const nextHut = appState.selectedHuts.find(hut => L.latLng(hut.lat, hut.lng).distanceTo(stepLocation) < 50);
+                    if (nextHut) {
+                       appState.visitedStops.add(nextHut.id);
+                       uiManager.updateChallengeStatus();
+                       if(appState.visitedStops.size === appState.selectedHuts.length) {
+                           uiManager.showToast("🏆 Alle Stopps erreicht!");
+                           ttsManager.speak("Herzlichen Glückwunsch, du hast alle Ziele erreicht!");
+                       }
+                    }
                     break; 
                 }
             }
@@ -854,7 +911,9 @@
             uiManager.setLoading(false);
 
             if(route) {
-                this.announcedSteps = {}; // Anweisungen zurücksetzen
+                this.announcedSteps = {};
+                appState.visitedStops.clear();
+                uiManager.updateChallengeStatus();
                 mapManager.drawRoute(route.coords);
                 mapManager.map.fitBounds(mapManager.routeLine.getBounds(), {padding: [50,50]});
                 uiManager.setNavigationState(true);
@@ -875,6 +934,7 @@
         resetRoute() {
             this.stopNavigation();
             appState.selectedHuts = [];
+            appState.visitedStops.clear();
             uiManager.updateSelectedList();
             if(appState.currentRoomId) {
                 firebaseManager.updateRoomHuts();
@@ -885,8 +945,10 @@
     const userManager = {
         watchId: null,
         lastPosition: null,
+        userId: localStorage.getItem('radlMapUserId') || `user_${Math.random().toString(36).substring(2, 9)}`,
 
         init() {
+            localStorage.setItem('radlMapUserId', this.userId);
             const savedName = localStorage.getItem('username');
             if(savedName) document.getElementById('usernameInput').value = savedName;
             
@@ -894,6 +956,8 @@
                 mapManager.updateUserMarker(pos, 20, 0);
                 mapManager.map.setView(pos, config.map.defaultZoom);
             }).finally(() => uiManager.setLoading(false));
+            
+            firebaseManager.rejoinLastRoom();
         },
         
         getCurrentPosition() {
@@ -920,8 +984,8 @@
                     mapManager.updateUserMarker(currentPos, pos.coords.accuracy, bearing);
                     if (appState.isFollowing) mapManager.map.panTo(currentPos);
                     
-                    // NEU: Bei jeder Positionsänderung die nächste Anweisung prüfen
-                    routeManager.checkNextManeuver(currentPos);
+                    if(appState.isNavigating) routeManager.checkNextManeuver(currentPos);
+                    if(appState.currentRoomId) firebaseManager.updateUserPositionInRoom(currentPos);
 
                     this.lastPosition = currentPos;
                 },
@@ -962,7 +1026,7 @@
     };
     
     const geminiManager = {
-        apiKey: "", // Wird zur Laufzeit von der Umgebung bereitgestellt
+        apiKey: "", 
 
         async callGemini(prompt, jsonSchema = null) {
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${this.apiKey}`;
@@ -1000,7 +1064,7 @@
 
             try {
                 const userPos = await userManager.getCurrentPosition();
-                if (!appState.allHuts.length) {
+                if (appState.allHuts.length === 0) {
                     uiManager.showToast("Hütten werden noch geladen. Bitte kurz warten.");
                     return;
                 }
@@ -1093,46 +1157,45 @@
                     const data = doc.data();
                     if (!data.location) return;
                     
-                    const hut = {
-                        id: doc.id,
-                        ...data,
-                        lat: data.location.latitude,
-                        lng: data.location.longitude,
-                    };
+                    const hut = { id: doc.id, ...data, lat: data.location.latitude, lng: data.location.longitude };
                     appState.allHuts.push(hut);
                     
-                    const isSelected = appState.selectedHuts.some(h => h.id === hut.id);
-
-                    const bilderUrls = (data.fotos || []).filter(f => typeof f === 'string' || f.status === 'freigegeben').map(f => typeof f === 'string' ? f : f.url);
-
-                    const popupContent = `
-                        <div class="popup-card p-0">
-                            ${bilderUrls.length > 0 ? `
-                            <div class="swiper popup-swiper">
-                              <div class="swiper-wrapper">
-                                ${bilderUrls.map(url => `<div class="swiper-slide"><img src="${url}" alt="${data.name}"></div>`).join('')}
-                              </div>
-                              <div class="swiper-pagination"></div>
-                              <div class="swiper-button-prev"></div>
-                              <div class="swiper-button-next"></div>
-                            </div>
-                            ` : `<img src="${config.noImagePlaceholders[0]}" class="popup-swiper-img">`}
-                            <div class="p-4">
-                                <h3 class="font-bold text-lg mb-2">${data.name}</h3>
-                                ${data.beschreibung ? `<p class="text-sm text-gray-600 dark:text-gray-300 mb-4">${data.beschreibung}</p>` : ''}
-                                <button id="btn-${hut.id}" class="w-full p-2 rounded-lg font-semibold text-white ${isSelected ? 'bg-red-500' : 'bg-green-500'}">
-                                    ${isSelected ? 'Von Tour entfernen' : 'Zur Tour hinzufügen'}
-                                </button>
-                            </div>
-                        </div>
-                    `;
-
-                    const marker = L.marker([hut.lat, hut.lng]).bindPopup(popupContent, { minWidth: 280 });
+                    const marker = L.marker([hut.lat, hut.lng]);
+                    
                     marker.on('popupopen', () => {
-                        document.getElementById(`btn-${hut.id}`).onclick = () => {
-                            routeManager.toggleSelect(hut);
-                            marker.closePopup();
-                        };
+                        const isSelected = appState.selectedHuts.some(h => h.id === hut.id);
+                        const bilderUrls = (hut.fotos || []).filter(f => typeof f === 'string' || f.status === 'freigegeben').map(f => typeof f === 'string' ? f : f.url);
+                        
+                        const popupContent = `
+                            <div class="popup-card p-0">
+                                ${bilderUrls.length > 0 ? `
+                                <div class="swiper popup-swiper">
+                                  <div class="swiper-wrapper">
+                                    ${bilderUrls.map(url => `<div class="swiper-slide"><img src="${url}" alt="${hut.name}"></div>`).join('')}
+                                  </div>
+                                  <div class="swiper-pagination"></div><div class="swiper-button-prev"></div><div class="swiper-button-next"></div>
+                                </div>
+                                ` : `<img src="${config.noImagePlaceholders[0]}" class="popup-swiper-img">`}
+                                <div class="p-4 space-y-2">
+                                    <h3 class="font-bold text-lg">${hut.name}</h3>
+                                    ${hut.beschreibung ? `<p class="text-sm text-gray-600 dark:text-gray-300">${hut.beschreibung}</p>` : ''}
+                                    <p class="text-xs">Tiere: ${hut.tiere ? hut.tiere.join(', ') : 'Keine'}</p>
+                                    <p class="text-xs">Strom: ${hut.strom || 'k.A.'} | Sitzplätze: ${hut.sitzplaetze || 'k.A.'}</p>
+                                    ${hut.telefon ? `<p class="text-xs">Tel: ${hut.telefon}</p>`: ''}
+                                    <button id="btn-${hut.id}" class="w-full mt-2 p-2 rounded-lg font-semibold text-white ${isSelected ? 'bg-red-500' : 'bg-green-500'}">
+                                        ${isSelected ? 'Von Tour entfernen' : 'Zur Tour hinzufügen'}
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                        marker.setPopupContent(popupContent);
+                        
+                        setTimeout(() => { // Timeout to ensure DOM is ready for Swiper
+                           document.getElementById(`btn-${hut.id}`).onclick = () => {
+                                routeManager.toggleSelect(hut);
+                                marker.closePopup();
+                            };
+                        }, 0);
                     });
                     mapManager.clusterGroup.addLayer(marker);
                 });
@@ -1142,18 +1205,39 @@
             });
         },
         
-        joinRoom() {
-            let id = document.getElementById('roomIdInput').value.trim();
-            if(!id) id = Math.random().toString(36).substring(2, 8).toUpperCase();
-            appState.currentRoomId = id;
-            this.listenToRoom(id);
+        rejoinLastRoom() {
+            const lastRoomId = localStorage.getItem('lastRoomId');
+            if(lastRoomId) {
+                if(confirm(`Möchtest du dem Raum "${lastRoomId}" wieder beitreten?`)) {
+                    this.joinRoom(lastRoomId);
+                }
+            }
+        },
+        
+        joinRoom(id = null) {
+            let roomId = id || document.getElementById('roomIdInput').value.trim();
+            if(!roomId) roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+            
+            appState.currentRoomId = roomId;
+            localStorage.setItem('lastRoomId', roomId);
+            
+            this.listenToRoom(roomId);
+            this.listenToUsersInRoom(roomId);
+            userManager.startWatchingPosition(); // Start sending own position
+            
             uiManager.updateRoomUI();
-            uiManager.showToast(`Raum ${id} beigetreten.`);
+            uiManager.showToast(`Raum ${roomId} beigetreten.`);
         },
         
         leaveRoom() {
             if(appState.roomUnsubscribe) appState.roomUnsubscribe();
+            if(appState.userPositionsUnsubscribe) appState.userPositionsUnsubscribe();
+            
+            localStorage.removeItem('lastRoomId');
             appState.currentRoomId = null;
+            
+            Object.keys(mapManager.groupMarkers).forEach(id => mapManager.removeGroupMarker(id));
+
             uiManager.updateRoomUI();
             uiManager.showToast("Raum verlassen.");
         },
@@ -1164,13 +1248,9 @@
                 if(doc.exists) {
                     const roomData = doc.data();
                     const hutIds = roomData.hutIds || [];
-                    
                     const localIds = appState.selectedHuts.map(h => h.id).join(',');
                     if (hutIds.join(',') !== localIds) {
-                        appState.selectedHuts = hutIds
-                            .map(id => appState.allHuts.find(h => h.id === id))
-                            .filter(Boolean);
-                        
+                        appState.selectedHuts = hutIds.map(id => appState.allHuts.find(h => h.id === id)).filter(Boolean);
                         uiManager.updateSelectedList();
                         routeManager.recalculatePreviewRoute();
                          uiManager.showToast("Tour im Raum wurde aktualisiert!");
@@ -1179,10 +1259,62 @@
             });
         },
         
+        listenToUsersInRoom(roomId) {
+            if (appState.userPositionsUnsubscribe) appState.userPositionsUnsubscribe();
+            appState.userPositionsUnsubscribe = this.db.collection('room_positions').doc(roomId).collection('users').onSnapshot(snapshot => {
+                const activeUsers = [];
+                const now = Date.now();
+                snapshot.forEach(doc => {
+                    const user = doc.data();
+                    if (doc.id !== userManager.userId && (now - user.timestamp) < 60000) { // Not me & active within 60s
+                        mapManager.updateGroupMarker({ id: doc.id, ...user });
+                        activeUsers.push(user);
+                    }
+                });
+                uiManager.updateRoomUI(activeUsers);
+            });
+        },
+        
+        updateUserPositionInRoom(pos) {
+            if(!appState.currentRoomId) return;
+            const name = localStorage.getItem('username') || 'Anonym';
+            const colors = ['#e11d48', '#2563eb', '#16a34a', '#f97316', '#9333ea'];
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            
+            this.db.collection('room_positions').doc(appState.currentRoomId).collection('users').doc(userManager.userId).set({
+                lat: pos.lat,
+                lng: pos.lng,
+                name: name,
+                color: color,
+                timestamp: Date.now()
+            });
+        },
+        
         updateRoomHuts() {
             if(!appState.currentRoomId) return;
             const hutIds = appState.selectedHuts.map(h => h.id);
             this.db.collection("rooms").doc(appState.currentRoomId).set({ hutIds }, { merge: true });
+        }
+    };
+    
+    const dragAndDrop = {
+        draggedIndex: null,
+        start(event, index) {
+            this.draggedIndex = index;
+        },
+        drop(event, targetIndex) {
+            event.preventDefault();
+            if (this.draggedIndex === null || this.draggedIndex === targetIndex) return;
+
+            const draggedItem = appState.selectedHuts.splice(this.draggedIndex, 1)[0];
+            appState.selectedHuts.splice(targetIndex, 0, draggedItem);
+
+            this.draggedIndex = null;
+            uiManager.updateSelectedList();
+            routeManager.recalculatePreviewRoute();
+            if (appState.currentRoomId) {
+                firebaseManager.updateRoomHuts();
+            }
         }
     };
 
