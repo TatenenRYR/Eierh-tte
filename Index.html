@@ -259,12 +259,12 @@
     </button>
   </div>
   
-  <!-- NEU: Wetter Widget -->
+  <!-- Wetter Widget -->
   <div id="weather-widget" class="absolute top-4 left-4 z-10 bg-[var(--ui-bg)] backdrop-blur-md shadow-lg rounded-full p-3 border border-[var(--border-color)] flex items-center gap-2 text-lg font-semibold">
       <span>-</span><span>-°C</span>
   </div>
   
-  <!-- NEU: Schnellnavigation -->
+  <!-- Schnellnavigation -->
   <div class="absolute left-4 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-3">
        <a href="index.html" class="bg-[var(--ui-bg)] backdrop-blur-md shadow-lg rounded-full p-3 border border-[var(--border-color)]">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
@@ -408,7 +408,7 @@
   
   <script>
     // ==========================================================
-    //  🚲 RADLMAP - V5.1 - FINAL
+    //  🚲 RADLMAP - V5.2 - FINAL
     // ==========================================================
 
     // ----------------------------------------------------------
@@ -421,6 +421,7 @@
         authDomain: "eierhuettentour.firebaseapp.com",
         projectId: "eierhuettentour"
       },
+      // HINWEIS: Der OpenRouteService API Key wurde entfernt, da er nicht mehr benötigt wird.
       map: {
         defaultCenter: [47.3, 11.4],
         defaultZoom: 13,
@@ -610,16 +611,19 @@
             }, 8000);
         },
         
-        getTurnIcon(modifier) {
-            if (!modifier) return '⬆️';
-            if (modifier.includes('sharp right')) return '↘️';
-            if (modifier.includes('right')) return '➡️';
-            if (modifier.includes('slight right')) return '↗️';
-            if (modifier.includes('sharp left')) return '↙️';
-            if (modifier.includes('left')) return '⬅️';
-            if (modifier.includes('slight left')) return '↖️';
-            if (modifier.includes('uturn')) return '🔄';
-            return '⬆️'; // default for straight, etc.
+        getTurnIcon(type) {
+             switch (type) {
+                case 0: return '⬆️'; // Straight
+                case 1: return '↖️'; // Slight Left
+                case 2: return '⬅️'; // Left
+                case 3: return '↙️'; // Sharp Left
+                case 4: return '↗️'; // Slight Right
+                case 5: return '➡️'; // Right
+                case 6: return '↘️'; // Sharp Right
+                case 11: return '🔄'; // Roundabout
+                case 10: return '🏁'; // Arrive
+                default: return '➡️';
+            }
         },
 
         updateRoomUI(users = []) {
@@ -822,7 +826,7 @@
 
             try {
                 const response = await fetch(url);
-                if (!response.ok) throw new Error(`OSRM API Fehler: ${response.status}`);
+                if (!response.ok) throw new Error(`OSRM API Fehler: ${response.statusText}`);
                 const data = await response.json();
                 if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) throw new Error('OSRM konnte keine Route finden.');
                 
@@ -854,7 +858,7 @@
                 if (distance < 150 && distance > 40 && !this.announcedSteps[i].pre) {
                     this.announcedSteps[i].pre = true;
                     const instruction = `In ${Math.round(distance/10)*10} Metern ${step.maneuver.instruction}`;
-                    const icon = uiManager.getTurnIcon(step.maneuver.type + " " + (step.maneuver.modifier || ''));
+                    const icon = uiManager.getTurnIcon(step.maneuver.type);
                     uiManager.showNavHint(icon, instruction);
                     ttsManager.speak(instruction);
                     break;
@@ -863,7 +867,7 @@
                 if (distance < 25 && !this.announcedSteps[i].imminent) {
                     this.announcedSteps[i].imminent = true;
                     const instruction = `Jetzt ${step.maneuver.instruction}`;
-                    const icon = uiManager.getTurnIcon(step.maneuver.type + " " + (step.maneuver.modifier || ''));
+                    const icon = uiManager.getTurnIcon(step.maneuver.type);
                     uiManager.showNavHint(icon, instruction);
                     ttsManager.speak(instruction);
                     
@@ -1195,6 +1199,7 @@
                     
                     const marker = L.marker([hut.lat, hut.lng]);
                     marker.bindTooltip(hut.name, { permanent: true, direction: 'bottom', className: 'hutten-bubble', offset: [0, 10] });
+                    marker.bindPopup("Lade...", {minWidth: 300});
                     
                     marker.on('click', () => {
                         const isSelected = appState.selectedHuts.some(h => h.id === hut.id);
@@ -1248,7 +1253,7 @@
                                 </div>
                             </div>
                         `;
-                        marker.bindPopup(popupContent).openPopup();
+                        marker.setPopupContent(popupContent).openPopup();
                         
                         setTimeout(() => {
                            const btn = document.getElementById(`btn-${hut.id}`);
