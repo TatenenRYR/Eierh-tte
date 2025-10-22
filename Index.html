@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>RadlMap Navigation 🚲</title>
+  <title>RadlMap Navigation 🚲 (Smarter)</title>
 
   <!-- Meta Tags für Social Media Vorschau -->
   <meta property="og:title" content="🏠🚲 RadlMap Tourplaner" />
@@ -24,6 +24,9 @@
   <link rel="stylesheet" href="https://unpkg.com/swiper/swiper-bundle.min.css"/>
   <script src="https://unpkg.com/swiper/swiper-bundle.min.js"></script>
   <script src="https://unpkg.com/leaflet-geometryutil"></script> <!-- Library for distance calculations -->
+  
+  <!-- NEU: Chart.js für Höhenprofil -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 
   <style>
@@ -270,6 +273,15 @@
         background: none;
         border: none;
     }
+    
+    /* SMARTER: Stil für Offline-Indikator */
+    #offline-indicator {
+        animation: pulse-offline 2s infinite;
+    }
+    @keyframes pulse-offline {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
 
   </style>
 </head>
@@ -300,6 +312,8 @@
   <!-- Wetter Widget -->
   <div id="weather-widget" class="absolute top-4 left-4 z-10 bg-[var(--ui-bg)] backdrop-blur-md shadow-lg rounded-full p-3 border border-[var(--border-color)] flex items-center gap-2 text-lg font-semibold">
       <span>-</span><span>-°C</span>
+      <!-- SMARTER: Offline-Indikator -->
+      <span id="offline-indicator" class="hidden text-xs text-red-500 font-bold">OFFLINE</span>
   </div>
   
   <!-- Schnellnavigation -->
@@ -342,14 +356,15 @@
         <!-- Gemini Tour Suggestion -->
         <div class="p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
             <h3 class="font-bold text-blue-800 dark:text-blue-300">✨ KI Tour-Planer</h3>
-            <p class="text-xs text-blue-600 dark:text-blue-400 mt-1 mb-3">Keine Idee? Lass dir eine Tour vorschlagen!</p>
+            <p class="text-xs text-blue-600 dark:text-blue-400 mt-1 mb-3">Lässt deine Vorlieben & Wetter einfließen!</p>
             <div class="flex gap-2">
                 <select id="tour-difficulty" class="flex-1 p-2 border border-[var(--border-color)] rounded-lg bg-transparent text-sm">
                     <option value="einfache">Leicht</option>
                     <option value="mittelschwere">Mittel</option>
                     <option value="anspruchsvolle">Anspruchsvoll</option>
                 </select>
-                <button id="suggest-tour-btn" onclick="geminiManager.suggestTour()" class="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-600 transition">Vorschlagen</button>
+                <!-- SMARTER: Übergibt das aktuelle Wetter an die KI -->
+                <button id="suggest-tour-btn" onclick="geminiManager.suggestTour(weatherManager.currentWeather)" class="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-600 transition">Vorschlagen</button>
             </div>
         </div>
         
@@ -359,6 +374,12 @@
         <div id="tour-actions" class="hidden space-y-2">
             <p id="challenge-status" class="text-sm font-semibold text-center text-green-600"></p>
             <p id="tour-stats" class="text-sm text-gray-500 my-2 text-center"></p>
+            
+            <!-- SMARTER: Höhenprofil-Container -->
+            <div id="elevation-chart-container" class="hidden w-full h-32 mt-2">
+                <canvas id="elevation-chart"></canvas>
+            </div>
+
             <button onclick="routeManager.recalculatePreviewRoute()" class="w-full bg-gray-500 text-white p-2 rounded-lg text-sm font-medium hover:bg-gray-600 transition">
                 🔄 Vorschau aktualisieren
             </button>
@@ -408,6 +429,25 @@
       <!-- Einstellungen Tab -->
       <section id="tab-einstellungen" class="tab-panel hidden space-y-4">
         <h3 class="font-bold">⚙️ Einstellungen</h3>
+        
+        <!-- SMARTER: KI-Präferenzen -->
+        <div>
+          <label for="user-pref-intensity" class="block text-sm font-medium mb-1">Bevorzugte Intensität</label>
+          <select id="user-pref-intensity" class="w-full p-2 border border-[var(--border-color)] rounded-lg bg-transparent">
+              <option value="eher flach">Eher flach</option>
+              <option value="hügelig">Hügelig</option>
+              <option value="anspruchsvolle Anstiege">Anspruchsvolle Anstiege</option>
+          </select>
+        </div>
+        <div>
+          <label for="user-pref-type" class="block text-sm font-medium mb-1">Bevorzugter Tour-Typ</label>
+          <select id="user-pref-type" class="w-full p-2 border border-[var(--border-color)] rounded-lg bg-transparent">
+              <option value="naturfokussiert">Naturfokussiert</option>
+              <option value="kulinarisch">Kulinarisch</option>
+              <option value="kulturelle Sehenswürdigkeiten">Kulturelle Sehenswürdigkeiten</option>
+          </select>
+        </div>
+
         <div>
           <label for="voiceLang" class="block text-sm font-medium mb-1">🗣️ Sprachausgabe</label>
           <select id="voiceLang" class="w-full p-2 border border-[var(--border-color)] rounded-lg bg-transparent"></select>
@@ -474,7 +514,7 @@
   
   <script>
     // ==========================================================
-    //  🚲 RADLMAP - V5.4 - FINAL
+    //  🚲 RADLMAP - V5.6 - SMARTER (Zoom & Popup Fix)
     // ==========================================================
 
     // ----------------------------------------------------------
@@ -490,7 +530,7 @@
       map: {
         defaultCenter: [47.3, 11.4],
         defaultZoom: 13,
-        navigationZoom: 18,
+        navigationZoom: 18, // Geändert auf 18 für "ganz nah"
       },
       routing: {
         profile: 'cycling-regular',
@@ -518,6 +558,8 @@
       roomUnsubscribe: null,
       userPositionsUnsubscribe: null,
       visitedStops: new Set(),
+      navigationStartTime: null, // SMARTER: Für proaktive Tipps
+      lastBreakTime: null,       // SMARTER: Für proaktive Tipps
       
       toggleFollow() {
         this.isFollowing = !this.isFollowing;
@@ -538,12 +580,27 @@
     //  2. UI MANAGER - Alles was die Oberfläche betrifft
     // ----------------------------------------------------------
     const uiManager = {
+        elevationChartInstance: null, // SMARTER: Referenz auf Chart.js Instanz
+
         init() {
             this.initTheme();
             this.initTabs();
             this.updateVoiceButton();
             this.updateFollowButton();
             ttsManager.init();
+            
+            // SMARTER: Offline-Status-Listener
+            window.addEventListener('offline', () => {
+                document.getElementById('offline-indicator').classList.remove('hidden');
+                uiManager.showToast("Offline-Modus. Karten werden aus dem Cache geladen.");
+            });
+            window.addEventListener('online', () => {
+                document.getElementById('offline-indicator').classList.add('hidden');
+                uiManager.showToast("Wieder online.");
+            });
+            if (!navigator.onLine) { // Initialer Check
+                 document.getElementById('offline-indicator').classList.remove('hidden');
+            }
         },
 
         toggleSidebar() {
@@ -569,6 +626,12 @@
             if(mapManager.tileLayer) {
                 mapManager.map.removeLayer(mapManager.tileLayer);
                 mapManager.addTileLayer();
+            }
+            // SMARTER: Höhenprofil neu zeichnen, wenn Theme ändert (für Gitterlinien-Farbe)
+            if(this.elevationChartInstance) {
+                this.elevationChartInstance.destroy();
+                this.elevationChartInstance = null; // Zwingt Neubezug der Daten beim nächsten Mal
+                routeManager.recalculatePreviewRoute(); // Einfachster Weg zum Neuzeichnen
             }
         },
         
@@ -758,6 +821,82 @@
             document.getElementById('add-warning-modal').classList.add('hidden');
             document.getElementById('warning-description').value = ''; // Clear description
         },
+
+        /**
+         * SMARTER: Zeigt das Höhenprofil an oder blendet es aus.
+         * @param {object | null} elevationData - Die von der API abgerufenen Höhendaten oder null zum Ausblenden.
+         */
+        displayElevationChart(elevationData) {
+            const container = document.getElementById('elevation-chart-container');
+            const ctx = document.getElementById('elevation-chart').getContext('2d');
+
+            // Altes Chart zerstören, falls vorhanden
+            if (this.elevationChartInstance) {
+                this.elevationChartInstance.destroy();
+                this.elevationChartInstance = null;
+            }
+
+            if (!elevationData || !elevationData.elevation) {
+                container.classList.add('hidden');
+                return;
+            }
+
+            container.classList.remove('hidden');
+
+            const labels = elevationData.elevation.map((_, index) => index); // Einfache Indizes als Label
+            const data = elevationData.elevation;
+            
+            const gridColor = appState.isDarkTheme ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+            const fontColor = appState.isDarkTheme ? '#f9fafb' : '#1f2937';
+
+            this.elevationChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Höhe (m)',
+                        data: data,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0, // Keine Punkte für saubere Linie
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            ticks: { color: fontColor },
+                            grid: { color: gridColor },
+                            title: {
+                                display: true,
+                                text: 'Höhe (m)',
+                                color: fontColor,
+                                font: { size: 10 }
+                            }
+                        },
+                        x: {
+                            ticks: { display: false }, // X-Achsen-Beschriftung ausblenden
+                            grid: { display: false }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            enabled: true,
+                            intersect: false,
+                            mode: 'index',
+                            callbacks: {
+                                label: (context) => `${context.parsed.y} m Höhe`
+                            }
+                        }
+                    }
+                }
+            });
+        }
     };
 
     // ----------------------------------------------------------
@@ -808,6 +947,9 @@
             
             this.tileLayer = L.tileLayer(url, { attribution: attr, maxZoom: 19 });
             this.tileLayer.addTo(this.map);
+            
+            // SMARTER: Offline-Caching-Logik könnte hier mit Plugins wie Leaflet.PouchDB
+            // oder Service Workern hinzugefügt werden.
         },
         
         updateUserMarker(latlng, accuracy, bearing) {
@@ -1083,11 +1225,13 @@
             if (appState.selectedHuts.length < 1) {
                 mapManager.clearRoute();
                 document.getElementById('tour-stats').textContent = '';
+                uiManager.displayElevationChart(null); // SMARTER: Höhenprofil ausblenden
                 return;
             }
             if (appState.selectedHuts.length < 2) {
                 if(mapManager.previewLine) mapManager.map.removeLayer(mapManager.previewLine);
                 document.getElementById('tour-stats').textContent = 'Füge einen weiteren Stopp für eine Route hinzu.';
+                uiManager.displayElevationChart(null); // SMARTER: Höhenprofil ausblenden
                 return;
             }
             
@@ -1104,6 +1248,10 @@
                 const distanceKm = (route.distance / 1000).toFixed(1);
                 const durationMin = Math.round(route.duration / 60);
                 document.getElementById('tour-stats').textContent = `Tour: ${distanceKm} km, ca. ${durationMin} min`;
+                
+                // SMARTER: Höhenprofil abrufen und anzeigen
+                const elevationData = await weatherManager.fetchElevation(route.coords);
+                uiManager.displayElevationChart(elevationData);
             }
             uiManager.setLoading(false);
         },
@@ -1127,12 +1275,22 @@
                 localStorage.setItem('lastRouteData', JSON.stringify(route)); // Save for offline
                 this.announcedSteps = {};
                 appState.visitedStops.clear();
+                appState.navigationStartTime = Date.now(); // SMARTER: Startzeit für Assistent
+                appState.lastBreakTime = Date.now();      // SMARTER: Startzeit für Assistent
                 uiManager.updateChallengeStatus();
                 mapManager.drawRoute(route.coords);
-                mapManager.map.fitBounds(mapManager.routeLine.getBounds(), {padding: [50,50]});
+                
+                // *** ÄNDERUNG HIER: ***
+                // mapManager.map.fitBounds(mapManager.routeLine.getBounds(), {padding: [50,50]}); // ALT: Zeigt ganze Route
+                mapManager.map.setView(startPos, config.map.navigationZoom); // NEU: Zoomt nah auf User
+                
                 uiManager.setNavigationState(true);
                 userManager.startWatchingPosition();
                 uiManager.showToast("Navigation gestartet!");
+                
+                // SMARTER: Höhenprofil abrufen und anzeigen
+                const elevationData = await weatherManager.fetchElevation(route.coords);
+                uiManager.displayElevationChart(elevationData);
                 
                 if (appState.currentRoom.id && appState.currentRoom.guideId === userManager.userId) {
                     const serializableRoute = { coords: route.coords, distance: route.distance, duration: route.duration, steps: route.steps };
@@ -1151,8 +1309,11 @@
             mapManager.clearRoute();
             this.routeData = null;
             this.announcedSteps = {};
+            appState.navigationStartTime = null; // SMARTER: Assistent stoppen
+            appState.lastBreakTime = null;
             uiManager.setNavigationState(false);
             uiManager.showToast("Navigation beendet.");
+            uiManager.displayElevationChart(null); // SMARTER: Höhenprofil ausblenden
 
             if (appState.currentRoom.id && appState.currentRoom.guideId === userManager.userId) {
                 firebaseManager.updateGuidedRoute(false, null);
@@ -1225,6 +1386,7 @@
                         routeManager.checkNextManeuver(currentPos);
                         routeManager.checkDeviation(currentPos);
                         mapManager.addPointToPastRoute(currentPos); // Add point to grey track
+                        this.checkSmartAlerts(); // SMARTER: Proaktiven Assistenten prüfen
                     }
                     if(appState.currentRoom.id) firebaseManager.updateUserPositionInRoom(currentPos);
 
@@ -1265,6 +1427,24 @@
                         // Optionally remove from warnedAbout after some time if needed
                     }
                 }
+            }
+        },
+
+        /**
+         * SMARTER: Prüft auf proaktive Warnungen, z.B. Pausen-Erinnerungen.
+         */
+        checkSmartAlerts() {
+            if (!appState.isNavigating || !appState.navigationStartTime) return;
+            
+            const now = Date.now();
+            const timeSinceLastBreak = now - (appState.lastBreakTime || appState.navigationStartTime);
+            
+            // Erinnere an Pause nach 60 Minuten (3600000 ms)
+            if (timeSinceLastBreak > 3600000) {
+                const message = "Du fährst schon seit einer Stunde. Zeit für eine kleine Pause?";
+                ttsManager.speak(message);
+                uiManager.showToast(message);
+                appState.lastBreakTime = now; // Timer zurücksetzen
             }
         },
 
@@ -1323,7 +1503,11 @@
             }
         },
 
-        async suggestTour() {
+        /**
+         * SMARTER: KI-Tourenvorschlag, der Wetter und Nutzerpräferenzen berücksichtigt.
+         * @param {object | null} weatherData - Das aktuelle Wetterobjekt von Open-Meteo.
+         */
+        async suggestTour(weatherData = null) {
              if (!navigator.onLine) {
                  uiManager.showToast("Offline. KI-Funktionen nicht verfügbar.");
                  return;
@@ -1339,9 +1523,25 @@
                     return;
                 }
                 const difficulty = document.getElementById('tour-difficulty').value;
+                // SMARTER: Lese Nutzerpräferenzen aus
+                const intensity = document.getElementById('user-pref-intensity').value;
+                const tourType = document.getElementById('user-pref-type').value;
+                const weatherText = weatherData 
+                    ? `Das aktuelle Wetter ist: ${weatherData.temperature}°C.` 
+                    : "Das Wetter ist unbekannt.";
+                
                 const hutsString = appState.allHuts.map(h => `id: ${h.id}, name: ${h.name}`).join('; ');
 
-                const prompt = `Ich bin ein Radfahrer bei Position ${userPos.lat},${userPos.lng}. Schlage mir eine ${difficulty} Fahrradtour vor. Hier ist eine Liste verfügbarer Hütten: ${hutsString}. Schlage eine Route mit 3 bis 5 Stopps vor, liste die IDs der Hütten in der richtigen Reihenfolge auf und gib der Tour einen eingängigen Titel und eine kurze, motivierende Beschreibung (auf Deutsch). Gib die Antwort ausschließlich im folgenden JSON-Format zurück:`;
+                // SMARTER: Deutlich verbesserter Prompt mit mehr Kontext
+                const prompt = `
+                  Ich bin ein Radfahrer bei Position ${userPos.lat},${userPos.lng}. 
+                  Schlage mir eine ${difficulty} Fahrradtour vor.
+                  Meine Präferenzen sind: Intensität: "${intensity}", Tour-Typ: "${tourType}".
+                  ${weatherText}
+                  Bitte berücksichtige diese Präferenzen bei der Auswahl der Stopps (z.B. bei "anspruchsvoll" eher Hütten in den Bergen, bei "kulinarisch" Hütten mit guter Bewertung).
+                  Hier ist eine Liste verfügbarer Hütten: ${hutsString}. 
+                  Schlage eine Route mit 3 bis 5 Stopps vor, liste die IDs der Hütten in der richtigen Reihenfolge auf und gib der Tour einen eingängigen Titel und eine kurze, motivierende Beschreibung (auf Deutsch). 
+                  Gib die Antwort ausschließlich im folgenden JSON-Format zurück:`;
                 
                 const schema = {
                     type: "OBJECT",
@@ -1357,7 +1557,7 @@
                 if (!resultText) return;
 
                 const resultJson = JSON.parse(resultText);
-                uiManager.showToast(`Tour-Vorschlag: ${resultJson.title}`);
+                uiManager.openPopup(`KI-Vorschlag: ${resultJson.title}`, `<p>${resultJson.description}</p><p class="mt-2 text-sm">Die Stopps wurden deiner Tour hinzugefügt.</p>`);
                 
                 appState.selectedHuts = resultJson.stop_ids
                     .map(stopId => appState.allHuts.find(h => h.id === stopId))
@@ -1461,6 +1661,15 @@
                         const isSelected = appState.selectedHuts.some(h => h.id === hut.id);
                         const bilderUrls = (hut.fotos || []).filter(f => typeof f === 'string' || f.status === 'freigegeben').map(f => typeof f === 'string' ? f : f.url);
                         
+                        // *** ÄNDERUNG HIER: Öffnungszeiten flexibel formatieren ***
+                        let oeffnungszeitenText = 'Keine Angabe';
+                        if (Array.isArray(hut.oeffnungszeiten) && hut.oeffnungszeiten.length > 0) {
+                            oeffnungszeitenText = hut.oeffnungszeiten.join('<br>'); // Zeigt jeden Array-Eintrag in einer neuen Zeile
+                        } else if (typeof hut.oeffnungszeiten === 'string' && hut.oeffnungszeiten.trim()) {
+                            oeffnungszeitenText = hut.oeffnungszeiten.replace(/\n/g, '<br>'); // Ersetzt auch Newlines in Strings
+                        }
+                        // *** ENDE DER ÄNDERUNG ***
+
                         const popupContent = `
                             <div class="popup-card overflow-hidden">
                                 ${bilderUrls.length > 0 ? `
@@ -1482,7 +1691,7 @@
                                     
                                      <div class="text-sm border-t border-[var(--border-color)] pt-2">
                                         <h4 class="font-semibold text-xs uppercase text-gray-500 mb-1">Öffnungszeiten</h4>
-                                        <p>${hut.oeffnungszeiten || 'Keine Angabe'}</p>
+                                        <p>${oeffnungszeitenText}</p> <!-- Variable hier eingefügt -->
                                     </div>
 
 
@@ -1799,10 +2008,14 @@
 
     const weatherManager = {
         lastFetchTime: 0,
+        currentWeather: null, // SMARTER: Wetter für KI-Prompts speichern
+
         async fetchWeather(lat, lng) {
             const now = Date.now();
             if (now - this.lastFetchTime < 10 * 60 * 1000) return; // Update every 10 mins
             this.lastFetchTime = now;
+            
+            if (!navigator.onLine) return; // Nicht fetchen, wenn offline
 
             try {
                 const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true`);
@@ -1815,10 +2028,13 @@
             }
         },
         updateWidget(weather) {
+            this.currentWeather = weather; // SMARTER: Wetter speichern
             const widget = document.getElementById('weather-widget');
             const icon = this.getWeatherIcon(weather.weathercode);
             const temp = Math.round(weather.temperature);
-            widget.innerHTML = `<span>${icon}</span><span>${temp}°C</span>`;
+            // Update widget content, but keep offline indicator
+            widget.querySelector('span:first-child').textContent = icon;
+            widget.querySelector('span:nth-child(2)').textContent = `${temp}°C`;
         },
         getWeatherIcon(code) {
             if (code === 0) return '☀️';
@@ -1830,6 +2046,39 @@
             if (code >= 80 && code <= 82) return '⛈️';
             if (code >= 95 && code <= 99) return '🌩️';
             return '-';
+        },
+        
+        /**
+         * SMARTER: Ruft Höhendaten für eine Reihe von Koordinaten ab.
+         * @param {Array<Array<number>>} coordinates - Ein Array von [lat, lng] Koordinaten.
+         * @returns {object | null} Ein Objekt mit einem 'elevation' Array oder null bei Fehler.
+         */
+        async fetchElevation(coordinates) {
+            if (!navigator.onLine) {
+                uiManager.showToast("Offline. Höhenprofil kann nicht geladen werden.");
+                return null;
+            }
+            // Open-Meteo benötigt separate Lat/Lng-Arrays
+            // Reduziere die Anzahl der Punkte für die API-Anfrage, um die URL-Länge nicht zu sprengen
+            const sampleRate = Math.max(1, Math.floor(coordinates.length / 100)); // Max 100 Punkte
+            const sampledCoords = coordinates.filter((_, i) => i % sampleRate === 0);
+            
+            const lats = sampledCoords.map(c => c[0].toFixed(2)).join(',');
+            const lngs = sampledCoords.map(c => c[1].toFixed(2)).join(',');
+            
+            const url = `https://api.open-meteo.com/v1/elevation?latitude=${lats}&longitude=${lngs}`;
+            
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Höhen-API nicht erreichbar.');
+                const data = await response.json();
+                if (!data || !data.elevation) throw new Error('Ungültige Höhendaten.');
+                return data;
+            } catch (error) {
+                console.error("Fehler beim Laden des Höhenprofils:", error);
+                uiManager.showToast("Höhenprofil konnte nicht geladen werden.");
+                return null;
+            }
         }
     };
 
