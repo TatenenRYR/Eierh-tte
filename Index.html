@@ -195,6 +195,19 @@
       animation: pulse 2s infinite ease-out;
     }
 
+    /* Popup Styling */
+    .popup-card {
+        max-height: 520px;
+        overflow-y: auto;
+    }
+    .popup-swiper img {
+        border-radius: 8px;
+        width: 100%;
+        height: 150px;
+        object-fit: cover;
+    }
+
+
   </style>
 </head>
 <body class="antialiased">
@@ -388,6 +401,7 @@
       selectedHuts: [],
       allHuts: [],
       currentRoomId: null,
+      roomUnsubscribe: null,
       
       toggleFollow() {
         this.isFollowing = !this.isFollowing;
@@ -585,6 +599,20 @@
             this.map.addLayer(this.clusterGroup);
 
             this.map.on('dragstart', () => { if(appState.isFollowing) appState.toggleFollow() });
+            
+            this.map.on('popupopen', (e) => {
+              const swiperEl = e.popup.getElement().querySelector('.popup-swiper');
+              if (swiperEl && !swiperEl.swiper) {
+                new Swiper(swiperEl, {
+                  loop: true,
+                  pagination: { el: '.swiper-pagination', clickable: true },
+                  navigation: {
+                    nextEl: '.swiper-button-next',
+                    prevEl: '.swiper-button-prev',
+                  },
+                });
+              }
+            });
         },
 
         addTileLayer() {
@@ -690,12 +718,18 @@
             }
             uiManager.updateSelectedList();
             this.recalculatePreviewRoute();
+            if(appState.currentRoomId) {
+                firebaseManager.updateRoomHuts();
+            }
         },
         
         removeSelected(index) {
             appState.selectedHuts.splice(index, 1);
             uiManager.updateSelectedList();
             this.recalculatePreviewRoute();
+             if(appState.currentRoomId) {
+                firebaseManager.updateRoomHuts();
+            }
         },
 
         async recalculatePreviewRoute() {
@@ -755,6 +789,9 @@
             this.stopNavigation();
             appState.selectedHuts = [];
             uiManager.updateSelectedList();
+            if(appState.currentRoomId) {
+                firebaseManager.updateRoomHuts();
+            }
         }
     };
 
@@ -877,18 +914,18 @@
                     return;
                 }
                 const difficulty = document.getElementById('tour-difficulty').value;
-                const hutsString = appState.allHuts.map(h => `${h.name} (bei ${h.lat.toFixed(3)},${h.lng.toFixed(3)})`).join('; ');
+                const hutsString = appState.allHuts.map(h => `id: ${h.id}, name: ${h.name}`).join('; ');
 
-                const prompt = `Ich bin ein Radfahrer bei Position ${userPos.lat},${userPos.lng}. Schlage mir eine ${difficulty} Fahrradtour vor. Hier ist eine Liste verfügbarer Hütten: ${hutsString}. Schlage eine Route mit 3 bis 5 Stopps vor, liste die Hüttennamen in der richtigen Reihenfolge auf und gib der Tour einen eingängigen Titel und eine kurze, motivierende Beschreibung (auf Deutsch). Gib die Antwort ausschließlich im folgenden JSON-Format zurück:`;
+                const prompt = `Ich bin ein Radfahrer bei Position ${userPos.lat},${userPos.lng}. Schlage mir eine ${difficulty} Fahrradtour vor. Hier ist eine Liste verfügbarer Hütten: ${hutsString}. Schlage eine Route mit 3 bis 5 Stopps vor, liste die IDs der Hütten in der richtigen Reihenfolge auf und gib der Tour einen eingängigen Titel und eine kurze, motivierende Beschreibung (auf Deutsch). Gib die Antwort ausschließlich im folgenden JSON-Format zurück:`;
                 
                 const schema = {
                     type: "OBJECT",
                     properties: {
                         "title": { "type": "STRING" },
                         "description": { "type": "STRING" },
-                        "stops": { "type": "ARRAY", "items": { "type": "STRING" } }
+                        "stop_ids": { "type": "ARRAY", "items": { "type": "STRING" } }
                     },
-                    required: ["title", "description", "stops"]
+                    required: ["title", "description", "stop_ids"]
                 };
 
                 const resultText = await this.callGemini(prompt, schema);
@@ -897,14 +934,21 @@
                 const resultJson = JSON.parse(resultText);
                 uiManager.showToast(`Tour-Vorschlag: ${resultJson.title}`);
                 
-                appState.selectedHuts = resultJson.stops
-                    .map(stopName => appState.allHuts.find(h => h.name === stopName))
-                    .filter(Boolean); // Filtere nicht gefundene Hütten heraus
+                appState.selectedHuts = resultJson.stop_ids
+                    .map(stopId => appState.allHuts.find(h => h.id === stopId))
+                    .filter(Boolean);
                 
                 uiManager.updateSelectedList();
                 routeManager.recalculatePreviewRoute();
+                if (appState.currentRoomId) {
+                    firebaseManager.updateRoomHuts();
+                }
 
-            } finally {
+            } catch(e) {
+                console.error("Fehler beim Verarbeiten des Tour-Vorschlags:", e);
+                uiManager.showToast("KI-Vorschlag konnte nicht verarbeitet werden.");
+            }
+            finally {
                 btn.disabled = false;
                 btn.textContent = 'Vorschlagen';
             }
@@ -939,9 +983,14 @@
         db: null,
         
         init() {
-            firebase.initializeApp(config.firebase);
-            this.db = firebase.firestore();
-            this.loadHuts();
+            try {
+                firebase.initializeApp(config.firebase);
+                this.db = firebase.firestore();
+                this.loadHuts();
+            } catch(e) {
+                console.error("Firebase Init Fehler:", e);
+                uiManager.showToast("Firebase konnte nicht geladen werden.");
+            }
         },
         
         loadHuts() {
@@ -955,7 +1004,7 @@
                     
                     const hut = {
                         id: doc.id,
-                        name: data.name,
+                        ...data, // alle Daten übernehmen
                         lat: data.location.latitude,
                         lng: data.location.longitude,
                     };
@@ -963,17 +1012,31 @@
                     
                     const isSelected = appState.selectedHuts.some(h => h.id === hut.id);
 
+                    const bilderUrls = (data.fotos || []).filter(f => typeof f === 'string' || f.status === 'freigegeben').map(f => typeof f === 'string' ? f : f.url);
+
                     const popupContent = `
-                        <div class="p-1">
-                            <h3 class="font-bold text-lg mb-2">${hut.name}</h3>
-                            <p class="text-sm mb-4">Details zur Hütte hier...</p>
-                            <button id="btn-${hut.id}" class="w-full p-2 rounded-lg font-semibold text-white ${isSelected ? 'bg-red-500' : 'bg-green-500'}">
-                                ${isSelected ? 'Von Tour entfernen' : 'Zur Tour hinzufügen'}
-                            </button>
+                        <div class="popup-card p-0">
+                            ${bilderUrls.length > 0 ? `
+                            <div class="swiper popup-swiper">
+                              <div class="swiper-wrapper">
+                                ${bilderUrls.map(url => `<div class="swiper-slide"><img src="${url}" alt="${data.name}"></div>`).join('')}
+                              </div>
+                              <div class="swiper-pagination"></div>
+                              <div class="swiper-button-prev"></div>
+                              <div class="swiper-button-next"></div>
+                            </div>
+                            ` : `<img src="${config.noImagePlaceholders[0]}" class="popup-swiper-img">`}
+                            <div class="p-4">
+                                <h3 class="font-bold text-lg mb-2">${data.name}</h3>
+                                ${data.beschreibung ? `<p class="text-sm text-gray-600 dark:text-gray-300 mb-4">${data.beschreibung}</p>` : ''}
+                                <button id="btn-${hut.id}" class="w-full p-2 rounded-lg font-semibold text-white ${isSelected ? 'bg-red-500' : 'bg-green-500'}">
+                                    ${isSelected ? 'Von Tour entfernen' : 'Zur Tour hinzufügen'}
+                                </button>
+                            </div>
                         </div>
                     `;
 
-                    const marker = L.marker([hut.lat, hut.lng]).bindPopup(popupContent, { minWidth: 250 });
+                    const marker = L.marker([hut.lat, hut.lng]).bindPopup(popupContent, { minWidth: 280 });
                     marker.on('popupopen', () => {
                         document.getElementById(`btn-${hut.id}`).onclick = () => {
                             routeManager.toggleSelect(hut);
@@ -982,6 +1045,9 @@
                     });
                     mapManager.clusterGroup.addLayer(marker);
                 });
+            }, err => {
+                console.error("Fehler beim Laden der Hütten:", err);
+                uiManager.showToast("Hütten konnten nicht geladen werden.");
             });
         },
         
@@ -989,14 +1055,44 @@
             let id = document.getElementById('roomIdInput').value.trim();
             if(!id) id = Math.random().toString(36).substring(2, 8).toUpperCase();
             appState.currentRoomId = id;
+            this.listenToRoom(id);
             uiManager.updateRoomUI();
             uiManager.showToast(`Raum ${id} beigetreten.`);
         },
         
         leaveRoom() {
+            if(appState.roomUnsubscribe) appState.roomUnsubscribe();
             appState.currentRoomId = null;
             uiManager.updateRoomUI();
             uiManager.showToast("Raum verlassen.");
+        },
+        
+        listenToRoom(roomId) {
+            if(appState.roomUnsubscribe) appState.roomUnsubscribe();
+            appState.roomUnsubscribe = this.db.collection("rooms").doc(roomId).onSnapshot(doc => {
+                if(doc.exists) {
+                    const roomData = doc.data();
+                    const hutIds = roomData.hutIds || [];
+                    
+                    // Nur aktualisieren, wenn es einen Unterschied gibt, um Endlosschleifen zu vermeiden
+                    const localIds = appState.selectedHuts.map(h => h.id).join(',');
+                    if (hutIds.join(',') !== localIds) {
+                        appState.selectedHuts = hutIds
+                            .map(id => appState.allHuts.find(h => h.id === id))
+                            .filter(Boolean);
+                        
+                        uiManager.updateSelectedList();
+                        routeManager.recalculatePreviewRoute();
+                         uiManager.showToast("Tour im Raum wurde aktualisiert!");
+                    }
+                }
+            });
+        },
+        
+        updateRoomHuts() {
+            if(!appState.currentRoomId) return;
+            const hutIds = appState.selectedHuts.map(h => h.id);
+            this.db.collection("rooms").doc(appState.currentRoomId).set({ hutIds }, { merge: true });
         }
     };
 
