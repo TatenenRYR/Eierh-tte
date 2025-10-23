@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Hütten Admin-Dashboard</title>
+  <title>Hütten Admin-Dashboard V3</title>
   
   <!-- Bibliotheken -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -18,6 +18,15 @@
   <style>
     /* Generelle Stil-Anpassungen */
     body { font-family: 'Inter', sans-serif; }
+    .nav-group-title {
+        font-size: 0.75rem; /* text-xs */
+        font-weight: 600; /* font-semibold */
+        color: #6b7280; /* gray-500 */
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 0.5rem 1rem;
+        margin-top: 1rem;
+    }
     .nav-btn {
       display: flex;
       align-items: center;
@@ -60,11 +69,38 @@
         padding: 1rem;
     }
     .modal-content {
-        background: white; border-radius: 0.75rem; padding: 2rem;
+        background: white; border-radius: 0.75rem; padding: 0; /* Padding wird intern verwaltet */
         width: 100%; max-width: 48rem; /* 768px */
-        max-height: 90vh; overflow-y: auto;
+        max-height: 90vh;
+        display: flex; flex-direction: column;
         box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
     }
+    .modal-header { padding: 1.5rem; border-bottom: 1px solid #e5e7eb; }
+    .modal-body { padding: 1.5rem; overflow-y: auto; }
+    .modal-footer { padding: 1.5rem; border-top: 1px solid #e5e7eb; background-color: #f9fafb; }
+    
+    /* Modal Tabs */
+    .modal-tab-nav { display: flex; border-bottom: 1px solid #e5e7eb; padding: 0 1.5rem; }
+    .modal-tab {
+        padding: 1rem 0.5rem;
+        margin-bottom: -1px; /* Zieht Tab unter die Border */
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+        font-weight: 500;
+        color: #6b7280;
+    }
+    .modal-tab:hover { color: #111827; }
+    .modal-tab.active {
+        color: #10b981; /* emerald-500 */
+        border-color: #10b981;
+    }
+    .modal-tab-content { display: none; }
+    .modal-tab-content.active { display: block; }
+    
+    /* Admin-Tabelle */
+    .admin-table { width: 100%; text-align: left; }
+    .admin-table th { padding: 0.75rem 1rem; background-color: #f9fafb; }
+    .admin-table td { padding: 0.75rem 1rem; border-bottom: 1px solid #e5e7eb; }
     
     /* Notification */
     #notification {
@@ -113,12 +149,30 @@
       <div class="p-4 border-b border-gray-200 mb-4">
         <h1 class="text-2xl font-bold text-emerald-700">🏘 Hütten Admin</h1>
       </div>
-      <nav class="flex-1 space-y-2">
-        <button class="nav-btn w-full active" onclick="showSection('overview')">📊 Übersicht</button>
+      <nav class="flex-1 space-y-1">
+        <!-- Gruppe 1 -->
+        <button class="nav-btn w-full active" onclick="showSection('overview')">📊 Dashboard</button>
+        
+        <!-- Gruppe 2: Inhalte -->
+        <div class="nav-group-title">Inhalte</div>
         <button class="nav-btn w-full" onclick="showSection('huts')">🏠 Hütten verwalten</button>
-        <button class="nav-btn w-full" onclick="showSection('profiles')">👤 Profile</button>
-        <button class="nav-btn w-full" onclick="showSection('support')">📨 Support-Tickets</button>
-        <button class="nav-btn w-full" onclick="showSection('gamification')">🏆 Titel & Abzeichen</button>
+        <button class="nav-btn w-full" onclick="showSection('moderation')">
+            🛡️ Moderation
+            <span id="mod-queue-badge" class="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-0.5 rounded-full hidden">0</span>
+        </button>
+        
+        <!-- Gruppe 3: Benutzer -->
+        <div class="nav-group-title">Benutzer</div>
+        <button class="nav-btn w-full" onclick="showSection('profiles')">👤 Profile verwalten</button>
+        <button class="nav-btn w-full" onclick="showSection('support')">
+            📨 Support-Tickets
+            <span id="support-queue-badge" class="ml-auto bg-blue-400 text-blue-900 text-xs font-bold px-2 py-0.5 rounded-full hidden">0</span>
+        </button>
+        
+        <!-- Gruppe 4: System -->
+        <div class="nav-group-title">System</div>
+        <button class="nav-btn w-full" onclick="showSection('gamification')">🏆 Gamification</button>
+        <button class="nav-btn w-full" onclick="showSection('system-logs')">📜 System-Protokoll</button>
       </nav>
       <div class="mt-4 pt-4 border-t border-gray-200">
          <div id="admin-user-info" class="p-2 mb-2 text-center text-sm text-gray-600"></div>
@@ -129,7 +183,7 @@
     <!-- 🟩 Hauptbereich -->
     <main class="flex-1 p-8 space-y-8 overflow-y-auto bg-gray-50">
       
-      <!-- Übersicht -->
+      <!-- Übersicht (Dashboard) -->
       <section id="overview" class="space-y-8">
         <div>
           <h2 class="section-title">Willkommen zurück!</h2>
@@ -141,21 +195,6 @@
             <!-- Stat-Karten werden hier via JS geladen -->
         </div>
         
-        <!-- Moderations-Warteschlange -->
-        <div class="card">
-            <h3 class="font-bold text-lg mb-4">Moderations-Warteschlange</h3>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                    <h4 class="font-semibold mb-2">🆕 Neue Eintragungen</h4>
-                    <div id="neueListe" class="space-y-2 max-h-64 overflow-y-auto p-2 bg-gray-50 rounded-md border"></div>
-                </div>
-                 <div>
-                    <h4 class="font-semibold mb-2">📷 Fotos warten auf Freigabe</h4>
-                    <div id="pending-fotos" class="space-y-2 max-h-64 overflow-y-auto p-2 bg-gray-50 rounded-md border"></div>
-                </div>
-            </div>
-        </div>
-
         <!-- Diagramme & Aktivitäten -->
         <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
           <div class="lg:col-span-3 card">
@@ -164,8 +203,8 @@
           </div>
           <div class="lg:col-span-2 card">
               <h3 class="font-bold text-lg mb-4">Letzte Admin-Aktivitäten</h3>
-              <div id="admin-log-list" class="space-y-3 max-h-96 overflow-y-auto text-sm divide-y divide-gray-100">
-                <!-- Log-Einträge werden hier via JS geladen -->
+              <div id="admin-log-widget" class="space-y-3 max-h-96 overflow-y-auto text-sm divide-y divide-gray-100">
+                <!-- Log-Widget wird hier via JS geladen -->
               </div>
           </div>
         </div>
@@ -178,17 +217,73 @@
             <button onclick="openHutModal(null)" class="bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg shadow-sm hover:bg-emerald-700 transition">+ Hütte hinzufügen</button>
         </div>
         <div class="card">
-            <div class="flex items-center gap-4 mb-4">
-              <select id="sortSelect" class="p-2 border rounded-md bg-white">
-                <option value="name">🔤 Nach Name</option>
-                <option value="erstelltAm">🕒 Neueste zuerst</option>
-              </select>
-              <input id="search-input" placeholder="🔍 Suchen nach Name, Status etc." class="p-2 border rounded-md w-full">
+            <!-- Filter & Aktionen -->
+            <div class="flex justify-between items-center gap-4 mb-4">
+                <div class="flex gap-4">
+                    <input id="search-input" placeholder="🔍 Suchen nach Name..." class="p-2 border rounded-md w-full">
+                    <select id="status-filter" class="p-2 border rounded-md bg-white">
+                        <option value="">Alle Status</option>
+                        <option value="angenommen">Angenommen</option>
+                        <option value="offen">Offen</option>
+                        <option value="abgelehnt">Abgelehnt</option>
+                    </select>
+                </div>
+                <div id="bulk-action-container" class="hidden">
+                    <select id="bulk-action-select" class="p-2 border rounded-md bg-white">
+                        <option value="">Massen-Aktion...</option>
+                        <option value="approve">Auswahl freigeben</option>
+                        <option value="reject">Auswahl ablehnen</option>
+                        <option value="delete">Auswahl LÖSCHEN</option>
+                    </select>
+                    <button id="bulk-action-btn" class="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg ml-2 hover:bg-blue-700">OK</button>
+                </div>
             </div>
-            <div id="hut-list" class="space-y-3">
-                <!-- Hütten-Liste wird hier via JS geladen -->
+            
+            <!-- Hütten-Tabelle -->
+            <div class="overflow-x-auto">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th class="w-10"><input type="checkbox" id="select-all-checkbox"></th>
+                            <th>Name</th>
+                            <th>Status</th>
+                            <th>Erstellt am</th>
+                            <th>Pending Fotos</th>
+                            <th>Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="hut-table-body">
+                        <!-- Hütten-Reihen werden hier via JS geladen -->
+                    </tbody>
+                </table>
             </div>
             <div id="pagination" class="mt-6 flex flex-wrap justify-center gap-2"></div>
+        </div>
+      </section>
+      
+      <!-- Moderation (NEUE SEITE) -->
+      <section id="moderation" class="hidden">
+        <h2 class="section-title">🛡️ Moderations-Warteschlange</h2>
+        <div class="card">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- Spalte 1: Neue Hütten -->
+                <div>
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-bold text-lg">🆕 Neue Eintragungen</h3>
+                        <button id="bulk-approve-huts" class="bg-green-500 text-white px-3 py-1 rounded-md text-sm">Alle freigeben</button>
+                    </div>
+                    <div id="neueListe-page" class="space-y-2 max-h-[60vh] overflow-y-auto p-2 bg-gray-50 rounded-md border">
+                        <!-- Inhalt via JS -->
+                    </div>
+                </div>
+                <!-- Spalte 2: Wartende Fotos -->
+                 <div>
+                    <h3 class="font-bold text-lg mb-4">📷 Fotos warten auf Freigabe</h3>
+                    <div id="pending-fotos-page" class="space-y-3 max-h-[60vh] overflow-y-auto p-2 bg-gray-50 rounded-md border">
+                        <!-- Inhalt via JS -->
+                    </div>
+                </div>
+            </div>
         </div>
       </section>
       
@@ -225,9 +320,9 @@
         </div>
       </section>
       
-      <!-- Gamification: Titel & Abzeichen -->
-      <section id="gamification" class="hidden space-y-8">
-          <h2 class="section-title">🏆 Titel & Abzeichen verwalten</h2>
+      <!-- Gamification -->
+      <section id="gamification" class="hidden">
+          <h2 class="section-title">🏆 Gamification</h2>
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <!-- Titel -->
               <div class="card">
@@ -262,17 +357,32 @@
               </div>
           </div>
       </section>
+      
+      <!-- System-Protokoll (NEUE SEITE) -->
+      <section id="system-logs" class="hidden">
+        <h2 class="section-title">📜 Globales System-Protokoll</h2>
+        <div class="card">
+            <input id="log-search-input" class="w-full border p-2 rounded-md mb-4" placeholder="Logs durchsuchen (z.B. nach Aktion oder Admin-Name)...">
+            <div id="admin-log-full-list" class="space-y-3 max-h-[70vh] overflow-y-auto text-sm divide-y divide-gray-100">
+                <!-- Volles Log wird hier via JS geladen -->
+            </div>
+        </div>
+      </section>
     </main>
   </div>
   
   <!-- Modals (versteckt) -->
   <div id="support-reply-modal" class="modal-backdrop hidden">
-      <div class="modal-content">
-        <h3 class="text-lg font-bold mb-2">Antwort auf Ticket</h3>
-        <div id="modal-ticket-info" class="text-sm text-gray-500 mb-4"></div>
-        <textarea id="modal-reply-text" class="w-full border p-2 rounded-md mb-2" rows="5" maxlength="500"></textarea>
-        <div class="text-xs text-gray-500 mb-4" id="modal-reply-counter">500 Zeichen übrig</div>
-        <div class="flex justify-end gap-2">
+      <div class="modal-content max-w-lg"> <!-- Angepasste Größe -->
+        <div class="modal-header">
+            <h3 class="text-lg font-bold">Antwort auf Ticket</h3>
+        </div>
+        <div class="modal-body">
+            <div id="modal-ticket-info" class="text-sm text-gray-500 mb-4"></div>
+            <textarea id="modal-reply-text" class="w-full border p-2 rounded-md mb-2" rows="5" maxlength="500"></textarea>
+            <div class="text-xs text-gray-500" id="modal-reply-counter">500 Zeichen übrig</div>
+        </div>
+        <div class="modal-footer flex justify-end gap-2">
           <button onclick="closeReplyModal()" class="px-4 py-2 bg-gray-300 rounded-lg">Abbrechen</button>
           <button onclick="sendReply()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg">Antworten & schließen</button>
         </div>
@@ -322,14 +432,19 @@
   // === DOM-ELEMENTE ===
   const loginSection = document.getElementById('login-section');
   const dashboard = document.getElementById('dashboard');
-  const hutList = document.getElementById('hut-list');
   const searchInput = document.getElementById('search-input');
-  const sortSelect = document.getElementById('sortSelect');
+  const statusFilter = document.getElementById('status-filter');
   const notification = document.getElementById('notification');
   const statsContainer = document.getElementById('statsContainer');
   const hutEditModal = document.getElementById('hut-edit-modal');
   const hutEditModalContent = document.getElementById('hut-edit-modal-content');
   const adminUserInfo = document.getElementById('admin-user-info');
+  const hutTableBody = document.getElementById('hut-table-body');
+  const selectAllCheckbox = document.getElementById('select-all-checkbox');
+  const bulkActionContainer = document.getElementById('bulk-action-container');
+  const bulkActionBtn = document.getElementById('bulk-action-btn');
+  const modQueueBadge = document.getElementById('mod-queue-badge');
+  const supportQueueBadge = document.getElementById('support-queue-badge');
 
   // === TIERE MAPPING (Normalisierung) ===
   const TIERE_EMOJI_TO_NAME = {
@@ -374,15 +489,17 @@
       loginSection.classList.add('hidden');
       dashboard.classList.remove('hidden');
       
-      // Event Listeners für Suche/Sortierung
+      // Event Listeners für Suche/Sortierung/Bulk
       searchInput.addEventListener('input', applySearchAndSort);
-      sortSelect.addEventListener('change', applySearchAndSort);
+      statusFilter.addEventListener('change', applySearchAndSort);
+      selectAllCheckbox.addEventListener('change', toggleAllCheckboxes);
+      bulkActionBtn.addEventListener('click', handleBulkAction);
+      hutTableBody.addEventListener('change', updateBulkActionUI);
 
       // Starte alle Live-Listener
       initHutsListener(); // Diese ersetzt das alte loadHuts()
-      initLiveNewHuts();
-      initLivePendingFotos();
-      ladeSupportTickets();
+      initLiveModerationQueues();
+      initLiveSupportQueue();
       loadAdminLogs();
       
       showSection('overview'); // Starte auf der Übersichtsseite
@@ -394,46 +511,87 @@
     }
   });
 
-  // === ADMIN LOGGING (NEUE FUNKTION) ===
-  async function logAdminAction(action, hutId = null, hutName = null) {
+  // === ADMIN LOGGING (Globales Protokoll) ===
+  async function logAdminAction(action, details = {}) {
       if (!currentUser) return;
       try {
-          await db.collection('adminLogs').add({
+          const logEntry = {
               adminEmail: currentUser.email,
               adminName: currentUser.displayName || 'N/A',
               action: action,
-              hutId: hutId,
-              hutName: hutName,
-              timestamp: firebase.firestore.FieldValue.serverTimestamp()
-          });
+              timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+              ...details
+          };
+          await db.collection('adminLogs').add(logEntry);
       } catch (e) {
           console.error("Fehler beim Schreiben des Admin-Logs:", e);
       }
   }
 
   function loadAdminLogs() {
-      const logList = document.getElementById('admin-log-list');
-      db.collection('adminLogs').orderBy('timestamp', 'desc').limit(15)
-        .onSnapshot(snapshot => {
-            if (snapshot.empty) {
-                logList.innerHTML = '<p class="text-gray-500 italic">Keine Aktivitäten protokolliert.</p>';
-                return;
-            }
-            logList.innerHTML = snapshot.docs.map(doc => {
-                const log = doc.data();
-                const time = log.timestamp?.toDate().toLocaleString('de-DE') || '';
-                return `
-                <div class="pt-2">
-                    <p class="font-medium">${log.action}</p>
-                    <p class="text-gray-600">${log.hutName ? `Hütte: ${log.hutName}` : ''}</p>
-                    <p class="text-xs text-gray-400">${log.adminName} - ${time}</p>
-                </div>
-                `;
-            }).join('');
-        }, err => {
-            console.error("Fehler beim Laden der Admin-Logs:", err);
-            logList.innerHTML = '<p class="text-red-500">Fehler beim Laden der Logs.</p>';
-        });
+      const logWidget = document.getElementById('admin-log-widget');
+      const logFullList = document.getElementById('admin-log-full-list');
+      const logSearchInput = document.getElementById('log-search-input');
+      
+      let query = db.collection('adminLogs').orderBy('timestamp', 'desc');
+
+      const renderLogs = (snapshot) => {
+          if (snapshot.empty) {
+              logWidget.innerHTML = '<p class="text-gray-500 italic">Keine Aktivitäten.</p>';
+              logFullList.innerHTML = '<p class="text-gray-500 italic">Keine Aktivitäten.</p>';
+              return;
+          }
+          
+          const logHTML = snapshot.docs.map(doc => {
+              const log = doc.data();
+              const time = log.timestamp?.toDate().toLocaleString('de-DE') || '';
+              let detailText = '';
+              if(log.hutName) detailText = `Hütte: ${log.hutName}`;
+              if(log.ticketId) detailText = `Ticket: ${log.ticketId}`;
+              if(log.profileName) detailText = `Profil: ${log.profileName}`;
+
+              return `
+              <div class="pt-2 pb-2 border-b border-gray-100">
+                  <p class="font-medium">${log.action}</p>
+                  <p class="text-gray-600">${detailText}</p>
+                  <p class="text-xs text-gray-400">${log.adminName} - ${time}</p>
+              </div>
+              `;
+          }).join('');
+
+          // Widget (nur die letzten 10)
+          logWidget.innerHTML = snapshot.docs.slice(0, 10).map(doc => {
+              const log = doc.data();
+              const time = log.timestamp?.toDate().toLocaleDateString('de-DE') || '';
+              return `
+              <div class="pt-2">
+                  <p class="font-medium">${log.action}</p>
+                  <p class="text-xs text-gray-400">${log.adminName} - ${time}</p>
+              </div>`;
+          }).join('');
+          
+          // Volle Seite
+          logFullList.innerHTML = logHTML;
+      };
+      
+      // Live-Listener für beide
+      query.limit(50).onSnapshot(renderLogs, err => {
+          console.error("Fehler beim Laden der Admin-Logs:", err);
+          logWidget.innerHTML = '<p class="text-red-500">Fehler beim Laden.</p>';
+          logFullList.innerHTML = '<p class="text-red-500">Fehler beim Laden.</p>';
+      });
+      
+      // Suchfunktion für volle Seite
+      logSearchInput.addEventListener('input', () => {
+          // Hinweis: Firestore kann keine "contains" Suchen auf Textfeldern.
+          // Für eine echte Suche bräuchte man Algolia/Typesense.
+          // Wir filtern hier client-seitig die bereits geladenen 50 Logs.
+          const term = logSearchInput.value.toLowerCase();
+          logFullList.querySelectorAll('div.pt-2').forEach(div => {
+              const text = div.textContent.toLowerCase();
+              div.style.display = text.includes(term) ? 'block' : 'none';
+          });
+      });
   }
 
   // === DATENLADEN & STATISTIKEN ===
@@ -465,8 +623,6 @@
   function renderStats(list) {
     const total = list.length;
     const withStrom = list.filter(h => h.strom === 'Ja').length;
-    const withFotos = list.filter(h => Array.isArray(h.fotos) && h.fotos.length > 0).length;
-    const count247 = list.filter(h => h.oeffnungszeiten === '24/7').length;
     const newEntries = list.filter(h => h.status === 'offen').length;
     const pendingFotos = list.reduce((sum, h) =>
         sum + (Array.isArray(h.fotos)
@@ -491,13 +647,22 @@
         <p class="text-gray-500">mit&nbsp;Strom</p>
       </div>
       <div class="card text-center">
-        <p class="text-3xl font-bold">${count247}</p>
-        <p class="text-gray-500">24/7 geöffnet</p>
+        <p class="text-3xl font-bold">${list.filter(h => h.status === 'angenommen').length}</p>
+        <p class="text-gray-500">Freigegeben</p>
       </div>
     `;
+    
+    // Badge in Navi aktualisieren
+    const modQueueCount = newEntries + pendingFotos;
+    if (modQueueCount > 0) {
+        modQueueBadge.textContent = modQueueCount;
+        modQueueBadge.classList.remove('hidden');
+    } else {
+        modQueueBadge.classList.add('hidden');
+    }
   }
   
-  // Neues Diagramm für Registrierungen
+  // Diagramm für Registrierungen
   function renderRegistrationsChart(list) {
       const ctx = document.getElementById('registrationsChart').getContext('2d');
       const today = new Date();
@@ -545,76 +710,81 @@
       }
   }
 
-  // === HÜTTEN-HAUPTLISTE (NEU: Nur Zusammenfassung) ===
+  // === HÜTTEN-TABELLE & BULK-ACTIONS ===
   
   function applySearchAndSort() {
     const search = searchInput.value.toLowerCase() || "";
-    const sortBy = sortSelect.value || "name";
+    const status = statusFilter.value || "";
 
     filteredHuts = allHuts.filter(hut => {
       const name = hut.name?.toLowerCase() || "";
-      const status = hut.status?.toLowerCase() || "";
-      return name.includes(search) || status.includes(search);
+      const hutStatus = hut.status || "";
+      
+      const nameMatch = name.includes(search);
+      const statusMatch = (status === "") || (hutStatus === status);
+      
+      return nameMatch && statusMatch;
     });
 
+    // Sortierung (Default: Neueste zuerst)
     filteredHuts.sort((a, b) => {
-      if (sortBy === "name") {
-        return (a.name || "").localeCompare(b.name || "");
-      }
-      if (sortBy === "erstelltAm") {
         const timeA = a.erstelltAm?.toMillis() || 0;
         const timeB = b.erstelltAm?.toMillis() || 0;
         return timeB - timeA;
-      }
-      return 0;
     });
 
     currentPage = 1;
     renderPage(currentPage);
+    updateBulkActionUI(); // Verstecke Bulk-UI bei Neufilterung
   }
 
   function renderPage(page) {
     const start = (page - 1) * hutsPerPage;
     const end = start + hutsPerPage;
-    const source = filteredHuts.length ? filteredHuts : allHuts;
-    const hutsToRender = source.slice(start, end);
+    const hutsToRender = filteredHuts.slice(start, end);
 
-    renderHutsList(hutsToRender);
-    renderPagination(source.length);
+    renderHutsTable(hutsToRender);
+    renderPagination(filteredHuts.length);
   }
 
-  function renderHutsList(list) {
-    hutList.innerHTML = '';
+  function renderHutsTable(list) {
+    hutTableBody.innerHTML = '';
     if (list.length === 0) {
-        hutList.innerHTML = '<p class="text-gray-500 italic">Keine Hütten gefunden.</p>';
+        hutTableBody.innerHTML = '<tr><td colspan="6" class="text-center text-gray-500 italic py-4">Keine Hütten gefunden, die den Kriterien entsprechen.</td></tr>';
         return;
     }
     list.forEach(hut => {
-      const el = document.createElement('div');
-      el.className = 'bg-white p-3 rounded-lg shadow-sm border flex justify-between items-center';
-      
       let statusColor = 'bg-gray-200 text-gray-700';
       if (hut.status === 'angenommen') statusColor = 'bg-green-100 text-green-700';
       if (hut.status === 'offen') statusColor = 'bg-yellow-100 text-yellow-700';
       if (hut.status === 'abgelehnt') statusColor = 'bg-red-100 text-red-700';
       
-      el.innerHTML = `
-        <div class="flex-1 min-w-0">
-          <p class="font-semibold text-emerald-700 truncate">${hut.name || 'Unbenannte Hütte'}</p>
-          <p class="text-sm text-gray-500">
-            ${hut.erstelltAm?.toDate().toLocaleDateString('de-DE') || 'Kein Datum'}
-          </p>
-        </div>
-        <div class="flex items-center gap-4 ml-4">
+      const pendingFotosCount = (hut.fotos || []).filter(f => f.status === 'wartet').length;
+      
+      const row = document.createElement('tr');
+      row.className = 'hover:bg-gray-50';
+      row.innerHTML = `
+        <td><input type="checkbox" class="hut-checkbox" data-id="${hut.id}"></td>
+        <td>
+            <p class="font-semibold text-emerald-700">${hut.name || 'Unbenannte Hütte'}</p>
+            <p class="text-xs text-gray-400">${hut.id}</p>
+        </td>
+        <td>
             <span class="text-xs font-medium px-2 py-1 rounded-full ${statusColor}">
               ${hut.status || 'N/A'}
             </span>
+        </td>
+        <td class="text-sm text-gray-600">${hut.erstelltAm?.toDate().toLocaleDateString('de-DE') || '-'}</td>
+        <td class="text-sm">
+            ${pendingFotosCount > 0 ? `<span class="text-blue-600 font-semibold">${pendingFotosCount}</span>` : '0'}
+        </td>
+        <td>
             <button onclick="openHutModal('${hut.id}')" class="bg-blue-600 text-white px-3 py-1 rounded-md text-sm font-semibold hover:bg-blue-700">
               Bearbeiten
             </button>
-        </div>
+        </td>
       `;
-      hutList.appendChild(el);
+      hutTableBody.appendChild(row);
     });
   }
   
@@ -627,7 +797,7 @@
     for (let i = 1; i <= totalPages; i++) {
         const btn = document.createElement('button');
         btn.textContent = i;
-        btn.className = `px-3 py-1 border rounded-md mx-1 ${i === currentPage ? 'bg-emerald-600 text-white' : 'bg-white'}`;
+        btn.className = `px-3 py-1 border rounded-md mx-1 ${i === currentPage ? 'bg-emerald-600 text-white' : 'bg-white hover:bg-gray-100'}`;
         btn.onclick = () => {
           currentPage = i;
           renderPage(currentPage);
@@ -635,8 +805,65 @@
         paginationContainer.appendChild(btn);
     }
   }
+
+  function toggleAllCheckboxes() {
+      const isChecked = selectAllCheckbox.checked;
+      hutTableBody.querySelectorAll('.hut-checkbox').forEach(cb => {
+          cb.checked = isChecked;
+      });
+      updateBulkActionUI();
+  }
   
-  // === HÜTTEN-MODAL (NEU: Bearbeitungs-Popup) ===
+  function updateBulkActionUI() {
+      const selectedCount = hutTableBody.querySelectorAll('.hut-checkbox:checked').length;
+      if (selectedCount > 0) {
+          bulkActionContainer.classList.remove('hidden');
+      } else {
+          bulkActionContainer.classList.add('hidden');
+          selectAllCheckbox.checked = false;
+      }
+  }
+  
+  async function handleBulkAction() {
+      const action = document.getElementById('bulk-action-select').value;
+      const selectedIds = Array.from(hutTableBody.querySelectorAll('.hut-checkbox:checked'))
+                                .map(cb => cb.dataset.id);
+      
+      if (!action || selectedIds.length === 0) {
+          showNotification('⚠️ Bitte Aktion und Hütten auswählen.');
+          return;
+      }
+      
+      let confirmMessage = `Möchten Sie die ${selectedIds.length} ausgewählten Hütten wirklich ${action}?`;
+      if (action === 'delete') {
+          confirmMessage = `❗ ACHTUNG: Möchten Sie ${selectedIds.length} Hütten wirklich ENDGÜLTIG LÖSCHEN?`;
+      }
+      if (!confirm(confirmMessage)) return;
+
+      bulkActionBtn.disabled = true;
+      bulkActionBtn.textContent = 'Verarbeite...';
+      
+      for (const id of selectedIds) {
+          try {
+              if (action === 'approve') {
+                  await quickUpdateStatus(id, 'angenommen');
+              } else if (action === 'reject') {
+                  await quickUpdateStatus(id, 'abgelehnt');
+              } else if (action === 'delete') {
+                  await deleteHut(id, true); // true = skip confirm
+              }
+          } catch (e) {
+              console.error(`Fehler bei Bulk-Aktion für ID ${id}:`, e);
+          }
+      }
+      
+      bulkActionBtn.disabled = false;
+      bulkActionBtn.textContent = 'OK';
+      showNotification(`✅ ${selectedIds.length} Hütten verarbeitet.`);
+      applySearchAndSort(); // Liste neu laden
+  }
+  
+  // === HÜTTEN-MODAL (NEU: mit Tabs) ===
 
   function closeHutModal() {
     hutEditModal.classList.add('hidden');
@@ -659,13 +886,7 @@
           }
           title = `Hütte bearbeiten: ${hut.name}`;
       } else {
-          // Vorlage für neue Hütte
-          hut = {
-              id: null, name: 'Neue Hütte', status: 'angenommen',
-              beschreibung: '', strom: 'Nein', sitzplaetze: 'Nein',
-              tiere: [], tags: [], fotos: [], location: null,
-              erstelltAm: null
-          };
+          hut = { id: null, name: 'Neue Hütte', status: 'angenommen', tiere: [], fotos: [], location: null };
       }
       
       // Lade Logs für diese Hütte
@@ -677,9 +898,9 @@
         } catch (e) { console.error("Fehler beim Log-Laden:", e); }
       }
 
-      // --- HTML für Modal-Inhalt ---
+      // --- HTML-Blöcke für Tabs ---
       
-      // Tiere
+      // Tab 1: Stammdaten
       const selectedEmojis = new Set(normalizeToEmojiArray(hut.tiere || []));
       const tiereHTML = Object.entries(TIERE_EMOJI_TO_NAME).map(([emoji, name]) => `
         <button type="button" data-emoji="${emoji}"
@@ -689,19 +910,9 @@
         </button>
       `).join('');
       
-      // Fotos
-      const fotos = Array.isArray(hut.fotos) ? hut.fotos : [];
-      const fotosFreigegeben = fotos.map((f, i) => (typeof f === 'string' ? { url: f, status: 'freigegeben' } : f))
-                                    .filter(f => f.status === 'freigegeben');
-      const fotosWartend = fotos.map((f, i) => ({ ...f, originalIndex: i }))
-                                .filter(f => typeof f === 'object' && f.status === 'wartet');
-
-      // --- Setze Modal-HTML ---
-      hutEditModalContent.innerHTML = `
-        <h2 class="text-2xl font-bold mb-6">${title}</h2>
+      const tabStammdaten = `
         <div class="space-y-6">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- Linke Spalte: Stammdaten -->
                 <div class="space-y-4">
                     <div>
                         <label class="block font-semibold mb-1">Name</label>
@@ -721,39 +932,49 @@
                         <div>
                             <label class="block font-semibold mb-1">Strom</label>
                             <select id="modal-hut-strom" class="w-full border p-2 rounded-md bg-white">
-                                ${['Ja','Nein'].map(o => `<option ${o===hut.strom?'selected':''}>${o}</option>`).join('')}
+                                ${['Ja','Nein', 'Unbekannt'].map(o => `<option ${o===(hut.strom || 'Unbekannt')?'selected':''}>${o}</option>`).join('')}
                             </select>
                         </div>
                         <div>
                             <label class="block font-semibold mb-1">Sitzplätze</label>
                             <select id="modal-hut-sitzplaetze" class="w-full border p-2 rounded-md bg-white">
-                                ${['Ja','Nein'].map(o => `<option ${o===hut.sitzplaetze?'selected':''}>${o}</option>`).join('')}
+                                ${['Ja','Nein', 'Unbekannt'].map(o => `<option ${o===(hut.sitzplaetze || 'Unbekannt')?'selected':''}>${o}</option>`).join('')}
                             </select>
                         </div>
                     </div>
-                    <div>
-                        <label class="block font-semibold mb-1">Tiere</label>
-                        <div id="modal-tiere-container" class="flex flex-wrap gap-2">${tiereHTML}</div>
-                    </div>
                 </div>
-                
-                <!-- Rechte Spalte: Karte -->
                 <div>
                     <label class="block font-semibold mb-1">Standort</label>
                     <div id="modal-map" class="minimap"></div>
                     <p class="text-xs text-gray-500 mt-1">Marker ziehen, um Standort zu ändern.</p>
                 </div>
             </div>
-            
-            <!-- Foto-Sektion -->
             <div>
-                <h3 class="font-semibold text-lg border-t pt-4 mb-2">Fotos</h3>
-                <label class="block mb-2 text-sm">📷 Neues Bild hochladen (wird automatisch zur Freigabe markiert):</label>
-                <input type="file" accept="image/*" onchange="initImageUpload(this, '${hut.id}')" class="w-full border p-2 rounded file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100 mb-4" />
+                <label class="block font-semibold mb-1">Tiere</label>
+                <div id="modal-tiere-container" class="flex flex-wrap gap-2">${tiereHTML}</div>
+            </div>
+        </div>
+      `;
+      
+      // Tab 2: Fotos
+      const fotos = Array.isArray(hut.fotos) ? hut.fotos : [];
+      const fotosFreigegeben = fotos.map((f, i) => (typeof f === 'string' ? { url: f, status: 'freigegeben' } : f))
+                                    .filter(f => f.status === 'freigegeben');
+      const fotosWartend = fotos.map((f, i) => ({ ...f, originalIndex: i }))
+                                .filter(f => typeof f === 'object' && f.status === 'wartet');
 
-                ${fotosWartend.length > 0 ? `
+      const tabFotos = `
+        <div class="space-y-4">
+            <div>
+                <label class="block mb-2 font-semibold">📷 Neues Bild hochladen</label>
+                <input type="file" ${hut.id ? '' : 'disabled'} accept="image/*" onchange="initImageUpload(this, '${hut.id}')" class="w-full border p-2 rounded file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100 mb-4" />
+                ${!hut.id ? '<p class="text-sm text-red-500 italic">Bitte Hütte zuerst speichern, um Fotos hochzuladen.</p>' : ''}
+            </div>
+            
+            ${fotosWartend.length > 0 ? `
+                <div>
                     <h4 class="font-medium mb-2">Warten auf Freigabe (${fotosWartend.length})</h4>
-                    <div class="flex flex-wrap gap-2 mb-4 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <div class="flex flex-wrap gap-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
                         ${fotosWartend.map(f => `
                           <div class="relative w-24 h-24 rounded overflow-hidden border-2 border-yellow-400">
                             <img src="${f.url}" alt="wartet" class="object-cover w-full h-full" />
@@ -764,8 +985,10 @@
                           </div>
                         `).join('')}
                     </div>
-                ` : ''}
-                
+                </div>
+            ` : ''}
+            
+            <div>
                 <h4 class="font-medium mb-2">Freigegebene Fotos (${fotosFreigegeben.length})</h4>
                 <div class="flex flex-wrap gap-2 p-2 bg-gray-50 border rounded-md">
                     ${fotosFreigegeben.length > 0 ? fotosFreigegeben.map(f => `
@@ -777,32 +1000,52 @@
                     `).join('') : '<p class="text-gray-500 italic">Keine freigegebenen Fotos.</p>'}
                 </div>
             </div>
-            
-            <!-- Log-Sektion -->
-            ${hutId ? `
+        </div>
+      `;
+      
+      // Tab 3: Protokoll
+      const tabProtokoll = `
+        <div>
+            <ul class="text-sm max-h-96 overflow-y-auto mt-2 border p-2 rounded-md bg-gray-50 divide-y">
+            ${logs.length > 0 ? logs.map(log => `
+              <li class="py-2">
+                <strong>${log.admin}</strong> änderte <em>${log.feld}</em> 
+                ${log.wert ? `auf <code>${String(log.wert).substring(0, 100)}...</code>` : ''}
+                <span class="block text-xs text-gray-400">${new Date(log.zeitpunkt?.seconds * 1000 || Date.now()).toLocaleString()}</span>
+              </li>
+            `).join('') : '<p class="text-gray-500 italic">Keine Logs für diese Hütte.</p>'}
+          </ul>
+        </div>
+      `;
+      
+
+      // --- Setze Modal-HTML (mit Tab-Struktur) ---
+      hutEditModalContent.innerHTML = `
+        <div class="modal-header">
+            <h2 class="text-2xl font-bold">${title}</h2>
+        </div>
+        
+        <!-- Tab Navigation -->
+        <div class="modal-tab-nav">
+            <button class="modal-tab active" onclick="showModalTab('stammdaten')">Stammdaten</button>
+            <button class="modal-tab" onclick="showModalTab('fotos')">Fotomontage</button>
+            <button class="modal-tab" onclick="showModalTab('protokoll')">Protokoll</button>
+        </div>
+        
+        <!-- Tab Content -->
+        <div class="modal-body">
+            <div id="tab-stammdaten" class="modal-tab-content active">${tabStammdaten}</div>
+            <div id="tab-fotos" class="modal-tab-content">${tabFotos}</div>
+            <div id="tab-protokoll" class="modal-tab-content">${tabProtokoll}</div>
+        </div>
+        
+        <div class="modal-footer flex justify-between items-center">
             <div>
-                <details class="mt-3">
-                  <summary class="font-semibold cursor-pointer">Bearbeitungs-Log (${logs.length})</summary>
-                  <ul class="text-xs max-h-48 overflow-auto mt-2 border p-2 rounded-md bg-gray-50">
-                    ${logs.map(log => `
-                      <li class="py-1 border-b"><strong>${log.admin}</strong> änderte <em>${log.feld}</em> 
-                      auf <code>${log.wert || ''}</code> 
-                      am ${new Date(log.zeitpunkt?.seconds * 1000 || Date.now()).toLocaleString()}</li>
-                    `).join('')}
-                  </ul>
-                </details>
+                ${hutId ? `<button onclick="deleteHut('${hut.id}')" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700">Hütte löschen</button>` : ''}
             </div>
-            ` : ''}
-            
-            <!-- Buttons -->
-            <div class="flex justify-between items-center border-t pt-6 mt-6">
-                <div>
-                    ${hutId ? `<button onclick="deleteHut('${hut.id}')" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700">Hütte löschen</button>` : ''}
-                </div>
-                <div class="flex gap-4">
-                    <button onclick="closeHutModal()" class="bg-gray-300 px-4 py-2 rounded-lg hover:bg-gray-400">Abbrechen</button>
-                    <button onclick="saveHutFromModal()" class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-emerald-700">Speichern</button>
-                </div>
+            <div class="flex gap-4">
+                <button onclick="closeHutModal()" class="bg-gray-300 px-4 py-2 rounded-lg hover:bg-gray-400">Abbrechen</button>
+                <button onclick="saveHutFromModal()" class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-emerald-700">Speichern</button>
             </div>
         </div>
       `;
@@ -819,13 +1062,7 @@
           if (!btn) return;
           const emoji = btn.dataset.emoji;
           if (hut.id && emoji) {
-              // Toggle-Funktion direkt aufrufen
               toggleTier(hut.id, emoji);
-              // UI optimistisch aktualisieren (wird durch Snapshot-Listener sowieso korrigiert)
-              btn.classList.toggle('bg-yellow-200');
-              btn.classList.toggle('ring-2');
-              btn.classList.toggle('ring-yellow-400');
-              btn.classList.toggle('bg-gray-100');
           } else if (!hut.id) {
               // Bei NEUER Hütte nur UI toggeln, Speicherung erfolgt mit "Speichern"
               btn.classList.toggle('bg-yellow-200');
@@ -836,34 +1073,46 @@
       });
   }
   
+  function showModalTab(tabId) {
+      // Buttons
+      hutEditModalContent.querySelectorAll('.modal-tab').forEach(btn => btn.classList.remove('active'));
+      hutEditModalContent.querySelector(`.modal-tab[onclick="showModalTab('${tabId}')"]`).classList.add('active');
+      
+      // Content
+      hutEditModalContent.querySelectorAll('.modal-tab-content').forEach(content => content.classList.remove('active'));
+      document.getElementById(`tab-${tabId}`).classList.add('active');
+      
+      // Karte neu initialisieren, falls sie es ist und noch nicht geladen war
+      if (tabId === 'stammdaten' && !adminModalMap) {
+          const hut = allHuts.find(h => h.id === currentEditingHutId);
+          initModalMap(hut?.location);
+      } else if (tabId === 'stammdaten' && adminModalMap) {
+          adminModalMap.invalidateSize(); // Größe neu berechnen
+      }
+  }
+  
   function initModalMap(location) {
-      // Standard-Standort (Mitte DE), falls keine Location
       let lat = location?.latitude || 51.1657;
       let lng = location?.longitude || 10.4515;
       let zoom = location ? 13 : 6;
       
-      // Globalen Standort für Speicherung setzen
       adminModalLocation = location ? new firebase.firestore.GeoPoint(lat, lng) : null;
 
-      // Warte kurz, bis das Modal gerendert ist
       setTimeout(() => {
           try {
             adminModalMap = L.map('modal-map').setView([lat, lng], zoom);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(adminModalMap);
-            
             adminModalMarker = L.marker([lat, lng], { draggable: true }).addTo(adminModalMap);
             
             adminModalMarker.on('dragend', e => {
                 const pos = e.target.getLatLng();
                 adminModalLocation = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
             });
-            
-            adminModalMap.invalidateSize(); // WICHTIG für Modals
+            adminModalMap.invalidateSize();
           } catch(e) {
               console.error("Leaflet-Fehler im Modal:", e);
-              document.getElementById('modal-map').innerHTML = '<p class="text-red-500">Karten-Fehler. Bitte neu laden.</p>';
           }
-      }, 100); // 100ms Verzögerung
+      }, 100);
   }
 
   // === HÜTTEN-CRUD (CREATE, READ, UPDATE, DELETE) ===
@@ -875,14 +1124,8 @@
       const strom = document.getElementById('modal-hut-strom').value;
       const sitzplaetze = document.getElementById('modal-hut-sitzplaetze').value;
       
-      if (!name) {
-          showNotification('❌ Name ist ein Pflichtfeld.');
-          return;
-      }
-      if (!adminModalLocation) {
-          showNotification('❌ Bitte einen Standort auf der Karte wählen.');
-          return;
-      }
+      if (!name) { showNotification('❌ Name ist ein Pflichtfeld.'); return; }
+      if (!adminModalLocation) { showNotification('❌ Bitte einen Standort auf der Karte wählen.'); return; }
       
       // Tiere auslesen (nur relevant für NEUE Hütten)
       let tiere = [];
@@ -894,10 +1137,7 @@
           });
       }
 
-      const data = {
-          name, status, beschreibung, strom, sitzplaetze,
-          location: adminModalLocation,
-      };
+      const data = { name, status, beschreibung, strom, sitzplaetze, location: adminModalLocation };
 
       try {
           if (currentEditingHutId) {
@@ -905,85 +1145,75 @@
               const hutRef = db.collection('eierhuetten').doc(currentEditingHutId);
               await hutRef.update(data);
               
-              // Log-Einträge für geänderte Felder
               const oldHut = allHuts.find(h => h.id === currentEditingHutId);
+              let changes = [];
               Object.keys(data).forEach(key => {
                   if (JSON.stringify(oldHut[key]) !== JSON.stringify(data[key])) {
-                      logAdminAction(`Feld '${key}' geändert`, currentEditingHutId, data.name);
-                      // Detailliertes Log in der Hütte selbst
+                      changes.push(key);
                       hutRef.collection('log').add({
                           admin: currentUser.displayName || currentUser.email,
-                          feld: key,
-                          wert: (typeof data[key] === 'object') ? JSON.stringify(data[key]) : data[key],
+                          feld: key, wert: (typeof data[key] === 'object') ? JSON.stringify(data[key]) : data[key],
                           zeitpunkt: new Date()
                       });
                   }
               });
-              
+              if(changes.length > 0) {
+                  logAdminAction(`Hütte aktualisiert (${changes.join(', ')})`, { hutId: currentEditingHutId, hutName: data.name });
+              }
               showNotification('✅ Hütte erfolgreich aktualisiert.');
           } else {
               // Neue Hütte erstellen
               data.erstelltAm = firebase.firestore.FieldValue.serverTimestamp();
               data.userId = currentUser.uid;
-              data.fotos = []; // Leeres Foto-Array
-              data.tiere = tiere; // Tiere aus Modal-Auswahl
+              data.fotos = [];
+              data.tiere = tiere;
               
               const docRef = await db.collection('eierhuetten').add(data);
-              logAdminAction('Neue Hütte erstellt', docRef.id, data.name);
+              logAdminAction('Neue Hütte erstellt', { hutId: docRef.id, hutName: data.name });
               showNotification('✅ Neue Hütte erfolgreich erstellt.');
           }
-          
           closeHutModal();
-          // onSnapshot wird die Liste automatisch aktualisieren
-          
       } catch (e) {
           console.error("Fehler beim Speichern der Hütte:", e);
           showNotification('❌ Fehler beim Speichern: ' + e.message);
       }
   }
   
-  // Wird von den schnellen Buttons im Dashboard (Übersicht) genutzt
+  // Schnelle Status-Änderung (für Moderation & Bulk)
   async function quickUpdateStatus(hutId, status) {
-    if (!confirm(`⚠️ Hütte wirklich auf "${status}" setzen?`)) return;
-    
     try {
         const hutRef = db.collection('eierhuetten').doc(hutId);
         await hutRef.update({ status });
         
-        // Loggen
         const hut = allHuts.find(h => h.id === hutId);
         const hutName = hut ? hut.name : `ID: ${hutId}`;
-        logAdminAction(`Status auf '${status}' gesetzt`, hutId, hutName);
+        logAdminAction(`Status auf '${status}' gesetzt`, { hutId, hutName });
         hutRef.collection('log').add({
             admin: currentUser.displayName || currentUser.email,
-            feld: 'status',
-            wert: status,
-            zeitpunkt: new Date()
+            feld: 'status', wert: status, zeitpunkt: new Date()
         });
-        
-        showNotification(`✅ Status für ${hutName} aktualisiert.`);
     } catch(e) {
         console.error("Fehler bei quickUpdateStatus:", e);
-        showNotification('❌ Fehler beim Status-Update.');
+        showNotification(`❌ Fehler bei Hütte ${hutId}: ${e.message}`);
     }
   }
 
-  async function deleteHut(id) {
-    if (!confirm(`❗ Möchtest du die Hütte mit ID ${id} wirklich endgültig löschen? Dies kann nicht rückgängig gemacht werden.`)) return;
+  async function deleteHut(id, skipConfirm = false) {
+    if (!skipConfirm && !confirm(`❗ Möchtest du die Hütte mit ID ${id} wirklich endgültig löschen? Dies kann nicht rückgängig gemacht werden.`)) return;
 
     try {
       const hutRef = db.collection('eierhuetten').doc(id);
       const hutDoc = await hutRef.get();
+      if(!hutDoc.exists) throw new Error("Hütte nicht gefunden.");
+      
       const hut = hutDoc.data();
       const hutName = hut.name || `ID: ${id}`;
       
-      // TODO: PayPal-Abo kündigen, falls vorhanden (Logik aus Original übernommen)
       if (hut.paypalSubscriptionId) {
           showNotification('⚠️ Diese Hütte hat ein Abo. Kündigung nicht implementiert.');
           // Hier käme die cancelPaypalSubscription-Logik hin
       }
       
-      // TODO: Fotos von imgbb löschen (Logik aus Original übernommen)
       if (Array.isArray(hut.fotos)) {
           for (const f of hut.fotos) {
               if (typeof f === "object" && f.delete_url) {
@@ -994,10 +1224,9 @@
 
       await hutRef.delete();
       
-      logAdminAction('Hütte gelöscht', id, hutName);
+      logAdminAction('Hütte gelöscht', { hutId: id, hutName });
       showNotification('🗑️ Hütte endgültig gelöscht.');
       closeHutModal(); // Falls sie im Modal geöffnet war
-      // onSnapshot aktualisiert die Liste
       
     } catch (err) {
       console.error('❌ Fehler beim Löschen der Hütte:', err);
@@ -1012,26 +1241,18 @@
       const ref = db.collection('eierhuetten').doc(hutId);
       const snap = await ref.get();
       const fotos = Array.isArray(snap.data().fotos) ? [...snap.data().fotos] : [];
-
       const f = fotos[index];
-      if (!f || typeof f === 'string') {
-        showNotification('ℹ️ Dieses Foto ist bereits freigegeben.');
-        return;
-      }
+      if (!f || typeof f === 'string') return;
+      
       fotos[index] = { ...f, status: 'freigegeben' };
-
       await ref.update({ fotos });
       
-      const hutName = snap.data().name || `ID: ${hutId}`;
-      logAdminAction('Foto freigegeben', hutId, hutName);
+      logAdminAction('Foto freigegeben', { hutId, hutName: snap.data().name, url: f.url });
       ref.collection('log').add({
         admin: currentUser.displayName || currentUser.email,
-        feld: 'fotos',
-        wert: `Foto freigegeben: ${f.url}`,
-        zeitpunkt: new Date()
+        feld: 'fotos', wert: `Foto freigegeben: ${f.url}`, zeitpunkt: new Date()
       });
       showNotification('✅ Bild freigegeben');
-      // onSnapshot aktualisiert das Modal/Liste
     } catch (err) {
       console.error(err);
       showNotification('❌ Fehler beim Freigeben.');
@@ -1053,20 +1274,16 @@
 
       await ref.update({ fotos });
       
-      const hutName = snap.data().name || `ID: ${hutId}`;
-      logAdminAction('Foto abgelehnt/gelöscht', hutId, hutName);
+      logAdminAction('Foto abgelehnt/gelöscht', { hutId, hutName: snap.data().name, url: (f.url || 'N/A') });
       ref.collection('log').add({
         admin: currentUser.displayName || currentUser.email,
-        feld: 'fotos',
-        wert: `Foto abgelehnt/gelöscht: ${typeof f === 'string' ? f : f.url}`,
-        zeitpunkt: new Date()
+        feld: 'fotos', wert: `Foto abgelehnt/gelöscht: ${typeof f === 'string' ? f : f.url}`, zeitpunkt: new Date()
       });
 
       if (deleteUrl) {
         try { await fetch(deleteUrl); } catch (e) { console.warn('imgbb delete fehlgeschlagen', e); }
       }
       showNotification('🗑️ Bild entfernt');
-      // onSnapshot aktualisiert das Modal/Liste
     } catch (err) {
       console.error(err);
       showNotification('❌ Fehler beim Entfernen.');
@@ -1075,11 +1292,7 @@
 
   async function initImageUpload(input, hutId) {
     const files = Array.from(input.files);
-    if (files.length === 0) return;
-    if (!hutId) {
-        showNotification('❌ Bitte Hütte zuerst speichern, um Fotos hochzuladen.');
-        return;
-    }
+    if (files.length === 0 || !hutId) return;
 
     showNotification(`⏳ Lade ${files.length} Bild(er) hoch...`);
     const uploadedObjects = [];
@@ -1096,22 +1309,14 @@
         const formData = new FormData();
         formData.append('key', '5df04de9bfd2776f101329be4193e44c'); // imgbb API Key
         formData.append('image', base64);
-
         const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: formData });
         const json = await res.json();
-
         if (json?.data?.url) {
           uploadedObjects.push({
-            url: json.data.url,
-            delete_url: json.data.delete_url || null,
-            status: 'wartet' // Neue Fotos warten immer
+            url: json.data.url, delete_url: json.data.delete_url || null, status: 'wartet'
           });
-        } else {
-          showNotification(`❌ Fehler beim Hochladen von Bild.`);
         }
-      } catch (err) {
-        showNotification(`❌ Upload-Fehler: ${err}`);
-      }
+      } catch (err) { showNotification(`❌ Upload-Fehler: ${err}`); }
     }
 
     if (uploadedObjects.length > 0) {
@@ -1119,11 +1324,9 @@
         await db.collection('eierhuetten').doc(hutId).update({
           fotos: firebase.firestore.FieldValue.arrayUnion(...uploadedObjects)
         });
-        
         const hut = allHuts.find(h => h.id === hutId);
-        logAdminAction(`Neue(s) Foto(s) hochgeladen`, hutId, hut.name);
+        logAdminAction(`Neue(s) Foto(s) hochgeladen`, { hutId, hutName: hut.name, count: uploadedObjects.length });
         showNotification('✅ Bilder hochgeladen (warten auf Freigabe).');
-        // onSnapshot aktualisiert das Modal
       } catch (err) {
         showNotification('❌ Fehler beim Speichern der Bilder: ' + err.message);
       }
@@ -1135,71 +1338,43 @@
   async function toggleTier(hutId, emoji) {
     const ref = db.collection('eierhuetten').doc(hutId);
     let newArray = [];
-
     try {
       await db.runTransaction(async tx => {
         const doc = await tx.get(ref);
         if (!doc.exists) throw new Error('Hütte nicht gefunden');
-
         let tiere = normalizeToEmojiArray(doc.data().tiere || []);
-
         const idx = tiere.indexOf(emoji);
+        
         if (idx >= 0) {
           tiere.splice(idx, 1); // Abwählen
         } else {
           tiere = tiere.filter(t => t !== '❌'); // "Keine Tiere" entfernen
-          tiere.push(emoji); // Hinzufügen
-        }
-        
-        if (emoji === '❌') {
+          if (emoji === '❌') {
             tiere = ['❌']; // "Keine Tiere" ist exklusiv
+          } else {
+            tiere.push(emoji); // Hinzufügen
+          }
         }
-
         newArray = tiere;
         tx.update(ref, { tiere });
       });
 
-      // Log nach erfolgreicher Transaktion
       const hut = allHuts.find(h => h.id === hutId);
-      logAdminAction(`Tiere geändert: ${newArray.join(', ')}`, hutId, hut.name);
+      logAdminAction(`Tiere geändert: ${newArray.join(', ')}`, { hutId, hutName: hut.name });
       ref.collection('log').add({
           admin: currentUser.displayName || currentUser.email,
-          feld: 'tiere',
-          wert: newArray.join(', '),
-          zeitpunkt: new Date()
+          feld: 'tiere', wert: newArray.join(', '), zeitpunkt: new Date()
       });
-      
       showNotification(`🐾 Tiere aktualisiert.`);
-      // onSnapshot aktualisiert das Modal
-      
     } catch (e) {
       console.error("Fehler bei toggleTier:", e);
       showNotification('❌ Fehler beim Speichern der Tier-Auswahl');
     }
   }
   
-  // === TAGS & NAVIGATION ===
-  
-  async function addTag(hutId, tag) {
-    // Diese Funktion scheint im Original-HTML nicht aufgerufen zu werden,
-    // aber ich lasse sie für Vollständigkeit drin.
-    if (!tag) return;
-    const docRef = db.collection('eierhuetten').doc(hutId);
-    await docRef.update({
-        tags: firebase.firestore.FieldValue.arrayUnion(tag)
-    });
-  }
-
-  async function removeTag(hutId, tag) {
-    // Diese Funktion scheint im Original-HTML nicht aufgerufen zu werden.
-    const docRef = db.collection('eierhuetten').doc(hutId);
-    await docRef.update({
-        tags: firebase.firestore.FieldValue.arrayRemove(tag)
-    });
-  }
-
+  // === NAVIGATION ===
   function showSection(id) {
-    document.querySelectorAll('.dash-section').forEach(sec =>
+    document.querySelectorAll('main > section').forEach(sec =>
       sec.classList.add('hidden')
     );
     document.getElementById(id)?.classList.remove('hidden');
@@ -1218,18 +1393,19 @@
     setTimeout(() => notification.style.display = 'none', 4000);
   }
 
-  // === ÜBERSICHT: MODERATIONS-WARTESCHLANGE ===
+  // === MODERATIONS-SEITE ===
 
-  function initLiveNewHuts() {
+  function initLiveModerationQueues() {
+    // 1. Neue Hütten
     db.collection('eierhuetten').where('status', '==', 'offen')
       .onSnapshot(snapshot => {
-        const neueListe = document.getElementById("neueListe");
+        const container = document.getElementById("neueListe-page");
         if (snapshot.empty) {
-            neueListe.innerHTML = "<p class='italic text-gray-500'>Keine neuen Eintragungen.</p>";
+            container.innerHTML = "<p class='italic text-gray-500'>Keine neuen Eintragungen.</p>";
             return;
         }
         
-        neueListe.innerHTML = "";
+        container.innerHTML = "";
         snapshot.forEach(doc => {
             const hut = doc.data();
             const row = document.createElement("div");
@@ -1239,26 +1415,33 @@
               <div class="flex space-x-2 flex-shrink-0">
                 <button onclick="quickUpdateStatus('${doc.id}', 'angenommen')"
                         class="px-2 py-1 bg-green-500 text-white rounded text-xs">Annehmen</button>
-                <button onclick="quickUpdateStatus('${doc.id}', 'abgelehnt')"
-                        class="px-2 py-1 bg-red-500 text-white rounded text-xs">Ablehnen</button>
                 <button onclick="openHutModal('${doc.id}')"
                         class="px-2 py-1 bg-gray-500 text-white rounded text-xs">Details</button>
               </div>
             `;
-            neueListe.appendChild(row);
+            container.appendChild(row);
         });
+        
+        // Bulk-Approve-Button
+        document.getElementById('bulk-approve-huts').onclick = async () => {
+            if(!confirm(`Möchten Sie alle ${snapshot.size} neuen Hütten auf einmal freigeben?`)) return;
+            for (const doc of snapshot.docs) {
+                await quickUpdateStatus(doc.id, 'angenommen');
+            }
+            showNotification(`✅ ${snapshot.size} Hütten freigegeben.`);
+        };
       });
-  }
 
-  function initLivePendingFotos() {
+    // 2. Wartende Fotos
     db.collection('eierhuetten')
       .onSnapshot(snapshot => {
-        const container = document.getElementById("pending-fotos");
+        const container = document.getElementById("pending-fotos-page");
         const pending = [];
         snapshot.forEach(doc => {
             const data = doc.data();
-            if (Array.isArray(data.fotos) && data.fotos.some(f => f && typeof f === "object" && f.status === "wartet")) {
-                pending.push({ id: doc.id, ...data });
+            const waitingPhotos = (data.fotos || []).map((f, i) => ({...f, originalIndex: i})).filter(f => f.status === 'wartet');
+            if (waitingPhotos.length > 0) {
+                pending.push({ id: doc.id, name: data.name, waitingPhotos });
             }
         });
         
@@ -1269,24 +1452,49 @@
         
         container.innerHTML = "";
         pending.forEach(hut => {
-            const wartendeFotos = hut.fotos.map((f, i) => ({...f, originalIndex: i})).filter(f => f.status === 'wartet');
             const row = document.createElement("div");
-            row.className = "flex items-center justify-between bg-white shadow-sm rounded px-3 py-2 border";
+            row.className = "bg-white shadow-sm rounded p-3 border";
             row.innerHTML = `
-                <div>
+                <div class="flex justify-between items-center mb-2">
                     <p class="font-medium text-blue-600">${hut.name}</p>
-                    <p class="text-xs text-gray-500">${wartendeFotos.length} Foto(s)</p>
+                    <button onclick="openHutModal('${hut.id}')"
+                            class="px-2 py-1 bg-gray-500 text-white rounded text-xs">Anzeigen</button>
                 </div>
-                <button onclick="openHutModal('${hut.id}')"
-                        class="px-2 py-1 bg-gray-500 text-white rounded text-xs">Anzeigen</button>
+                <div class="flex flex-wrap gap-2">
+                    ${hut.waitingPhotos.map(f => `
+                        <div class="relative w-16 h-16 rounded overflow-hidden border">
+                            <img src="${f.url}" alt="wartet" class="object-cover w-full h-full" />
+                            <div class="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 hover:opacity-100 transition">
+                              <button onclick="approveFoto('${hut.id}', ${f.originalIndex})" class="text-white text-lg">✔</button>
+                              <button onclick="rejectFoto('${hut.id}', ${f.originalIndex})" class="text-white text-lg ml-2">✖</button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
             `;
             container.appendChild(row);
         });
       });
   }
 
-  // === SUPPORT-TICKETS (Logik aus Original übernommen) ===
+  // === SUPPORT-TICKETS ===
   let currentReplyTicketId = null;
+
+  function initLiveSupportQueue() {
+      db.collection('support').where('status', '==', 'offen')
+        .onSnapshot(snapshot => {
+            const count = snapshot.size;
+            if (count > 0) {
+                supportQueueBadge.textContent = count;
+                supportQueueBadge.classList.remove('hidden');
+            } else {
+                supportQueueBadge.classList.add('hidden');
+            }
+        });
+      
+      // Volle Liste laden (wird bei Klick auf Tab aufgerufen)
+      document.querySelector('.nav-btn[onclick="showSection(\'support\')"]').addEventListener('click', ladeSupportTickets);
+  }
 
   async function ladeSupportTickets() {
     const snapshot = await db.collection('support').orderBy('createdAt', 'desc').get();
@@ -1301,7 +1509,7 @@
       const status = ticket.status || 'offen';
 
       const row = document.createElement('tr');
-      row.className = "align-top";
+      row.className = `align-top ${status === 'offen' ? 'bg-yellow-50' : ''}`;
       row.innerHTML = `
         <td class="px-4 py-2 text-xs text-gray-600">${datum}</td>
         <td class="px-4 py-2 text-xs">${email}</td>
@@ -1364,9 +1572,10 @@
       await db.collection("support").doc(currentReplyTicketId).update({
         status: "geschlossen"
       });
-      logAdminAction(`Support-Ticket beantwortet`, currentReplyTicketId);
+      logAdminAction(`Support-Ticket beantwortet`, { ticketId: currentReplyTicketId });
       showNotification("✅ Antwort gesendet & Ticket geschlossen");
       closeReplyModal();
+      ladeSupportTickets(); // Liste neu laden
     } catch (err) {
       alert("Fehler: " + err.message);
     }
@@ -1374,14 +1583,14 @@
 
   async function updateSupportStatus(id, neuerStatus) {
     await db.collection('support').doc(id).update({ status: neuerStatus });
-    logAdminAction(`Support-Status geändert: ${neuerStatus}`, id);
+    logAdminAction(`Support-Status geändert: ${neuerStatus}`, { ticketId: id });
     showNotification('✅ Status aktualisiert');
   }
 
   async function loescheSupportTicket(id) {
     if (!confirm('Dieses Support-Ticket wirklich löschen?')) return;
-    await db.collection('support').doc(id).delete(); // Hauptdokument löschen (Subkollektion wird nicht automatisch gelöscht, aber OK)
-    logAdminAction(`Support-Ticket gelöscht`, id);
+    await db.collection('support').doc(id).delete();
+    logAdminAction(`Support-Ticket gelöscht`, { ticketId: id });
     showNotification('🗑️ Ticket gelöscht');
     ladeSupportTickets();
   }
@@ -1391,7 +1600,7 @@
     document.getElementById("modal-reply-counter").innerText = `${left} Zeichen übrig`;
   });
 
-  // === PROFIL-VERWALTUNG (Logik aus Original übernommen) ===
+  // === PROFIL-VERWALTUNG ===
   let currentProfileId = null;
 
   async function loadProfileAdmin(id) {
@@ -1402,7 +1611,6 @@
       const data = snap.data();
       const adminArea = document.getElementById("profile-admin-area");
 
-      // Titel laden
       let titleOptions = "<option value=''>Kein Titel</option>";
       const titleSnap = await db.collection("titles").get();
       titleSnap.forEach(doc => {
@@ -1410,14 +1618,13 @@
         titleOptions += `<option value="${t.name}" ${data.title === t.name ? 'selected' : ''}>${t.name}</option>`;
       });
 
-      // Abzeichen laden
       let badgeCheckboxes = "";
       const badgeSnap = await db.collection("badgesDefs").get();
       badgeSnap.forEach(doc => {
         const b = doc.data();
         const checked = (data.badges || []).includes(doc.id) ? 'checked' : '';
         badgeCheckboxes += `
-            <label class="flex items-center space-x-2">
+            <label class="flex items-center space-x-2 p-2 rounded hover:bg-gray-100">
                 <input type="checkbox" class="form-checkbox" value="${doc.id}" ${checked}>
                 <span>${b.icon || "🏅"} ${b.name}</span>
             </label>
@@ -1425,38 +1632,43 @@
       });
 
       adminArea.innerHTML = `
-        <div class="flex items-center space-x-4">
-          <img id="profile-pic-admin" src="${data.pic || 'https://placehold.co/100x100/e2e8f0/718096?text=Profil'}" class="w-24 h-24 rounded-full border" />
-          <input id="profile-pic-url" class="flex-1 border p-2 rounded-md" placeholder="Profilbild-URL ändern..." value="${data.pic || ''}" />
-        </div>
-        <input id="profile-name-admin" class="w-full border p-2 rounded-md" placeholder="Name" value="${data.name || ''}" />
-        <textarea id="profile-bio-admin" class="w-full border p-2 rounded-md" placeholder="Kurzbeschreibung / Bio">${data.bio || ''}</textarea>
-        
-        <label class="block font-bold">Titel</label>
-        <select id="profile-title-admin" class="w-full border p-2 rounded-md bg-white">${titleOptions}</select>
-        
-        <label class="block font-bold">Abzeichen</label>
-        <div id="profile-badges-admin" class="flex flex-wrap gap-4">${badgeCheckboxes}</div>
-        
-        <label class="block font-bold">Rolle</label>
-        <select id="profile-role-admin" class="w-full border p-2 rounded-md bg-white">
-          <option value="user" ${data.role === 'user' ? 'selected': ''}>👤 User</option>
-          <option value="admin" ${data.role === 'admin' ? 'selected': ''}>👑 Admin</option>
-          <option value="mod" ${data.role === 'mod' ? 'selected': ''}>🛡️ Moderator</option>
-        </select>
-        
-        <label class="inline-flex items-center space-x-2">
-          <input id="profile-banned-admin" type="checkbox" class="form-checkbox" ${data.banned ? 'checked' : ''}>
-          <span>🚫 Account gesperrt</span>
-        </label>
-        
-        <div class="text-sm text-gray-600" id="profile-stats">
-            Fahrten: ${data.rides || 0} | Km: ${data.km || 0} | Letzter Login: ${data.lastLogin?.toDate().toLocaleString('de-DE') || "–"}
-        </div>
-        
-        <div class="flex space-x-2 mt-4">
-          <button onclick="saveProfileAdmin()" class="bg-green-600 text-white px-4 py-2 rounded-lg">💾 Speichern</button>
-          <button onclick="deleteProfileAdmin()" class="bg-red-600 text-white px-4 py-2 rounded-lg">🗑️ Löschen</button>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="md:col-span-1 space-y-4">
+                <img id="profile-pic-admin" src="${data.pic || 'https://placehold.co/150x150/e2e8f0/718096?text=Profil'}" class="w-40 h-40 rounded-full border-4 border-white shadow-lg mx-auto" />
+                <input id="profile-pic-url" class="w-full border p-2 rounded-md" placeholder="Profilbild-URL ändern..." value="${data.pic || ''}" />
+                <div class="text-sm text-gray-600 bg-gray-50 p-3 rounded-md">
+                    <strong>Stats:</strong><br>
+                    Fahrten: ${data.rides || 0} | Km: ${data.km || 0}<br>
+                    Letzter Login: ${data.lastLogin?.toDate().toLocaleString('de-DE') || "–"}
+                </div>
+            </div>
+            <div class="md:col-span-2 space-y-4">
+                <input id="profile-name-admin" class="w-full border p-2 rounded-md" placeholder="Name" value="${data.name || ''}" />
+                <textarea id="profile-bio-admin" class="w-full border p-2 rounded-md" placeholder="Kurzbeschreibung / Bio">${data.bio || ''}</textarea>
+                
+                <label class="block font-bold">Titel</label>
+                <select id="profile-title-admin" class="w-full border p-2 rounded-md bg-white">${titleOptions}</select>
+                
+                <label class="block font-bold">Rolle</label>
+                <select id="profile-role-admin" class="w-full border p-2 rounded-md bg-white">
+                  <option value="user" ${data.role === 'user' ? 'selected': ''}>👤 User</option>
+                  <option value="admin" ${data.role === 'admin' ? 'selected': ''}>👑 Admin</option>
+                  <option value="mod" ${data.role === 'mod' ? 'selected': ''}>🛡️ Moderator</option>
+                </select>
+                
+                <label class="block font-bold">Abzeichen</label>
+                <div id="profile-badges-admin" class="grid grid-cols-2 gap-2 border rounded-md p-2 max-h-48 overflow-y-auto">${badgeCheckboxes}</div>
+                
+                <label class="inline-flex items-center space-x-2 bg-red-50 p-3 rounded-md">
+                  <input id="profile-banned-admin" type="checkbox" class="form-checkbox" ${data.banned ? 'checked' : ''}>
+                  <span>🚫 Account gesperrt</span>
+                </label>
+                
+                <div class="flex space-x-2 mt-4 border-t pt-4">
+                  <button onclick="saveProfileAdmin()" class="bg-green-600 text-white px-4 py-2 rounded-lg">💾 Speichern</button>
+                  <button onclick="deleteProfileAdmin()" class="bg-red-600 text-white px-4 py-2 rounded-lg">🗑️ Löschen</button>
+                </div>
+            </div>
         </div>
       `;
       adminArea.classList.remove("hidden");
@@ -1465,7 +1677,6 @@
   async function saveProfileAdmin() {
     if (!currentProfileId) return;
     const badges = [...document.querySelectorAll("#profile-badges-admin input:checked")].map(i => i.value);
-
     const data = {
         name: document.getElementById("profile-name-admin").value,
         pic: document.getElementById("profile-pic-url").value,
@@ -1475,9 +1686,8 @@
         banned: document.getElementById("profile-banned-admin").checked,
         badges: badges
     };
-    
     await db.collection("profiles").doc(currentProfileId).update(data);
-    logAdminAction(`Profil gespeichert: ${data.name}`, null, null);
+    logAdminAction(`Profil gespeichert`, { profileId: currentProfileId, profileName: data.name });
     showNotification("✔️ Profil gespeichert!");
   }
 
@@ -1486,7 +1696,7 @@
     if (!confirm("Soll dieses Profil wirklich gelöscht werden?")) return;
     const name = document.getElementById("profile-name-admin").value;
     await db.collection("profiles").doc(currentProfileId).delete();
-    logAdminAction(`Profil gelöscht: ${name}`, null, null);
+    logAdminAction(`Profil gelöscht`, { profileId: currentProfileId, profileName: name });
     showNotification("🗑️ Profil gelöscht!");
     document.getElementById("profile-admin-area").classList.add("hidden");
     document.getElementById("profile-search").value = "";
@@ -1498,7 +1708,6 @@
       if (q.length < 3) { box.classList.add('hidden'); return; }
 
       const snap = await db.collection('profiles').where('name', '>=', q).where('name', '<=', q + '\uf8ff').limit(5).get();
-      
       box.innerHTML = snap.empty
         ? "<p class='p-2 text-gray-500 italic'>Keine Treffer</p>"
         : snap.docs.map(d => `
@@ -1516,9 +1725,7 @@
   };
   
 
-  // === TITEL & ABZEICHEN (Logik aus Original übernommen) ===
-  
-  // ---- TITEL Verwaltung ----
+  // === TITEL & ABZEICHEN ===
   const titleList = document.getElementById("title-list");
   const titleForm = document.getElementById("title-form");
   let titleEditId = null;
@@ -1562,7 +1769,6 @@
       conditionValue: parseInt(document.getElementById("title-value").value) || 0
     };
     if (!payload.name) { alert("Bitte einen Titel-Namen angeben."); return; }
-
     if (titleEditId) {
       await db.collection("titles").doc(titleEditId).update(payload);
       logAdminAction(`Titel aktualisiert: ${payload.name}`);
@@ -1575,7 +1781,6 @@
     loadTitles();
   });
   
-  // ---- ABZEICHEN Verwaltung ----
   const badgeList = document.getElementById("badge-list-admin");
   const badgeForm = document.getElementById("badge-form");
   let badgeEditId = null;
@@ -1617,24 +1822,18 @@
     e.preventDefault();
     const name = document.getElementById("badge-name").value.trim();
     if (!name) return alert("Bitte Abzeichen-Namen eingeben!");
-    
     const payload = {
-        name,
-        icon: document.getElementById("badge-icon").value.trim(),
+        name, icon: document.getElementById("badge-icon").value.trim(),
         conditionType: document.getElementById("badge-condition").value,
         conditionValue: parseInt(document.getElementById("badge-value").value) || 0,
         createdAt: new Date()
     };
-    
     const fileInput = document.getElementById("badge-icon-file");
     if (fileInput.files.length > 0) {
       try {
         payload.iconUrl = await badgeFormUploadToImgBB(fileInput.files[0]);
-      } catch (err) {
-        alert("❌ Fehler beim ImgBB-Upload: " + err);
-      }
+      } catch (err) { alert("❌ Fehler beim ImgBB-Upload: " + err); }
     }
-
     if (badgeEditId) {
         await db.collection("badgesDefs").doc(badgeEditId).update(payload);
         logAdminAction(`Abzeichen aktualisiert: ${payload.name}`);
@@ -1642,7 +1841,6 @@
         await db.collection("badgesDefs").add(payload);
         logAdminAction(`Abzeichen erstellt: ${payload.name}`);
     }
-    
     badgeEditId = null;
     badgeForm.reset();
     loadBadges();
@@ -1655,25 +1853,19 @@
         reader.onerror = () => reject('❌ Fehler beim Lesen der Datei.');
         reader.readAsDataURL(file);
       });
-      
       const formData = new FormData();
       formData.append("key", "5df04de9bfd2776f101329be4193e44c");
       formData.append("image", base64);
-      
       const res = await fetch("https://api.imgbb.com/1/upload", { method: "POST", body: formData });
       const json = await res.json();
       if (json?.data?.url) return json.data.url;
       throw new Error("ImgBB Upload fehlgeschlagen");
   }
 
-  // Initiales Laden beim Wechsel zur Sektion
   document.querySelector('.nav-btn[onclick="showSection(\'gamification\')"]').addEventListener('click', () => {
       loadTitles();
       loadBadges();
   });
-  
-  // (Die alte In-App-Konsole wurde entfernt, da sie sehr aufdringlich war. 
-  //  Die Standard-Browser-Konsole (F12) ist für die Entwicklung besser geeignet.)
 
 </script>
 </body>
