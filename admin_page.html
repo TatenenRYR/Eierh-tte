@@ -36,8 +36,6 @@
   
   <style>
     .minimap { height: 200px; width: 100%; border-radius: 0.5rem; margin-top: 0.5rem; }
-    .progress-bar { width: 100%; background-color: #e5e7eb; border-radius: 0.5rem; margin-top: 5px; }
-    .progress-fill { height: 8px; background-color: #10b981; border-radius: 0.5rem; width: 0%; transition: width 0.3s; }
     #notification { 
       position: fixed; top: 1rem; right: 1rem; 
       background: #38bdf8; color: white; 
@@ -73,14 +71,13 @@
       100% { transform: rotate(360deg); } 
     }
     
-    /* 🤖 NEU: Stile für das mobile Slide-Out-Menü */
+    /* Stile für das mobile Slide-Out-Menü */
     #sidebar {
       transition: transform 0.3s ease-in-out;
     }
     #sidebar-overlay {
       transition: opacity 0.3s ease-in-out;
     }
-    /* Klasse, die per JS umgeschaltet wird */
     body.sidebar-open #sidebar {
       transform: translateX(0);
     }
@@ -108,7 +105,7 @@
       </button>
     </div>
   </div>
-
+  
   <aside id="sidebar" class="w-64 bg-white shadow-lg fixed top-0 left-0 h-full z-40 
                            transform -translate-x-full md:translate-x-0 md:relative md:flex-shrink-0">
     <div class="p-4 border-b">
@@ -151,7 +148,6 @@
       
       <section id="overview" class="dash-section">
         <h2 class="section-title">📊 Übersicht</h2>
-        <div id="stats" class="text-gray-700"></div>
         <div id="statsContainer" class="grid grid-cols-1 lg:grid-cols-2 gap-6"></div>
         <canvas id="statsChart" class="bg-white rounded-xl shadow-lg p-4 mt-6"></canvas>
         <h2 class="section-title">🆕 Neue Eintragungen</h2>
@@ -359,7 +355,6 @@
       Ein Nutzer hat ein Support-Ticket eingereicht.
       Hier ist der bisherige Nachrichtenverlauf:
       ${JSON.stringify(history, null, 2)}
-
       Bitte verfasse eine hilfreiche und höfliche Antwort auf die LETZTE Nutzeranfrage.
       Fasse dich kurz (maximal 3-4 Sätze).
       Sprich den Nutzer mit "Hallo" an und unterschreibe mit "Viele Grüße, Dein Hütten-Support-Team".
@@ -387,21 +382,14 @@
   // --- 2. KI-FUNKTION: Foto analysieren ---
   
   // Helper-Funktion, um Bild-URL in Base64 umzuwandeln
-  // ⚠️ HINWEIS: Dies wird sehr wahrscheinlich an CORS-Sperren von imgbb.com scheitern!
-  // Ein Server-Backend (Firebase Function) hat dieses Problem nicht.
   async function fetchImageAsBase64(url) {
-      // Wir verwenden einen öffentlichen CORS-Proxy NUR ZUM TESTEN.
-      // Das ist langsam und unzuverlässig, aber umgeht CORS im Browser.
+      // ⚠️ Wir verwenden einen CORS-Proxy NUR ZUM TESTEN.
       const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-      
       console.log("Versuche Bild über Proxy zu laden:", proxyUrl);
-      
       try {
         const response = await fetch(proxyUrl);
         if (!response.ok) throw new Error(`Netzwerkfehler: ${response.statusText}`);
-        
         const blob = await response.blob();
-        
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onloadend = () => resolve({
@@ -410,14 +398,11 @@
                   mimeType: blob.type
               }
           });
-          reader.onerror = (error) => {
-            console.error("FileReader Error:", error);
-            reject("Fehler beim Lesen der Bilddatei.");
-          };
+          reader.onerror = (error) => reject("Fehler beim Lesen der Bilddatei.");
           reader.readAsDataURL(blob);
         });
       } catch (error) {
-         console.error('Fehler beim Laden oder Konvertieren des Bildes:', error);
+         console.error('Fehler beim Laden des Bildes:', error);
          throw new Error("Fehler beim Laden des Bildes (evtl. CORS oder Proxy-Problem).");
       }
   }
@@ -430,8 +415,11 @@
     try {
       imagePart = await fetchImageAsBase64(imageUrl);
     } catch (e) {
+      // 🤖 "Repariert": Gebe eine klare Fehlermeldung zu CORS aus.
       console.error(e);
-      alert("Fehler bei der Bildanalyse: " + e.message + "\n\n(Dies liegt oft an CORS. Ein Backend löst das.)");
+      alert("Fehler bei der Bildanalyse: " + e.message + 
+            "\n\nHinweis: Das Laden von Bildern von 'imgbb.com' wird vom Browser blockiert (CORS-Problem). " +
+            "Diese Funktion funktioniert nur zuverlässig über ein Server-Backend (z.B. Firebase Function).");
       setButtonLoading(button, false, originalText);
       return;
     }
@@ -441,7 +429,6 @@
       1. Ist dieses Bild für eine App über Wanderhütten/Hofläden geeignet? (ja/nein/vielleicht)
       2. Was ist auf dem Bild hauptsächlich zu sehen? (z.B. "Eine Holzhütte", "Ein Selfie", "Essen")
       3. Enthält das Bild unangemessene Inhalte (Nacktheit, Gewalt)? (ja/nein)
-
       Beispiel-Antwort:
       {"geeignet": "ja", "inhalt": "Eine Holzhütte im Wald", "unangemessen": "nein"}
     `;
@@ -450,18 +437,13 @@
       const result = await model.generateContent([prompt, imagePart]);
       const response = await result.response;
       let text = response.text().replace(/```json/g, "").replace(/```/g, "").trim();
-      
-      console.log("AI-Foto-Analyse Roh-Antwort:", text);
       const analysis = JSON.parse(text);
-      
-      // Zeige das Ergebnis in einem Alert an
       alert(
         `🤖 AI-Foto-Check:\n\n` +
         `Geeignet: ${analysis.geeignet}\n` +
         `Inhalt: ${analysis.inhalt}\n` +
         `Unangemessen: ${analysis.unangemessen}`
       );
-
     } catch (e) {
       console.error("Gemini Fehler (Image):", e);
       alert("Fehler bei der AI-Bildanalyse: " + e.message);
@@ -476,7 +458,6 @@
     const originalText = button.innerHTML;
     setButtonLoading(button, true);
 
-    // Finde die Hütte in den globalen Daten
     const hut = window.allHuts.find(h => h.id === hutId);
     if (!hut) {
       alert("Fehler: Hütte nicht gefunden.");
@@ -490,35 +471,23 @@
       - Name: "${hut.name}"
       - Beschreibung: "${hut.beschreibung || "Keine"}"
       - Aktuelle Tags: [${(hut.tags || []).join(", ")}]
-
       Dein JSON-Audit soll enthalten:
       1. "qualitaet": Eine Bewertung der Beschreibung (z.B. "Sehr gut", "Gut", "Zu kurz", "Fehlt").
       2. "vorschlag": Ein kurzer Satz, um die Beschreibung zu verbessern (oder "Perfekt", wenn gut).
       3. "tags": Ein Array mit 3-5 Tag-Vorschlägen (Strings), die zur Beschreibung passen.
-
-      Beispiel-Antwort:
-      {
-        "qualitaet": "Zu kurz",
-        "vorschlag": "Die Beschreibung sollte Details zu Produkten oder Öffnungszeiten enthalten.",
-        "tags": ["Hofladen", "Eier", "Regional"]
-      }
     `;
 
     try {
       const result = await model.generateContent(prompt);
       const response = await result.response;
       let text = response.text().replace(/```json/g, "").replace(/```/g, "").trim();
-      
-      console.log("AI-Audit Roh-Antwort:", text);
       const audit = JSON.parse(text);
-
       alert(
         `🤖 AI-Audit für "${hut.name}":\n\n` +
         `Qualität: ${audit.qualitaet}\n` +
         `Vorschlag: ${audit.vorschlag}\n` +
         `Tag-Vorschläge: ${audit.tags.join(", ")}`
       );
-
     } catch (e) {
       console.error("Gemini Fehler (Audit):", e);
       alert("Fehler beim AI-Audit: " + e.message);
@@ -528,13 +497,11 @@
   };
   
   
-  // 🤖 NEU: --- 4. KI-FUNKTION: Support-Tickets taggen ---
+  // --- 4. KI-FUNKTION: Support-Tickets taggen ---
   window.geminiTagTicket = async (button, ticketId) => {
     const originalText = button.innerHTML;
     setButtonLoading(button, true);
     
-    // Hole die Firebase DB-Instanz aus dem globalen Skript
-    // 'window.db' wird im nächsten Skript-Block gesetzt
     if (!window.db) {
         alert("Fehler: DB-Verbindung nicht gefunden.");
         setButtonLoading(button, false, originalText);
@@ -543,7 +510,6 @@
     
     let firstMessage = "";
     try {
-      // Hole die erste Nachricht des Tickets, um sie zu analysieren
       const msgsSnap = await window.db.collection("support").doc(ticketId)
                                .collection("messages").orderBy("createdAt", "asc").limit(1).get();
       firstMessage = msgsSnap.docs[0]?.data().text;
@@ -563,11 +529,8 @@
       Analysiere diese Support-Anfrage und gib 1-2 relevante Tags zurück.
       Mögliche Tags sind: 'Abrechnung', 'Bug-Report', 'Foto-Problem', 'Hütten-Info', 'Spam', 'Allgemein'.
       Antworte NUR mit einem JSON-Array.
-      
       Text: "${firstMessage}"
-      
-      Beispiel-Antwort:
-      ["Abrechnung"]
+      Beispiel-Antwort: ["Abrechnung"]
     `;
     
     try {
@@ -576,10 +539,8 @@
       let text = response.text().replace(/```json/g, "").replace(/```/g, "").trim();
       const tags = JSON.parse(text);
       
-      // Speichere die Tags im Firestore-Dokument
       await window.db.collection("support").doc(ticketId).update({ aiTags: tags });
       
-      // Zeige die Tags sofort in der UI an
       const tagCell = document.getElementById(`ai-tags-${ticketId}`);
       if(tagCell) {
         tagCell.innerHTML = tags.map(tag => 
@@ -590,10 +551,65 @@
     } catch (e) {
       console.error("Gemini Fehler (Tagging):", e);
       alert("Fehler beim AI-Tagging: " + e.message);
-      // Bei Fehler den Button wiederherstellen
       setButtonLoading(button, false, originalText);
     } 
-    // Bei Erfolg wird der Button absichtlich nicht wiederhergestellt, da er durch die Tags ersetzt wird.
+  };
+  
+  // 🤖 NEU: --- 5. KI-FUNKTION (Idee 1): Beschreibung generieren ---
+  window.geminiGenerateDescription = async (button, hutId) => {
+    const originalText = button.innerHTML;
+    setButtonLoading(button, true);
+
+    const keywordsInput = document.getElementById(`hut-keywords-${hutId}`);
+    const descriptionBox = document.getElementById(`hut-description-${hutId}`);
+    const hut = window.allHuts.find(h => h.id === hutId);
+
+    if (!hut || !keywordsInput || !descriptionBox) {
+        alert("Fehler: Hütte oder Textfelder nicht gefunden.");
+        setButtonLoading(button, false, originalText);
+        return;
+    }
+
+    const keywords = keywordsInput.value.trim();
+    if (!keywords) {
+      alert("Bitte geben Sie zuerst Stichpunkte in das 'KI-Stichpunkte'-Feld ein.");
+      setButtonLoading(button, false, originalText);
+      return;
+    }
+
+    const prompt = `
+      Du bist ein Werbetexter für eine App über Wanderhütten und Hofläden.
+      Generiere eine einladende, kurze Beschreibung (2-3 Sätze) für die Hütte "${hut.name}".
+      Verwende diese Stichpunkte: "${keywords}".
+      Schreibe nur den Fließtext der Beschreibung, ohne Überschrift.
+    `;
+
+    try {
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      
+      descriptionBox.value = text; // Text in die Box einfügen
+      
+      // Globale Benachrichtigungsfunktion aufrufen
+      if (window.showNotification) {
+        window.showNotification("🤖 Text generiert. Bitte prüfen und speichern.");
+      } else {
+        alert("Text generiert. Bitte prüfen und speichern.");
+      }
+      
+      // Optional: Textfeld "blinken" lassen, um Änderung zu signalisieren
+      descriptionBox.classList.add('ring-2', 'ring-ai');
+      setTimeout(() => {
+        descriptionBox.classList.remove('ring-2', 'ring-ai');
+      }, 2000);
+
+    } catch (e) {
+      console.error("Gemini Fehler (Description):", e);
+      alert("Fehler bei der AI-Textgenerierung: " + e.message);
+    } finally {
+      setButtonLoading(button, false, originalText);
+    }
   };
 
 </script>
@@ -635,11 +651,14 @@
   const hutList = document.getElementById('hut-list');
   const searchInput = document.getElementById('search-input');
   const notification = document.getElementById('notification');
-  const stats = document.getElementById('stats');
   
   // App-Status
   let currentUser = null;
   let adminMarker, adminMap, adminLocation;
+  let filteredHuts = [];
+  let currentPage = 1;
+  const hutsPerPage = 15;
+  let statsChart; // Chart-Instanz
 
   // === TIERE MAPPING (global) ===
   const TIERE_EMOJI_TO_NAME = {
@@ -688,7 +707,8 @@
     
   // === UI-Helfer ===
   
-  function showNotification(message) {
+  // Mache showNotification global verfügbar
+  window.showNotification = function(message) {
     notification.textContent = message;
     notification.style.display = 'block';
     setTimeout(() => notification.style.display = 'none', 4000);
@@ -696,15 +716,12 @@
 
   // === Authentifizierung ===
   
-  // 🤖 NEU: Auth-Button bleibt gleich, aber onAuthStateChanged ist jetzt "smarter"
   document.getElementById('login-btn').onclick = () => {
-    // Zeige einen Ladezustand
     const btn = document.getElementById('login-btn');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Verbinde...';
     
     auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(error => {
-      // Fehler beim Popup (z.B. geschlossen)
       const loginError = document.getElementById('login-error');
       loginError.textContent = `Fehler beim Anmelden: ${error.message}`;
       loginError.classList.remove('hidden');
@@ -722,46 +739,40 @@
       try {
         const adminDoc = await db.collection('admins').doc(user.email).get();
         if (!adminDoc.exists) {
-          // 🤖 NEU: Zeige Fehler in der UI statt alert()
           loginError.textContent = `Zugriff verweigert. Dein Konto (${user.email}) ist nicht als Admin registriert.`;
           loginError.classList.remove('hidden');
-          await auth.signOut(); // Automatisch wieder ausloggen
-          loginBtn.disabled = false;
-          loginBtn.innerHTML = 'Mit Google Anmelden';
+          await auth.signOut();
           return;
         }
         
         loginSection.classList.add('hidden');
-        // 🤖 NEU: 'flex' statt 'block' für die neue Dashboard-Struktur
         dashboard.classList.remove('hidden');
         dashboard.classList.add('flex'); 
         
+        // Setup Live-Listener
         db.collection('eierhuetten').onSnapshot(() => {
           showNotification('🔄 Live-Update: Hüttendaten wurden aktualisiert.');
-          loadHuts(); // Lade Hütten bei Live-Update
-        });
+          loadHuts(); 
+        }, err => console.error("Snapshot-Fehler (Hütten):", err));
+        
+        initLiveNewHuts(); // Startet eigenen Listener
+        initLivePendingFotos(); // Startet eigenen Listener
         
         // Initiales Laden
         showSection('overview');
-        loadHuts(); // Lade Hütten initial
-        initLiveNewHuts();
-        initLivePendingFotos();
-        ladeSupportTickets();
+        await loadHuts(); // Erstes Laden
+        await ladeSupportTickets(); // Erstes Laden
         
       } catch (err) {
         console.error("Auth-Fehler:", err);
         loginError.textContent = `Ein Fehler ist aufgetreten: ${err.message}`;
         loginError.classList.remove('hidden');
-        loginBtn.disabled = false;
-        loginBtn.innerHTML = 'Mit Google Anmelden';
       }
     } else {
-      // User ist ausgeloggt
       currentUser = null;
       loginSection.classList.remove('hidden');
       dashboard.classList.add('hidden');
       dashboard.classList.remove('flex');
-      // Setze Login-Button zurück
       loginBtn.disabled = false;
       loginBtn.innerHTML = 'Mit Google Anmelden';
     }
@@ -769,23 +780,21 @@
 
   // === Datenladen & Statistik ===
 
-  function normalizeHutId(hutId) {
-    if (!hutId && hutId !== 0) return null;
-    if (typeof hutId === 'object') return hutId.id || hutId?.toString?.() || null;
-    return String(hutId);
-  }
-
   async function loadHuts() {
-    const snapshot = await db.collection('eierhuetten').orderBy('erstelltAm', 'desc').get();
-    allHuts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    window.allHuts = allHuts; // Für AI-Funktion global bereitstellen
-    currentPage = 1;
-    applySearchAndSort(); // Wende Filter an, anstatt nur renderPage aufzurufen
-    renderStats(allHuts);
+    try {
+      const snapshot = await db.collection('eierhuetten').orderBy('erstelltAm', 'desc').get();
+      allHuts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      window.allHuts = allHuts; // Für AI-Funktion global bereitstellen
+      applySearchAndSort(); // Wende Filter an
+      renderStats(allHuts); // Statistiken mit *allen* Hütten aktualisieren
+    } catch (e) {
+      console.error("Fehler beim Laden der Hütten:", e);
+      showNotification("❌ Fehler beim Laden der Hütten.");
+    }
   }
-
-  let statsChart; 
+ 
   function renderStats(list) {
+    if (!list) return;
     const total = list.length;
     const withStrom = list.filter(h => h.strom === 'Ja').length;
     const withFotos = list.filter(h => Array.isArray(h.fotos) && h.fotos.length > 0).length;
@@ -796,6 +805,7 @@
               ? h.fotos.filter(f => f && typeof f === 'object' && f.status === 'wartet').length
               : 0), 0);
     const c = document.getElementById("statsContainer");
+    if (!c) return;
     c.innerHTML = `
       <div class="bg-white p-4 rounded-xl shadow-lg text-center"><p class="text-3xl font-bold text-primary">${total}</p><p class="text-slate-500">Gesamt&nbsp;Hütten</p></div>
       <div class="bg-white p-4 rounded-xl shadow-lg text-center"><p class="text-3xl font-bold text-yellow-600">${newEntries}</p><p class="text-slate-500">Neue&nbsp;Eintragungen</p></div>
@@ -804,7 +814,9 @@
       <div class="bg-white p-4 rounded-xl shadow-lg text-center"><p class="text-3xl font-bold text-red-600">${pendingFotos}</p><p class="text-slate-500">wartende&nbsp;Fotos</p></div>
       <div class="bg-white p-4 rounded-xl shadow-lg text-center"><p class="text-3xl font-bold text-indigo-600">${count247}</p><p class="text-slate-500">24/7 geöffnet</p></div>
     `;
+    
     const ctx = document.getElementById('statsChart').getContext('2d');
+    if (!ctx) return;
     const data = {
       labels: ['mit Strom','mit Fotos','24/7 geöffnet','Neue Eintragungen'],
       datasets: [{
@@ -843,12 +855,10 @@
       await ref.update({ fotos });
       await ref.collection('log').add({
         admin: currentUser.displayName || currentUser.email,
-        feld: 'fotos',
-        wert: `Foto freigegeben: ${f.url}`,
-        zeitpunkt: new Date()
+        feld: 'fotos', wert: `Foto freigegeben: ${f.url}`, zeitpunkt: new Date()
       });
       showNotification('✅ Bild freigegeben');
-      // loadHuts(); // Wird durch onSnapshot-Listener erledigt
+      // onSnapshot erledigt den Re-Render
     } catch (err) {
       console.error(err);
       showNotification('❌ Fehler beim Freigeben.');
@@ -867,16 +877,13 @@
       await ref.update({ fotos });
       await ref.collection('log').add({
         admin: currentUser.displayName || currentUser.email,
-        feld: 'fotos',
-        wert: `Foto abgelehnt/gelöscht: ${typeof f === 'string' ? f : f.url}`,
-        zeitpunkt: new Date()
+        feld: 'fotos', wert: `Foto abgelehnt/gelöscht: ${typeof f === 'string' ? f : f.url}`, zeitpunkt: new Date()
       });
       if (deleteUrl) {
-        // imgbb delete_url ist oft unzuverlässig, daher "fire and forget"
         try { fetch(deleteUrl, { method: 'GET' }); } catch (e) { console.warn('imgbb delete fehlgeschlagen', e); }
       }
       showNotification('🗑️ Bild entfernt');
-      // loadHuts(); // Wird durch onSnapshot-Listener erledigt
+      // onSnapshot erledigt den Re-Render
     } catch (err) {
       console.error(err);
       showNotification('❌ Fehler beim Entfernen.');
@@ -906,15 +913,14 @@
           uploadedObjects.push({
             url: json.data.url,
             delete_url: json.data.delete_url || null,
-            status: 'wartet' // Neue Bilder müssen freigegeben werden
+            status: 'wartet'
           });
         } else {
-          console.warn('❌ Upload unvollständig:', json);
-          showNotification(`❌ Fehler beim Hochladen von Bild ${i + 1}`);
+          throw new Error(json.error?.message || "Unbekannter ImgBB-Fehler");
         }
       } catch (err) {
         console.error(err);
-        showNotification(`❌ Upload-Fehler: ${err}`);
+        showNotification(`❌ Upload-Fehler: ${err.message}`);
       }
     }
     if (uploadedObjects.length > 0) {
@@ -923,7 +929,7 @@
           fotos: firebase.firestore.FieldValue.arrayUnion(...uploadedObjects)
         });
         showNotification('✅ Bilder hochgeladen (warten auf Freigabe).');
-        // loadHuts(); // Wird durch onSnapshot-Listener erledigt
+        // onSnapshot erledigt den Re-Render
       } catch (err) {
         console.error(err);
         showNotification('❌ Fehler beim Speichern der Bilder: ' + err.message);
@@ -934,20 +940,22 @@
   // === Hütten-CRUD ===
 
   async function updateField(hutId, field, value) {
-    // Für Tiere gibt es eine eigene Funktion (toggleTier)
     if (field === "tiere") return; 
+    
+    // Finde das Element, um den Wert bei Abbruch zurückzusetzen
+    const el = document.getElementById(`hut-${hutId}`);
+    let inputElement;
+    if (field === 'name') inputElement = el.querySelector('input[onchange*="name"]');
+    if (field === 'beschreibung') inputElement = el.querySelector('textarea[onchange*="beschreibung"]');
+    if (field === 'sitzplaetze') inputElement = el.querySelector('select[onchange*="sitzplaetze"]');
+    if (field === 'strom') inputElement = el.querySelector('select[onchange*="strom"]');
+    if (field === 'status') inputElement = el.querySelector('select[onchange*="status"]');
 
     if (!confirm(`⚠️ Willst du wirklich das Feld "${field}" auf "${value}" ändern?`)) {
-      // Lade die Daten neu, um die UI zurückzusetzen
-      const el = document.getElementById(`hut-${hutId}`);
+      // Setze den UI-Wert auf den alten Wert aus 'allHuts' zurück
       const hut = allHuts.find(h => h.id === hutId);
-      if(el && hut) {
-          // Setze das spezifische Feld zurück
-          if(field === 'name') el.querySelector('input[onchange*="name"]').value = hut.name || '';
-          if(field === 'beschreibung') el.querySelector('textarea[onchange*="beschreibung"]').value = hut.beschreibung || '';
-          if(field === 'sitzplaetze') el.querySelector('select[onchange*="sitzplaetze"]').value = hut.sitzplaetze || 'Nein';
-          if(field === 'strom') el.querySelector('select[onchange*="strom"]').value = hut.strom || 'Nein';
-          if(field === 'status') el.querySelector('select[onchange*="status"]').value = hut.status || 'offen';
+      if(hut && inputElement) {
+          inputElement.value = hut[field] || (field === 'status' ? 'offen' : '');
       }
       return;
     }
@@ -956,21 +964,23 @@
       await db.collection('eierhuetten').doc(hutId).update({ [field]: value });
       await db.collection('eierhuetten').doc(hutId).collection('log').add({
         admin: currentUser.displayName || currentUser.email,
-        feld: field,
-        wert: value,
-        zeitpunkt: new Date()
+        feld: field, wert: value, zeitpunkt: new Date()
       });
       showNotification(`✅ Feld "${field}" aktualisiert.`);
-      // loadHuts(); // Wird durch onSnapshot-Listener erledigt
+      // onSnapshot erledigt den Re-Render
     } catch (e) {
       showNotification(`❌ Fehler beim Aktualisieren: ${e.message}`);
+      // Bei Fehler auch zurücksetzen
+      const hut = allHuts.find(h => h.id === hutId);
+      if(hut && inputElement) {
+          inputElement.value = hut[field] || (field === 'status' ? 'offen' : '');
+      }
     }
   }
 
   // === Navigation ===
   
-  // 🤖 NEU: Funktion zum Steuern des mobilen Menüs
-  function toggleMenu(forceOpen = null) {
+  window.toggleMenu = function(forceOpen = null) {
     if (forceOpen === null) {
       document.body.classList.toggle('sidebar-open');
     } else if (forceOpen) {
@@ -980,8 +990,7 @@
     }
   }
 
-  // 🤖 NEU: showSection schließt jetzt das mobile Menü und setzt den Header-Titel
-  function showSection(id) {
+  window.showSection = function(id) {
     document.querySelectorAll('.dash-section').forEach(sec =>
       sec.classList.add('hidden')
     );
@@ -992,22 +1001,20 @@
       const btnOnClick = btn.getAttribute('onclick');
       if (btnOnClick && btnOnClick.includes(`showSection('${id}')`)) {
         btn.classList.add('active');
-        title = btn.textContent.trim(); // 📊 Übersicht
+        title = btn.textContent.trim(); 
       } else {
         btn.classList.remove('active');
       }
     });
     
-    // Setze den Header-Titel
     document.getElementById('header-title').textContent = title;
-    
-    // Schließe das mobile Menü bei Sektionswechsel
-    toggleMenu(false);
+    toggleMenu(false); // Schließe mobiles Menü
   }
 
   // === Hütten-Rendering ===
   
   async function renderHuts(list) {
+    if (!hutList) return;
     hutList.innerHTML = '';
     if (list.length === 0) {
         hutList.innerHTML = `<p class="text-slate-500 italic text-center">Keine Hütten gefunden, die den Kriterien entsprechen.</p>`;
@@ -1017,7 +1024,6 @@
     for (const hut of list) {
       try {
         const el = document.createElement("div");
-        // 🤖 NEU: 'rounded-xl shadow-lg' für moderneres Karten-Design
         el.className = "bg-white p-4 rounded-xl shadow-lg space-y-3"; 
         el.id = `hut-${hut.id}`;
         
@@ -1061,10 +1067,11 @@
         let fotosFreigegeben = fotos
           .map((foto, i) => {
             const f = typeof foto === 'string' ? { url: foto, status: 'freigegeben' } : foto;
-            if (f.status !== 'freigegeben') return '';
+            if (!f || (typeof f === 'object' && f.status !== 'freigegeben')) return '';
+            const url = typeof f === 'string' ? f : f.url;
             return `
               <div class="relative w-24 h-24 rounded-lg overflow-hidden border border-slate-300">
-                <img src="${f.url}" alt="Foto" class="object-cover w-full h-full" />
+                <img src="${url}" alt="Foto" class="object-cover w-full h-full" />
                 <button type="button" onclick="deleteFoto('${hut.id}', ${i})" 
                   class="absolute top-0 right-0 bg-red-600 text-white rounded-bl-lg px-1 text-sm font-bold hover:bg-red-700" title="Foto löschen">×</button>
               </div>
@@ -1099,10 +1106,24 @@
               🤖 Audit
             </button>
           </div>
+          
+          <div class="p-3 bg-slate-50 rounded-lg space-y-2">
+            <label class="font-medium text-slate-700 text-sm">KI-Stichpunkte (für neue Beschreibung):
+              <input type="text" id="hut-keywords-${hut.id}" 
+                     placeholder="z.B. Eier, Honig, 24/7, nähe Wald" 
+                     class="w-full border rounded-lg p-2 mt-1">
+            </label>
+            <button onclick="geminiGenerateDescription(this, '${hut.id}')" 
+                    class="bg-secondary hover:bg-indigo-700 text-white px-3 py-1 rounded-lg text-sm w-full flex items-center justify-center gap-1">
+              🤖 Beschreibung aus Stichpunkten generieren
+            </button>
+          </div>
+          
           <label class="font-medium text-slate-700">Beschreibung:
-            <textarea onchange="updateField('${hut.id}','beschreibung',this.value)" 
+            <textarea id="hut-description-${hut.id}" onchange="updateField('${hut.id}','beschreibung',this.value)" 
               class="w-full border rounded-lg p-2 mt-1 h-24">${hut.beschreibung || ''}</textarea>
           </label>
+          
           <div><label class="font-medium text-slate-700">Tiere:</label>${tiereHTML}</div>
           <div><label class="font-medium text-slate-700">Tags:</label>${tagsHTML}</div>
           <div><label class="font-medium text-slate-700">Fotos (freigegeben):</label><div class="flex flex-wrap gap-2 mt-1">${fotosFreigegeben}</div></div>
@@ -1156,7 +1177,6 @@
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
           const marker = L.marker([hut.location.latitude, hut.location.longitude], { draggable: true }).addTo(map);
           
-          // Workaround, um Karten in versteckten Sektionen korrekt zu laden
           setTimeout(() => map.invalidateSize(), 100); 
           
           marker.on('dragend', async (e) => {
@@ -1180,7 +1200,7 @@
               showNotification(`📍 Standort von "${hut.name}" wurde aktualisiert.`);
             } catch (err) {
               showNotification(`❌ Fehler beim Speichern des Standorts: ${err.message}`);
-              marker.setLatLng([hut.location.latitude, hut.location.longitude]); // Zurücksetzen
+              marker.setLatLng([hut.location.latitude, hut.location.longitude]);
             }
           });
         }
@@ -1196,7 +1216,6 @@
 
   // === Interaktive Elemente (Tiere, Tags) ===
   
-  // Event-Delegation für Tier-Buttons
   document.addEventListener('click', async (e) => {
     const btn = e.target.closest('.admin-tiere-btn');
     if (!btn) return;
@@ -1205,7 +1224,6 @@
     const emoji = btn.dataset.emoji;
     if (!hutId || !emoji) return;
 
-    // Optimistische UI: sofort sichtbar toggeln
     const willSelect = !btn.classList.contains('bg-yellow-200');
     btn.classList.toggle('bg-yellow-200', willSelect);
     btn.classList.toggle('bg-slate-100', !willSelect);
@@ -1214,7 +1232,6 @@
       await toggleTier(hutId, emoji);
     } catch (err) {
       console.error('toggleTier Fehler:', err);
-      // rollback UI bei Fehler
       btn.classList.toggle('bg-yellow-200', !willSelect);
       btn.classList.toggle('bg-slate-100', willSelect === false);
       showNotification('❌ Fehler beim Speichern der Tier-Auswahl');
@@ -1225,7 +1242,6 @@
     const ref = db.collection('eierhuetten').doc(hutId);
     let newArray = [];
     
-    // Atomisch mit transaction aktualisieren
     await db.runTransaction(async tx => {
       const doc = await tx.get(ref);
       if (!doc.exists) throw new Error('Hütte nicht gefunden');
@@ -1235,14 +1251,12 @@
 
       const idx = tiere.indexOf(emoji);
       if (idx >= 0) {
-        tiere.splice(idx, 1); // Abwählen
+        tiere.splice(idx, 1); 
       } else {
-        // falls "❌ / Keine Tiere" vorhanden → entfernen
         tiere = tiere.filter(t => t !== '❌');
-        tiere.push(emoji); // Hinzufügen
+        tiere.push(emoji);
       }
       
-      // Wenn "Keine Tiere" (❌) ausgewählt wird, alle anderen löschen
       if (emoji === '❌' && idx < 0) {
           tiere = ['❌'];
       }
@@ -1251,23 +1265,19 @@
       tx.update(ref, { tiere });
     });
 
-    // Log nach der erfolgreichen transaction
     try {
       await db.collection('eierhuetten').doc(hutId).collection('log').add({
         admin: currentUser.displayName || currentUser.email,
-        feld: 'tiere',
-        wert: newArray.join(', '),
-        zeitpunkt: new Date()
+        feld: 'tiere', wert: newArray.join(', '), zeitpunkt: new Date()
       });
     } catch (e) {
       console.warn('Log konnte nicht geschrieben werden', e);
     }
-
     showNotification(`🐾 Tiere aktualisiert`);
-    // loadHuts(); // Wird durch onSnapshot-Listener erledigt
+    // onSnapshot erledigt den Re-Render
   }
 
-  async function addTag(hutId, tag) {
+  window.addTag = async function(hutId, tag) {
     tag = tag.trim();
     if (!tag) return;
     const docRef = db.collection('eierhuetten').doc(hutId);
@@ -1276,20 +1286,20 @@
           tags: firebase.firestore.FieldValue.arrayUnion(tag)
       });
       showNotification(`#${tag} hinzugefügt ✅`);
-      // loadHuts(); // Wird durch onSnapshot-Listener erledigt
+      // onSnapshot erledigt den Re-Render
     } catch (e) {
       showNotification(`❌ Fehler beim Hinzufügen von Tag: ${e.message}`);
     }
   }
 
-  async function removeTag(hutId, tag) {
+  window.removeTag = async function(hutId, tag) {
     const docRef = db.collection('eierhuetten').doc(hutId);
     try {
       await docRef.update({
           tags: firebase.firestore.FieldValue.arrayRemove(tag)
       });
       showNotification(`#${tag} entfernt ❌`);
-      // loadHuts(); // Wird durch onSnapshot-Listener erledigt
+      // onSnapshot erledigt den Re-Render
     } catch (e) {
       showNotification(`❌ Fehler beim Entfernen von Tag: ${e.message}`);
     }
@@ -1297,10 +1307,6 @@
 
   // === Paginierung, Suche & Filterung ===
   
-  let filteredHuts = [];
-  let currentPage = 1;
-  const hutsPerPage = 15;
-
   function renderPage(page) {
     if (page) currentPage = page;
     const start = (currentPage - 1) * hutsPerPage;
@@ -1327,14 +1333,10 @@
       return btn;
     };
     
-    // "Zurück"-Button
     if (currentPage > 1) {
       paginationContainer.appendChild(createPageBtn('«', currentPage - 1));
     }
-    
-    // Seiten-Buttons
     for (let i = 1; i <= totalPages; i++) {
-      // Logik, um nur relevante Seiten anzuzeigen (optional, aber gut für viele Seiten)
       if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
         paginationContainer.appendChild(createPageBtn(i, i));
       } else if (i === currentPage - 3 || i === currentPage + 3) {
@@ -1344,8 +1346,6 @@
         paginationContainer.appendChild(dots);
       }
     }
-    
-    // "Vor"-Button
     if (currentPage < totalPages) {
       paginationContainer.appendChild(createPageBtn('»', currentPage + 1));
     }
@@ -1355,7 +1355,6 @@
     const search = document.getElementById("search-input")?.value.toLowerCase() || "";
     const sortBy = document.getElementById("sortSelect")?.value || "name";
 
-    // Filtern
     if (search) {
       filteredHuts = allHuts.filter(hut => {
         const name   = hut.name?.toLowerCase() || "";
@@ -1370,10 +1369,9 @@
         );
       });
     } else {
-      filteredHuts = [...allHuts]; // Kopie aller Hütten
+      filteredHuts = [...allHuts];
     }
 
-    // Sortieren
     filteredHuts.sort((a, b) => {
       if (sortBy === "name") {
         return (a.name || "").localeCompare(b.name || "");
@@ -1381,20 +1379,52 @@
       if (sortBy === "createdAt") {
         const timeA = a.erstelltAm?.toMillis?.() || 0;
         const timeB = b.erstelltAm?.toMillis?.() || 0;
-        return timeB - timeA; // Neueste zuerst
+        return timeB - timeA;
       }
       return 0;
     });
 
-    // Neu rendern
-    renderPage(1); // Immer auf Seite 1 starten
-    
-    // renderStats(allHuts); // Statistiken sollten immer *alle* Hütten zeigen
+    renderPage(1); 
+  }
+  
+  // === Foto-Management (deleteFoto) ===
+  window.deleteFoto = async function(hutId, index) {
+    if (!confirm('Foto wirklich löschen?')) return;
+
+    try {
+      const ref = db.collection('eierhuetten').doc(hutId);
+      const snap = await ref.get();
+      if (!snap.exists) return showNotification("Hütte nicht gefunden.");
+      
+      const fotos = Array.isArray(snap.data().fotos) ? [...snap.data().fotos] : [];
+      const f = fotos[index];
+      if (!f) return showNotification("Foto nicht gefunden.");
+
+      const url = typeof f === 'string' ? f : f.url;
+      const deleteUrl = typeof f === 'object' ? f.delete_url : null;
+
+      fotos.splice(index, 1);
+      await ref.update({ fotos });
+
+      await ref.collection('log').add({
+        admin: currentUser.displayName || currentUser.email,
+        feld: 'fotos', wert: `Foto gelöscht: ${url}`, zeitpunkt: new Date()
+      });
+
+      if (deleteUrl) {
+        try { await fetch(deleteUrl); } catch (e) { console.warn('imgbb delete fehlgeschlagen', e); }
+      }
+
+      showNotification('Foto wurde gelöscht.');
+      // onSnapshot erledigt den Re-Render
+    } catch (e) {
+      alert('Fehler beim Löschen des Fotos: ' + e.message);
+    }
   }
 
   // === Hütten löschen (mit Abo-Check) ===
 
-  async function deleteHut(id) {
+  window.deleteHut = async function(id) {
     if (!confirm('Möchtest du diese Hütte wirklich löschen? Dies kann nicht rückgängig gemacht werden.')) return;
     
     try {
@@ -1443,7 +1473,7 @@
       // Schritt 3: Hütte aus Firestore löschen
       await db.collection('eierhuetten').doc(id).delete();
       showNotification('🗑️ Hütte endgültig gelöscht.', 'bot');
-      // loadHuts(); // Wird durch onSnapshot-Listener erledigt
+      // onSnapshot erledigt den Re-Render
       
     } catch (err) {
       console.error('❌ Fehler beim Löschen der Hütte:', err.message || err);
@@ -1454,7 +1484,9 @@
   // === Live-Updates für Dashboard ===
 
   function initLivePendingFotos() {
-    db.collection('eierhuetten').onSnapshot(snapshot => {
+    db.collection('eierhuetten')
+      .where('fotos', '!=', []) // Grober Filter
+      .onSnapshot(snapshot => {
       const pending = [];
       snapshot.forEach(doc => {
         const data = doc.data();
@@ -1464,7 +1496,6 @@
         }
       });
       renderPendingFotos(pending);
-      // showNotification('🔄 Live-Update: Wartende Fotos wurden aktualisiert.');
     }, err => console.error("❌ Fehler Live-Update wartende Fotos:", err));
   }
 
@@ -1477,7 +1508,6 @@
       return;
     }
     
-    // Filtern nach Hütten, die tatsächlich wartende Fotos haben
     const huettenMitPending = list.filter(h =>
       Array.isArray(h.fotos) && h.fotos.some(f => f && typeof f === 'object' && f.status === 'wartet')
     );
@@ -1488,15 +1518,13 @@
     
     huettenMitPending.forEach(hut => {
       const wartende = (hut.fotos || [])
-        .map((f, i) => ({ f, i })) // Objekt mit Foto und originalem Index
+        .map((f, i) => ({ f, i }))
         .filter(item => item.f && typeof item.f === 'object' && item.f.status === 'wartet');
-      
       if (wartende.length === 0) return;
 
       const card = document.createElement('div');
       card.className = "bg-white border p-3 rounded-lg mb-4 shadow-sm";
       
-      // Header mit Checkbox und "Gehe zu"-Button
       const header = document.createElement('div');
       header.className = "flex justify-between items-center mb-2";
       const label = document.createElement('label');
@@ -1521,7 +1549,6 @@
       header.appendChild(btn);
       card.appendChild(header);
 
-      // Galerie der wartenden Fotos
       const gallery = document.createElement('div');
       gallery.className = "flex flex-wrap gap-2";
       wartende.forEach(item => {
@@ -1534,8 +1561,8 @@
         img.onclick = async () => {
           img.style.opacity = '0.6';
           try {
-            await approveSingleFoto(hut.id, item.i); // Wichtig: item.i ist der originale Index
-            wrapper.remove(); // Foto aus der Übersicht entfernen
+            await approveSingleFoto(hut.id, item.i);
+            wrapper.remove(); 
           } catch (e) {
             console.error(e);
             showNotification('❌ Fehler beim Freigeben des Fotos.');
@@ -1549,7 +1576,6 @@
       container.appendChild(card);
     });
 
-    // Massenfreigabe-Button
     const massBtn = document.createElement('button');
     massBtn.textContent = "✅ Ausgewählte Hütten freigeben";
     massBtn.className = "mt-4 bg-green-600 text-white px-4 py-2 rounded-lg";
@@ -1567,7 +1593,6 @@
   }
   
   async function approveAllFotosForHut(hutId) {
-      // Diese Funktion muss alle 'wartet'-Indizes finden und sie nacheinander freigeben
       try {
         const ref = db.collection('eierhuetten').doc(hutId);
         const snap = await ref.get();
@@ -1601,7 +1626,7 @@
       }
   }
 
-  function scrollToHut(hutId) {
+  window.scrollToHut = function(hutId) {
     showSection('huts');
     setTimeout(() => {
       const target = document.getElementById(`hut-${hutId}`);
@@ -1622,10 +1647,8 @@
         const neue = [];
         snapshot.forEach(doc => neue.push({ id: doc.id, ...doc.data() }));
         renderNewEntries(neue);
-        // showNotification('🔄 Live-Update: Neue Eintragungen wurden aktuallisiert.');
-        // Statistiken aktualisieren
-        const source = filteredHuts.length > 0 || searchInput.value.trim() ? filteredHuts : allHuts;
-        renderStats(source.length > 0 ? source : allHuts);
+        // Statistiken auch hier aktualisieren
+        renderStats(allHuts);
       }, err => console.error("❌ Fehler Live-Update neue Hütten:", err));
   }
 
@@ -1665,80 +1688,80 @@
   
   // === Support-Ticket-Logik ===
   
-  // 🤖 NEU: Globale Variablen für AI-Funktion
   window.currentReplyTicketId = null;
   window.currentReplyEmail = null;
 
   async function ladeSupportTickets() {
-    const snapshot = await db.collection('support').orderBy('createdAt', 'desc').limit(50).get();
-    const body = document.getElementById('support-tickets-body');
-    body.innerHTML = '';
-    
-    if (snapshot.empty) {
-        body.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500 italic">Keine Support-Tickets gefunden.</td></tr>';
-        return;
-    }
-    
-    snapshot.forEach(doc => {
-      const ticket = doc.data();
-      const id = doc.id;
-      const datum = ticket.createdAt?.toDate().toLocaleString('de-DE') || '-';
-      const email = ticket.mail || '-';
-      const status = ticket.status || 'offen';
+    try {
+      const snapshot = await db.collection('support').orderBy('createdAt', 'desc').limit(50).get();
+      const body = document.getElementById('support-tickets-body');
+      body.innerHTML = '';
       
-      // 🤖 NEU: AI-Tags rendern
-      let aiTagsHTML = '';
-      if (Array.isArray(ticket.aiTags) && ticket.aiTags.length > 0) {
-        aiTagsHTML = ticket.aiTags.map(tag => 
-          `<span class="px-2 py-1 bg-ai text-white rounded-full text-xs font-medium">${tag}</span>`
-        ).join(' ');
-      } else if (status === 'offen') {
-        // 🤖 NEU: Button zum Taggen anzeigen, wenn noch keine Tags vorhanden
-        aiTagsHTML = `<button onclick="geminiTagTicket(this, '${id}')" 
-                              class="bg-slate-200 text-slate-700 text-xs px-2 py-1 rounded-lg hover:bg-slate-300">
-                        🤖 Taggen
-                      </button>`;
+      if (snapshot.empty) {
+          body.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500 italic">Keine Support-Tickets gefunden.</td></tr>';
+          return;
       }
+      
+      snapshot.forEach(doc => {
+        const ticket = doc.data();
+        const id = doc.id;
+        const datum = ticket.createdAt?.toDate().toLocaleString('de-DE') || '-';
+        const email = ticket.mail || '-';
+        const status = ticket.status || 'offen';
+        
+        let aiTagsHTML = '';
+        if (Array.isArray(ticket.aiTags) && ticket.aiTags.length > 0) {
+          aiTagsHTML = ticket.aiTags.map(tag => 
+            `<span class="px-2 py-1 bg-ai text-white rounded-full text-xs font-medium">${tag}</span>`
+          ).join(' ');
+        } else if (status === 'offen') {
+          aiTagsHTML = `<button onclick="geminiTagTicket(this, '${id}')" 
+                                class="bg-slate-200 text-slate-700 text-xs px-2 py-1 rounded-lg hover:bg-slate-300">
+                          🤖 Taggen
+                        </button>`;
+        }
 
-      const row = document.createElement('tr');
-      row.className = "align-top hover:bg-slate-50";
-      // 🤖 NEU: ID zur Zeile hinzugefügt, damit AI-Tag-Funktion sie finden kann
-      row.id = `ticket-row-${id}`; 
-      row.innerHTML = `
-        <td class="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">${datum}</td>
-        <td class="px-4 py-3 text-xs">
-          ${email}<br><span class="text-[10px] text-slate-400">ID: ${id}</span>
-        </td>
-        <td class="px-4 py-3 text-xs">
-          <div id="msgs-${id}" class="space-y-1 max-w-xs">⏳ Lade Nachrichten…</div>
-        </td>
-        <td class="px-4 py-3">
-          <div id="ai-tags-${id}" class="flex flex-col gap-1 items-start">
-            ${aiTagsHTML}
-          </div>
-        </td>
-        <td class="px-4 py-3">
-          <select onchange="updateSupportStatus('${id}', this.value)" class="border rounded-lg px-2 py-1 text-xs">
-            ${['offen', 'bearbeitet', 'geschlossen', 'archiviert'].map(opt => `
-              <option value="${opt}" ${opt === status ? 'selected' : ''}>${opt}</option>
-            `).join('')}
-          </select>
-        </td>
-        <td class="px-4 py-3 space-x-1 whitespace-nowrap">
-          <button onclick="openReplyModal('${id}','${email}')" class="bg-primary text-white text-xs px-2 py-1 rounded-md">Antworten</button>
-          <button onclick="loescheSupportTicket('${id}')" class="bg-red-600 text-white text-xs px-2 py-1 rounded-md">Löschen</button>
-        </td>
-      `;
-      body.appendChild(row);
-      ladeSupportNachrichten(id);
-    });
+        const row = document.createElement('tr');
+        row.className = "align-top hover:bg-slate-50";
+        row.id = `ticket-row-${id}`; 
+        row.innerHTML = `
+          <td class="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">${datum}</td>
+          <td class="px-4 py-3 text-xs">
+            ${email}<br><span class="text-[10px] text-slate-400">ID: ${id}</span>
+          </td>
+          <td class="px-4 py-3 text-xs">
+            <div id="msgs-${id}" class="space-y-1 max-w-xs">⏳ Lade Nachrichten…</div>
+          </td>
+          <td class="px-4 py-3">
+            <div id="ai-tags-${id}" class="flex flex-col gap-1 items-start">
+              ${aiTagsHTML}
+            </div>
+          </td>
+          <td class="px-4 py-3">
+            <select onchange="updateSupportStatus('${id}', this.value)" class="border rounded-lg px-2 py-1 text-xs">
+              ${['offen', 'bearbeitet', 'geschlossen', 'archiviert'].map(opt => `
+                <option value="${opt}" ${opt === status ? 'selected' : ''}>${opt}</option>
+              `).join('')}
+            </select>
+          </td>
+          <td class="px-4 py-3 space-x-1 whitespace-nowrap">
+            <button onclick="openReplyModal('${id}','${email}')" class="bg-primary text-white text-xs px-2 py-1 rounded-md">Antworten</button>
+            <button onclick="loescheSupportTicket('${id}')" class="bg-red-600 text-white text-xs px-2 py-1 rounded-md">Löschen</button>
+          </td>
+        `;
+        body.appendChild(row);
+        ladeSupportNachrichten(id);
+      });
+    } catch(e) {
+        console.error("Fehler beim Laden der Support-Tickets:", e);
+        showNotification("❌ Fehler beim Laden der Tickets.");
+    }
   }
 
   function ladeSupportNachrichten(ticketId) {
     const wrap = document.getElementById("msgs-" + ticketId);
     if (!wrap) return;
 
-    // Lade Nachrichten (kein Live-Snapshot, um Lesevorgänge zu sparen)
     db.collection("support").doc(ticketId).collection("messages")
       .orderBy("createdAt", "asc")
       .get()
@@ -1772,8 +1795,7 @@
       });
   }
 
-  function openReplyModal(ticketId, email) {
-    // 🤖 NEU: Globale Variablen für AI-Funktion setzen
+  window.openReplyModal = function(ticketId, email) {
     window.currentReplyTicketId = ticketId;
     window.currentReplyEmail = email;
     
@@ -1784,15 +1806,14 @@
     document.getElementById("support-reply-modal").classList.add("flex");
   }
 
-  function closeReplyModal() {
+  window.closeReplyModal = function() {
     document.getElementById("support-reply-modal").classList.add("hidden");
     document.getElementById("support-reply-modal").classList.remove("flex");
-    // 🤖 NEU: Globale Variablen zurücksetzen
     window.currentReplyTicketId = null;
     window.currentReplyEmail = null;
   }
 
-  async function sendReply() {
+  window.sendReply = async function() {
     const text = document.getElementById("modal-reply-text").value.trim();
     if (!text || !window.currentReplyTicketId) return;
 
@@ -1803,23 +1824,22 @@
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
       await db.collection("support").doc(window.currentReplyTicketId).update({
-        status: "geschlossen" // Antwort schließt Ticket automatisch
+        status: "geschlossen" 
       });
 
       showNotification("✅ Antwort gesendet & Ticket geschlossen");
       closeReplyModal();
-      ladeSupportTickets(); // Tabelle neu laden
+      ladeSupportTickets(); 
     } catch (err) {
       console.error("sendReply error", err);
       alert("Fehler: " + err.message);
     }
   }
 
-  async function updateSupportStatus(id, neuerStatus) {
+  window.updateSupportStatus = async function(id, neuerStatus) {
     try {
       await db.collection('support').doc(id).update({ status: neuerStatus });
       showNotification('✅ Status aktualisiert');
-      // Wenn Status auf 'offen' zurückgesetzt wird, Tags neu prüfen
       if(neuerStatus === 'offen') {
           ladeSupportTickets();
       }
@@ -1828,12 +1848,11 @@
     }
   }
 
-  async function loescheSupportTicket(id) {
+  window.loescheSupportTicket = async function(id) {
     if (!confirm('Dieses Support-Ticket und alle Nachrichten darin wirklich löschen?')) return;
     try {
-      // Hinweis: Sub-Collections werden nicht automatisch gelöscht.
-      // Für eine saubere Löschung wäre eine Cloud Function nötig.
-      // Hier löschen wir nur das Hauptdokument.
+      // Dies löscht nur das Hauptdokument, nicht die Sub-Collection!
+      // Eine saubere Löschung erfordert eine Cloud Function.
       await db.collection('support').doc(id).delete();
       showNotification('🗑️ Ticket gelöscht');
       ladeSupportTickets();
@@ -1842,7 +1861,6 @@
     }
   }
 
-  // Counter im Modal aktualisieren
   document.getElementById("modal-reply-text").addEventListener("input", e => {
     const left = 500 - e.target.value.length;
     document.getElementById("modal-reply-counter").innerText = `${left} Zeichen übrig`;
@@ -1853,7 +1871,7 @@
   
   let currentProfileId = null;
   
-  async function loadProfileAdmin(id) {
+  window.loadProfileAdmin = async function(id) {
     const queryId = id || document.getElementById("profile-selected-id").value;
     let snap;
     
@@ -1864,13 +1882,11 @@
         const queryName = document.getElementById("profile-search").value.trim();
         if (!queryName) return alert("Bitte ID oder Name eingeben.");
         
-        // Versuche zuerst, nach Name zu suchen
         const q = await db.collection("profiles").where("name","==",queryName).limit(1).get();
         if (!q.empty) {
             snap = q.docs[0];
             currentProfileId = snap.id;
         } else {
-            // Wenn Name nicht klappt, versuche als ID
             try {
                 snap = await db.collection("profiles").doc(queryName).get();
                 currentProfileId = snap.id;
@@ -1894,7 +1910,6 @@
     document.getElementById("profile-stats").textContent =
       `Fahrten: ${data.rides || 0} | Km: ${data.km || 0} | Letzter Login: ${data.lastLogin?.toDate()?.toLocaleString('de-DE') || "–"}`;
     
-    // Titel laden
     const titleSel = document.getElementById("profile-title-admin");
     titleSel.innerHTML = "<option value=''>Kein Titel</option>";
     const titleSnap = await db.collection("titles").get();
@@ -1907,7 +1922,6 @@
     });
     titleSel.value = data.title || "";
     
-    // Abzeichen laden
     const badgeContainer = document.getElementById("profile-badges-admin");
     badgeContainer.innerHTML = "";
     const badgeSnap = await db.collection("badgesDefs").get();
@@ -1931,7 +1945,7 @@
     });
   }
 
-  async function saveProfileAdmin() {
+  window.saveProfileAdmin = async function() {
     if (!currentProfileId) return;
     const badges = [...document.querySelectorAll("#profile-badges-admin input:checked")].map(i => i.value);
     
@@ -1951,7 +1965,7 @@
     }
   }
 
-  async function deleteProfileAdmin() {
+  window.deleteProfileAdmin = async function() {
     if (!currentProfileId) return;
     if (!confirm(`Soll dieses Profil (${currentProfileId}) wirklich gelöscht werden? Dies löscht nicht den Firebase-Auth-User!`)) return;
     try {
@@ -1965,13 +1979,11 @@
     }
   }
 
-  function openProfileLink() {
+  window.openProfileLink = function() {
     if (!currentProfileId) return;
-    // Passe 'eierhuettentour.web.app' an deine echte URL an
     window.open(`https://eierhuettentour.web.app/profile.html?id=${currentProfileId}`, "_blank");
   }
 
-  // Live-Suche für Profile
   document.getElementById('profile-search').addEventListener('input', async e => {
     const q = e.target.value.trim();
     const box = document.getElementById('profile-suggestions');
@@ -1981,7 +1993,6 @@
       return; 
     }
     
-    // Suche nach Namen
     const snap = await db.collection('profiles')
       .where('name', '>=', q)
       .where('name', '<=', q + '\uf8ff')
@@ -1991,7 +2002,6 @@
       ? "<p class='p-2 text-slate-500 italic'>Keine Treffer</p>"
       : snap.docs.map(d => {
           const name = d.data().name;
-          // Ersetze Anführungszeichen im Namen, um HTML-Fehler zu vermeiden
           const safeName = name.replace(/'/g, "&apos;").replace(/"/g, "&quot;");
           return `
             <div class="p-2 hover:bg-slate-100 cursor-pointer"
@@ -2002,24 +2012,22 @@
     box.classList.remove('hidden');
   });
   
-  // Wird von der Live-Suche aufgerufen
   window.selectProfile = (id, name) => {
     document.getElementById('profile-search').value = name;
     document.getElementById('profile-selected-id').value = id;
     document.getElementById('profile-suggestions').classList.add('hidden');
-    loadProfileAdmin(id); // Lade das ausgewählte Profil
+    loadProfileAdmin(id); 
   };
   
-  // Lade Profil, wenn Enter gedrückt wird (falls keine Auswahl getroffen)
   document.getElementById('profile-search').addEventListener('keydown', e => {
       if(e.key === 'Enter') {
           document.getElementById('profile-suggestions').classList.add('hidden');
-          loadProfileAdmin(); // Lade, was in der Box steht (ID oder Name)
+          loadProfileAdmin(); 
       }
   });
 
 
-  // === Titel & Abzeichen Sektionen ===
+  // === Titel & Abzeichen Sektionen (Self-Contained Module) ===
   (async () => {
     // --- Titel Verwaltung ---
     const titleList = document.getElementById("title-list");
@@ -2031,20 +2039,26 @@
 
     async function loadTitles() {
       if (!titleList) return;
-      const snap = await db.collection("titles").get();
-      titleList.innerHTML = "";
-      snap.forEach(doc => {
-        const t = doc.data();
-        const row = document.createElement("div");
-        row.className = "p-2 border rounded-lg flex justify-between items-center";
-        row.innerHTML = `
-          <span><strong>${t.name}</strong> — Regel: ${t.conditionType} ≥ ${t.conditionValue}</span>
-          <div class="space-x-2">
-            <button type="button" class="px-2 py-1 bg-blue-600 text-white rounded-lg" onclick="editTitle('${doc.id}')">✏️</button>
-            <button type="button" class="px-2 py-1 bg-red-600 text-white rounded-lg" onclick="deleteTitle('${doc.id}')">🗑️</button>
-          </div>`;
-        titleList.appendChild(row);
-      });
+      try {
+        const snap = await db.collection("titles").get();
+        titleList.innerHTML = "";
+        if (snap.empty) {
+            titleList.innerHTML = "<p class='italic text-slate-500'>Noch keine Titel erstellt.</p>";
+            return;
+        }
+        snap.forEach(doc => {
+          const t = doc.data();
+          const row = document.createElement("div");
+          row.className = "p-2 border rounded-lg flex justify-between items-center";
+          row.innerHTML = `
+            <span><strong>${t.name}</strong> — Regel: ${t.conditionType} ≥ ${t.conditionValue}</span>
+            <div class="space-x-2">
+              <button type="button" class="px-2 py-1 bg-blue-600 text-white rounded-lg" onclick="editTitle('${doc.id}')">✏️</button>
+              <button type="button" class="px-2 py-1 bg-red-600 text-white rounded-lg" onclick="deleteTitle('${doc.id}')">🗑️</button>
+            </div>`;
+          titleList.appendChild(row);
+        });
+      } catch(e) { console.error("Fehler beim Laden der Titel:", e); }
     }
 
     window.editTitle = async function(id) {
@@ -2093,22 +2107,28 @@
 
     async function loadBadges() {
       if (!badgeList) return;
-      const snap = await db.collection("badgesDefs").get();
-      badgeList.innerHTML = "";
-      snap.forEach(doc => {
-        const b = doc.data();
-        const displayIcon = b.iconUrl
-          ? `<img src="${b.iconUrl}" class="w-6 h-6 inline-block rounded" />`
-          : (b.icon || "🏅");
-        badgeList.innerHTML += `
-          <div class="p-2 border rounded-lg flex justify-between items-center">
-            <span>${displayIcon} <strong>${b.name}</strong> — Regel: ${b.conditionType} ≥ ${b.conditionValue}</span>
-            <div class="space-x-2">
-              <button type="button" onclick="editBadge('${doc.id}')" class="px-2 py-1 bg-blue-600 text-white rounded-lg">✏️</button>
-              <button type="button" onclick="deleteBadge('${doc.id}')" class="px-2 py-1 bg-red-600 text-white rounded-lg">🗑️</button>
-            </div>
-          </div>`;
-      });
+      try {
+        const snap = await db.collection("badgesDefs").get();
+        badgeList.innerHTML = "";
+        if (snap.empty) {
+            badgeList.innerHTML = "<p class='italic text-slate-500'>Noch keine Abzeichen erstellt.</p>";
+            return;
+        }
+        snap.forEach(doc => {
+          const b = doc.data();
+          const displayIcon = b.iconUrl
+            ? `<img src="${b.iconUrl}" class="w-6 h-6 inline-block rounded" />`
+            : (b.icon || "🏅");
+          badgeList.innerHTML += `
+            <div class="p-2 border rounded-lg flex justify-between items-center">
+              <span>${displayIcon} <strong>${b.name}</strong> — Regel: ${b.conditionType} ≥ ${b.conditionValue}</span>
+              <div class="space-x-2">
+                <button type="button" onclick="editBadge('${doc.id}')" class="px-2 py-1 bg-blue-600 text-white rounded-lg">✏️</button>
+                <button type="button" onclick="deleteBadge('${doc.id}')" class="px-2 py-1 bg-red-600 text-white rounded-lg">🗑️</button>
+              </div>
+            </div>`;
+        });
+      } catch(e) { console.error("Fehler beim Laden der Abzeichen:", e); }
     }
 
     window.editBadge = async function(id) {
@@ -2144,7 +2164,7 @@
           } catch (err) {
             console.error(err);
             alert("❌ Fehler beim ImgBB-Upload");
-            return; // Abbrechen bei Upload-Fehler
+            return;
           }
         }
         
@@ -2190,14 +2210,16 @@
       });
     }
     
-    // Initiales Laden beim Start
-    document.addEventListener("DOMContentLoaded", () => {
-        loadTitles();
-        loadBadges();
+    // Initiales Laden beim Start (innerhalb des Auth-Checks)
+    auth.onAuthStateChanged(user => {
+        if(user) {
+            loadTitles();
+            loadBadges();
+        }
     });
   })();
   
 </script>
 
 </body>
-          </html>
+</html>
