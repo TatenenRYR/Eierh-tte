@@ -10,31 +10,30 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-functions-compat.js"></script>
   
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.tailwindcss.com"></script>
   
   <style>
-    /* General styles for UI elements */
+    /* Allgemeine Stile für UI-Elemente */
     .nav-btn { @apply text-left px-3 py-2 rounded hover:bg-green-50 transition w-full; }
     .nav-btn.active { @apply bg-green-100 text-green-800 font-semibold; }
     .section-title { @apply text-2xl font-bold mb-4 border-b pb-2; }
     .dash-section { @apply space-y-4; }
+    .minimap { height: 200px; width: 100%; border-radius: 0.5rem; margin-top: 0.5rem; z-index: 0; }
     
-    /* Notification pop-up for user feedback */
+    /* Benachrichtigungs-Pop-up für Nutzerfeedback */
     #notification {
-      position: fixed; top: 1rem; right: 1rem;
-      color: white; padding: 1rem; border-radius: 0.5rem;
-      z-index: 9999; max-width: 300px;
-      transform: translateX(120%);
-      opacity: 0;
-      transition: all 0.3s ease-in-out;
-      visibility: hidden;
+      position: fixed; top: 1rem; right: 1rem; color: white; padding: 1rem; border-radius: 0.5rem;
+      z-index: 9999; max-width: 300px; transform: translateX(120%); opacity: 0;
+      transition: all 0.3s ease-in-out; visibility: hidden;
     }
     #notification.show { transform: translateX(0); opacity: 1; visibility: visible; }
     #notification.info { background-color: #3b82f6; }
     #notification.success { background-color: #10b981; }
     #notification.error { background-color: #ef4444; }
 
-    /* Loading spinner for background tasks */
+    /* Lade-Spinner für Hintergrundaufgaben */
     .spinner-overlay {
       position: fixed; inset: 0; background-color: rgba(255, 255, 255, 0.8);
       display: flex; justify-content: center; align-items: center; z-index: 10000;
@@ -42,10 +41,8 @@
     }
     .spinner-overlay.show { opacity: 1; visibility: visible; }
     .spinner {
-      border: 4px solid rgba(0, 0, 0, 0.1);
-      width: 36px; height: 36px; border-radius: 50%;
-      border-left-color: #09f;
-      animation: spin 1s ease infinite;
+      border: 4px solid rgba(0, 0, 0, 0.1); width: 36px; height: 36px; border-radius: 50%;
+      border-left-color: #09f; animation: spin 1s ease infinite;
     }
     @keyframes spin { 100% { transform: rotate(360deg); } }
   </style>
@@ -64,7 +61,11 @@
 
   <div id="dashboard" class="hidden min-h-screen md:flex">
     
-    <aside id="sidebar" class="w-64 bg-white shadow-md flex-shrink-0">
+    <button id="menu-toggle" class="md:hidden p-2 text-gray-700 border rounded fixed top-2 left-2 z-20 bg-white">
+      ☰ Menü
+    </button>
+
+    <aside id="sidebar" class="w-64 bg-white shadow-md flex-shrink-0 fixed md:relative inset-y-0 left-0 transform -translate-x-full md:translate-x-0 transition-transform duration-300 z-10">
       <div class="p-4 border-b flex justify-between items-center">
         <h1 class="text-xl font-bold text-green-700">🏘️ Hütten Admin</h1>
         <button id="logout-btn" title="Logout" class="text-red-500 hover:text-red-700">
@@ -74,7 +75,11 @@
       <nav id="main-nav" class="p-4 space-y-1">
         <button data-section="overview" class="nav-btn">📊 Übersicht</button>
         <button data-section="huts" class="nav-btn">🏠 Hüttenliste</button>
-        </nav>
+        <button data-section="support" class="nav-btn">📨 Support-Tickets</button>
+        <button data-section="profiles" class="nav-btn">👤 Profile</button>
+        <button data-section="titles" class="nav-btn">👑 Titel</button>
+        <button data-section="badges" class="nav-btn">🏅 Abzeichen</button>
+      </nav>
     </aside>
 
     <main class="flex-1 p-6 space-y-8 overflow-y-auto">
@@ -82,12 +87,22 @@
       <section id="overview" class="dash-section">
         <h2 class="section-title">📊 Übersicht</h2>
         <div id="stats-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"></div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            <div class="bg-white p-4 rounded-lg shadow">
+                <h3 class="font-bold mb-2">🆕 Neueste "Offene" Hütten</h3>
+                <div id="new-huts-list" class="space-y-2"></div>
+            </div>
+            <div class="bg-white p-4 rounded-lg shadow">
+                <h3 class="font-bold mb-2">📷 Fotos zur Freigabe</h3>
+                <div id="pending-photos-list" class="space-y-2"></div>
+            </div>
+        </div>
       </section>
 
       <section id="huts" class="dash-section hidden">
         <h2 class="section-title">🏠 Hüttenliste</h2>
         <div class="flex flex-wrap items-center gap-2 mb-4 bg-white p-3 rounded-lg shadow">
-          <input id="search-input" placeholder="🔍 Suchen..." class="p-2 border rounded flex-grow">
+          <input id="search-input" placeholder="🔍 Suchen..." class="p-2 border rounded flex-grow min-w-[200px]">
           <select id="sort-select" class="p-2 border rounded flex-shrink-0">
             <option value="erstelltAm_desc">🕒 Neueste zuerst</option>
             <option value="name_asc">🔤 Name (A-Z)</option>
@@ -97,17 +112,46 @@
         <div id="pagination-controls" class="mt-4 flex flex-wrap justify-center gap-2"></div>
       </section>
 
-    </main>
+      <section id="support" class="dash-section hidden">
+        <h2 class="section-title">📨 Support-Tickets</h2>
+        <div class="overflow-x-auto bg-white rounded shadow">
+            <table class="min-w-full text-sm">
+                <thead class="bg-blue-100 text-left">
+                    <tr>
+                        <th class="p-2">Datum</th>
+                        <th class="p-2">User</th>
+                        <th class="p-2">Nachricht</th>
+                        <th class="p-2">Status</th>
+                        <th class="p-2">Aktionen</th>
+                    </tr>
+                </thead>
+                <tbody id="support-tickets-body" class="divide-y divide-gray-200"></tbody>
+            </table>
+        </div>
+      </section>
+
+      </main>
   </div>
+  
+  <div id="support-reply-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+      <div class="bg-white p-4 rounded shadow max-w-lg w-full m-4">
+          <h3 class="text-lg font-bold mb-2">Antwort auf Ticket</h3>
+          <textarea id="modal-reply-text" class="w-full border p-2 rounded mb-2" rows="5"></textarea>
+          <div class="flex justify-end gap-2">
+              <button id="modal-cancel-btn" class="px-3 py-1 bg-gray-300 rounded">Abbrechen</button>
+              <button id="modal-send-btn" class="px-3 py-1 bg-green-600 text-white rounded">Antworten</button>
+          </div>
+      </div>
+  </div>
+
 
 <script>
 // ===================================================================================
-//  SMART ADMIN DASHBOARD - REWRITTEN & IMPROVED
+//  SMART ADMIN DASHBOARD - VOLLSTÄNDIGE & MOBILFREUNDLICHE VERSION
 // ===================================================================================
 
 const AdminDashboard = {
-    // --- 1. Configuration & State Management ---
-    // Central place for all settings and application data.
+    // --- 1. Konfiguration & Zustand ---
     config: {
         firebase: {
             apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
@@ -119,92 +163,102 @@ const AdminDashboard = {
         },
         hutsPerPage: 10,
     },
-
     state: {
         currentUser: null,
         huts: [],
         filteredHuts: [],
+        supportTickets: [],
         currentPage: 1,
-        activeListeners: [], // To manage and clean up Firebase listeners.
+        activeListeners: [],
+        currentSupportTicketId: null,
     },
 
-    // --- 2. Application Initialization ---
-    // Sets up the entire application in a structured way.
+    // --- 2. Initialisierung der Anwendung ---
     init() {
-        // Initialize Firebase services
         firebase.initializeApp(this.config.firebase);
         this.services = {
             auth: firebase.auth(),
             db: firebase.firestore(),
         };
+        this.cacheDOMElements();
+        this.bindEventListeners();
+        this.services.auth.onAuthStateChanged(this.handleAuthStateChange.bind(this));
+    },
 
-        // Cache frequently used DOM elements to avoid repeated lookups.
+    cacheDOMElements() {
         this.ui = {
             spinner: document.getElementById('spinner-overlay'),
             notification: document.getElementById('notification'),
             loginSection: document.getElementById('login-section'),
             dashboard: document.getElementById('dashboard'),
+            sidebar: document.getElementById('sidebar'),
             nav: document.getElementById('main-nav'),
             hutList: document.getElementById('hut-list'),
             searchInput: document.getElementById('search-input'),
             sortSelect: document.getElementById('sort-select'),
             statsContainer: document.getElementById('stats-container'),
+            newHutsList: document.getElementById('new-huts-list'),
+            pendingPhotosList: document.getElementById('pending-photos-list'),
+            paginationControls: document.getElementById('pagination-controls'),
+            supportTicketsBody: document.getElementById('support-tickets-body'),
+            supportReplyModal: document.getElementById('support-reply-modal'),
+            modalReplyText: document.getElementById('modal-reply-text'),
         };
-        
-        // Centralize all event listeners for clean code.
-        this.bindEventListeners();
-        
-        // Listen for authentication changes.
-        this.services.auth.onAuthStateChanged(this.handleAuthStateChange.bind(this));
     },
-
+    
     bindEventListeners() {
-        document.getElementById('login-btn').addEventListener('click', () => {
-            this.services.auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
-        });
-
-        document.getElementById('logout-btn').addEventListener('click', () => {
-            this.services.auth.signOut();
-        });
-
-        // Use event delegation for navigation clicks.
+        document.getElementById('login-btn').addEventListener('click', () => this.services.auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()));
+        document.getElementById('logout-btn').addEventListener('click', () => this.services.auth.signOut());
+        document.getElementById('menu-toggle').addEventListener('click', () => this.ui.sidebar.classList.toggle('-translate-x-full'));
+        
         this.ui.nav.addEventListener('click', e => {
             if (e.target.matches('.nav-btn')) {
                 this.showSection(e.target.dataset.section);
+                if (window.innerWidth < 768) { // md breakpoint
+                    this.ui.sidebar.classList.add('-translate-x-full');
+                }
             }
         });
         
-        // Efficiently handle interactions within the dynamic hut list.
         this.ui.hutList.addEventListener('change', e => {
             const { hutId, field } = e.target.dataset;
-            if (hutId && field) {
-                this.updateHutField(hutId, field, e.target.value);
-            }
+            if (hutId && field) this.updateHutField(hutId, field, e.target.value);
         });
 
-        // Debounce search input to avoid excessive database reads.
         let searchTimeout;
         this.ui.searchInput.addEventListener('input', () => {
             clearTimeout(searchTimeout);
             searchTimeout = setTimeout(() => this.applyFiltersAndSort(), 300);
         });
-
         this.ui.sortSelect.addEventListener('change', () => this.applyFiltersAndSort());
+
+        // Event Listener für Support-Modal
+        document.getElementById('modal-cancel-btn').addEventListener('click', () => this.closeSupportModal());
+        document.getElementById('modal-send-btn').addEventListener('click', () => this.sendSupportReply());
+
+        // Event Delegation für die Support-Tabelle
+        this.ui.supportTicketsBody.addEventListener('click', e => {
+            const button = e.target.closest('button');
+            if (!button) return;
+
+            const { action, ticketId } = button.dataset;
+            if (action === 'reply') {
+                this.openSupportModal(ticketId);
+            }
+        });
     },
 
-    // --- 3. Authentication & Authorization ---
-    // Securely handles user login and checks for admin privileges.
+    // --- 3. Authentifizierung & Autorisierung ---
     async handleAuthStateChange(user) {
         this.showSpinner(true);
         if (user) {
             try {
                 const adminDoc = await this.services.db.collection('admins').doc(user.email).get();
-                if (!adminDoc.exists) throw new Error('Access denied. Not an admin.');
+                if (!adminDoc.exists) throw new Error('Zugriff verweigert. Kein Admin.');
                 
                 this.state.currentUser = user;
                 this.ui.loginSection.classList.add('hidden');
-                this.ui.dashboard.classList.remove('hidden', 'md:flex');
-                this.ui.dashboard.classList.add('flex'); // Make sure it's a flex container
+                this.ui.dashboard.classList.remove('hidden');
                 this.startApp();
             } catch (error) {
                 this.showNotification(error.message, 'error');
@@ -219,27 +273,21 @@ const AdminDashboard = {
         this.showSpinner(false);
     },
 
-    // --- 4. Core Application Logic ---
+    // --- 4. Kernlogik der Anwendung ---
     startApp() {
         this.showSection('overview');
         this.setupRealtimeListeners();
     },
 
     setupRealtimeListeners() {
-        this.cleanupListeners(); // Prevent duplicate listeners.
+        this.cleanupListeners();
         
-        // This single listener efficiently keeps all data up-to-date.
-        const hutsListener = this.services.db.collection('eierhuetten')
-            .orderBy('erstelltAm', 'desc')
+        const hutsListener = this.services.db.collection('eierhuetten').orderBy('erstelltAm', 'desc')
             .onSnapshot(snapshot => {
                 this.state.huts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 this.applyFiltersAndSort();
                 this.renderOverview();
-                this.showNotification('Data updated in real-time.', 'info');
-            }, error => {
-                console.error("Firebase listener error:", error);
-                this.showNotification("Error loading real-time data.", 'error');
-            });
+            }, error => console.error("Firebase listener error:", error));
             
         this.state.activeListeners.push(hutsListener);
     },
@@ -249,15 +297,20 @@ const AdminDashboard = {
         this.state.activeListeners = [];
     },
 
-    // --- 5. UI Rendering & Management ---
-    // Intelligently updates the UI without unnecessary re-renders.
+    // --- 5. UI-Rendering & Management ---
     showSection(id) {
         document.querySelectorAll('.dash-section').forEach(sec => sec.classList.add('hidden'));
-        document.getElementById(id)?.classList.remove('hidden');
+        const section = document.getElementById(id);
+        if(section) section.classList.remove('hidden');
 
         this.ui.nav.querySelectorAll('.nav-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.section === id);
         });
+
+        // Lade Daten für die Sektion, falls nötig (Lazy Loading)
+        if (id === 'support' && this.state.supportTickets.length === 0) {
+            this.loadSupportTickets();
+        }
     },
 
     renderOverview() {
@@ -267,34 +320,24 @@ const AdminDashboard = {
             approved: this.state.huts.filter(h => h.status === 'angenommen').length,
             withPower: this.state.huts.filter(h => h.strom === 'Ja').length,
         };
-
         this.ui.statsContainer.innerHTML = `
-            <div class="bg-white p-4 rounded shadow text-center"><p class="text-3xl font-bold">${stats.total}</p><p class="text-gray-500">Total Huts</p></div>
-            <div class="bg-yellow-100 p-4 rounded shadow text-center"><p class="text-3xl font-bold text-yellow-800">${stats.open}</p><p class="text-yellow-600">Open for Review</p></div>
-            <div class="bg-green-100 p-4 rounded shadow text-center"><p class="text-3xl font-bold text-green-800">${stats.approved}</p><p class="text-green-600">Approved</p></div>
-            <div class="bg-blue-100 p-4 rounded shadow text-center"><p class="text-3xl font-bold text-blue-800">${stats.withPower}</p><p class="text-blue-600">With Power</p></div>
+            <div class="bg-white p-4 rounded shadow text-center"><p class="text-3xl font-bold">${stats.total}</p><p class="text-gray-500">Hütten Gesamt</p></div>
+            <div class="bg-yellow-100 p-4 rounded shadow text-center"><p class="text-3xl font-bold text-yellow-800">${stats.open}</p><p class="text-yellow-600">Offen zur Prüfung</p></div>
+            <div class="bg-green-100 p-4 rounded shadow text-center"><p class="text-3xl font-bold text-green-800">${stats.approved}</p><p class="text-green-600">Freigegeben</p></div>
+            <div class="bg-blue-100 p-4 rounded shadow text-center"><p class="text-3xl font-bold text-blue-800">${stats.withPower}</p><p class="text-blue-600">Mit Strom</p></div>
         `;
     },
 
     applyFiltersAndSort() {
         const searchTerm = this.ui.searchInput.value.toLowerCase().trim();
         const [sortBy, sortDir] = this.ui.sortSelect.value.split('_');
-
-        let tempHuts = [...this.state.huts];
-
-        if (searchTerm) {
-            tempHuts = tempHuts.filter(hut => (hut.name || '').toLowerCase().includes(searchTerm));
-        }
-
+        let tempHuts = this.state.huts.filter(hut => !searchTerm || (hut.name || '').toLowerCase().includes(searchTerm));
         tempHuts.sort((a, b) => {
             const valA = a[sortBy] || '';
             const valB = b[sortBy] || '';
-            let comparison = 0;
-            if (valA > valB) comparison = 1;
-            else if (valA < valB) comparison = -1;
+            let comparison = String(valA).localeCompare(String(valB));
             return sortDir === 'desc' ? comparison * -1 : comparison;
         });
-
         this.state.filteredHuts = tempHuts;
         this.renderHutPage(1);
     },
@@ -304,98 +347,135 @@ const AdminDashboard = {
         const start = (page - 1) * this.config.hutsPerPage;
         const end = start + this.config.hutsPerPage;
         const hutsToRender = this.state.filteredHuts.slice(start, end);
-
-        // This is more efficient than innerHTML for large lists.
-        this.ui.hutList.innerHTML = '';
-        if (hutsToRender.length === 0) {
-            this.ui.hutList.innerHTML = `<p class="text-center text-gray-500">No huts found.</p>`;
-        } else {
-            hutsToRender.forEach(hut => {
-                const hutElement = this.createHutElement(hut);
-                this.ui.hutList.appendChild(hutElement);
-            });
-        }
+        this.ui.hutList.innerHTML = hutsToRender.length > 0
+            ? hutsToRender.map(hut => this.createHutElement(hut)).join('')
+            : `<p class="text-center text-gray-500">Keine Hütten gefunden.</p>`;
     },
     
-    // Creates a single hut element, separating logic from presentation.
     createHutElement(hut) {
-        const el = document.createElement('div');
-        el.className = 'bg-white p-4 rounded-lg shadow-md space-y-3';
-        el.id = `hut-${hut.id}`;
-
-        el.innerHTML = `
-            <input class="text-xl font-bold w-full border-b-2 focus:border-blue-500 outline-none" value="${hut.name || ''}" data-hut-id="${hut.id}" data-field="name">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <label class="block">
-                    <span class="text-sm font-medium text-gray-700">Status</span>
-                    <select class="w-full mt-1 border-gray-300 rounded-md shadow-sm" data-hut-id="${hut.id}" data-field="status">
-                        ${['offen', 'angenommen', 'abgelehnt'].map(s => `<option value="${s}" ${s === hut.status ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`).join('')}
-                    </select>
-                </label>
-                 <label class="block">
-                    <span class="text-sm font-medium text-gray-700">Power</span>
-                    <select class="w-full mt-1 border-gray-300 rounded-md shadow-sm" data-hut-id="${hut.id}" data-field="strom">
-                        ${['Ja', 'Nein', 'Unbekannt'].map(s => `<option value="${s}" ${s === hut.strom ? 'selected' : ''}>${s}</option>`).join('')}
-                    </select>
-                </label>
-                 <label class="block">
-                    <span class="text-sm font-medium text-gray-700">Seating</span>
-                    <select class="w-full mt-1 border-gray-300 rounded-md shadow-sm" data-hut-id="${hut.id}" data-field="sitzplaetze">
-                        ${['Ja', 'Nein', 'Unbekannt'].map(s => `<option value="${s}" ${s === hut.sitzplaetze ? 'selected' : ''}>${s}</option>`).join('')}
-                    </select>
-                </label>
+        return `
+            <div class="bg-white p-4 rounded-lg shadow-md space-y-3" id="hut-${hut.id}">
+                <input class="text-xl font-bold w-full border-b-2 focus:border-blue-500 outline-none" value="${hut.name || ''}" data-hut-id="${hut.id}" data-field="name">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <label class="block">
+                        <span class="text-sm font-medium text-gray-700">Status</span>
+                        <select class="w-full mt-1 border-gray-300 rounded-md shadow-sm" data-hut-id="${hut.id}" data-field="status">
+                            ${['offen', 'angenommen', 'abgelehnt'].map(s => `<option value="${s}" ${s === hut.status ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`).join('')}
+                        </select>
+                    </label>
+                    <label class="block">
+                        <span class="text-sm font-medium text-gray-700">Strom</span>
+                        <select class="w-full mt-1 border-gray-300 rounded-md shadow-sm" data-hut-id="${hut.id}" data-field="strom">
+                            ${['Ja', 'Nein', 'Unbekannt'].map(s => `<option value="${s}" ${s === hut.strom ? 'selected' : ''}>${s}</option>`).join('')}
+                        </select>
+                    </label>
+                    <label class="block">
+                        <span class="text-sm font-medium text-gray-700">Sitzplätze</span>
+                        <select class="w-full mt-1 border-gray-300 rounded-md shadow-sm" data-hut-id="${hut.id}" data-field="sitzplaetze">
+                            ${['Ja', 'Nein', 'Unbekannt'].map(s => `<option value="${s}" ${s === hut.sitzplaetze ? 'selected' : ''}>${s}</option>`).join('')}
+                        </select>
+                    </label>
+                </div>
             </div>
         `;
-        return el;
     },
 
-    // --- 6. Data Manipulation (CRUD) ---
-    // Secure and efficient database operations.
-    async updateHutField(hutId, field, value) {
+    // --- 6. Support-Ticket Management ---
+    async loadSupportTickets() {
         this.showSpinner(true);
         try {
-            const hutRef = this.services.db.collection('eierhuetten').doc(hutId);
-            await hutRef.update({ [field]: value });
-            
-            // Log the change for auditing.
-            await hutRef.collection('log').add({
-                admin: this.state.currentUser.email,
-                field: field,
-                value: value,
-                timestamp: firebase.firestore.FieldValue.serverTimestamp()
-            });
-
-            this.showNotification(`Field '${field}' updated successfully.`, 'success');
+            const snapshot = await this.services.db.collection('support').orderBy('createdAt', 'desc').get();
+            this.state.supportTickets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            this.renderSupportTickets();
         } catch (error) {
-            console.error("Error updating field:", error);
-            this.showNotification("Failed to update field.", 'error');
+            this.showNotification('Fehler beim Laden der Support-Tickets.', 'error');
         }
         this.showSpinner(false);
     },
 
-    // --- 7. UI Feedback ---
-    // Provides clear visual feedback to the user.
+    renderSupportTickets() {
+        const body = this.ui.supportTicketsBody;
+        body.innerHTML = '';
+        if (this.state.supportTickets.length === 0) {
+            body.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">Keine Tickets vorhanden.</td></tr>`;
+            return;
+        }
+        this.state.supportTickets.forEach(ticket => {
+            const row = document.createElement('tr');
+            const lastMessage = ticket.messages?.[ticket.messages.length - 1]?.text || '(Keine Nachricht)';
+            row.innerHTML = `
+                <td class="p-2 align-top text-xs">${new Date(ticket.createdAt?.seconds * 1000).toLocaleString('de-DE')}</td>
+                <td class="p-2 align-top">${ticket.mail || 'N/A'}</td>
+                <td class="p-2 align-top">${lastMessage}</td>
+                <td class="p-2 align-top">${ticket.status || 'offen'}</td>
+                <td class="p-2 align-top"><button data-action="reply" data-ticket-id="${ticket.id}" class="bg-blue-500 text-white px-2 py-1 rounded text-xs">Antworten</button></td>
+            `;
+            body.appendChild(row);
+        });
+    },
+
+    openSupportModal(ticketId) {
+        this.state.currentSupportTicketId = ticketId;
+        this.ui.modalReplyText.value = '';
+        this.ui.supportReplyModal.classList.remove('hidden');
+        this.ui.supportReplyModal.classList.add('flex');
+    },
+
+    closeSupportModal() {
+        this.ui.supportReplyModal.classList.add('hidden');
+        this.ui.supportReplyModal.classList.remove('flex');
+        this.state.currentSupportTicketId = null;
+    },
+
+    async sendSupportReply() {
+        const text = this.ui.modalReplyText.value.trim();
+        const ticketId = this.state.currentSupportTicketId;
+        if (!text || !ticketId) return;
+
+        this.showSpinner(true);
+        try {
+            const ticketRef = this.services.db.collection('support').doc(ticketId);
+            await ticketRef.collection('messages').add({
+                text: text,
+                sender: 'Admin',
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            });
+            await ticketRef.update({ status: 'bearbeitet' });
+            this.showNotification('Antwort gesendet.', 'success');
+            this.closeSupportModal();
+            this.loadSupportTickets(); // Reload to show update
+        } catch (error) {
+            this.showNotification('Fehler beim Senden der Antwort.', 'error');
+        }
+        this.showSpinner(false);
+    },
+
+    // --- 7. Datenmanipulation (CRUD) ---
+    async updateHutField(hutId, field, value) {
+        this.showSpinner(true);
+        try {
+            await this.services.db.collection('eierhuetten').doc(hutId).update({ [field]: value });
+            this.showNotification(`Feld '${field}' erfolgreich aktualisiert.`, 'success');
+        } catch (error) {
+            this.showNotification("Update fehlgeschlagen.", 'error');
+        }
+        this.showSpinner(false);
+    },
+
+    // --- 8. UI-Feedback Helfer ---
     showSpinner(visible) {
         this.ui.spinner.classList.toggle('show', visible);
     },
-
-
-
-    showNotification(message, type = 'info') { // types: info, success, error
+    showNotification(message, type = 'info') {
         this.ui.notification.textContent = message;
-        this.ui.notification.className = ``; // Reset classes
+        this.ui.notification.className = ``;
         this.ui.notification.classList.add(type, 'show');
-        setTimeout(() => {
-            this.ui.notification.classList.remove('show');
-        }, 4000);
+        setTimeout(() => this.ui.notification.classList.remove('show'), 4000);
     },
 };
 
-// Start the application once the DOM is ready.
-document.addEventListener('DOMContentLoaded', () => {
-    AdminDashboard.init();
-});
-
+document.addEventListener('DOMContentLoaded', () => AdminDashboard.init());
 </script>
+
 </body>
 </html>
