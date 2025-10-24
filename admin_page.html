@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Hütten Admin-Dashboard</title>
-  
+
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
@@ -15,76 +15,49 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  
+
   <script>
     tailwind.config = {
       theme: {
         extend: {
           colors: {
-            primary: {
-              DEFAULT: '#065f46', // emerald-800
-              light: '#059669', // emerald-600
-              hover: '#047857', // emerald-700
-            },
-            secondary: '#4f46e5', // indigo-600
-            ai: '#7c3aed', // purple-600
+            primary: { DEFAULT: '#065f46', light: '#059669', hover: '#047857' },
+            secondary: '#4f46e5',
+            ai: '#7c3aed',
           },
         },
       },
     }
   </script>
-  
+
   <style>
-    .minimap { height: 200px; width: 100%; border-radius: 0.5rem; margin-top: 0.5rem; }
-    #notification { 
-      position: fixed; top: 1rem; right: 1rem; 
-      background: #38bdf8; color: white; 
-      padding: 1rem; border-radius: 0.5rem; 
-      display: none; z-index: 9999; max-width: 300px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    .minimap { height: 200px; width: 100%; border-radius: 0.5rem; margin-top: 0.5rem; z-index: 1;} /* Ensure map is visible */
+    #notification {
+      position: fixed; top: 1rem; right: 1rem;
+      background: #38bdf8; color: white; padding: 1rem; border-radius: 0.5rem;
+      display: none; z-index: 9999; max-width: 300px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
-    .nav-btn {
-      @apply text-left px-3 py-2 rounded text-slate-700 hover:bg-emerald-50 transition duration-150;
-    }
-    .nav-btn.active {
-      @apply bg-emerald-100 text-emerald-800 font-semibold;
-    }
-    .section-title {
-      @apply text-2xl font-bold mb-4 border-b pb-2 text-slate-800;
-    }
-    .dash-section {
-      @apply space-y-4;
-    }
-    
-    /* Spinner für Lade-Buttons */
+    .nav-btn { @apply text-left px-3 py-2 rounded text-slate-700 hover:bg-emerald-50 transition duration-150; }
+    .nav-btn.active { @apply bg-emerald-100 text-emerald-800 font-semibold; }
+    .section-title { @apply text-2xl font-bold mb-4 border-b pb-2 text-slate-800; }
+    .dash-section { @apply space-y-4; }
     .spinner {
-      border: 2px solid rgba(255,255,255,0.3);
-      border-radius: 50%;
-      border-top: 2px solid #fff;
-      width: 16px; height: 16px;
-      animation: spin 1s linear infinite;
-      display: inline-block;
-      margin-right: 4px;
+      border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 2px solid #fff;
+      width: 16px; height: 16px; animation: spin 1s linear infinite;
+      display: inline-block; margin-right: 4px;
     }
-    @keyframes spin { 
-      0% { transform: rotate(0deg); } 
-      100% { transform: rotate(360deg); } 
-    }
-    
-    /* Stile für das mobile Slide-Out-Menü */
-    #sidebar {
-      transition: transform 0.3s ease-in-out;
-    }
-    #sidebar-overlay {
-      transition: opacity 0.3s ease-in-out;
-    }
-    body.sidebar-open #sidebar {
-      transform: translateX(0);
-    }
-    body.sidebar-open #sidebar-overlay {
-      opacity: 1;
-      pointer-events: auto;
-    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    /* Mobile Slide-Out-Menü Stile */
+    #sidebar { transition: transform 0.3s ease-in-out; }
+    #sidebar-overlay { transition: opacity 0.3s ease-in-out; }
+    body.sidebar-open #sidebar { transform: translateX(0); }
+    body.sidebar-open #sidebar-overlay { opacity: 1; pointer-events: auto; }
+    /* Hütten-Kacheln */
+    .hut-card { @apply bg-white rounded-xl shadow-lg overflow-hidden cursor-pointer transition-transform duration-200 hover:scale-[1.02]; }
+    .hut-card img { @apply w-full h-32 object-cover; }
+    .hut-card-content { @apply p-3; }
+    .hut-card-title { @apply font-bold text-lg text-primary truncate; }
+    .hut-card-type { @apply text-sm text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full inline-block; }
   </style>
 </head>
 
@@ -94,23 +67,14 @@
   <div id="login-section" class="flex items-center justify-center h-screen bg-slate-200">
     <div class="w-full max-w-sm p-8 bg-white rounded-xl shadow-2xl text-center">
       <h1 class="text-3xl font-bold text-primary mb-4">🏘 Hütten Admin</h1>
-      <p class="text-slate-600 mb-6">Bitte melde dich an, um fortzufahren.</p>
-      
-      <div id="login-error" class="hidden bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded-lg mb-4 text-sm">
-        </div>
-      
-      <button id="login-btn"
-        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200">
-        Mit Google Anmelden
-      </button>
+      <p class="text-slate-600 mb-6">Bitte melde dich an.</p>
+      <div id="login-error" class="hidden bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded-lg mb-4 text-sm"></div>
+      <button id="login-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200">Mit Google Anmelden</button>
     </div>
   </div>
-  
-  <aside id="sidebar" class="w-64 bg-white shadow-lg fixed top-0 left-0 h-full z-40 
-                           transform -translate-x-full md:translate-x-0 md:relative md:flex-shrink-0">
-    <div class="p-4 border-b">
-      <h1 class="text-xl font-bold text-primary">🏘 Hütten Admin</h1>
-    </div>
+
+  <aside id="sidebar" class="w-64 bg-white shadow-lg fixed top-0 left-0 h-full z-40 transform -translate-x-full md:translate-x-0 md:relative md:flex-shrink-0">
+    <div class="p-4 border-b"><h1 class="text-xl font-bold text-primary">🏘 Hütten Admin</h1></div>
     <nav class="p-4 space-y-1">
       <button class="nav-btn w-full" onclick="showSection('overview')">📊 Übersicht</button>
       <button class="nav-btn w-full" onclick="showSection('huts')">🏠 Hüttenliste</button>
@@ -120,99 +84,92 @@
       <button class="nav-btn w-full" onclick="showSection('badges')">🏅 Abzeichen</button>
     </nav>
   </aside>
-  
-  <div id="sidebar-overlay" 
-       class="fixed inset-0 bg-black bg-opacity-50 z-30 opacity-0 pointer-events-none md:hidden"
-       onclick="toggleMenu(false)">
-  </div>
+
+  <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-30 opacity-0 pointer-events-none md:hidden" onclick="toggleMenu(false)"></div>
 
   <div id="dashboard" class="hidden md:flex flex-col flex-1">
-    
+
     <header class="sticky top-0 bg-white shadow-md z-20">
       <div class="flex items-center justify-between p-4">
         <button id="menu-toggle" onclick="toggleMenu(true)" class="md:hidden p-2 text-slate-700 border rounded-lg">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
-          </svg>
+          <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" /></svg>
         </button>
-        
         <h2 id="header-title" class="text-xl font-semibold text-slate-800">Übersicht</h2>
-        
-        <button id="logout-btn" onclick="auth.signOut()" class="bg-red-500 hover:bg-red-600 text-white text-sm font-bold py-2 px-4 rounded-lg">
-          Logout
-        </button>
+        <button id="logout-btn" onclick="auth.signOut()" class="bg-red-500 hover:bg-red-600 text-white text-sm font-bold py-2 px-4 rounded-lg">Logout</button>
       </div>
     </header>
 
     <main class="flex-1 p-6 space-y-8 overflow-y-auto">
-      
+
       <section id="overview" class="dash-section">
         <h2 class="section-title">📊 Übersicht</h2>
-        <div id="statsContainer" class="grid grid-cols-1 lg:grid-cols-2 gap-6"></div>
+        <div id="statsContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
         <canvas id="statsChart" class="bg-white rounded-xl shadow-lg p-4 mt-6"></canvas>
         <h2 class="section-title">🆕 Neue Eintragungen</h2>
         <div id="neueListe" class="space-y-2 bg-slate-50 p-4 rounded-xl shadow-inner"></div>
         <h2 class="section-title">📷 Fotos warten auf Freigabe</h2>
-        <div id="pending-fotos" class="space-y-2 bg-slate-50 p-4 rounded-xl shadow-inner"></div>
+        <div id="pending-fotos" class="space-y-4 bg-slate-50 p-4 rounded-xl shadow-inner"></div>
       </section>
 
       <section id="huts" class="dash-section hidden">
-        <h2 class="section-title">🏠 Alle Hütten</h2>
-        <div class="flex items-center gap-2 mb-4">
-          <select id="sortSelect" class="p-2 border rounded-lg">
-            <option value="name">🔤 Nach Name</option>
-            <option value="createdAt">🕒 Neueste zuerst</option>
-          </select>
-          <input id="search-input" placeholder="🔍 Suchen..." class="p-2 border rounded-lg w-full">
+        <div id="hut-list-view">
+          <h2 class="section-title">🏠 Alle Hütten</h2>
+          <div class="flex items-center gap-2 mb-4">
+            <select id="sortSelect" class="p-2 border rounded-lg">
+              <option value="name">🔤 Nach Name</option>
+              <option value="createdAt">🕒 Neueste zuerst</option>
+            </select>
+            <input id="search-input" placeholder="🔍 Suchen..." class="p-2 border rounded-lg w-full">
+          </div>
+          <div id="hut-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            </div>
+          <div id="pagination" class="mt-4 flex flex-wrap justify-center gap-2"></div>
         </div>
-        <div id="hut-list" class="space-y-4"></div>
-        <div id="pagination" class="mt-4 flex flex-wrap justify-center gap-2"></div>
+        <div id="edit-hut-view" class="hidden">
+           <button onclick="showHutList()" class="mb-4 bg-slate-500 hover:bg-slate-600 text-white px-3 py-1 rounded-lg text-sm">&larr; Zurück zur Liste</button>
+           <h2 class="section-title" id="edit-hut-title">Hütte bearbeiten</h2>
+           <div id="edit-hut-content" class="bg-white p-4 rounded-xl shadow-lg space-y-3">
+             </div>
+        </div>
       </section>
 
       <section id="support" class="dash-section hidden">
-        <h2 class="section-title">📨 Support-Tickets</h2>
-        <div class="overflow-x-auto bg-white rounded-xl shadow-lg">
-          <table class="min-w-full text-sm">
-            <thead class="bg-slate-100 text-left">
-              <tr>
-                <th class="px-4 py-3">Datum</th>
-                <th class="px-4 py-3">User</th>
-                <th class="px-4 py-3">Nachrichten</th>
-                <th class="px-4 py-3">AI-Tags</th>
-                <th class="px-4 py-3">Status</th>
-                <th class="px-4 py-3">Aktionen</th>
-              </tr>
-            </thead>
-            <tbody id="support-tickets-body" class="divide-y divide-slate-200"></tbody>
-          </table>
-        </div>
+         <h2 class="section-title">📨 Support-Tickets</h2>
+         <div class="overflow-x-auto bg-white rounded-xl shadow-lg">
+           <table class="min-w-full text-sm">
+             <thead class="bg-slate-100 text-left">
+               <tr>
+                 <th class="px-4 py-3">Datum</th> <th class="px-4 py-3">User</th>
+                 <th class="px-4 py-3">Nachrichten</th> <th class="px-4 py-3">AI-Tags</th>
+                 <th class="px-4 py-3">Status</th> <th class="px-4 py-3">Aktionen</th>
+               </tr>
+             </thead>
+             <tbody id="support-tickets-body" class="divide-y divide-slate-200"></tbody>
+           </table>
+         </div>
       </section>
 
       <div id="support-reply-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
         <div class="bg-white p-6 rounded-xl shadow-2xl max-w-lg w-full">
-          <h3 class="text-lg font-bold mb-2">Antwort auf Ticket</h3>
-          <div id="modal-ticket-info" class="text-xs text-slate-500 mb-2"></div>
-          <textarea id="modal-reply-text" class="w-full border p-2 rounded-lg mb-2" rows="5" maxlength="500"></textarea>
-          
-          <button id="gemini-suggest-btn" onclick="geminiSuggestReply(this)" class="bg-ai hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm mb-2 w-full flex items-center justify-center gap-2">
-            🤖 Antwort vorschlagen
-          </button>
-          
-          <div class="text-xs text-slate-500 mb-3" id="modal-reply-counter">500 Zeichen übrig</div>
-          <div class="flex justify-end gap-2">
-            <button onclick="closeReplyModal()" class="px-3 py-2 bg-slate-200 rounded-lg">Abbrechen</button>
-            <button onclick="sendReply()" class="px-3 py-2 bg-primary text-white rounded-lg">Antworten & schließen</button>
-          </div>
+           <h3 class="text-lg font-bold mb-2">Antwort auf Ticket</h3>
+           <div id="modal-ticket-info" class="text-xs text-slate-500 mb-2"></div>
+           <textarea id="modal-reply-text" class="w-full border p-2 rounded-lg mb-2" rows="5" maxlength="500"></textarea>
+           <button id="gemini-suggest-btn" onclick="geminiSuggestReply(this)" class="bg-ai hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm mb-2 w-full flex items-center justify-center gap-2">🤖 Antwort vorschlagen</button>
+           <div class="text-xs text-slate-500 mb-3" id="modal-reply-counter">500 Zeichen übrig</div>
+           <div class="flex justify-end gap-2">
+             <button onclick="closeReplyModal()" class="px-3 py-2 bg-slate-200 rounded-lg">Abbrechen</button>
+             <button onclick="sendReply()" class="px-3 py-2 bg-primary text-white rounded-lg">Antworten & schließen</button>
+           </div>
         </div>
       </div>
-      
+
       <section id="profiles" class="dash-section hidden">
         <h2 class="section-title">👤 Profile Verwaltung</h2>
         <div class="bg-white p-6 rounded-xl shadow-lg space-y-3">
           <div class="relative">
-            <input id="profile-search" type="text" class="w-full border p-2 rounded-lg" placeholder="Profil suchen (ID oder Name)..." />
-            <input type="hidden" id="profile-selected-id">
-            <div id="profile-suggestions" class="absolute bg-white border w-full mt-1 rounded-lg shadow-lg hidden z-10"></div>
+             <input id="profile-search" type="text" class="w-full border p-2 rounded-lg" placeholder="Profil suchen (ID oder Name)..." />
+             <input type="hidden" id="profile-selected-id">
+             <div id="profile-suggestions" class="absolute bg-white border w-full mt-1 rounded-lg shadow-lg hidden z-10"></div>
           </div>
           <div id="profile-admin-area" class="hidden space-y-4 pt-4 border-t">
             <div class="flex items-center space-x-4">
@@ -241,1984 +198,308 @@
               <button onclick="deleteProfileAdmin()" class="bg-red-600 text-white px-3 py-2 rounded-lg">🗑️ Löschen</button>
               <button onclick="openProfileLink()" class="bg-secondary text-white px-3 py-2 rounded-lg">🔗 Öffnen</button>
             </div>
-          </div>
+           </div>
         </div>
       </section>
 
       <section id="titles" class="dash-section hidden">
-        <h2 class="section-title">👑 Titel Verwaltung</h2>
-        <div id="title-list" class="space-y-2 bg-white p-6 rounded-xl shadow-lg"></div>
-        <form id="title-form" class="mt-4 space-y-3 bg-white p-6 rounded-xl shadow-lg">
-          <h3 class="text-lg font-semibold">Neuen Titel erstellen / Bearbeiten</h3>
-          <input id="title-name" placeholder="Titel-Name" class="border p-2 rounded-lg w-full">
-          <select id="title-condition" class="border p-2 rounded-lg w-full">
-            <option value="rides">Anzahl Fahrten</option>
-            <option value="distance">Gesamtkilometer</option>
-          </select>
-          <input id="title-value" type="number" placeholder="Bedingung Wert" class="border p-2 rounded-lg w-full">
-          <button type="submit" class="bg-primary text-white px-4 py-2 rounded-lg">➕ Titel speichern</button>
-        </form>
+         <h2 class="section-title">👑 Titel Verwaltung</h2>
+         <div id="title-list" class="space-y-2 bg-white p-6 rounded-xl shadow-lg"></div>
+         <form id="title-form" class="mt-4 space-y-3 bg-white p-6 rounded-xl shadow-lg">
+            <h3 class="text-lg font-semibold">Neuen Titel erstellen / Bearbeiten</h3>
+            <input id="title-name" placeholder="Titel-Name" class="border p-2 rounded-lg w-full">
+            <select id="title-condition" class="border p-2 rounded-lg w-full">
+              <option value="rides">Anzahl Fahrten</option>
+              <option value="distance">Gesamtkilometer</option>
+            </select>
+            <input id="title-value" type="number" placeholder="Bedingung Wert" class="border p-2 rounded-lg w-full">
+            <button type="submit" class="bg-primary text-white px-4 py-2 rounded-lg">➕ Titel speichern</button>
+         </form>
       </section>
 
       <section id="badges" class="dash-section hidden">
-        <h2 class="section-title">🏅 Abzeichen Verwaltung</h2>
-        <div id="badge-list-admin" class="space-y-2 bg-white p-6 rounded-xl shadow-lg"></div>
-        <form id="badge-form" class="mt-4 space-y-3 bg-white p-6 rounded-xl shadow-lg">
-          <h3 class="text-lg font-semibold">Neues Abzeichen erstellen / Bearbeiten</h3>
-          <input id="badge-name" placeholder="Abzeichen-Name" class="border p-2 rounded-lg w-full">
-          <label class="block font-bold text-sm">Icon hochladen</label>
-          <input id="badge-icon-file" type="file" accept="image/*" class="w-full border p-2 rounded-lg">
-          <small class="text-slate-500">Oder Emoji eintragen:</small>
-          <input id="badge-icon" placeholder="Emoji/Icon (Fallback)" class="border p-2 rounded-lg w-full">
-          <select id="badge-condition" class="border p-2 rounded-lg w-full">
-            <option value="rides">Anzahl Fahrten</option>
-            <option value="distance">Gesamtkilometer</option>
-            <option value="night">Nachtfahrt</option>
-          </select>
-          <input id="badge-value" type="number" placeholder="Bedingung Wert" class="border p-2 rounded-lg w-full">
-          <button type="submit" class="bg-primary text-white px-4 py-2 rounded-lg">➕ Abzeichen speichern</button>
-        </form>
+         <h2 class="section-title">🏅 Abzeichen Verwaltung</h2>
+         <div id="badge-list-admin" class="space-y-2 bg-white p-6 rounded-xl shadow-lg"></div>
+         <form id="badge-form" class="mt-4 space-y-3 bg-white p-6 rounded-xl shadow-lg">
+            <h3 class="text-lg font-semibold">Neues Abzeichen erstellen / Bearbeiten</h3>
+            <input id="badge-name" placeholder="Abzeichen-Name" class="border p-2 rounded-lg w-full">
+            <label class="block font-bold text-sm">Icon hochladen</label>
+            <input id="badge-icon-file" type="file" accept="image/*" class="w-full border p-2 rounded-lg">
+            <small class="text-slate-500">Oder Emoji eintragen:</small>
+            <input id="badge-icon" placeholder="Emoji/Icon (Fallback)" class="border p-2 rounded-lg w-full">
+            <select id="badge-condition" class="border p-2 rounded-lg w-full">
+              <option value="rides">Anzahl Fahrten</option>
+              <option value="distance">Gesamtkilometer</option>
+              <option value="night">Nachtfahrt</option>
+            </select>
+            <input id="badge-value" type="number" placeholder="Bedingung Wert" class="border p-2 rounded-lg w-full">
+            <button type="submit" class="bg-primary text-white px-4 py-2 rounded-lg">➕ Abzeichen speichern</button>
+         </form>
       </section>
+
     </main>
   </div>
 
 <div id="admin-map" style="display:none;"></div>
-<form id="admin-hut-form" style="display:none;">
-  <input id="admin-hut-name" type="text">
-  <input id="admin-hut-images" type="file">
-</form>
 
 <script type="module">
-  // Importiere die Gemini AI-Bibliothek
   import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "https://sdk.gemini.ai/v1.5/gemini-ai.js";
-
-  // ⚠️⚠️⚠️ GEFÄHRLICH: API-Key ist hier öffentlich sichtbar! NUR ZUM TESTEN! ⚠️⚠️⚠️
-  const GEMINI_API_KEY = "AIzaSyB3FT8CdN9WkNjfQ5vutbjLCEibGSl3nnQ";
-
-  // Globale Instanz und Sicherheitseinstellungen
+  const GEMINI_API_KEY = "AIzaSyB3FT8CdN9WkNjfQ5vutbjLCEibGSl3nnQ"; // ⚠️ UNSICHER!
   const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-  
   const safetySettings = [
     { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
     { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
     { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
     { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
   ];
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", safetySettings });
+  console.log("🤖 Gemini AI (Frontend-Modus) initialisiert.");
 
-  // Das Gemini-Modell, das wir verwenden
-  const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
-    safetySettings,
-  });
-
-  console.log("🤖 Gemini AI (Frontend-Modus) initialisiert. Key ist sichtbar!");
-
-  // --- Helper-Funktion für Lade-Buttons ---
+  // --- Helper: Lade-Button ---
   function setButtonLoading(button, isLoading, originalText = null) {
-    if (isLoading) {
-      button.disabled = true;
-      button.innerHTML = `<span class="spinner"></span> Bitte warten...`;
-    } else {
-      button.disabled = false;
-      if (originalText) {
-        button.innerHTML = originalText;
+      if (!button) return;
+      if (isLoading) {
+          button.disabled = true;
+          // Speichere Originaltext im Button, falls nicht schon vorhanden
+          if (!button.dataset.originalText) {
+              button.dataset.originalText = button.innerHTML;
+          }
+          button.innerHTML = `<span class="spinner"></span> Bitte warten...`;
+      } else {
+          button.disabled = false;
+          // Stelle Originaltext wieder her, falls gespeichert
+          if (button.dataset.originalText) {
+              button.innerHTML = button.dataset.originalText;
+              delete button.dataset.originalText; // Entferne Attribut nach Gebrauch
+          } else if (originalText) {
+              button.innerHTML = originalText;
+          }
       }
-    }
   }
-  
-  // --- 1. KI-FUNKTION: Support-Antwort vorschlagen ---
-  // Mache die Funktion im globalen 'window'-Objekt verfügbar,
-  // damit der 'onclick'-Handler im HTML sie finden kann.
+
+  // --- KI-Funktion 1: Support-Antwort ---
   window.geminiSuggestReply = async (button) => {
     const originalText = button.innerHTML;
     setButtonLoading(button, true);
-    
     const replyText = document.getElementById("modal-reply-text");
-    const ticketId = window.currentReplyTicketId; // Diese Variable wird in openReplyModal gesetzt
-    
-    if (!ticketId) {
-      alert("Fehler: Keine Ticket-ID gefunden.");
-      setButtonLoading(button, false, originalText);
-      return;
+    const ticketId = window.currentReplyTicketId;
+    if (!ticketId || !window.supportMessages || !window.supportMessages[ticketId]) {
+      alert("Fehler: Ticket-ID oder Nachrichtenverlauf nicht gefunden.");
+      setButtonLoading(button, false, originalText); return;
     }
-
-    // Hole den Nachrichtenverlauf (wird in ladeSupportNachrichten gespeichert)
     const history = window.supportMessages[ticketId];
-    if (!history || history.length === 0) {
-      alert("Fehler: Konnte Nachrichtenverlauf nicht laden.");
-      setButtonLoading(button, false, originalText);
-      return;
-    }
-
-    const prompt = `
-      Du bist ein freundlicher und professioneller Support-Mitarbeiter für "Hütten Admin".
-      Ein Nutzer hat ein Support-Ticket eingereicht.
-      Hier ist der bisherige Nachrichtenverlauf:
-      ${JSON.stringify(history, null, 2)}
-      Bitte verfasse eine hilfreiche und höfliche Antwort auf die LETZTE Nutzeranfrage.
-      Fasse dich kurz (maximal 3-4 Sätze).
-      Sprich den Nutzer mit "Hallo" an und unterschreibe mit "Viele Grüße, Dein Hütten-Support-Team".
-      Gib NUR den Text der Antwort zurück, ohne zusätzliches Markup.
-    `;
-
+    const prompt = `Du bist ein freundlicher Support-Mitarbeiter... Nachrichtenverlauf:\n${JSON.stringify(history, null, 2)}\n\nVerfasse eine hilfreiche, höfliche Antwort (max. 4 Sätze) auf die LETZTE Anfrage. Anrede "Hallo", Gruß "Viele Grüße, Dein Hütten-Support-Team". Nur Antworttext.`;
     try {
       const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
-      
-      replyText.value = text;
-      // Trigger input event, um den Zeichenzähler zu aktualisieren
-      replyText.dispatchEvent(new Event('input')); 
-      
-    } catch (e) {
-      console.error("Gemini Fehler (Reply):", e);
-      alert("Fehler bei der AI-Anfrage: " + e.message);
-    } finally {
-      setButtonLoading(button, false, originalText);
-    }
+      replyText.value = result.response.text();
+      replyText.dispatchEvent(new Event('input'));
+    } catch (e) { console.error("Gemini Fehler (Reply):", e); alert("Fehler bei AI-Anfrage: " + e.message);
+    } finally { setButtonLoading(button, false, originalText); }
   };
 
-
-  // --- 2. KI-FUNKTION: Foto analysieren ---
-  
-  // Helper-Funktion, um Bild-URL in Base64 umzuwandeln
+  // --- KI-Funktion 2: Foto-Analyse ---
   async function fetchImageAsBase64(url) {
-      // ⚠️ Wir verwenden einen CORS-Proxy NUR ZUM TESTEN.
       const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
       console.log("Versuche Bild über Proxy zu laden:", proxyUrl);
       try {
         const response = await fetch(proxyUrl);
-        if (!response.ok) throw new Error(`Netzwerkfehler: ${response.statusText}`);
+        if (!response.ok) throw new Error(`Netzwerkfehler (${response.status}): ${response.statusText}`);
         const blob = await response.blob();
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
-          reader.onloadend = () => resolve({
-              inlineData: {
-                  data: reader.result.split(',')[1],
-                  mimeType: blob.type
-              }
-          });
-          reader.onerror = (error) => reject("Fehler beim Lesen der Bilddatei.");
-          reader.readAsDataURL(blob);
+          reader.onloadend = () => resolve({ inlineData: { data: reader.result.split(',')[1], mimeType: blob.type } });
+          reader.onerror = reject; reader.readAsDataURL(blob);
         });
-      } catch (error) {
-         console.error('Fehler beim Laden des Bildes:', error);
-         throw new Error("Fehler beim Laden des Bildes (evtl. CORS oder Proxy-Problem).");
-      }
+      } catch (error) { throw new Error(`Bildladen fehlgeschlagen (Proxy/CORS?): ${error.message}`); }
   }
-
   window.geminiAnalyzeImage = async (button, imageUrl) => {
-    const originalText = button.innerHTML;
-    setButtonLoading(button, true);
-
-    let imagePart;
-    try {
-      imagePart = await fetchImageAsBase64(imageUrl);
-    } catch (e) {
-      // 🤖 "Repariert": Gebe eine klare Fehlermeldung zu CORS aus.
-      console.error(e);
-      alert("Fehler bei der Bildanalyse: " + e.message + 
-            "\n\nHinweis: Das Laden von Bildern von 'imgbb.com' wird vom Browser blockiert (CORS-Problem). " +
-            "Diese Funktion funktioniert nur zuverlässig über ein Server-Backend (z.B. Firebase Function).");
-      setButtonLoading(button, false, originalText);
-      return;
-    }
-
-    const prompt = `
-      Analysiere dieses Bild und antworte im JSON-Format.
-      1. Ist dieses Bild für eine App über Wanderhütten/Hofläden geeignet? (ja/nein/vielleicht)
-      2. Was ist auf dem Bild hauptsächlich zu sehen? (z.B. "Eine Holzhütte", "Ein Selfie", "Essen")
-      3. Enthält das Bild unangemessene Inhalte (Nacktheit, Gewalt)? (ja/nein)
-      Beispiel-Antwort:
-      {"geeignet": "ja", "inhalt": "Eine Holzhütte im Wald", "unangemessen": "nein"}
-    `;
-
-    try {
-      const result = await model.generateContent([prompt, imagePart]);
-      const response = await result.response;
-      let text = response.text().replace(/```json/g, "").replace(/```/g, "").trim();
-      const analysis = JSON.parse(text);
-      alert(
-        `🤖 AI-Foto-Check:\n\n` +
-        `Geeignet: ${analysis.geeignet}\n` +
-        `Inhalt: ${analysis.inhalt}\n` +
-        `Unangemessen: ${analysis.unangemessen}`
-      );
-    } catch (e) {
-      console.error("Gemini Fehler (Image):", e);
-      alert("Fehler bei der AI-Bildanalyse: " + e.message);
-    } finally {
-      setButtonLoading(button, false, originalText);
-    }
+      const originalText = button.innerHTML; setButtonLoading(button, true);
+      let imagePart;
+      try { imagePart = await fetchImageAsBase64(imageUrl); } catch (e) {
+        console.error(e);
+        alert("Fehler Bildanalyse: " + e.message + "\nHinweis: CORS blockiert oft. Funktion benötigt Server-Backend.");
+        setButtonLoading(button, false, originalText); return;
+      }
+      const prompt = `Analysiere Bild. JSON: {"geeignet": "ja/nein/vielleicht", "inhalt": "...", "unangemessen": "ja/nein"}`;
+      try {
+        const result = await model.generateContent([prompt, imagePart]);
+        let text = result.response.text().replace(/```json|```/g, "").trim();
+        const analysis = JSON.parse(text);
+        alert(`🤖 AI-Foto-Check:\nGeeignet: ${analysis.geeignet}\nInhalt: ${analysis.inhalt}\nUnangemessen: ${analysis.unangemessen}`);
+      } catch (e) { console.error("Gemini Fehler (Image):", e); alert("Fehler AI-Bildanalyse: " + e.message);
+      } finally { setButtonLoading(button, false, originalText); }
   };
 
-
-  // --- 3. KI-FUNKTION: Hütten-Daten auditieren ---
+  // --- KI-Funktion 3: Hütten-Audit ---
   window.geminiAuditHut = async (button, hutId) => {
-    const originalText = button.innerHTML;
-    setButtonLoading(button, true);
-
+    const originalText = button.innerHTML; setButtonLoading(button, true);
     const hut = window.allHuts.find(h => h.id === hutId);
-    if (!hut) {
-      alert("Fehler: Hütte nicht gefunden.");
-      setButtonLoading(button, false, originalText);
-      return;
-    }
-
-    const prompt = `
-      Führe ein kurzes Audit für folgenden Datensatz einer Hütte durch.
-      Antworte als JSON-Objekt.
-      - Name: "${hut.name}"
-      - Beschreibung: "${hut.beschreibung || "Keine"}"
-      - Aktuelle Tags: [${(hut.tags || []).join(", ")}]
-      Dein JSON-Audit soll enthalten:
-      1. "qualitaet": Eine Bewertung der Beschreibung (z.B. "Sehr gut", "Gut", "Zu kurz", "Fehlt").
-      2. "vorschlag": Ein kurzer Satz, um die Beschreibung zu verbessern (oder "Perfekt", wenn gut).
-      3. "tags": Ein Array mit 3-5 Tag-Vorschlägen (Strings), die zur Beschreibung passen.
-    `;
-
+    if (!hut) { alert("Fehler: Hütte nicht gefunden."); setButtonLoading(button, false, originalText); return; }
+    const prompt = `Audit für Hütte "${hut.name}". Beschreibung: "${hut.beschreibung || "Keine"}". Tags: [${(hut.tags || []).join(", ")}]. JSON: {"qualitaet": "...", "vorschlag": "...", "tags": ["...", "..."]}`;
     try {
       const result = await model.generateContent(prompt);
-      const response = await result.response;
-      let text = response.text().replace(/```json/g, "").replace(/```/g, "").trim();
+      let text = result.response.text().replace(/```json|```/g, "").trim();
       const audit = JSON.parse(text);
-      alert(
-        `🤖 AI-Audit für "${hut.name}":\n\n` +
-        `Qualität: ${audit.qualitaet}\n` +
-        `Vorschlag: ${audit.vorschlag}\n` +
-        `Tag-Vorschläge: ${audit.tags.join(", ")}`
-      );
-    } catch (e) {
-      console.error("Gemini Fehler (Audit):", e);
-      alert("Fehler beim AI-Audit: " + e.message);
-    } finally {
-      setButtonLoading(button, false, originalText);
-    }
+      alert(`🤖 AI-Audit für "${hut.name}":\nQualität: ${audit.qualitaet}\nVorschlag: ${audit.vorschlag}\nTag-Vorschläge: ${audit.tags.join(", ")}`);
+    } catch (e) { console.error("Gemini Fehler (Audit):", e); alert("Fehler beim AI-Audit: " + e.message);
+    } finally { setButtonLoading(button, false, originalText); }
   };
-  
-  
-  // --- 4. KI-FUNKTION: Support-Tickets taggen ---
+
+  // --- KI-Funktion 4: Ticket-Tagging ---
   window.geminiTagTicket = async (button, ticketId) => {
-    const originalText = button.innerHTML;
-    setButtonLoading(button, true);
-    
-    if (!window.db) {
-        alert("Fehler: DB-Verbindung nicht gefunden.");
-        setButtonLoading(button, false, originalText);
-        return;
-    }
-    
+    const originalText = button.innerHTML; setButtonLoading(button, true);
+    if (!window.db) { alert("Fehler: DB nicht gefunden."); setButtonLoading(button, false, originalText); return; }
     let firstMessage = "";
     try {
-      const msgsSnap = await window.db.collection("support").doc(ticketId)
-                               .collection("messages").orderBy("createdAt", "asc").limit(1).get();
+      const msgsSnap = await window.db.collection("support").doc(ticketId).collection("messages").orderBy("createdAt", "asc").limit(1).get();
       firstMessage = msgsSnap.docs[0]?.data().text;
-      
-      if (!firstMessage) {
-        alert("Fehler: Keine Nachricht im Ticket gefunden zum Taggen.");
-        setButtonLoading(button, false, originalText);
-        return;
-      }
-    } catch (e) {
-      alert("Fehler beim Laden der Ticket-Nachricht: " + e.message);
-      setButtonLoading(button, false, originalText);
-      return;
-    }
-    
-    const prompt = `
-      Analysiere diese Support-Anfrage und gib 1-2 relevante Tags zurück.
-      Mögliche Tags sind: 'Abrechnung', 'Bug-Report', 'Foto-Problem', 'Hütten-Info', 'Spam', 'Allgemein'.
-      Antworte NUR mit einem JSON-Array.
-      Text: "${firstMessage}"
-      Beispiel-Antwort: ["Abrechnung"]
-    `;
-    
+      if (!firstMessage) { alert("Keine Nachricht zum Taggen."); setButtonLoading(button, false, originalText); return; }
+    } catch (e) { alert("Fehler Laden der Nachricht: " + e.message); setButtonLoading(button, false, originalText); return; }
+    const prompt = `Analysiere Support-Anfrage, gib 1-2 Tags zurück. Optionen: 'Abrechnung', 'Bug-Report', 'Foto-Problem', 'Hütten-Info', 'Spam', 'Allgemein'. NUR JSON Array. Text: "${firstMessage}"`;
     try {
       const result = await model.generateContent(prompt);
-      const response = await result.response;
-      let text = response.text().replace(/```json/g, "").replace(/```/g, "").trim();
+      let text = result.response.text().replace(/```json|```/g, "").trim();
       const tags = JSON.parse(text);
-      
       await window.db.collection("support").doc(ticketId).update({ aiTags: tags });
-      
       const tagCell = document.getElementById(`ai-tags-${ticketId}`);
-      if(tagCell) {
-        tagCell.innerHTML = tags.map(tag => 
-          `<span class="px-2 py-1 bg-ai text-white rounded-full text-xs font-medium">${tag}</span>`
-        ).join(' ');
-      }
-      
-    } catch (e) {
-      console.error("Gemini Fehler (Tagging):", e);
-      alert("Fehler beim AI-Tagging: " + e.message);
-      setButtonLoading(button, false, originalText);
-    } 
+      if(tagCell) { tagCell.innerHTML = tags.map(tag => `<span class="px-2 py-1 bg-ai text-white rounded-full text-xs font-medium">${tag}</span>`).join(' '); }
+      // Button verschwindet bei Erfolg (wird durch Tags ersetzt)
+    } catch (e) { console.error("Gemini Fehler (Tagging):", e); alert("Fehler beim AI-Tagging: " + e.message); setButtonLoading(button, false, originalText); }
   };
-  
-  // 🤖 NEU: --- 5. KI-FUNKTION (Idee 1): Beschreibung generieren ---
+
+  // --- KI-Funktion 5: Beschreibung generieren ---
   window.geminiGenerateDescription = async (button, hutId) => {
-    const originalText = button.innerHTML;
-    setButtonLoading(button, true);
-
-    const keywordsInput = document.getElementById(`hut-keywords-${hutId}`);
-    const descriptionBox = document.getElementById(`hut-description-${hutId}`);
+    const originalText = button.innerHTML; setButtonLoading(button, true);
+    const keywordsInput = document.getElementById(`edit-kiStichpunkte-${hutId}`); // ID angepasst
+    const descriptionBox = document.getElementById(`edit-beschreibung-${hutId}`); // ID angepasst
     const hut = window.allHuts.find(h => h.id === hutId);
-
-    if (!hut || !keywordsInput || !descriptionBox) {
-        alert("Fehler: Hütte oder Textfelder nicht gefunden.");
-        setButtonLoading(button, false, originalText);
-        return;
-    }
-
+    if (!hut || !keywordsInput || !descriptionBox) { alert("Fehler: Elemente nicht gefunden."); setButtonLoading(button, false, originalText); return; }
     const keywords = keywordsInput.value.trim();
-    if (!keywords) {
-      alert("Bitte geben Sie zuerst Stichpunkte in das 'KI-Stichpunkte'-Feld ein.");
-      setButtonLoading(button, false, originalText);
-      return;
-    }
-
-    const prompt = `
-      Du bist ein Werbetexter für eine App über Wanderhütten und Hofläden.
-      Generiere eine einladende, kurze Beschreibung (2-3 Sätze) für die Hütte "${hut.name}".
-      Verwende diese Stichpunkte: "${keywords}".
-      Schreibe nur den Fließtext der Beschreibung, ohne Überschrift.
-    `;
-
+    if (!keywords) { alert("Bitte Stichpunkte eingeben."); setButtonLoading(button, false, originalText); return; }
+    const prompt = `Werbetexter für Hütten-App. Generiere Beschreibung (2-3 Sätze) für "${hut.name}" aus Stichpunkten: "${keywords}". Nur Fließtext.`;
     try {
       const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
-      
-      descriptionBox.value = text; // Text in die Box einfügen
-      
-      // Globale Benachrichtigungsfunktion aufrufen
-      if (window.showNotification) {
-        window.showNotification("🤖 Text generiert. Bitte prüfen und speichern.");
-      } else {
-        alert("Text generiert. Bitte prüfen und speichern.");
-      }
-      
-      // Optional: Textfeld "blinken" lassen, um Änderung zu signalisieren
-      descriptionBox.classList.add('ring-2', 'ring-ai');
-      setTimeout(() => {
-        descriptionBox.classList.remove('ring-2', 'ring-ai');
-      }, 2000);
-
-    } catch (e) {
-      console.error("Gemini Fehler (Description):", e);
-      alert("Fehler bei der AI-Textgenerierung: " + e.message);
-    } finally {
-      setButtonLoading(button, false, originalText);
-    }
+      descriptionBox.value = result.response.text();
+      if (window.showNotification) { window.showNotification("🤖 Text generiert. Prüfen & Speichern."); }
+      else { alert("Text generiert. Prüfen & Speichern."); }
+      descriptionBox.classList.add('ring-2', 'ring-ai'); setTimeout(() => descriptionBox.classList.remove('ring-2', 'ring-ai'), 2000);
+    } catch (e) { console.error("Gemini Fehler (Description):", e); alert("Fehler AI-Textgenerierung: " + e.message);
+    } finally { setButtonLoading(button, false, originalText); }
   };
-
 </script>
 
-
 <script>
-  // Mache Firebase global verfügbar, damit das Modul-Skript darauf zugreifen kann
-  window.firebase = firebase; 
-
-  // Globale Variablen für die App
-  let allHuts = [];
-  window.allHuts = allHuts; // Auch für AI-Funktion global machen
-  window.supportMessages = {}; // Speichert Nachrichtenverläufe pro Ticket-ID
-
-  // Firebase-Konfiguration
-  const firebaseConfig = {
-    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
-    authDomain: "eierhuettentour.firebaseapp.com",
-    projectId: "eierhuettentour",
-    storageBucket: "eierhuettentour.appspot.com",
-    messagingSenderId: "348272135205",
-    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
-  };
-  
-  // Initialisiere Firebase (nur wenn nicht schon geschehen)
-  if (!firebase.apps.length) {
-    firebase.initializeApp(firebaseConfig);
-  }
-  
-  // Firebase-Dienste
-  const auth = firebase.auth();
-  const db = firebase.firestore();
-  window.db = db; // Global für AI-Tagging-Funktion
+  // Globale Variablen & Firebase Setup
+  window.firebase = firebase;
+  let allHuts = []; window.allHuts = allHuts;
+  window.supportMessages = {};
+  const firebaseConfig = { apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro", authDomain: "eierhuettentour.firebaseapp.com", projectId: "eierhuettentour", storageBucket: "eierhuettentour.appspot.com", messagingSenderId: "348272135205", appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc" };
+  if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
+  const auth = firebase.auth(); const db = firebase.firestore(); window.db = db;
   const storage = firebase.storage();
+  const loginSection = document.getElementById('login-section'); const dashboard = document.getElementById('dashboard');
+  const hutListContainer = document.getElementById('hut-list'); const searchInput = document.getElementById('search-input');
+  const notification = document.getElementById('notification'); const hutListView = document.getElementById('hut-list-view');
+  const editHutView = document.getElementById('edit-hut-view'); const editHutContent = document.getElementById('edit-hut-content');
+  const editHutTitle = document.getElementById('edit-hut-title');
+  let currentUser = null; let adminMarker, adminMap, adminLocation;
+  let filteredHuts = []; let currentPage = 1; const hutsPerPage = 12; // Weniger Kacheln pro Seite
+  let statsChart; let currentEditingHutId = null;
 
-  // DOM-Elemente
-  const loginSection = document.getElementById('login-section');
-  const dashboard = document.getElementById('dashboard');
-  const hutList = document.getElementById('hut-list');
-  const searchInput = document.getElementById('search-input');
-  const notification = document.getElementById('notification');
-  
-  // App-Status
-  let currentUser = null;
-  let adminMarker, adminMap, adminLocation;
-  let filteredHuts = [];
-  let currentPage = 1;
-  const hutsPerPage = 15;
-  let statsChart; // Chart-Instanz
+  // --- Tier-Mapping ---
+  const TIERE_EMOJI_TO_NAME = { "🦙": "Alpaka", "🐄": "Kuh", "🐖": "Schwein", "🐐": "Ziege", "🐑": "Schaf", "🐶": "Hund", "🐱": "Katze", "🐇": "Hase", "🐔": "Huhn", "🦆": "Ente", "🐴": "Pferd", "❌": "Keine Tiere" };
+  const TIERE_NAME_TO_EMOJI = Object.fromEntries(Object.entries(TIERE_EMOJI_TO_NAME).map(([e, n]) => [n, e]));
+  function normalizeToEmojiArray(arr) { if (!Array.isArray(arr)) return []; return arr.map(v => { v = String(v || '').trim(); if (TIERE_EMOJI_TO_NAME[v]) return v; if (TIERE_NAME_TO_EMOJI[v]) return TIERE_NAME_TO_EMOJI[v]; return null; }).filter(Boolean); }
 
-  // === TIERE MAPPING (global) ===
-  const TIERE_EMOJI_TO_NAME = {
-    "🦙": "Alpaka", "🐄": "Kuh", "🐖": "Schwein", "🐐": "Ziege", "🐑": "Schaf",
-    "🐶": "Hund", "🐱": "Katze", "🐇": "Hase", "🐔": "Huhn", "🦆": "Ente",
-    "🐴": "Pferd", "❌": "Keine Tiere"
-  };
-  const TIERE_NAME_TO_EMOJI = Object.fromEntries(
-    Object.entries(TIERE_EMOJI_TO_NAME).map(([e, n]) => [n, e])
-  );
-
-  function normalizeToEmojiArray(arr) {
-    if (!Array.isArray(arr)) return [];
-    return arr.map(v => {
-      if (!v) return null;
-      v = String(v).trim();
-      if (TIERE_EMOJI_TO_NAME[v]) return v;
-      if (TIERE_NAME_TO_EMOJI[v]) return TIERE_NAME_TO_EMOJI[v];
-      return null;
-    }).filter(Boolean);
-  }
-    
-  // === Initialisierung bei DOM-Ladung ===
+  // --- Initialisierung ---
   document.addEventListener('DOMContentLoaded', () => {
-    // Leaflet-Karte für Admin-Panel (versteckt)
-    adminMap = L.map('admin-map').setView([51.1657, 10.4515], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(adminMap);
-    adminMarker = L.marker([51.1657, 10.4515], { draggable: true }).addTo(adminMap);
-    adminMarker.on('dragend', e => {
-      const pos = e.target.getLatLng();
-      adminLocation = new firebase.firestore.GeoPoint(pos.lat, pos.lng);
-    });
-    navigator.geolocation.getCurrentPosition(pos => {
-      const { latitude, longitude } = pos.coords;
-      adminMap.setView([latitude, longitude], 13);
-      adminMarker.setLatLng([latitude, longitude]);
-      adminLocation = new firebase.firestore.GeoPoint(latitude, longitude);
-    });
-    
-    // Event Listener für Suchen & Sortieren
-    document.getElementById("search-input").addEventListener("input", applySearchAndSort);
-    document.getElementById("sortSelect").addEventListener("change", applySearchAndSort);
-  });
-  
-  // (Formular-Submit-Logik für 'admin-hut-form'... übersprungen, da nicht im UI sichtbar)
-    
-  // === UI-Helfer ===
-  
-  // Mache showNotification global verfügbar
-  window.showNotification = function(message) {
-    notification.textContent = message;
-    notification.style.display = 'block';
-    setTimeout(() => notification.style.display = 'none', 4000);
-  }
-
-  // === Authentifizierung ===
-  
-  document.getElementById('login-btn').onclick = () => {
-    const btn = document.getElementById('login-btn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Verbinde...';
-    
-    auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(error => {
-      const loginError = document.getElementById('login-error');
-      loginError.textContent = `Fehler beim Anmelden: ${error.message}`;
-      loginError.classList.remove('hidden');
-      btn.disabled = false;
-      btn.innerHTML = 'Mit Google Anmelden';
-    });
-  };
-
-  auth.onAuthStateChanged(async user => {
-    const loginError = document.getElementById('login-error');
-    const loginBtn = document.getElementById('login-btn');
-    
-    if (user) {
-      currentUser = user;
-      try {
-        const adminDoc = await db.collection('admins').doc(user.email).get();
-        if (!adminDoc.exists) {
-          loginError.textContent = `Zugriff verweigert. Dein Konto (${user.email}) ist nicht als Admin registriert.`;
-          loginError.classList.remove('hidden');
-          await auth.signOut();
-          return;
-        }
-        
-        loginSection.classList.add('hidden');
-        dashboard.classList.remove('hidden');
-        dashboard.classList.add('flex'); 
-        
-        // Setup Live-Listener
-        db.collection('eierhuetten').onSnapshot(() => {
-          showNotification('🔄 Live-Update: Hüttendaten wurden aktualisiert.');
-          loadHuts(); 
-        }, err => console.error("Snapshot-Fehler (Hütten):", err));
-        
-        initLiveNewHuts(); // Startet eigenen Listener
-        initLivePendingFotos(); // Startet eigenen Listener
-        
-        // Initiales Laden
-        showSection('overview');
-        await loadHuts(); // Erstes Laden
-        await ladeSupportTickets(); // Erstes Laden
-        
-      } catch (err) {
-        console.error("Auth-Fehler:", err);
-        loginError.textContent = `Ein Fehler ist aufgetreten: ${err.message}`;
-        loginError.classList.remove('hidden');
-      }
-    } else {
-      currentUser = null;
-      loginSection.classList.remove('hidden');
-      dashboard.classList.add('hidden');
-      dashboard.classList.remove('flex');
-      loginBtn.disabled = false;
-      loginBtn.innerHTML = 'Mit Google Anmelden';
-    }
+    try {
+        adminMap = L.map('admin-map').setView([51.1657, 10.4515], 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(adminMap);
+        adminMarker = L.marker([51.1657, 10.4515], { draggable: true }).addTo(adminMap);
+        adminMarker.on('dragend', e => { adminLocation = new firebase.firestore.GeoPoint(e.target.getLatLng().lat, e.target.getLatLng().lng); });
+        navigator.geolocation.getCurrentPosition(pos => { const { latitude, longitude } = pos.coords; adminMap.setView([latitude, longitude], 13); adminMarker.setLatLng([latitude, longitude]); adminLocation = new firebase.firestore.GeoPoint(latitude, longitude); }, () => console.warn("Geolocation nicht verfügbar/erlaubt."));
+    } catch (e) { console.error("Fehler bei Leaflet Initialisierung:", e); }
+    document.getElementById("search-input")?.addEventListener("input", applySearchAndSort);
+    document.getElementById("sortSelect")?.addEventListener("change", applySearchAndSort);
   });
 
-  // === Datenladen & Statistik ===
+  // --- UI-Helfer ---
+  window.showNotification = function(message) { if (!notification) return; notification.textContent = message; notification.style.display = 'block'; setTimeout(() => { notification.style.display = 'none'; }, 4000); }
+
+  // --- Authentifizierung ---
+  document.getElementById('login-btn').onclick = () => { const btn = document.getElementById('login-btn'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Verbinde...'; auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(error => { const loginError = document.getElementById('login-error'); loginError.textContent = `Fehler Anmelden: ${error.message}`; loginError.classList.remove('hidden'); btn.disabled = false; btn.innerHTML = 'Mit Google Anmelden'; }); };
+  auth.onAuthStateChanged(async user => { const loginError = document.getElementById('login-error'); const loginBtn = document.getElementById('login-btn'); if (user) { currentUser = user; try { const adminDoc = await db.collection('admins').doc(user.email).get(); if (!adminDoc.exists) { loginError.textContent = `Zugriff verweigert (${user.email}).`; loginError.classList.remove('hidden'); await auth.signOut(); return; } loginSection.classList.add('hidden'); dashboard.classList.remove('hidden'); dashboard.classList.add('flex'); db.collection('eierhuetten').onSnapshot(() => { showNotification('🔄 Live-Update: Hütten.'); loadHuts(); }, err => console.error("Snapshot-Fehler (Hütten):", err)); initLiveNewHuts(); initLivePendingFotos(); showSection('overview'); await loadHuts(); await ladeSupportTickets(); } catch (err) { console.error("Auth-Fehler:", err); loginError.textContent = `Fehler: ${err.message}`; loginError.classList.remove('hidden'); } } else { currentUser = null; loginSection.classList.remove('hidden'); dashboard.classList.add('hidden'); dashboard.classList.remove('flex'); loginBtn.disabled = false; loginBtn.innerHTML = 'Mit Google Anmelden'; } });
+
+  // --- Datenladen & Statistik ---
+  async function loadHuts() { try { const snapshot = await db.collection('eierhuetten').orderBy('erstelltAm', 'desc').get(); allHuts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); window.allHuts = allHuts; applySearchAndSort(); renderStats(allHuts); } catch (e) { console.error("Fehler Laden Hütten:", e); showNotification("❌ Fehler Laden Hütten."); } }
+  function renderStats(list) { if (!list) return; const total=list.length, withStrom=list.filter(h=>h.strom==='Ja').length, withFotos=list.filter(h=>Array.isArray(h.fotos)&&h.fotos.length>0).length, count247=list.filter(h=>h.oeffnungszeiten==='24/7').length, newEntries=list.filter(h=>h.status==='offen').length, pendingFotos=list.reduce((sum,h)=>sum+(Array.isArray(h.fotos)?h.fotos.filter(f=>f&&typeof f==='object'&&f.status==='wartet').length:0),0); const c=document.getElementById("statsContainer"); if(!c)return; c.innerHTML=`<div class="stat-card"><p class="stat-value text-primary">${total}</p><p class="stat-label">Gesamt</p></div> <div class="stat-card"><p class="stat-value text-yellow-600">${newEntries}</p><p class="stat-label">Neu</p></div> <div class="stat-card"><p class="stat-value text-blue-600">${withStrom}</p><p class="stat-label">Strom</p></div> <div class="stat-card"><p class="stat-value text-green-600">${withFotos}</p><p class="stat-label">Fotos</p></div> <div class="stat-card"><p class="stat-value text-red-600">${pendingFotos}</p><p class="stat-label">Wartend</p></div> <div class="stat-card"><p class="stat-value text-indigo-600">${count247}</p><p class="stat-label">24/7</p></div>`.replaceAll('stat-card', 'bg-white p-4 rounded-xl shadow-lg text-center').replaceAll('stat-value', 'text-3xl font-bold').replaceAll('stat-label', 'text-slate-500'); const ctx=document.getElementById('statsChart')?.getContext('2d'); if(!ctx)return; const data={labels:['Strom','Fotos','24/7','Neu'],datasets:[{data:[withStrom,withFotos,count247,newEntries],backgroundColor:['#3b82f6','#10b981','#f59e0b','#ef4444']}]}; const options={responsive:true,plugins:{legend:{position:'bottom'},title:{display:true,text:'Merkmale'}}}; if(statsChart){statsChart.data=data;statsChart.update();}else{statsChart=new Chart(ctx,{type:'doughnut',data,options});} }
+
+  // --- Foto-Management ---
+  async function approveFoto(hutId, index) { try { const ref = db.collection('eierhuetten').doc(hutId); const snap = await ref.get(); const fotos = [...(snap.data().fotos || [])]; const f = fotos[index]; if (!f || typeof f === 'string') { showNotification('ℹ️ Schon freigegeben.'); return; } fotos[index] = { ...f, status: 'freigegeben' }; await ref.update({ fotos }); await ref.collection('log').add({ admin: currentUser.email, feld: 'fotos', wert: `Foto ${index} freigegeben`, zeitpunkt: new Date() }); showNotification('✅ Bild freigegeben'); } catch (err) { console.error(err); showNotification('❌ Fehler Freigabe.'); } }
+  async function rejectFoto(hutId, index) { try { const ref = db.collection('eierhuetten').doc(hutId); const snap = await ref.get(); const fotos = [...(snap.data().fotos || [])]; const f = fotos[index]; if (!f) return; const deleteUrl = typeof f === 'object' ? f.delete_url : null; fotos.splice(index, 1); await ref.update({ fotos }); await ref.collection('log').add({ admin: currentUser.email, feld: 'fotos', wert: `Foto ${index} abgelehnt`, zeitpunkt: new Date() }); if (deleteUrl) { try { fetch(deleteUrl); } catch (e) { console.warn('imgbb delete failed', e); } } showNotification('🗑️ Bild entfernt'); } catch (err) { console.error(err); showNotification('❌ Fehler Entfernen.'); } }
+  async function initImageUpload(input, hutId) { const files = Array.from(input.files); if (files.length === 0) return; showNotification(`⏳ Lade ${files.length} Bild(er)...`); const uploads = []; for (const file of files) { const base64 = await new Promise((res, rej) => { const reader = new FileReader(); reader.onload = () => res(reader.result.split(',')[1]); reader.onerror = rej; reader.readAsDataURL(file); }).catch(e => { showNotification('❌ Fehler Lesen Datei.'); console.error(e); return null; }); if (!base64) continue; try { const fd = new FormData(); fd.append('key', '5df04de9bfd2776f101329be4193e44c'); fd.append('image', base64); const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: fd }); const json = await res.json(); if (json?.data?.url) { uploads.push({ url: json.data.url, delete_url: json.data.delete_url, status: 'wartet' }); } else { throw new Error(json.error?.message || "ImgBB Fehler"); } } catch (err) { console.error(err); showNotification(`❌ Upload-Fehler: ${err.message}`); } } if (uploads.length > 0) { try { await db.collection('eierhuetten').doc(hutId).update({ fotos: firebase.firestore.FieldValue.arrayUnion(...uploads) }); showNotification('✅ Bilder hochgeladen (warten).'); } catch (err) { console.error(err); showNotification('❌ Fehler Speichern Bilder: ' + err.message); } } }
+  window.deleteFoto = async function(hutId, index) { if (!confirm('Foto wirklich löschen?')) return; try { const ref = db.collection('eierhuetten').doc(hutId); const snap = await ref.get(); if (!snap.exists) return showNotification("Hütte weg."); const fotos = [...(snap.data().fotos || [])]; const f = fotos[index]; if (!f) return showNotification("Foto weg."); const url = typeof f === 'string' ? f : f.url; const deleteUrl = typeof f === 'object' ? f.delete_url : null; fotos.splice(index, 1); await ref.update({ fotos }); await ref.collection('log').add({ admin: currentUser.email, feld: 'fotos', wert: `Foto ${index} gelöscht`, zeitpunkt: new Date() }); if (deleteUrl) { try { fetch(deleteUrl); } catch (e) { console.warn('imgbb delete failed', e); } } showNotification('🗑️ Foto gelöscht.'); } catch (e) { alert('Fehler Löschen Foto: ' + e.message); } }
+
+  // --- Hütten-CRUD (angepasst für Detailansicht) ---
+  async function saveHutDetails() { if (!currentEditingHutId) return; const hutId = currentEditingHutId; const content = document.getElementById('edit-hut-content'); if (!content) return; const updatedData = { name: content.querySelector(`#edit-name-${hutId}`)?.value.trim(), typ: content.querySelector(`#edit-typ-${hutId}`)?.value, beschreibung: content.querySelector(`#edit-beschreibung-${hutId}`)?.value.trim(), kiStichpunkte: content.querySelector(`#edit-kiStichpunkte-${hutId}`)?.value.trim(), sitzplaetze: content.querySelector(`#edit-sitzplaetze-${hutId}`)?.value, strom: content.querySelector(`#edit-strom-${hutId}`)?.value, status: content.querySelector(`#edit-status-${hutId}`)?.value, }; Object.keys(updatedData).forEach(key => updatedData[key] === undefined && delete updatedData[key]); if (!updatedData.name) { alert("Name darf nicht leer sein."); return; } try { await db.collection('eierhuetten').doc(hutId).update(updatedData); await db.collection('eierhuetten').doc(hutId).collection('log').add({ admin: currentUser.email, feld: 'Details', wert: 'Gespeichert', zeitpunkt: new Date() }); showNotification(`✅ "${updatedData.name}" gespeichert.`); showHutList(); } catch (e) { showNotification(`❌ Fehler Speichern: ${e.message}`); } }
+  async function updateField(hutId, field, value) { if(field === 'status') { try { await db.collection('eierhuetten').doc(hutId).update({ [field]: value }); await db.collection('eierhuetten').doc(hutId).collection('log').add({ admin: currentUser.email, feld: field, wert: value, zeitpunkt: new Date() }); showNotification('✅ Status aktualisiert.'); } catch (e) { showNotification(`❌ Fehler: ${e.message}`); } } }
+
+  // --- Navigation & Ansichtswechsel ---
+  window.toggleMenu = function(forceOpen = null) { document.body.classList.toggle('sidebar-open', forceOpen === null ? undefined : forceOpen); }
+  window.showSection = function(id) { if (id === 'huts') { showHutList(); } document.querySelectorAll('.dash-section').forEach(sec => sec.classList.add('hidden')); document.getElementById(id)?.classList.remove('hidden'); let title = "Übersicht"; document.querySelectorAll('.nav-btn').forEach(btn => { const btnOnClick = btn.getAttribute('onclick'); const isActive = btnOnClick?.includes(`showSection('${id}')`); btn.classList.toggle('active', isActive); if (isActive) title = btn.textContent.trim(); }); document.getElementById('header-title').textContent = title; toggleMenu(false); }
+  function showHutList() { hutListView?.classList.remove('hidden'); editHutView?.classList.add('hidden'); if(editHutContent) editHutContent.innerHTML = ''; currentEditingHutId = null; applySearchAndSort(); }
+  async function showEditHut(hutId) { currentEditingHutId = hutId; const hut = allHuts.find(h => h.id === hutId); if (!hut) { alert("Hütte nicht gefunden!"); return; } hutListView?.classList.add('hidden'); editHutView?.classList.remove('hidden'); if(editHutTitle) editHutTitle.textContent = `Bearbeiten: ${hut.name}`; await renderEditHutForm(hut); }
+
+  // --- Hütten-Rendering ---
+  function renderHuts(list) { if (!hutListContainer) return; hutListContainer.innerHTML = ''; if (list.length === 0) { hutListContainer.innerHTML = `<p class="text-slate-500 italic text-center col-span-full">Keine Hütten gefunden.</p>`; return; } list.forEach(hut => { const el = document.createElement('div'); el.className = 'hut-card'; el.onclick = () => showEditHut(hut.id); const fotos = hut.fotos || []; const firstImage = fotos.find(f => f && (typeof f === 'string' || f.status === 'freigegeben')); const imageUrl = firstImage ? (typeof firstImage === 'string' ? firstImage : firstImage.url) : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; el.innerHTML = `<img src="${imageUrl}" alt="${hut.name || 'Hütte'}"><div class="hut-card-content"><h3 class="hut-card-title">${hut.name || 'Unbenannt'}</h3><div class="mt-1 space-x-1">${hut.typ ? `<span class="hut-card-type">${hut.typ}</span>` : ''} <span class="text-xs px-2 py-0.5 rounded-full ${hut.status === 'angenommen' ? 'bg-green-100 text-green-700' : hut.status === 'abgelehnt' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}">${hut.status || 'offen'}</span></div></div>`; hutListContainer.appendChild(el); }); }
+  async function renderEditHutForm(hut) { if (!editHutContent) return; const hutId = hut.id; const fotos = hut.fotos || []; let logs = []; try { const logSnap = await db.collection('eierhuetten').doc(hutId).collection('log').orderBy('zeitpunkt', 'desc').limit(20).get(); logs = logSnap.docs.map(doc => doc.data()); } catch (err) { console.error(`Fehler Logs ${hutId}:`, err); } const selectedEmojis = new Set(normalizeToEmojiArray(hut.tiere || [])); const tiereHTML = Object.entries(TIERE_EMOJI_TO_NAME).map(([emoji, name]) => `<button type="button" data-hut-id="${hutId}" data-emoji="${emoji}" class="admin-tiere-btn text-2xl ${selectedEmojis.has(emoji) ? 'bg-yellow-200' : 'bg-slate-100'} rounded-lg p-1 transition" title="${name}">${emoji}</button>`).join(''); const tagsHTML = `${(hut.tags || []).map(t => `<span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">${t} <button type="button" onclick="removeTag('${hutId}','${t}')" class="ml-1 font-bold">×</button></span>`).join('')}<input type="text" placeholder="+ Tag" onkeydown="if(event.key==='Enter'&&this.value.trim()){addTag('${hutId}',this.value); this.value=''; this.placeholder='✔️';setTimeout(()=>this.placeholder='+ Tag',1500)}" class="border rounded-lg px-2 py-1 text-sm w-24">`; const fotosFreigegeben = fotos.map((f, i) => { if (!f || (typeof f === 'object' && f.status !== 'freigegeben')) return ''; const url = typeof f === 'string' ? f : f.url; return `<div class="relative w-24 h-24 rounded-lg overflow-hidden border"><img src="${url}" class="object-cover w-full h-full"/><button type="button" onclick="deleteFoto('${hutId}', ${i})" class="absolute top-0 right-0 bg-red-600 text-white rounded-bl-lg px-1 text-sm font-bold" title="Löschen">×</button></div>`; }).join('') || '<p class="text-slate-500 text-sm">Keine.</p>'; const fotosWartend = fotos.map((f, i) => { if (typeof f === 'string' || !f || typeof f !== 'object' || f.status !== 'wartet') return ''; return `<div class="relative w-24 h-24 rounded-lg border-2 border-yellow-400 border-dashed group"><img src="${f.url}" class="object-cover w-full h-full opacity-50 grayscale"/><div class="absolute inset-0 flex flex-col items-center justify-center text-xs text-white bg-black/60">⏳<div class="flex gap-1 mt-2"><button type="button" onclick="approveFoto('${hutId}', ${i})" class="bg-green-600 p-2 rounded-full" title="Ok">✔</button><button type="button" onclick="geminiAnalyzeImage(this, '${f.url}')" class="bg-ai p-2 rounded-full" title="AI?">🤖</button><button type="button" onclick="rejectFoto('${hutId}', ${i})" class="bg-red-600 p-2 rounded-full" title="X">✖</button></div></div></div>`; }).join(''); const hutTypes = ['Eierhütte', 'Hofladen', 'Selbstbedienungshäuschen', 'Spielplatz', 'Abenteuerhof', 'Automat', 'Andere']; const typOptions = hutTypes.map(t => `<option value="${t}" ${hut.typ === t ? 'selected' : ''}>${t}</option>`).join(''); editHutContent.innerHTML = `<div class="space-y-4"><div><label class="form-label">Name:</label><input id="edit-name-${hutId}" class="form-input text-xl font-bold w-full border-b mt-1" value="${hut.name || ''}"></div><div><label class="form-label">Typ:</label><select id="edit-typ-${hutId}" class="form-input mt-1"><option value="">-- Wählen --</option>${typOptions}</select></div><div class="form-section"><label class="form-label text-sm">KI-Stichpunkte:</label><input type="text" id="edit-kiStichpunkte-${hutId}" value="${hut.kiStichpunkte || ''}" placeholder="z.B. Eier, Honig, 24/7" class="form-input mt-1"><button onclick="geminiGenerateDescription(this, '${hutId}')" class="btn-secondary w-full mt-1">🤖 Beschreibung generieren</button></div><div><label class="form-label">Beschreibung:</label><textarea id="edit-beschreibung-${hutId}" class="form-input h-24 mt-1">${hut.beschreibung || ''}</textarea></div><div><label class="form-label">Tiere:</label><div class="flex flex-wrap gap-2 mt-1">${tiereHTML}</div></div><div><label class="form-label">Tags:</label><div class="flex flex-wrap gap-2 items-center mt-1">${tagsHTML}</div></div><div><label class="form-label">Fotos (OK):</label><div class="flex flex-wrap gap-2 mt-1">${fotosFreigegeben}</div></div>${fotosWartend ? `<div><label class="form-label">Fotos (Warten):</label><div class="flex flex-wrap gap-2 mt-1">${fotosWartend}</div></div>` : ''}<label class="form-label text-sm">📷 Neues Bild:</label><input type="file" accept="image/*" onchange="initImageUpload(this, '${hutId}')" class="form-file mt-1"/></div><div class="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label class="form-label">Sitzplätze:</label><select id="edit-sitzplaetze-${hutId}" class="form-input mt-1">${['Ja','Nein',''].map(o=>`<option value="${o}" ${o===hut.sitzplaetze?'selected':''}>${o||'k.A.'}</option>`).join('')}</select></div><div><label class="form-label">Strom:</label><select id="edit-strom-${hutId}" class="form-input mt-1">${['Ja','Nein',''].map(o=>`<option value="${o}" ${o===hut.strom?'selected':''}>${o||'k.A.'}</option>`).join('')}</select></div><div><label class="form-label">Status:</label><select id="edit-status-${hutId}" class="form-input mt-1">${['offen','angenommen','abgelehnt'].map(s=>`<option value="${s}" ${s===hut.status?'selected':''}>${s}</option>`).join('')}</select></div></div><div class="minimap" id="edit-map-${hutId}"></div><details class="mt-3"><summary class="summary-style">Log (${logs.length})</summary><ul class="log-list">${logs.map(log=>`<li class="log-item"><strong>${log.admin||'System'}</strong> änderte <em>${log.feld}</em> auf <code>${log.wert}</code> <span class="log-time">${new Date(log.zeitpunkt?.seconds*1000||Date.now()).toLocaleString()}</span></li>`).join('')}</ul></details><div class="flex justify-between items-center pt-4 border-t mt-4"><button type="button" onclick="saveHutDetails()" class="btn-primary">💾 Speichern</button><button type="button" onclick="deleteHut('${hutId}')" class="btn-danger">🗑️ Löschen</button></div></div>`.replaceAll('form-label','font-medium text-slate-700').replaceAll('form-input','w-full border rounded-lg p-2').replaceAll('form-section','p-3 bg-slate-50 rounded-lg space-y-2 border').replaceAll('form-file','block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-primary hover:file:bg-emerald-100').replaceAll('summary-style','cursor-pointer text-sm text-slate-600').replaceAll('log-list','text-xs max-h-48 overflow-auto mt-2 p-2 bg-slate-50 rounded-lg').replaceAll('log-item','border-b py-1').replaceAll('log-time','text-slate-500').replaceAll('btn-primary','bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg font-semibold').replaceAll('btn-secondary','bg-secondary hover:bg-indigo-700 text-white px-3 py-1 rounded-lg text-sm').replaceAll('btn-danger','bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg font-semibold'); initEditMap(hut); }
+  function initEditMap(hut) { const mapId = `edit-map-${hut.id}`; const mapContainer = document.getElementById(mapId); if (!mapContainer || mapContainer.classList.contains('leaflet-container')) return; const lat = hut.location?.latitude || 51.16; const lng = hut.location?.longitude || 10.45; const editMap = L.map(mapId, { zoomControl: true, dragging: true, scrollWheelZoom: true, doubleClickZoom: true, boxZoom: true, keyboard: true }).setView([lat, lng], 13); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(editMap); const marker = L.marker([lat, lng], { draggable: true }).addTo(editMap); setTimeout(() => editMap.invalidateSize(), 100); marker.on('dragend', async (e) => { const newPos = e.target.getLatLng(); const kommentar = prompt('Kommentar zur Standortänderung (optional):'); try { await db.collection('eierhuetten').doc(hut.id).update({ location: new firebase.firestore.GeoPoint(newPos.lat, newPos.lng) }); await db.collection('eierhuetten').doc(hut.id).collection('log').add({ admin: currentUser.email, feld: 'location', wert: `Lat: ${newPos.lat.toFixed(6)}, Lng: ${newPos.lng.toFixed(6)}`, kommentar: kommentar || '', zeitpunkt: new Date() }); showNotification(`📍 Standort aktualisiert.`); } catch (err) { showNotification(`❌ Fehler Standort Speichern: ${err.message}`); marker.setLatLng([lat, lng]); } }); }
+
+  // --- Interaktive Elemente (Tiere, Tags) ---
+  document.addEventListener('click', async (e) => { const btn = e.target.closest('.admin-tiere-btn'); if (!btn) return; const hutId = btn.dataset.hutId; const emoji = btn.dataset.emoji; if (!hutId || !emoji) return; const willSelect = !btn.classList.contains('bg-yellow-200'); btn.classList.toggle('bg-yellow-200', willSelect); btn.classList.toggle('bg-slate-100', !willSelect); try { await toggleTier(hutId, emoji); } catch (err) { console.error('toggleTier Fehler:', err); btn.classList.toggle('bg-yellow-200', !willSelect); btn.classList.toggle('bg-slate-100', willSelect === false); showNotification('❌ Fehler Tier-Auswahl.'); } });
+  async function toggleTier(hutId, emoji) { const ref = db.collection('eierhuetten').doc(hutId); let newArray = []; await db.runTransaction(async tx => { const doc = await tx.get(ref); if (!doc.exists) throw new Error('Hütte weg'); let tiere = normalizeToEmojiArray(doc.data().tiere); const idx = tiere.indexOf(emoji); if (idx >= 0) { tiere.splice(idx, 1); } else { tiere = tiere.filter(t => t !== '❌'); tiere.push(emoji); } if (emoji === '❌' && idx < 0) { tiere = ['❌']; } newArray = tiere; tx.update(ref, { tiere }); }); try { await db.collection('eierhuetten').doc(hutId).collection('log').add({ admin: currentUser.email, feld: 'tiere', wert: newArray.join(', '), zeitpunkt: new Date() }); } catch (e) { console.warn('Log error', e); } showNotification(`🐾 Tiere aktualisiert`); }
+  window.addTag = async function(hutId, tag) { tag = tag.trim(); if (!tag) return; try { await db.collection('eierhuetten').doc(hutId).update({ tags: firebase.firestore.FieldValue.arrayUnion(tag) }); showNotification(`#${tag} +`); } catch (e) { showNotification(`❌ Fehler Tag +: ${e.message}`); } }
+  window.removeTag = async function(hutId, tag) { try { await db.collection('eierhuetten').doc(hutId).update({ tags: firebase.firestore.FieldValue.arrayRemove(tag) }); showNotification(`#${tag} -`); } catch (e) { showNotification(`❌ Fehler Tag -: ${e.message}`); } }
+
+  // --- Paginierung, Suche & Filterung ---
+  function renderPage(page) { if (page) currentPage = page; const start = (currentPage - 1) * hutsPerPage; const end = start + hutsPerPage; const source = filteredHuts.length > 0 || searchInput?.value.trim() ? filteredHuts : allHuts; const hutsToRender = source.slice(start, end); renderHuts(hutsToRender); renderPagination(source.length); }
+  function renderPagination(totalItems) { const totalPages = Math.ceil(totalItems / hutsPerPage); const pc = document.getElementById('pagination'); pc.innerHTML = ''; if (totalPages <= 1) return; const createBtn = (lbl, pg) => { const btn = document.createElement('button'); btn.textContent = lbl; btn.disabled = pg === currentPage; btn.className = 'px-3 py-1 border rounded-lg mx-1 disabled:bg-slate-200 disabled:text-slate-500 bg-white shadow-sm'; btn.onclick = () => renderPage(pg); return btn; }; if (currentPage > 1) pc.appendChild(createBtn('«', currentPage - 1)); for (let i = 1; i <= totalPages; i++) { if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) { pc.appendChild(createBtn(i, i)); } else if (i === currentPage - 3 || i === currentPage + 3) { const dots = document.createElement('span'); dots.textContent = '...'; dots.className = 'px-2 py-1'; pc.appendChild(dots); } } if (currentPage < totalPages) pc.appendChild(createBtn('»', currentPage + 1)); }
+  function applySearchAndSort() { const search = searchInput?.value.toLowerCase() || ""; const sortBy = document.getElementById("sortSelect")?.value || "name"; if (search) { filteredHuts = allHuts.filter(hut => (hut.name?.toLowerCase() || "").includes(search) || (hut.status?.toLowerCase() || "").includes(search) || (hut.typ?.toLowerCase() || "").includes(search) || (hut.tags || []).join(' ').toLowerCase().includes(search)); } else { filteredHuts = [...allHuts]; } filteredHuts.sort((a, b) => { if (sortBy === "name") return (a.name || "").localeCompare(b.name || ""); if (sortBy === "createdAt") return (b.erstelltAm?.toMillis?.() || 0) - (a.erstelltAm?.toMillis?.() || 0); return 0; }); renderPage(1); }
+
+  // --- Hütten löschen ---
+  window.deleteHut = async function(id) { if (!confirm('Hütte wirklich löschen? Kann nicht rückgängig gemacht werden.')) return; try { const doc = await db.collection('eierhuetten').doc(id).get(); if (!doc.exists) return showNotification('❌ Hütte weg.', 'bot'); const hut = doc.data(); if (hut.paypalSubscriptionId) { showNotification('🔄 Kündige Abo...', 'bot'); try { const cancelFn = firebase.functions().httpsCallable('cancelPaypalSubscription'); const result = await cancelFn({ subscriptionId: hut.paypalSubscriptionId }); if (result.data.success) { showNotification('✅ Abo gekündigt.', 'bot'); } else { if (!confirm(`⚠️ Abo Kündigung fehlgeschlagen.\nTrotzdem löschen?`)) { showNotification('🚫 Abbruch.', 'bot'); return; } } } catch (err) { if (!confirm(`⚠️ Fehler Abo Kündigung: ${err.message}\nTrotzdem löschen?`)) { showNotification('🚫 Abbruch.', 'bot'); return; } } } if (Array.isArray(hut.fotos)) { hut.fotos.forEach(f => { if (f?.delete_url) fetch(f.delete_url).catch(e => console.warn(`ImgBB delete failed: ${e.message}`)); }); } await db.collection('eierhuetten').doc(id).delete(); showNotification('🗑️ Hütte gelöscht.', 'bot'); showHutList(); } catch (err) { console.error('❌ Fehler Löschen:', err); showNotification('❌ Fehler Löschen.', 'bot'); } }
+
+  // --- Live-Updates für Dashboard ---
+  function initLivePendingFotos() { db.collection('eierhuetten').where('fotos', '!=', []).onSnapshot(snapshot => { const pending = []; snapshot.forEach(doc => { const data = doc.data(); if (Array.isArray(data.fotos) && data.fotos.some(f => f?.status === "wartet")) { pending.push({ id: doc.id, ...data }); } }); renderPendingFotos(pending); }, err => console.error("❌ Fehler Live Pending Fotos:", err)); }
+  function renderPendingFotos(list) { const container = document.getElementById("pending-fotos"); container.innerHTML = ""; const huetten = list.filter(h => Array.isArray(h.fotos) && h.fotos.some(f => f?.status === 'wartet')); if (huetten.length === 0) { container.innerHTML = "<p class='italic text-slate-500'>Keine Fotos warten.</p>"; return; } huetten.forEach(hut => { const wartende = (hut.fotos || []).map((f, i) => ({ f, i })).filter(item => item.f?.status === 'wartet'); if (wartende.length === 0) return; const card = document.createElement('div'); card.className = "bg-white border p-3 rounded-lg mb-4 shadow-sm"; card.innerHTML = `<div class="flex justify-between items-center mb-2"><label class="flex items-center space-x-2"><input type="checkbox" ${pendingSelected.has(hut.id)?'checked':''} onchange="if(this.checked) pendingSelected.add('${hut.id}'); else pendingSelected.delete('${hut.id}');"><span class="font-semibold">${hut.name} (${wartende.length})</span></label><button class="bg-blue-600 text-white px-2 py-1 rounded-lg text-sm" onclick="showSection('huts'); showEditHut('${hut.id}');">🔎</button></div><div class="flex flex-wrap gap-2">${wartende.map(item => `<div class="relative group"><img src="${item.f.url}" title="Klick zum Freigeben" class="w-24 h-24 object-cover rounded-lg border cursor-pointer hover:ring-4 hover:ring-green-400" onclick="this.style.opacity='0.6'; approveFoto('${hut.id}', ${item.i}).catch(e=>{console.error(e); showNotification('❌ Fehler'); this.style.opacity='1';}).finally(() => this.closest('.relative')?.remove())"></div>`).join('')}</div>`; container.appendChild(card); }); const massBtn = document.createElement('button'); massBtn.textContent = "✅ Ausgewählte freigeben"; massBtn.className = "mt-4 bg-green-600 text-white px-4 py-2 rounded-lg"; massBtn.onclick = async () => { if (pendingSelected.size === 0) return showNotification('ℹ️ Keine gewählt.'); massBtn.disabled = true; for (const id of Array.from(pendingSelected)) { await approveAllFotosForHut(id); } pendingSelected.clear(); massBtn.disabled = false; showNotification('✅ Ausgewählte freigegeben.'); }; container.appendChild(massBtn); }
+  async function approveAllFotosForHut(hutId) { try { const ref = db.collection('eierhuetten').doc(hutId); const snap = await ref.get(); if (!snap.exists) return; let fotos = [...(snap.data().fotos || [])]; const indices = fotos.reduce((acc, f, i) => { if (f?.status === 'wartet') acc.push(i); return acc; }, []); if (indices.length > 0) { indices.forEach(i => { fotos[i] = { ...fotos[i], status: 'freigegeben' }; }); await ref.update({ fotos }); await ref.collection('log').add({ admin: currentUser.email, feld: 'fotos', wert: `${indices.length} Fotos freigegeben`, zeitpunkt: new Date() }); } } catch (err) { console.error(`Fehler Massenfreigabe ${hutId}:`, err); showNotification(`❌ Fehler Massenfreigabe ${hutId}`); } }
+  function initLiveNewHuts() { db.collection('eierhuetten').where('status', '==', 'offen').onSnapshot(snapshot => { const neue = []; snapshot.forEach(doc => neue.push({ id: doc.id, ...doc.data() })); renderNewEntries(neue); renderStats(allHuts); }, err => console.error("❌ Fehler Live Neue Hütten:", err)); }
+  function renderNewEntries(list) { const nl = document.getElementById("neueListe"); const neue = list.filter(h => h.status === "offen"); if (neue.length === 0) { nl.innerHTML = "<p class='italic text-slate-500'>Keine neuen.</p>"; return; } nl.innerHTML = ""; neue.forEach(hut => { const row = document.createElement("div"); row.className = "flex items-center justify-between bg-white shadow-sm rounded-lg px-3 py-2"; row.innerHTML = `<a href="javascript:void(0)" onclick="showSection('huts'); showEditHut('${hut.id}');" class="font-medium text-blue-600 hover:underline truncate max-w-[50%] block" title="${hut.name}">${hut.name}</a><div class="flex space-x-2"><button onclick="updateField('${hut.id}', 'status', 'angenommen')" class="btn-xs bg-green-500">OK</button><button onclick="updateField('${hut.id}', 'status', 'abgelehnt')" class="btn-xs bg-red-500">X</button></div>`.replaceAll('btn-xs', 'px-2 py-1 text-white rounded-lg whitespace-nowrap text-sm'); nl.appendChild(row); }); }
+
+  // --- Support-Ticket-Logik ---
+  window.currentReplyTicketId = null; window.currentReplyEmail = null;
+  async function ladeSupportTickets() { try { const snapshot = await db.collection('support').orderBy('createdAt', 'desc').limit(50).get(); const body = document.getElementById('support-tickets-body'); body.innerHTML = ''; if (snapshot.empty) { body.innerHTML = '<tr><td colspan="6" class="p-4 text-center italic">Keine Tickets.</td></tr>'; return; } snapshot.forEach(doc => { const ticket = doc.data(); const id = doc.id; const datum = ticket.createdAt?.toDate().toLocaleString('de-DE') || '-'; const email = ticket.mail || '-'; const status = ticket.status || 'offen'; let aiTagsHTML = (ticket.aiTags || []).map(tag => `<span class="tag-ai">${tag}</span>`).join(' ') || (status === 'offen' ? `<button onclick="geminiTagTicket(this, '${id}')" class="btn-tag">🤖 Taggen</button>` : ''); const row = document.createElement('tr'); row.className = "align-top hover:bg-slate-50"; row.id = `ticket-row-${id}`; row.innerHTML = `<td class="td-style whitespace-nowrap">${datum}</td><td class="td-style"><span title="${email}">${email.substring(0,20)}${email.length>20?'...':''}</span><br><span class="text-[10px] text-slate-400">ID: ${id.substring(0,5)}...</span></td><td class="td-style"><div id="msgs-${id}" class="msg-container">⏳...</div></td><td class="td-style"><div id="ai-tags-${id}" class="flex flex-col gap-1 items-start">${aiTagsHTML}</div></td><td class="td-style"><select onchange="updateSupportStatus('${id}', this.value)" class="select-xs">${['offen','bearbeitet','geschlossen','archiviert'].map(opt=>`<option value="${opt}" ${opt===status?'selected':''}>${opt}</option>`).join('')}</select></td><td class="td-style space-x-1 whitespace-nowrap"><button onclick="openReplyModal('${id}','${email}')" class="btn-xs bg-primary">Antwort</button><button onclick="loescheSupportTicket('${id}')" class="btn-xs bg-red-600">X</button></td>`.replaceAll('td-style','px-4 py-3 text-xs').replaceAll('msg-container','space-y-1 max-w-xs').replaceAll('tag-ai','px-2 py-1 bg-ai text-white rounded-full text-xs font-medium').replaceAll('btn-tag','bg-slate-200 text-slate-700 text-xs px-2 py-1 rounded-lg hover:bg-slate-300').replaceAll('select-xs','border rounded-lg px-2 py-1 text-xs').replaceAll('btn-xs','px-2 py-1 text-white rounded-md text-xs'); body.appendChild(row); ladeSupportNachrichten(id); }); } catch(e) { console.error("Fehler Laden Tickets:", e); showNotification("❌ Fehler Laden Tickets."); } }
+  function ladeSupportNachrichten(ticketId) { const wrap = document.getElementById("msgs-" + ticketId); if (!wrap) return; db.collection("support").doc(ticketId).collection("messages").orderBy("createdAt", "asc").get().then(snap => { wrap.innerHTML = ""; const msgsForAI = []; window.supportMessages[ticketId] = msgsForAI; if (snap.empty) { wrap.innerHTML = "<div class='text-slate-500'>(leer)</div>"; return; } snap.forEach(mdoc => { const d = mdoc.data(); const zeit = d.createdAt?.toDate?.().toLocaleString('de-DE', { hour: '2-digit', minute: '2-digit' }) || "-"; msgsForAI.push({ sender: d.sender || '?', text: d.text || '' }); wrap.innerHTML += `<div class="msg-bubble ${d.sender === 'Admin' ? 'bg-blue-50' : 'bg-white'}"><p class="msg-text">${d.text || ''}</p><p class="msg-meta">${d.sender || '?'} · ${zeit}</p></div>`; }); }).catch(err => { console.error(`Fehler Laden Nachrichten ${ticketId}:`, err); wrap.innerHTML = "<div class='text-red-500'>Fehler</div>"; }).finally(() => { wrap.style.maxHeight = '150px'; wrap.style.overflowY = 'auto'; }); wrap.closest('td')?.style.verticalAlign = 'top'; }
+  window.openReplyModal = function(ticketId, email) { window.currentReplyTicketId = ticketId; window.currentReplyEmail = email; document.getElementById("modal-ticket-info").innerText = `Ticket: ${ticketId.substring(0,5)}... User: ${email}`; document.getElementById("modal-reply-text").value = ""; document.getElementById("modal-reply-counter").innerText = "500 Zeichen übrig"; document.getElementById("support-reply-modal").classList.remove("hidden"); document.getElementById("support-reply-modal").classList.add("flex"); }
+  window.closeReplyModal = function() { document.getElementById("support-reply-modal").classList.add("hidden"); document.getElementById("support-reply-modal").classList.remove("flex"); window.currentReplyTicketId = null; window.currentReplyEmail = null; }
+  window.sendReply = async function() { const text = document.getElementById("modal-reply-text").value.trim(); if (!text || !window.currentReplyTicketId) return; try { await db.collection("support").doc(window.currentReplyTicketId).collection("messages").add({ text, sender: "Admin", createdAt: firebase.firestore.FieldValue.serverTimestamp() }); await db.collection("support").doc(window.currentReplyTicketId).update({ status: "geschlossen" }); showNotification("✅ Antwort gesendet & geschlossen"); closeReplyModal(); ladeSupportTickets(); } catch (err) { console.error("sendReply error", err); alert("Fehler: " + err.message); } }
+  window.updateSupportStatus = async function(id, status) { try { await db.collection('support').doc(id).update({ status }); showNotification('✅ Status aktualisiert'); if(status === 'offen') ladeSupportTickets(); } catch (e) { showNotification(`❌ Fehler: ${e.message}`); } }
+  window.loescheSupportTicket = async function(id) { if (!confirm('Ticket löschen?')) return; try { await db.collection('support').doc(id).delete(); showNotification('🗑️ Ticket gelöscht'); ladeSupportTickets(); } catch (e) { showNotification(`❌ Fehler: ${e.message}`); } }
+  document.getElementById("modal-reply-text")?.addEventListener("input", e => { const left = 500 - e.target.value.length; document.getElementById("modal-reply-counter").innerText = `${left} Zeichen übrig`; });
+
+  // --- Profil-Sektion ---
+  window.loadProfileAdmin = async function(id) { const queryId = id || document.getElementById("profile-selected-id").value; let snap; if (queryId) { currentProfileId = queryId; snap = await db.collection("profiles").doc(currentProfileId).get(); } else { const queryName = document.getElementById("profile-search").value.trim(); if (!queryName) return alert("ID/Name?"); const q = await db.collection("profiles").where("name","==",queryName).limit(1).get(); if (!q.empty) { snap = q.docs[0]; currentProfileId = snap.id; } else { try { snap = await db.collection("profiles").doc(queryName).get(); currentProfileId = snap.id; } catch (e) { return alert("Profil nicht gefunden."); } } } if (!snap.exists) return alert("Profil nicht gefunden!"); const data = snap.data(); document.getElementById("profile-admin-area").classList.remove("hidden"); document.getElementById("profile-pic-admin").src = data.pic || "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"; document.getElementById("profile-pic-url").value = data.pic || ""; document.getElementById("profile-name-admin").value = data.name || ""; document.getElementById("profile-bio-admin").value = data.bio || ""; document.getElementById("profile-role-admin").value = data.role || "user"; document.getElementById("profile-banned-admin").checked = data.banned || false; document.getElementById("profile-stats").textContent = `Fahrten: ${data.rides||0} | Km: ${data.km||0} | Login: ${data.lastLogin?.toDate()?.toLocaleString('de-DE')||"–"}`; const titleSel = document.getElementById("profile-title-admin"); titleSel.innerHTML = "<option value=''>Kein Titel</option>"; const titleSnap = await db.collection("titles").get(); titleSnap.forEach(doc => { const t = doc.data(); const opt = document.createElement("option"); opt.value = t.name; opt.textContent = t.name; titleSel.appendChild(opt); }); titleSel.value = data.title || ""; const badgeContainer = document.getElementById("profile-badges-admin"); badgeContainer.innerHTML = ""; const badgeSnap = await db.collection("badgesDefs").get(); badgeSnap.forEach(doc => { const b = doc.data(); const id = `badge-chk-${doc.id}`; const wrapper = document.createElement('div'); wrapper.className = 'flex items-center gap-1'; const chk = document.createElement("input"); chk.type = "checkbox"; chk.value = doc.id; chk.id = id; chk.checked = (data.badges || []).includes(doc.id); wrapper.appendChild(chk); const lbl = document.createElement("label"); lbl.setAttribute('for', id); lbl.className = 'cursor-pointer'; lbl.textContent = `${b.icon||"🏅"} ${b.name}`; wrapper.appendChild(lbl); badgeContainer.appendChild(wrapper); }); }
+  window.saveProfileAdmin = async function() { if (!currentProfileId) return; const badges = [...document.querySelectorAll("#profile-badges-admin input:checked")].map(i => i.value); try { await db.collection("profiles").doc(currentProfileId).update({ name: document.getElementById("profile-name-admin").value, pic: document.getElementById("profile-pic-url").value, bio: document.getElementById("profile-bio-admin").value, title: document.getElementById("profile-title-admin").value, role: document.getElementById("profile-role-admin").value, banned: document.getElementById("profile-banned-admin").checked, badges: badges }); alert("✔️ Profil gespeichert!"); } catch (e) { alert(`❌ Fehler: ${e.message}`); } }
+  window.deleteProfileAdmin = async function() { if (!currentProfileId || !confirm(`Profil ${currentProfileId} löschen? Auth bleibt!`)) return; try { await db.collection("profiles").doc(currentProfileId).delete(); alert("🗑️ Profil gelöscht!"); document.getElementById("profile-admin-area").classList.add("hidden"); document.getElementById("profile-search").value = ""; currentProfileId = null; } catch (e) { alert(`❌ Fehler: ${e.message}`); } }
+  window.openProfileLink = function() { if (currentProfileId) window.open(`https://eierhuettentour.web.app/profile.html?id=${currentProfileId}`, "_blank"); }
+  document.getElementById('profile-search')?.addEventListener('input', async e => { const q = e.target.value.trim(); const box = document.getElementById('profile-suggestions'); if (q.length < 3) { box.classList.add('hidden'); document.getElementById('profile-selected-id').value = ''; return; } const snap = await db.collection('profiles').where('name', '>=', q).where('name', '<=', q + '\uf8ff').limit(5).get(); box.innerHTML = snap.empty ? "<p class='p-2 text-slate-500 italic'>Nix</p>" : snap.docs.map(d => { const name = d.data().name; const safeName = name.replace(/'/g, "&apos;").replace(/"/g, "&quot;"); return `<div class="p-2 hover:bg-slate-100 cursor-pointer" onclick="selectProfile('${d.id}', '${safeName}')">${name}</div>`; }).join(''); box.classList.remove('hidden'); });
+  window.selectProfile = (id, name) => { document.getElementById('profile-search').value = name; document.getElementById('profile-selected-id').value = id; document.getElementById('profile-suggestions').classList.add('hidden'); loadProfileAdmin(id); };
+  document.getElementById('profile-search')?.addEventListener('keydown', e => { if(e.key === 'Enter') { document.getElementById('profile-suggestions').classList.add('hidden'); loadProfileAdmin(); } });
+
+  // --- Titel & Abzeichen Sektionen (Self-Contained Module) ---
+  (async () => { const titleList = document.getElementById("title-list"); const titleForm = document.getElementById("title-form"); const titleNameEl = document.getElementById("title-name"); const titleCondEl = document.getElementById("title-condition"); const titleValEl = document.getElementById("title-value"); let titleEditId = null; async function loadTitles() { if (!titleList) return; try { const snap = await db.collection("titles").get(); titleList.innerHTML = snap.empty ? "<p class='italic text-slate-500'>Keine Titel.</p>" : ""; snap.forEach(doc => { const t = doc.data(); const row = document.createElement("div"); row.className = "p-2 border rounded-lg flex justify-between items-center"; row.innerHTML = `<span><strong>${t.name}</strong> (${t.conditionType} ≥ ${t.conditionValue})</span><div class="space-x-2"><button type="button" class="btn-xs bg-blue-600" onclick="editTitle('${doc.id}')">✏️</button><button type="button" class="btn-xs bg-red-600" onclick="deleteTitle('${doc.id}')">🗑️</button></div>`.replaceAll('btn-xs','px-2 py-1 text-white rounded-lg text-xs'); titleList.appendChild(row); }); } catch(e) { console.error("Fehler Laden Titel:", e); } } window.editTitle = async (id) => { const doc = await db.collection("titles").doc(id).get(); const t = doc.data(); titleEditId = id; if (titleNameEl) titleNameEl.value = t.name || ""; if (titleCondEl) titleCondEl.value = t.conditionType || "rides"; if (titleValEl) titleValEl.value = t.conditionValue ?? 0; }; window.deleteTitle = async (id) => { if (confirm("Titel löschen?")) { await db.collection("titles").doc(id).delete(); await loadTitles(); } }; if (titleForm) { titleForm.addEventListener("submit", async (e) => { e.preventDefault(); const payload = { name: (titleNameEl?.value || "").trim(), conditionType: titleCondEl?.value || "rides", conditionValue: parseInt(titleValEl?.value || "0") || 0 }; if (!payload.name) { alert("Name?"); return; } if (titleEditId) { await db.collection("titles").doc(titleEditId).update(payload); titleEditId = null; } else { await db.collection("titles").add(payload); } if (titleForm) titleForm.reset(); await loadTitles(); }); } const badgeList = document.getElementById("badge-list-admin"); const badgeForm = document.getElementById("badge-form"); let badgeEditId = null; async function loadBadges() { if (!badgeList) return; try { const snap = await db.collection("badgesDefs").get(); badgeList.innerHTML = snap.empty ? "<p class='italic text-slate-500'>Keine Abzeichen.</p>" : ""; snap.forEach(doc => { const b = doc.data(); const icon = b.iconUrl ? `<img src="${b.iconUrl}" class="w-6 h-6 inline-block rounded"/>` : (b.icon || "🏅"); badgeList.innerHTML += `<div class="p-2 border rounded-lg flex justify-between items-center"><span>${icon} <strong>${b.name}</strong> (${b.conditionType} ≥ ${b.conditionValue})</span><div class="space-x-2"><button type="button" onclick="editBadge('${doc.id}')" class="btn-xs bg-blue-600">✏️</button><button type="button" onclick="deleteBadge('${doc.id}')" class="btn-xs bg-red-600">🗑️</button></div>`.replaceAll('btn-xs','px-2 py-1 text-white rounded-lg text-xs'); }); } catch(e) { console.error("Fehler Laden Abzeichen:", e); } } window.editBadge = async (id) => { const doc = await db.collection("badgesDefs").doc(id).get(); const b = doc.data(); badgeEditId = id; ['badge-name', 'badge-icon', 'badge-condition', 'badge-value'].forEach(elId => { const el = document.getElementById(elId); if (el) { if (elId === 'badge-name') el.value = b.name || ''; else if (elId === 'badge-icon') el.value = b.icon || ''; else if (elId === 'badge-condition') el.value = b.conditionType || 'rides'; else if (elId === 'badge-value') el.value = b.conditionValue ?? 0; } }); }; window.deleteBadge = async (id) => { if (confirm("Abzeichen löschen?")) { await db.collection("badgesDefs").doc(id).delete(); await loadBadges(); } }; if (badgeForm) { badgeForm.addEventListener("submit", async (e) => { e.preventDefault(); const name = document.getElementById("badge-name")?.value.trim(); if (!name) return alert("Name?"); let iconUrl = ""; const fileInput = document.getElementById("badge-icon-file"); if (fileInput.files.length > 0) { try { iconUrl = await badgeFormUploadToImgBB(fileInput.files[0]); } catch (err) { alert(`❌ Upload Fehler: ${err}`); return; } } const payload = { name, icon: document.getElementById("badge-icon")?.value.trim(), iconUrl, conditionType: document.getElementById("badge-condition")?.value, conditionValue: parseInt(document.getElementById("badge-value")?.value) || 0, createdAt: new Date() }; if (badgeEditId) { await db.collection("badgesDefs").doc(badgeEditId).update(payload); badgeEditId = null; } else { await db.collection("badgesDefs").add(payload); } alert("✅ Abzeichen gespeichert"); e.target.reset(); await loadBadges(); }); } async function badgeFormUploadToImgBB(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = async () => { const base64 = reader.result.split(",")[1]; const fd = new FormData(); fd.append("key", "5df04de9bfd2776f101329be4193e44c"); fd.append("image", base64); try { const res = await fetch("https://api.imgbb.com/1/upload", { method: "POST", body: fd }); const json = await res.json(); if (json?.data?.url) resolve(json.data.url); else reject(json.error?.message || 'ImgBB Fehler'); } catch (err) { reject(err); } }; reader.onerror = () => reject("❌ Datei lesen Fehler."); reader.readAsDataURL(file); }); } auth.onAuthStateChanged(user => { if(user) { loadTitles(); loadBadges(); } }); })();
 
-  async function loadHuts() {
-    try {
-      const snapshot = await db.collection('eierhuetten').orderBy('erstelltAm', 'desc').get();
-      allHuts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      window.allHuts = allHuts; // Für AI-Funktion global bereitstellen
-      applySearchAndSort(); // Wende Filter an
-      renderStats(allHuts); // Statistiken mit *allen* Hütten aktualisieren
-    } catch (e) {
-      console.error("Fehler beim Laden der Hütten:", e);
-      showNotification("❌ Fehler beim Laden der Hütten.");
-    }
-  }
- 
-  function renderStats(list) {
-    if (!list) return;
-    const total = list.length;
-    const withStrom = list.filter(h => h.strom === 'Ja').length;
-    const withFotos = list.filter(h => Array.isArray(h.fotos) && h.fotos.length > 0).length;
-    const count247 = list.filter(h => h.oeffnungszeiten === '24/7').length;
-    const newEntries = list.filter(h => h.status === 'offen').length;
-    const pendingFotos = list.reduce((sum, h) =>
-        sum + (Array.isArray(h.fotos)
-              ? h.fotos.filter(f => f && typeof f === 'object' && f.status === 'wartet').length
-              : 0), 0);
-    const c = document.getElementById("statsContainer");
-    if (!c) return;
-    c.innerHTML = `
-      <div class="bg-white p-4 rounded-xl shadow-lg text-center"><p class="text-3xl font-bold text-primary">${total}</p><p class="text-slate-500">Gesamt&nbsp;Hütten</p></div>
-      <div class="bg-white p-4 rounded-xl shadow-lg text-center"><p class="text-3xl font-bold text-yellow-600">${newEntries}</p><p class="text-slate-500">Neue&nbsp;Eintragungen</p></div>
-      <div class="bg-white p-4 rounded-xl shadow-lg text-center"><p class="text-3xl font-bold text-blue-600">${withStrom}</p><p class="text-slate-500">mit&nbsp;Strom</p></div>
-      <div class="bg-white p-4 rounded-xl shadow-lg text-center"><p class="text-3xl font-bold text-green-600">${withFotos}</p><p class="text-slate-500">mit&nbsp;Fotos</p></div>
-      <div class="bg-white p-4 rounded-xl shadow-lg text-center"><p class="text-3xl font-bold text-red-600">${pendingFotos}</p><p class="text-slate-500">wartende&nbsp;Fotos</p></div>
-      <div class="bg-white p-4 rounded-xl shadow-lg text-center"><p class="text-3xl font-bold text-indigo-600">${count247}</p><p class="text-slate-500">24/7 geöffnet</p></div>
-    `;
-    
-    const ctx = document.getElementById('statsChart').getContext('2d');
-    if (!ctx) return;
-    const data = {
-      labels: ['mit Strom','mit Fotos','24/7 geöffnet','Neue Eintragungen'],
-      datasets: [{
-        data: [withStrom, withFotos, count247, newEntries],
-        backgroundColor: ['#3b82f6','#10b981','#f59e0b','#ef4444']
-      }]
-    };
-    const options = {
-      responsive: true,
-      plugins: {
-        legend: { position: 'bottom' },
-        title: { display: true, text: 'Verteilung besonderer Merkmale' }
-      }
-    };
-    if (statsChart) {
-      statsChart.data = data;
-      statsChart.update();
-    } else {
-      statsChart = new Chart(ctx, { type: 'doughnut', data, options });
-    }
-  }
-  
-  // === Foto-Management ===
-
-  async function approveFoto(hutId, index) {
-    try {
-      const ref = db.collection('eierhuetten').doc(hutId);
-      const snap = await ref.get();
-      const fotos = Array.isArray(snap.data().fotos) ? [...snap.data().fotos] : [];
-      const f = fotos[index];
-      if (!f || typeof f === 'string') {
-        showNotification('ℹ️ Dieses Foto ist bereits freigegeben.');
-        return;
-      }
-      fotos[index] = { ...f, status: 'freigegeben' };
-      await ref.update({ fotos });
-      await ref.collection('log').add({
-        admin: currentUser.displayName || currentUser.email,
-        feld: 'fotos', wert: `Foto freigegeben: ${f.url}`, zeitpunkt: new Date()
-      });
-      showNotification('✅ Bild freigegeben');
-      // onSnapshot erledigt den Re-Render
-    } catch (err) {
-      console.error(err);
-      showNotification('❌ Fehler beim Freigeben.');
-    }
-  }
-
-  async function rejectFoto(hutId, index) {
-    try {
-      const ref = db.collection('eierhuetten').doc(hutId);
-      const snap = await ref.get();
-      const fotos = Array.isArray(snap.data().fotos) ? [...snap.data().fotos] : [];
-      const f = fotos[index];
-      if (!f) return;
-      const deleteUrl = typeof f === 'object' ? f.delete_url : null;
-      fotos.splice(index, 1);
-      await ref.update({ fotos });
-      await ref.collection('log').add({
-        admin: currentUser.displayName || currentUser.email,
-        feld: 'fotos', wert: `Foto abgelehnt/gelöscht: ${typeof f === 'string' ? f : f.url}`, zeitpunkt: new Date()
-      });
-      if (deleteUrl) {
-        try { fetch(deleteUrl, { method: 'GET' }); } catch (e) { console.warn('imgbb delete fehlgeschlagen', e); }
-      }
-      showNotification('🗑️ Bild entfernt');
-      // onSnapshot erledigt den Re-Render
-    } catch (err) {
-      console.error(err);
-      showNotification('❌ Fehler beim Entfernen.');
-    }
-  }
-
-  async function initImageUpload(input, hutId) {
-    const files = Array.from(input.files);
-    if (files.length === 0) return;
-    showNotification(`⏳ Lade ${files.length} Bild(er) hoch...`);
-    const uploadedObjects = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const reader = new FileReader();
-      const base64 = await new Promise((resolve, reject) => {
-        reader.onload = () => resolve(reader.result.split(',')[1]);
-        reader.onerror = () => reject('❌ Fehler beim Lesen der Datei.');
-        reader.readAsDataURL(file);
-      });
-      try {
-        const formData = new FormData();
-        formData.append('key', '5df04de9bfd2776f101329be4193e44c'); // ImgBB API Key
-        formData.append('image', base64);
-        const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: formData });
-        const json = await res.json();
-        if (json?.data?.url) {
-          uploadedObjects.push({
-            url: json.data.url,
-            delete_url: json.data.delete_url || null,
-            status: 'wartet'
-          });
-        } else {
-          throw new Error(json.error?.message || "Unbekannter ImgBB-Fehler");
-        }
-      } catch (err) {
-        console.error(err);
-        showNotification(`❌ Upload-Fehler: ${err.message}`);
-      }
-    }
-    if (uploadedObjects.length > 0) {
-      try {
-        await db.collection('eierhuetten').doc(hutId).update({
-          fotos: firebase.firestore.FieldValue.arrayUnion(...uploadedObjects)
-        });
-        showNotification('✅ Bilder hochgeladen (warten auf Freigabe).');
-        // onSnapshot erledigt den Re-Render
-      } catch (err) {
-        console.error(err);
-        showNotification('❌ Fehler beim Speichern der Bilder: ' + err.message);
-      }
-    }
-  }
-
-  // === Hütten-CRUD ===
-
-  async function updateField(hutId, field, value) {
-    if (field === "tiere") return; 
-    
-    // Finde das Element, um den Wert bei Abbruch zurückzusetzen
-    const el = document.getElementById(`hut-${hutId}`);
-    let inputElement;
-    if (field === 'name') inputElement = el.querySelector('input[onchange*="name"]');
-    if (field === 'beschreibung') inputElement = el.querySelector('textarea[onchange*="beschreibung"]');
-    if (field === 'sitzplaetze') inputElement = el.querySelector('select[onchange*="sitzplaetze"]');
-    if (field === 'strom') inputElement = el.querySelector('select[onchange*="strom"]');
-    if (field === 'status') inputElement = el.querySelector('select[onchange*="status"]');
-
-    if (!confirm(`⚠️ Willst du wirklich das Feld "${field}" auf "${value}" ändern?`)) {
-      // Setze den UI-Wert auf den alten Wert aus 'allHuts' zurück
-      const hut = allHuts.find(h => h.id === hutId);
-      if(hut && inputElement) {
-          inputElement.value = hut[field] || (field === 'status' ? 'offen' : '');
-      }
-      return;
-    }
-    
-    try {
-      await db.collection('eierhuetten').doc(hutId).update({ [field]: value });
-      await db.collection('eierhuetten').doc(hutId).collection('log').add({
-        admin: currentUser.displayName || currentUser.email,
-        feld: field, wert: value, zeitpunkt: new Date()
-      });
-      showNotification(`✅ Feld "${field}" aktualisiert.`);
-      // onSnapshot erledigt den Re-Render
-    } catch (e) {
-      showNotification(`❌ Fehler beim Aktualisieren: ${e.message}`);
-      // Bei Fehler auch zurücksetzen
-      const hut = allHuts.find(h => h.id === hutId);
-      if(hut && inputElement) {
-          inputElement.value = hut[field] || (field === 'status' ? 'offen' : '');
-      }
-    }
-  }
-
-  // === Navigation ===
-  
-  window.toggleMenu = function(forceOpen = null) {
-    if (forceOpen === null) {
-      document.body.classList.toggle('sidebar-open');
-    } else if (forceOpen) {
-      document.body.classList.add('sidebar-open');
-    } else {
-      document.body.classList.remove('sidebar-open');
-    }
-  }
-
-  window.showSection = function(id) {
-    document.querySelectorAll('.dash-section').forEach(sec =>
-      sec.classList.add('hidden')
-    );
-    document.getElementById(id).classList.remove('hidden');
-
-    let title = "Übersicht";
-    document.querySelectorAll('.nav-btn').forEach(btn => {
-      const btnOnClick = btn.getAttribute('onclick');
-      if (btnOnClick && btnOnClick.includes(`showSection('${id}')`)) {
-        btn.classList.add('active');
-        title = btn.textContent.trim(); 
-      } else {
-        btn.classList.remove('active');
-      }
-    });
-    
-    document.getElementById('header-title').textContent = title;
-    toggleMenu(false); // Schließe mobiles Menü
-  }
-
-  // === Hütten-Rendering ===
-  
-  async function renderHuts(list) {
-    if (!hutList) return;
-    hutList.innerHTML = '';
-    if (list.length === 0) {
-        hutList.innerHTML = `<p class="text-slate-500 italic text-center">Keine Hütten gefunden, die den Kriterien entsprechen.</p>`;
-        return;
-    }
-    
-    for (const hut of list) {
-      try {
-        const el = document.createElement("div");
-        el.className = "bg-white p-4 rounded-xl shadow-lg space-y-3"; 
-        el.id = `hut-${hut.id}`;
-        
-        const fotos = Array.isArray(hut.fotos) ? hut.fotos : [];
-        let logs = [];
-        try {
-          const logSnap = await db.collection('eierhuetten')
-            .doc(hut.id).collection('log').orderBy('zeitpunkt', 'desc').limit(20).get();
-          logs = logSnap.docs.map(doc => doc.data());
-        } catch (err) {
-          console.error(`❌ Fehler beim Laden der Logs für Hütte ${hut.id}:`, err);
-        }
-        
-        const selectedEmojis = new Set(normalizeToEmojiArray(hut.tiere || []));
-        let tiereHTML = `
-          <div class="flex flex-wrap gap-2" data-hut-id="${hut.id}">
-            ${Object.entries(TIERE_EMOJI_TO_NAME).map(([emoji, name]) => `
-              <button type="button"
-                data-hut-id="${hut.id}" data-emoji="${emoji}"
-                class="admin-tiere-btn text-2xl ${selectedEmojis.has(emoji) ? 'bg-yellow-200' : 'bg-slate-100'} rounded-lg p-1 transition"
-                title="${name}">
-                ${emoji}
-              </button>
-            `).join('')}
-          </div>
-        `;
-        
-        let tagsHTML = `
-          <div class="flex flex-wrap gap-2 items-center">
-            ${(Array.isArray(hut.tags)?hut.tags:[]).map(t => `
-              <span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
-                ${t} <button type="button" onclick="removeTag('${hut.id}','${t}')" class="ml-1 font-bold">×</button>
-              </span>
-            `).join('')}
-            <input type="text" placeholder="+ Tag" 
-              onkeydown="if(event.key==='Enter' && this.value.trim()){addTag('${hut.id}',this.value);this.value='';this.placeholder='✔️';setTimeout(()=>this.placeholder='+ Tag',1500)}"
-              class="border rounded-lg px-2 py-1 text-sm w-24">
-          </div>
-        `;
-        
-        let fotosFreigegeben = fotos
-          .map((foto, i) => {
-            const f = typeof foto === 'string' ? { url: foto, status: 'freigegeben' } : foto;
-            if (!f || (typeof f === 'object' && f.status !== 'freigegeben')) return '';
-            const url = typeof f === 'string' ? f : f.url;
-            return `
-              <div class="relative w-24 h-24 rounded-lg overflow-hidden border border-slate-300">
-                <img src="${url}" alt="Foto" class="object-cover w-full h-full" />
-                <button type="button" onclick="deleteFoto('${hut.id}', ${i})" 
-                  class="absolute top-0 right-0 bg-red-600 text-white rounded-bl-lg px-1 text-sm font-bold hover:bg-red-700" title="Foto löschen">×</button>
-              </div>
-            `;
-          }).join('') || '<p class="text-slate-500 text-sm">Keine Fotos</p>';
-        
-        let fotosWartend = fotos
-          .map((f, i) => {
-            if (typeof f === 'string' || !f || typeof f !== 'object' || f.status !== 'wartet') return '';
-            return `
-              <div class="relative w-24 h-24 rounded-lg overflow-hidden border-2 border-yellow-400 border-dashed group">
-                <img src="${f.url}" alt="wartet" class="object-cover w-full h-full opacity-50 grayscale" />
-                <div class="absolute inset-0 flex flex-col items-center justify-center text-xs text-white bg-black/60">
-                  ⏳ Wartet
-                  <div class="flex gap-1 mt-2">
-                    <button type="button" onclick="approveFoto('${hut.id}', ${i})" class="bg-green-600 p-2 rounded-full" title="Freigeben">✔</button>
-                    <button type="button" onclick="geminiAnalyzeImage(this, '${f.url}')" 
-                            class="bg-ai p-2 rounded-full" title="AI-Check">🤖</button>
-                    <button type="button" onclick="rejectFoto('${hut.id}', ${i})" class="bg-red-600 p-2 rounded-full" title="Löschen">✖</button>
-                  </div>
-                </div>
-              </div>
-            `;
-          }).join('');
-
-        el.innerHTML = `
-          <div class="flex justify-between items-start">
-            <input class="text-xl font-bold w-full mb-2 border-b" 
-              value="${hut.name || ''}" 
-              onchange="updateField('${hut.id}', 'name', this.value)">
-            <button onclick="geminiAuditHut(this, '${hut.id}')" class="bg-ai hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-sm whitespace-nowrap ml-2 flex items-center gap-1">
-              🤖 Audit
-            </button>
-          </div>
-          
-          <div class="p-3 bg-slate-50 rounded-lg space-y-2">
-            <label class="font-medium text-slate-700 text-sm">KI-Stichpunkte (für neue Beschreibung):
-              <input type="text" id="hut-keywords-${hut.id}" 
-                     placeholder="z.B. Eier, Honig, 24/7, nähe Wald" 
-                     class="w-full border rounded-lg p-2 mt-1">
-            </label>
-            <button onclick="geminiGenerateDescription(this, '${hut.id}')" 
-                    class="bg-secondary hover:bg-indigo-700 text-white px-3 py-1 rounded-lg text-sm w-full flex items-center justify-center gap-1">
-              🤖 Beschreibung aus Stichpunkten generieren
-            </button>
-          </div>
-          
-          <label class="font-medium text-slate-700">Beschreibung:
-            <textarea id="hut-description-${hut.id}" onchange="updateField('${hut.id}','beschreibung',this.value)" 
-              class="w-full border rounded-lg p-2 mt-1 h-24">${hut.beschreibung || ''}</textarea>
-          </label>
-          
-          <div><label class="font-medium text-slate-700">Tiere:</label>${tiereHTML}</div>
-          <div><label class="font-medium text-slate-700">Tags:</label>${tagsHTML}</div>
-          <div><label class="font-medium text-slate-700">Fotos (freigegeben):</label><div class="flex flex-wrap gap-2 mt-1">${fotosFreigegeben}</div></div>
-          ${fotosWartend ? `<div><label class="font-medium text-slate-700">Fotos (warten auf Freigabe):</label><div class="flex flex-wrap gap-2 mt-1">${fotosWartend}</div></div>` : ''}
-          <label class="block mt-2 text-sm font-medium text-slate-700">📷 Neues Bild hochladen:
-            <input type="file" accept="image/*" onchange="initImageUpload(this, '${hut.id}')" 
-                   class="upload-image mt-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-primary hover:file:bg-emerald-100" />
-          </label>
-          
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <label class="font-medium text-slate-700">Sitzplätze:
-              <select onchange="updateField('${hut.id}', 'sitzplaetze', this.value)" class="w-full mb-2 border rounded-lg p-2 mt-1">
-                ${['Ja','Nein', ''].map(o => `<option value="${o}" ${o===hut.sitzplaetze?'selected':''}>${o || 'k.A.'}</option>`).join('')}
-              </select>
-            </label>
-            <label class="font-medium text-slate-700">Strom:
-              <select onchange="updateField('${hut.id}', 'strom', this.value)" class="w-full mb-2 border rounded-lg p-2 mt-1">
-                ${['Ja','Nein', ''].map(o => `<option value="${o}" ${o===hut.strom?'selected':''}>${o || 'k.A.'}</option>`).join('')}
-              </select>
-            </label>
-            <label class="font-medium text-slate-700">Status:
-              <select onchange="updateField('${hut.id}', 'status', this.value)" class="w-full mb-2 border rounded-lg p-2 mt-1">
-                ${['offen','angenommen','abgelehnt'].map(s => `<option value="${s}" ${s===hut.status?'selected':''}>${s}</option>`).join('')}
-              </select>
-            </label>
-          </div>
-          
-          <div class="minimap" id="map-${hut.id}"></div>
-          
-          <details class="mt-3">
-            <summary class="cursor-pointer text-sm text-slate-600">Bearbeitungs-Log (${logs.length})</summary>
-            <ul class="text-xs max-h-48 overflow-auto mt-2 p-2 bg-slate-50 rounded-lg">
-              ${logs.map(log => `
-                <li class="border-b py-1"><strong>${log.admin || 'System'}</strong> änderte <em>${log.feld}</em> auf <code>${log.wert}</code> 
-                <span class="text-slate-500">am ${new Date(log.zeitpunkt?.seconds * 1000 || Date.now()).toLocaleString()}</span></li>
-              `).join('')}
-            </ul>
-          </details>
-          
-          <button type="button" onclick="deleteHut('${hut.id}')" 
-            class="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg mt-3 w-full font-semibold">Hütte löschen</button>
-        `;
-        hutList.appendChild(el);
-
-        // Karte initialisieren
-        if (hut.location?.latitude && hut.location?.longitude) {
-          const map = L.map(`map-${hut.id}`, {
-            zoomControl: false, dragging: true, scrollWheelZoom: true,
-            doubleClickZoom: true, boxZoom: true, keyboard: true
-          }).setView([hut.location.latitude, hut.location.longitude], 13);
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-          const marker = L.marker([hut.location.latitude, hut.location.longitude], { draggable: true }).addTo(map);
-          
-          setTimeout(() => map.invalidateSize(), 100); 
-          
-          marker.on('dragend', async (e) => {
-            const newPos = e.target.getLatLng();
-            const kommentar = prompt('Bitte Kommentar zur Standortänderung eingeben:');
-            if (kommentar === null) {
-              marker.setLatLng([hut.location.latitude, hut.location.longitude]);
-              return;
-            }
-            try {
-              await db.collection('eierhuetten').doc(hut.id).update({
-                location: new firebase.firestore.GeoPoint(newPos.lat, newPos.lng)
-              });
-              await db.collection('eierhuetten').doc(hut.id).collection('log').add({
-                admin: currentUser.displayName || currentUser.email,
-                feld: 'location',
-                wert: `Lat: ${newPos.lat.toFixed(6)}, Lng: ${newPos.lng.toFixed(6)}`,
-                kommentar: kommentar,
-                zeitpunkt: new Date()
-              });
-              showNotification(`📍 Standort von "${hut.name}" wurde aktualisiert.`);
-            } catch (err) {
-              showNotification(`❌ Fehler beim Speichern des Standorts: ${err.message}`);
-              marker.setLatLng([hut.location.latitude, hut.location.longitude]);
-            }
-          });
-        }
-      } catch (err) {
-        console.warn(`❌ Hütte konnte nicht gerendert werden: ${hut?.id || 'unbekannt'}`, err);
-        const fallback = document.createElement('div');
-        fallback.className = 'bg-red-100 text-red-800 p-2 rounded-lg mb-2';
-        fallback.textContent = `⚠️ Hütte konnte nicht geladen werden (ID: ${hut?.id || 'unbekannt'})`;
-        hutList.appendChild(fallback);
-      }
-    }
-  }
-
-  // === Interaktive Elemente (Tiere, Tags) ===
-  
-  document.addEventListener('click', async (e) => {
-    const btn = e.target.closest('.admin-tiere-btn');
-    if (!btn) return;
-
-    const hutId = btn.dataset.hutId;
-    const emoji = btn.dataset.emoji;
-    if (!hutId || !emoji) return;
-
-    const willSelect = !btn.classList.contains('bg-yellow-200');
-    btn.classList.toggle('bg-yellow-200', willSelect);
-    btn.classList.toggle('bg-slate-100', !willSelect);
-
-    try {
-      await toggleTier(hutId, emoji);
-    } catch (err) {
-      console.error('toggleTier Fehler:', err);
-      btn.classList.toggle('bg-yellow-200', !willSelect);
-      btn.classList.toggle('bg-slate-100', willSelect === false);
-      showNotification('❌ Fehler beim Speichern der Tier-Auswahl');
-    }
-  });
-
-  async function toggleTier(hutId, emoji) {
-    const ref = db.collection('eierhuetten').doc(hutId);
-    let newArray = [];
-    
-    await db.runTransaction(async tx => {
-      const doc = await tx.get(ref);
-      if (!doc.exists) throw new Error('Hütte nicht gefunden');
-
-      let tiere = Array.isArray(doc.data().tiere) ? doc.data().tiere : [];
-      tiere = normalizeToEmojiArray(tiere);
-
-      const idx = tiere.indexOf(emoji);
-      if (idx >= 0) {
-        tiere.splice(idx, 1); 
-      } else {
-        tiere = tiere.filter(t => t !== '❌');
-        tiere.push(emoji);
-      }
-      
-      if (emoji === '❌' && idx < 0) {
-          tiere = ['❌'];
-      }
-
-      newArray = tiere;
-      tx.update(ref, { tiere });
-    });
-
-    try {
-      await db.collection('eierhuetten').doc(hutId).collection('log').add({
-        admin: currentUser.displayName || currentUser.email,
-        feld: 'tiere', wert: newArray.join(', '), zeitpunkt: new Date()
-      });
-    } catch (e) {
-      console.warn('Log konnte nicht geschrieben werden', e);
-    }
-    showNotification(`🐾 Tiere aktualisiert`);
-    // onSnapshot erledigt den Re-Render
-  }
-
-  window.addTag = async function(hutId, tag) {
-    tag = tag.trim();
-    if (!tag) return;
-    const docRef = db.collection('eierhuetten').doc(hutId);
-    try {
-      await docRef.update({
-          tags: firebase.firestore.FieldValue.arrayUnion(tag)
-      });
-      showNotification(`#${tag} hinzugefügt ✅`);
-      // onSnapshot erledigt den Re-Render
-    } catch (e) {
-      showNotification(`❌ Fehler beim Hinzufügen von Tag: ${e.message}`);
-    }
-  }
-
-  window.removeTag = async function(hutId, tag) {
-    const docRef = db.collection('eierhuetten').doc(hutId);
-    try {
-      await docRef.update({
-          tags: firebase.firestore.FieldValue.arrayRemove(tag)
-      });
-      showNotification(`#${tag} entfernt ❌`);
-      // onSnapshot erledigt den Re-Render
-    } catch (e) {
-      showNotification(`❌ Fehler beim Entfernen von Tag: ${e.message}`);
-    }
-  }
-
-  // === Paginierung, Suche & Filterung ===
-  
-  function renderPage(page) {
-    if (page) currentPage = page;
-    const start = (currentPage - 1) * hutsPerPage;
-    const end = start + hutsPerPage;
-    const source = filteredHuts.length > 0 || searchInput.value.trim() ? filteredHuts : allHuts;
-    const hutsToRender = source.slice(start, end); 
-    
-    renderHuts(hutsToRender);
-    renderPagination(source.length); 
-  }
-
-  function renderPagination(totalItems) {
-    const totalPages = Math.ceil(totalItems / hutsPerPage);
-    const paginationContainer = document.getElementById('pagination');
-    paginationContainer.innerHTML = '';
-    if (totalPages <= 1) return;
-    
-    const createPageBtn = (label, pageNum) => {
-      const btn = document.createElement('button');
-      btn.textContent = label;
-      btn.disabled = pageNum === currentPage;
-      btn.className = 'px-3 py-1 border rounded-lg mx-1 disabled:bg-slate-200 disabled:text-slate-500 bg-white shadow-sm';
-      btn.onclick = () => renderPage(pageNum);
-      return btn;
-    };
-    
-    if (currentPage > 1) {
-      paginationContainer.appendChild(createPageBtn('«', currentPage - 1));
-    }
-    for (let i = 1; i <= totalPages; i++) {
-      if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
-        paginationContainer.appendChild(createPageBtn(i, i));
-      } else if (i === currentPage - 3 || i === currentPage + 3) {
-        const dots = document.createElement('span');
-        dots.textContent = '...';
-        dots.className = 'px-2 py-1';
-        paginationContainer.appendChild(dots);
-      }
-    }
-    if (currentPage < totalPages) {
-      paginationContainer.appendChild(createPageBtn('»', currentPage + 1));
-    }
-  }
-
-  function applySearchAndSort() {
-    const search = document.getElementById("search-input")?.value.toLowerCase() || "";
-    const sortBy = document.getElementById("sortSelect")?.value || "name";
-
-    if (search) {
-      filteredHuts = allHuts.filter(hut => {
-        const name   = hut.name?.toLowerCase() || "";
-        const status = hut.status?.toLowerCase() || "";
-        const strom  = hut.strom?.toLowerCase() || "";
-        const sitz   = hut.sitzplaetze?.toLowerCase() || "";
-        const tags   = (hut.tags || []).join(' ').toLowerCase();
-        return (
-          name.includes(search) || status.includes(search) ||
-          strom.includes(search) || sitz.includes(search) ||
-          tags.includes(search)
-        );
-      });
-    } else {
-      filteredHuts = [...allHuts];
-    }
-
-    filteredHuts.sort((a, b) => {
-      if (sortBy === "name") {
-        return (a.name || "").localeCompare(b.name || "");
-      }
-      if (sortBy === "createdAt") {
-        const timeA = a.erstelltAm?.toMillis?.() || 0;
-        const timeB = b.erstelltAm?.toMillis?.() || 0;
-        return timeB - timeA;
-      }
-      return 0;
-    });
-
-    renderPage(1); 
-  }
-  
-  // === Foto-Management (deleteFoto) ===
-  window.deleteFoto = async function(hutId, index) {
-    if (!confirm('Foto wirklich löschen?')) return;
-
-    try {
-      const ref = db.collection('eierhuetten').doc(hutId);
-      const snap = await ref.get();
-      if (!snap.exists) return showNotification("Hütte nicht gefunden.");
-      
-      const fotos = Array.isArray(snap.data().fotos) ? [...snap.data().fotos] : [];
-      const f = fotos[index];
-      if (!f) return showNotification("Foto nicht gefunden.");
-
-      const url = typeof f === 'string' ? f : f.url;
-      const deleteUrl = typeof f === 'object' ? f.delete_url : null;
-
-      fotos.splice(index, 1);
-      await ref.update({ fotos });
-
-      await ref.collection('log').add({
-        admin: currentUser.displayName || currentUser.email,
-        feld: 'fotos', wert: `Foto gelöscht: ${url}`, zeitpunkt: new Date()
-      });
-
-      if (deleteUrl) {
-        try { await fetch(deleteUrl); } catch (e) { console.warn('imgbb delete fehlgeschlagen', e); }
-      }
-
-      showNotification('Foto wurde gelöscht.');
-      // onSnapshot erledigt den Re-Render
-    } catch (e) {
-      alert('Fehler beim Löschen des Fotos: ' + e.message);
-    }
-  }
-
-  // === Hütten löschen (mit Abo-Check) ===
-
-  window.deleteHut = async function(id) {
-    if (!confirm('Möchtest du diese Hütte wirklich löschen? Dies kann nicht rückgängig gemacht werden.')) return;
-    
-    try {
-      const doc = await db.collection('eierhuetten').doc(id).get();
-      if (!doc.exists) return showNotification('❌ Hütte nicht gefunden.', 'bot');
-      
-      const hut = doc.data();
-
-      // Schritt 1: PayPal-Abo kündigen, falls vorhanden
-      if (hut.paypalSubscriptionId) {
-        showNotification('🔄 Kündige PayPal-Abo...', 'bot');
-        console.log('➡️ Sende Abo-Kündigung für:', hut.paypalSubscriptionId);
-        
-        try {
-          // Annahme: Du hast die Cloud Function 'cancelPaypalSubscription' bereitgestellt
-          const cancelSubscription = firebase.functions().httpsCallable('cancelPaypalSubscription');
-          const result = await cancelSubscription({ subscriptionId: hut.paypalSubscriptionId });
-          
-          if (result.data.success) {
-            showNotification('✅ Abo erfolgreich gekündigt.', 'bot');
-          } else {
-            console.error('❌ Fehler bei Kündigung:', result.data.error);
-            if (!confirm(`⚠️ Das PayPal-Abo konnte nicht automatisch gekündigt werden.\nMöchtest du die Hütte trotzdem löschen?`)) {
-              showNotification('🚫 Löschvorgang abgebrochen.', 'bot');
-              return;
-            }
-          }
-        } catch (err) {
-          console.error('❌ Fehler bei Kündigung (Cloud Function Call):', err.message || err);
-          if (!confirm(`⚠️ Fehler bei der PayPal-Kündigung: ${err.message || 'Unbekannt'}\nMöchtest du die Hütte trotzdem löschen?`)) {
-            showNotification('🚫 Löschvorgang abgebrochen.', 'bot');
-            return;
-          }
-        }
-      }
-
-      // Schritt 2: Fotos bei imgbb löschen (Fire-and-forget)
-      if (Array.isArray(hut.fotos)) {
-        hut.fotos.forEach(f => {
-          if (f && typeof f === "object" && f.delete_url) {
-            fetch(f.delete_url).catch(e => console.warn(`Konnte imgbb-Foto nicht löschen: ${e.message}`));
-          }
-        });
-      }
-
-      // Schritt 3: Hütte aus Firestore löschen
-      await db.collection('eierhuetten').doc(id).delete();
-      showNotification('🗑️ Hütte endgültig gelöscht.', 'bot');
-      // onSnapshot erledigt den Re-Render
-      
-    } catch (err) {
-      console.error('❌ Fehler beim Löschen der Hütte:', err.message || err);
-      showNotification('❌ Fehler beim Löschen der Hütte.', 'bot');
-    }
-  }
-  
-  // === Live-Updates für Dashboard ===
-
-  function initLivePendingFotos() {
-    db.collection('eierhuetten')
-      .where('fotos', '!=', []) // Grober Filter
-      .onSnapshot(snapshot => {
-      const pending = [];
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        if (Array.isArray(data.fotos) &&
-            data.fotos.some(f => f && typeof f === "object" && f.status === "wartet")) {
-          pending.push({ id: doc.id, ...data });
-        }
-      });
-      renderPendingFotos(pending);
-    }, err => console.error("❌ Fehler Live-Update wartende Fotos:", err));
-  }
-
-  let pendingSelected = new Set();
-  function renderPendingFotos(list) {
-    const container = document.getElementById("pending-fotos");
-    container.innerHTML = "";
-    if (!Array.isArray(list) || list.length === 0) {
-      container.innerHTML = "<p class='italic text-slate-500'>Keine Fotos warten auf Freigabe.</p>";
-      return;
-    }
-    
-    const huettenMitPending = list.filter(h =>
-      Array.isArray(h.fotos) && h.fotos.some(f => f && typeof f === 'object' && f.status === 'wartet')
-    );
-    if (huettenMitPending.length === 0) {
-      container.innerHTML = "<p class='italic text-slate-500'>Keine Fotos warten auf Freigabe.</p>";
-      return;
-    }
-    
-    huettenMitPending.forEach(hut => {
-      const wartende = (hut.fotos || [])
-        .map((f, i) => ({ f, i }))
-        .filter(item => item.f && typeof item.f === 'object' && item.f.status === 'wartet');
-      if (wartende.length === 0) return;
-
-      const card = document.createElement('div');
-      card.className = "bg-white border p-3 rounded-lg mb-4 shadow-sm";
-      
-      const header = document.createElement('div');
-      header.className = "flex justify-between items-center mb-2";
-      const label = document.createElement('label');
-      label.className = "flex items-center space-x-2";
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.checked = pendingSelected.has(hut.id);
-      checkbox.onchange = (ev) => {
-        if (ev.target.checked) pendingSelected.add(hut.id);
-        else pendingSelected.delete(hut.id);
-      };
-      const title = document.createElement('span');
-      title.className = "font-semibold";
-      title.textContent = `${hut.name} – ${wartende.length} Foto(s)`;
-      label.appendChild(checkbox);
-      label.appendChild(title);
-      header.appendChild(label);
-      const btn = document.createElement('button');
-      btn.className = "bg-blue-600 text-white px-2 py-1 rounded-lg text-sm";
-      btn.textContent = "🔎 Anzeigen";
-      btn.onclick = () => scrollToHut(hut.id);
-      header.appendChild(btn);
-      card.appendChild(header);
-
-      const gallery = document.createElement('div');
-      gallery.className = "flex flex-wrap gap-2";
-      wartende.forEach(item => {
-        const wrapper = document.createElement('div');
-        wrapper.className = "relative group";
-        const img = document.createElement('img');
-        img.src = item.f.url;
-        img.title = "Klicken zum Freigeben";
-        img.className = "w-24 h-24 object-cover rounded-lg border cursor-pointer hover:ring-4 hover:ring-green-400";
-        img.onclick = async () => {
-          img.style.opacity = '0.6';
-          try {
-            await approveSingleFoto(hut.id, item.i);
-            wrapper.remove(); 
-          } catch (e) {
-            console.error(e);
-            showNotification('❌ Fehler beim Freigeben des Fotos.');
-            img.style.opacity = '1';
-          }
-        };
-        wrapper.appendChild(img);
-        gallery.appendChild(wrapper);
-      });
-      card.appendChild(gallery);
-      container.appendChild(card);
-    });
-
-    const massBtn = document.createElement('button');
-    massBtn.textContent = "✅ Ausgewählte Hütten freigeben";
-    massBtn.className = "mt-4 bg-green-600 text-white px-4 py-2 rounded-lg";
-    massBtn.onclick = async () => {
-      if (pendingSelected.size === 0) return showNotification('ℹ️ Keine Hütten ausgewählt.');
-      massBtn.disabled = true;
-      for (const id of Array.from(pendingSelected)) {
-        await approveAllFotosForHut(id);
-      }
-      pendingSelected.clear();
-      massBtn.disabled = false;
-      showNotification('✅ Ausgewählte Fotos freigegeben.');
-    };
-    container.appendChild(massBtn);
-  }
-  
-  async function approveAllFotosForHut(hutId) {
-      try {
-        const ref = db.collection('eierhuetten').doc(hutId);
-        const snap = await ref.get();
-        if (!snap.exists) return;
-        
-        let fotos = Array.isArray(snap.data().fotos) ? [...snap.data().fotos] : [];
-        let hasChanged = false;
-        
-        const indicesToApprove = [];
-        fotos.forEach((f, i) => {
-            if(f && typeof f === 'object' && f.status === 'wartet') {
-                indicesToApprove.push(i);
-            }
-        });
-
-        if (indicesToApprove.length > 0) {
-            indicesToApprove.forEach(index => {
-                fotos[index] = { ...fotos[index], status: 'freigegeben' };
-            });
-            await ref.update({ fotos });
-            await ref.collection('log').add({
-              admin: currentUser.displayName || currentUser.email,
-              feld: 'fotos',
-              wert: `${indicesToApprove.length} Foto(s) per Massenfreigabe angenommen.`,
-              zeitpunkt: new Date()
-            });
-        }
-      } catch (err) {
-          console.error(`Fehler bei Massenfreigabe für ${hutId}:`, err);
-          showNotification(`❌ Fehler bei Massenfreigabe für Hütte ${hutId}`);
-      }
-  }
-
-  window.scrollToHut = function(hutId) {
-    showSection('huts');
-    setTimeout(() => {
-      const target = document.getElementById(`hut-${hutId}`);
-      if (target) {
-        target.scrollIntoView({ behavior: "smooth", block: "start" });
-        target.classList.add("ring-4", "ring-yellow-400", "transition-all", "duration-300");
-        setTimeout(() => target.classList.remove("ring-4", "ring-yellow-400"), 2500);
-      } else {
-        console.warn("❗ Hütte mit ID", hutId, "nicht gefunden");
-      }
-    }, 300);
-  }
-
-  function initLiveNewHuts() {
-    db.collection('eierhuetten')
-      .where('status', '==', 'offen')
-      .onSnapshot(snapshot => {
-        const neue = [];
-        snapshot.forEach(doc => neue.push({ id: doc.id, ...doc.data() }));
-        renderNewEntries(neue);
-        // Statistiken auch hier aktualisieren
-        renderStats(allHuts);
-      }, err => console.error("❌ Fehler Live-Update neue Hütten:", err));
-  }
-
-  function renderNewEntries(list) {
-    const neueListe = document.getElementById("neueListe");
-    const neue = list.filter(h => h.status === "offen");
-    if (neue.length === 0) {
-      neueListe.innerHTML =
-        "<p class='italic text-slate-500'>Keine neuen Eintragungen.</p>";
-      return;
-    }
-    neueListe.innerHTML = "";
-    neue.forEach(hut => {
-      const row = document.createElement("div");
-      row.className =
-        "flex items-center justify-between bg-white shadow-sm rounded-lg px-3 py-2";
-      row.innerHTML = `
-        <a href="javascript:void(0)" onclick="scrollToHut('${hut.id}')"
-           class="font-medium text-blue-600 hover:underline truncate max-w-[50%] block"
-           title="${hut.name}">
-           ${hut.name}
-        </a>
-        <div class="flex space-x-2 flex-shrink-0">
-          <button onclick="updateField('${hut.id}', 'status', 'angenommen')"
-                  class="px-2 py-1 bg-green-500 text-white rounded-lg whitespace-nowrap text-sm">
-            Annehmen
-          </button>
-          <button onclick="updateField('${hut.id}', 'status', 'abgelehnt')"
-                  class="px-2 py-1 bg-red-500 text-white rounded-lg whitespace-nowrap text-sm">
-            Ablehnen
-          </button>
-        </div>
-      `;
-      neueListe.appendChild(row);
-    });
-  }
-  
-  // === Support-Ticket-Logik ===
-  
-  window.currentReplyTicketId = null;
-  window.currentReplyEmail = null;
-
-  async function ladeSupportTickets() {
-    try {
-      const snapshot = await db.collection('support').orderBy('createdAt', 'desc').limit(50).get();
-      const body = document.getElementById('support-tickets-body');
-      body.innerHTML = '';
-      
-      if (snapshot.empty) {
-          body.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500 italic">Keine Support-Tickets gefunden.</td></tr>';
-          return;
-      }
-      
-      snapshot.forEach(doc => {
-        const ticket = doc.data();
-        const id = doc.id;
-        const datum = ticket.createdAt?.toDate().toLocaleString('de-DE') || '-';
-        const email = ticket.mail || '-';
-        const status = ticket.status || 'offen';
-        
-        let aiTagsHTML = '';
-        if (Array.isArray(ticket.aiTags) && ticket.aiTags.length > 0) {
-          aiTagsHTML = ticket.aiTags.map(tag => 
-            `<span class="px-2 py-1 bg-ai text-white rounded-full text-xs font-medium">${tag}</span>`
-          ).join(' ');
-        } else if (status === 'offen') {
-          aiTagsHTML = `<button onclick="geminiTagTicket(this, '${id}')" 
-                                class="bg-slate-200 text-slate-700 text-xs px-2 py-1 rounded-lg hover:bg-slate-300">
-                          🤖 Taggen
-                        </button>`;
-        }
-
-        const row = document.createElement('tr');
-        row.className = "align-top hover:bg-slate-50";
-        row.id = `ticket-row-${id}`; 
-        row.innerHTML = `
-          <td class="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">${datum}</td>
-          <td class="px-4 py-3 text-xs">
-            ${email}<br><span class="text-[10px] text-slate-400">ID: ${id}</span>
-          </td>
-          <td class="px-4 py-3 text-xs">
-            <div id="msgs-${id}" class="space-y-1 max-w-xs">⏳ Lade Nachrichten…</div>
-          </td>
-          <td class="px-4 py-3">
-            <div id="ai-tags-${id}" class="flex flex-col gap-1 items-start">
-              ${aiTagsHTML}
-            </div>
-          </td>
-          <td class="px-4 py-3">
-            <select onchange="updateSupportStatus('${id}', this.value)" class="border rounded-lg px-2 py-1 text-xs">
-              ${['offen', 'bearbeitet', 'geschlossen', 'archiviert'].map(opt => `
-                <option value="${opt}" ${opt === status ? 'selected' : ''}>${opt}</option>
-              `).join('')}
-            </select>
-          </td>
-          <td class="px-4 py-3 space-x-1 whitespace-nowrap">
-            <button onclick="openReplyModal('${id}','${email}')" class="bg-primary text-white text-xs px-2 py-1 rounded-md">Antworten</button>
-            <button onclick="loescheSupportTicket('${id}')" class="bg-red-600 text-white text-xs px-2 py-1 rounded-md">Löschen</button>
-          </td>
-        `;
-        body.appendChild(row);
-        ladeSupportNachrichten(id);
-      });
-    } catch(e) {
-        console.error("Fehler beim Laden der Support-Tickets:", e);
-        showNotification("❌ Fehler beim Laden der Tickets.");
-    }
-  }
-
-  function ladeSupportNachrichten(ticketId) {
-    const wrap = document.getElementById("msgs-" + ticketId);
-    if (!wrap) return;
-
-    db.collection("support").doc(ticketId).collection("messages")
-      .orderBy("createdAt", "asc")
-      .get()
-      .then(snap => {
-        wrap.innerHTML = "";
-        
-        const messagesForAI = [];
-        window.supportMessages[ticketId] = messagesForAI;
-
-        if (snap.empty) {
-          wrap.innerHTML = "<div class='text-slate-500'>(keine Nachrichten)</div>";
-          return;
-        }
-        snap.forEach(mdoc => {
-          const d = mdoc.data();
-          const zeit = d.createdAt?.toDate?.().toLocaleString('de-DE') || "-";
-          
-          messagesForAI.push({ sender: d.sender || 'Unbekannt', text: d.text || '' });
-          
-          wrap.innerHTML += `
-            <div class="border rounded-lg p-2 ${d.sender === 'Admin' ? 'bg-blue-50' : 'bg-white'} mb-1 shadow-sm">
-              <div class="text-xs text-slate-800">${d.text || ''}</div>
-              <div class="text-[10px] text-slate-500 mt-1">${d.sender || '-'} · ${zeit}</div>
-            </div>
-          `;
-        });
-      })
-      .catch(err => {
-          console.error(`Fehler beim Laden der Nachrichten für ${ticketId}:`, err);
-          wrap.innerHTML = "<div class='text-red-500'>Fehler beim Laden</div>";
-      });
-  }
-
-  window.openReplyModal = function(ticketId, email) {
-    window.currentReplyTicketId = ticketId;
-    window.currentReplyEmail = email;
-    
-    document.getElementById("modal-ticket-info").innerText = `Ticket-ID: ${ticketId} · User: ${email}`;
-    document.getElementById("modal-reply-text").value = "";
-    document.getElementById("modal-reply-counter").innerText = "500 Zeichen übrig";
-    document.getElementById("support-reply-modal").classList.remove("hidden");
-    document.getElementById("support-reply-modal").classList.add("flex");
-  }
-
-  window.closeReplyModal = function() {
-    document.getElementById("support-reply-modal").classList.add("hidden");
-    document.getElementById("support-reply-modal").classList.remove("flex");
-    window.currentReplyTicketId = null;
-    window.currentReplyEmail = null;
-  }
-
-  window.sendReply = async function() {
-    const text = document.getElementById("modal-reply-text").value.trim();
-    if (!text || !window.currentReplyTicketId) return;
-
-    try {
-      await db.collection("support").doc(window.currentReplyTicketId).collection("messages").add({
-        text, 
-        sender: "Admin",
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      await db.collection("support").doc(window.currentReplyTicketId).update({
-        status: "geschlossen" 
-      });
-
-      showNotification("✅ Antwort gesendet & Ticket geschlossen");
-      closeReplyModal();
-      ladeSupportTickets(); 
-    } catch (err) {
-      console.error("sendReply error", err);
-      alert("Fehler: " + err.message);
-    }
-  }
-
-  window.updateSupportStatus = async function(id, neuerStatus) {
-    try {
-      await db.collection('support').doc(id).update({ status: neuerStatus });
-      showNotification('✅ Status aktualisiert');
-      if(neuerStatus === 'offen') {
-          ladeSupportTickets();
-      }
-    } catch (e) {
-      showNotification(`❌ Fehler: ${e.message}`);
-    }
-  }
-
-  window.loescheSupportTicket = async function(id) {
-    if (!confirm('Dieses Support-Ticket und alle Nachrichten darin wirklich löschen?')) return;
-    try {
-      // Dies löscht nur das Hauptdokument, nicht die Sub-Collection!
-      // Eine saubere Löschung erfordert eine Cloud Function.
-      await db.collection('support').doc(id).delete();
-      showNotification('🗑️ Ticket gelöscht');
-      ladeSupportTickets();
-    } catch (e) {
-      showNotification(`❌ Fehler: ${e.message}`);
-    }
-  }
-
-  document.getElementById("modal-reply-text").addEventListener("input", e => {
-    const left = 500 - e.target.value.length;
-    document.getElementById("modal-reply-counter").innerText = `${left} Zeichen übrig`;
-  });
-
-  
-  // === Profil-Sektion ===
-  
-  let currentProfileId = null;
-  
-  window.loadProfileAdmin = async function(id) {
-    const queryId = id || document.getElementById("profile-selected-id").value;
-    let snap;
-    
-    if (queryId) {
-        currentProfileId = queryId;
-        snap = await db.collection("profiles").doc(currentProfileId).get();
-    } else {
-        const queryName = document.getElementById("profile-search").value.trim();
-        if (!queryName) return alert("Bitte ID oder Name eingeben.");
-        
-        const q = await db.collection("profiles").where("name","==",queryName).limit(1).get();
-        if (!q.empty) {
-            snap = q.docs[0];
-            currentProfileId = snap.id;
-        } else {
-            try {
-                snap = await db.collection("profiles").doc(queryName).get();
-                currentProfileId = snap.id;
-            } catch (e) {
-                return alert("Kein Profil gefunden (weder Name noch ID).");
-            }
-        }
-    }
-
-    if (!snap.exists) return alert("Profil nicht gefunden!");
-    
-    const data = snap.data();
-    
-    document.getElementById("profile-admin-area").classList.remove("hidden");
-    document.getElementById("profile-pic-admin").src = data.pic || "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
-    document.getElementById("profile-pic-url").value = data.pic || "";
-    document.getElementById("profile-name-admin").value = data.name || "";
-    document.getElementById("profile-bio-admin").value = data.bio || "";
-    document.getElementById("profile-role-admin").value = data.role || "user";
-    document.getElementById("profile-banned-admin").checked = data.banned || false;
-    document.getElementById("profile-stats").textContent =
-      `Fahrten: ${data.rides || 0} | Km: ${data.km || 0} | Letzter Login: ${data.lastLogin?.toDate()?.toLocaleString('de-DE') || "–"}`;
-    
-    const titleSel = document.getElementById("profile-title-admin");
-    titleSel.innerHTML = "<option value=''>Kein Titel</option>";
-    const titleSnap = await db.collection("titles").get();
-    titleSnap.forEach(doc => {
-      const t = doc.data();
-      const opt = document.createElement("option");
-      opt.value = t.name; 
-      opt.textContent = t.name;
-      titleSel.appendChild(opt);
-    });
-    titleSel.value = data.title || "";
-    
-    const badgeContainer = document.getElementById("profile-badges-admin");
-    badgeContainer.innerHTML = "";
-    const badgeSnap = await db.collection("badgesDefs").get();
-    badgeSnap.forEach(doc => {
-      const b = doc.data();
-      const id = `badge-chk-${doc.id}`;
-      const wrapper = document.createElement('div');
-      wrapper.className = 'flex items-center gap-1';
-      const chk = document.createElement("input");
-      chk.type = "checkbox"; 
-      chk.value = doc.id;
-      chk.id = id;
-      chk.checked = (data.badges || []).includes(doc.id);
-      wrapper.appendChild(chk);
-      const lbl = document.createElement("label");
-      lbl.setAttribute('for', id);
-      lbl.className = 'cursor-pointer';
-      lbl.textContent = `${b.icon || "🏅"} ${b.name}`;
-      wrapper.appendChild(lbl);
-      badgeContainer.appendChild(wrapper);
-    });
-  }
-
-  window.saveProfileAdmin = async function() {
-    if (!currentProfileId) return;
-    const badges = [...document.querySelectorAll("#profile-badges-admin input:checked")].map(i => i.value);
-    
-    try {
-      await db.collection("profiles").doc(currentProfileId).update({
-        name: document.getElementById("profile-name-admin").value,
-        pic: document.getElementById("profile-pic-url").value,
-        bio: document.getElementById("profile-bio-admin").value,
-        title: document.getElementById("profile-title-admin").value,
-        role: document.getElementById("profile-role-admin").value,
-        banned: document.getElementById("profile-banned-admin").checked,
-        badges: badges
-      });
-      alert("✔️ Profil gespeichert!");
-    } catch (e) {
-      alert(`❌ Fehler beim Speichern: ${e.message}`);
-    }
-  }
-
-  window.deleteProfileAdmin = async function() {
-    if (!currentProfileId) return;
-    if (!confirm(`Soll dieses Profil (${currentProfileId}) wirklich gelöscht werden? Dies löscht nicht den Firebase-Auth-User!`)) return;
-    try {
-      await db.collection("profiles").doc(currentProfileId).delete();
-      alert("🗑️ Profil gelöscht!");
-      document.getElementById("profile-admin-area").classList.add("hidden");
-      document.getElementById("profile-search").value = "";
-      currentProfileId = null;
-    } catch (e) {
-      alert(`❌ Fehler beim Löschen: ${e.message}`);
-    }
-  }
-
-  window.openProfileLink = function() {
-    if (!currentProfileId) return;
-    window.open(`https://eierhuettentour.web.app/profile.html?id=${currentProfileId}`, "_blank");
-  }
-
-  document.getElementById('profile-search').addEventListener('input', async e => {
-    const q = e.target.value.trim();
-    const box = document.getElementById('profile-suggestions');
-    if (q.length < 3) { 
-      box.classList.add('hidden'); 
-      document.getElementById('profile-selected-id').value = '';
-      return; 
-    }
-    
-    const snap = await db.collection('profiles')
-      .where('name', '>=', q)
-      .where('name', '<=', q + '\uf8ff')
-      .limit(5).get();
-
-    box.innerHTML = snap.empty
-      ? "<p class='p-2 text-slate-500 italic'>Keine Treffer</p>"
-      : snap.docs.map(d => {
-          const name = d.data().name;
-          const safeName = name.replace(/'/g, "&apos;").replace(/"/g, "&quot;");
-          return `
-            <div class="p-2 hover:bg-slate-100 cursor-pointer"
-                onclick="selectProfile('${d.id}', '${safeName}')">
-              ${name}
-            </div>`;
-        }).join('');
-    box.classList.remove('hidden');
-  });
-  
-  window.selectProfile = (id, name) => {
-    document.getElementById('profile-search').value = name;
-    document.getElementById('profile-selected-id').value = id;
-    document.getElementById('profile-suggestions').classList.add('hidden');
-    loadProfileAdmin(id); 
-  };
-  
-  document.getElementById('profile-search').addEventListener('keydown', e => {
-      if(e.key === 'Enter') {
-          document.getElementById('profile-suggestions').classList.add('hidden');
-          loadProfileAdmin(); 
-      }
-  });
-
-
-  // === Titel & Abzeichen Sektionen (Self-Contained Module) ===
-  (async () => {
-    // --- Titel Verwaltung ---
-    const titleList = document.getElementById("title-list");
-    const titleForm = document.getElementById("title-form");
-    const titleNameEl = document.getElementById("title-name");
-    const titleCondEl = document.getElementById("title-condition");
-    const titleValEl = document.getElementById("title-value");
-    let titleEditId = null;
-
-    async function loadTitles() {
-      if (!titleList) return;
-      try {
-        const snap = await db.collection("titles").get();
-        titleList.innerHTML = "";
-        if (snap.empty) {
-            titleList.innerHTML = "<p class='italic text-slate-500'>Noch keine Titel erstellt.</p>";
-            return;
-        }
-        snap.forEach(doc => {
-          const t = doc.data();
-          const row = document.createElement("div");
-          row.className = "p-2 border rounded-lg flex justify-between items-center";
-          row.innerHTML = `
-            <span><strong>${t.name}</strong> — Regel: ${t.conditionType} ≥ ${t.conditionValue}</span>
-            <div class="space-x-2">
-              <button type="button" class="px-2 py-1 bg-blue-600 text-white rounded-lg" onclick="editTitle('${doc.id}')">✏️</button>
-              <button type="button" class="px-2 py-1 bg-red-600 text-white rounded-lg" onclick="deleteTitle('${doc.id}')">🗑️</button>
-            </div>`;
-          titleList.appendChild(row);
-        });
-      } catch(e) { console.error("Fehler beim Laden der Titel:", e); }
-    }
-
-    window.editTitle = async function(id) {
-      const doc = await db.collection("titles").doc(id).get();
-      const t = doc.data();
-      titleEditId = id;
-      if (titleNameEl) titleNameEl.value = t.name || "";
-      if (titleCondEl) titleCondEl.value = t.conditionType || "rides";
-      if (titleValEl) titleValEl.value = t.conditionValue ?? 0;
-    };
-
-    window.deleteTitle = async function(id) {
-      if (!confirm("Diesen Titel wirklich löschen?")) return;
-      await db.collection("titles").doc(id).delete();
-      await loadTitles();
-    };
-
-    if (titleForm) {
-      titleForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const payload = {
-          name: (titleNameEl?.value || "").trim(),
-          conditionType: titleCondEl?.value || "rides",
-          conditionValue: parseInt(titleValEl?.value || "0", 10) || 0
-        };
-        if (!payload.name) { alert("Bitte einen Titel-Namen angeben."); return; }
-        if (titleEditId) {
-          await db.collection("titles").doc(titleEditId).update(payload);
-          titleEditId = null;
-        } else {
-          await db.collection("titles").add(payload);
-        }
-        if (titleForm) titleForm.reset();
-        await loadTitles();
-      });
-    }
-    
-    // --- Abzeichen Verwaltung ---
-    const badgeList = document.getElementById("badge-list-admin");
-    const badgeForm = document.getElementById("badge-form");
-    const badgeNameEl = document.getElementById("badge-name");
-    const badgeIconEl = document.getElementById("badge-icon");
-    const badgeCondEl = document.getElementById("badge-condition");
-    const badgeValEl = document.getElementById("badge-value");
-    let badgeEditId = null;
-
-    async function loadBadges() {
-      if (!badgeList) return;
-      try {
-        const snap = await db.collection("badgesDefs").get();
-        badgeList.innerHTML = "";
-        if (snap.empty) {
-            badgeList.innerHTML = "<p class='italic text-slate-500'>Noch keine Abzeichen erstellt.</p>";
-            return;
-        }
-        snap.forEach(doc => {
-          const b = doc.data();
-          const displayIcon = b.iconUrl
-            ? `<img src="${b.iconUrl}" class="w-6 h-6 inline-block rounded" />`
-            : (b.icon || "🏅");
-          badgeList.innerHTML += `
-            <div class="p-2 border rounded-lg flex justify-between items-center">
-              <span>${displayIcon} <strong>${b.name}</strong> — Regel: ${b.conditionType} ≥ ${b.conditionValue}</span>
-              <div class="space-x-2">
-                <button type="button" onclick="editBadge('${doc.id}')" class="px-2 py-1 bg-blue-600 text-white rounded-lg">✏️</button>
-                <button type="button" onclick="deleteBadge('${doc.id}')" class="px-2 py-1 bg-red-600 text-white rounded-lg">🗑️</button>
-              </div>
-            </div>`;
-        });
-      } catch(e) { console.error("Fehler beim Laden der Abzeichen:", e); }
-    }
-
-    window.editBadge = async function(id) {
-      const doc = await db.collection("badgesDefs").doc(id).get();
-      const b = doc.data();
-      badgeEditId = id;
-      if (badgeNameEl) badgeNameEl.value = b.name || "";
-      if (badgeIconEl) badgeIconEl.value = b.icon || "";
-      if (badgeCondEl) badgeCondEl.value = b.conditionType || "rides";
-      if (badgeValEl) badgeValEl.value = b.conditionValue ?? 0;
-    };
-
-    window.deleteBadge = async function(id) {
-      if (!confirm("Dieses Abzeichen wirklich löschen?")) return;
-      await db.collection("badgesDefs").doc(id).delete();
-      await loadBadges();
-    };
-
-    if (badgeForm) {
-      badgeForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const name = document.getElementById("badge-name").value.trim();
-        const emojiFallback = document.getElementById("badge-icon").value.trim();
-        const conditionType = document.getElementById("badge-condition").value;
-        const conditionValue = parseInt(document.getElementById("badge-value").value) || 0;
-        if (!name) return alert("Bitte Abzeichen-Namen eingeben!");
-        
-        let iconUrl = "";
-        const fileInput = document.getElementById("badge-icon-file");
-        if (fileInput.files.length > 0) {
-          try {
-            iconUrl = await badgeFormUploadToImgBB(fileInput.files[0]);
-          } catch (err) {
-            console.error(err);
-            alert("❌ Fehler beim ImgBB-Upload");
-            return;
-          }
-        }
-        
-        const payload = {
-          name,
-          icon: emojiFallback,
-          iconUrl,
-          conditionType,
-          conditionValue,
-          createdAt: new Date()
-        };
-        
-        if (badgeEditId) {
-            await db.collection("badgesDefs").doc(badgeEditId).update(payload);
-            badgeEditId = null;
-        } else {
-            await db.collection("badgesDefs").add(payload);
-        }
-        
-        alert("✅ Abzeichen gespeichert");
-        e.target.reset();
-        await loadBadges();
-      });
-    }
-
-    async function badgeFormUploadToImgBB(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const base64 = reader.result.split(",")[1];
-          const formData = new FormData();
-          formData.append("key", "5df04de9bfd2776f101329be4193e44c"); // ImgBB Key
-          formData.append("image", base64);
-          try {
-            const res = await fetch("https://api.imgbb.com/1/upload", { method: "POST", body: formData });
-            const json = await res.json();
-            if (json?.data?.url) resolve(json.data.url);
-            else reject(`ImgBB Fehler: ${json.error?.message || 'Unbekannt'}`);
-          } catch (err) { reject(err); }
-        };
-        reader.onerror = () => reject("❌ Datei konnte nicht gelesen werden.");
-        reader.readAsDataURL(file);
-      });
-    }
-    
-    // Initiales Laden beim Start (innerhalb des Auth-Checks)
-    auth.onAuthStateChanged(user => {
-        if(user) {
-            loadTitles();
-            loadBadges();
-        }
-    });
-  })();
-  
 </script>
 
 </body>
