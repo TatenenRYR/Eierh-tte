@@ -4,99 +4,170 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Hütten Admin-Dashboard</title>
+  
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-functions-compat.js"></script>
-  
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              DEFAULT: '#065f46', // emerald-800
+              light: '#059669', // emerald-600
+              hover: '#047857', // emerald-700
+            },
+            secondary: '#4f46e5', // indigo-600
+            ai: '#7c3aed', // purple-600
+          },
+        },
+      },
+    }
+  </script>
+  
   <style>
     .minimap { height: 200px; width: 100%; border-radius: 0.5rem; margin-top: 0.5rem; }
     .progress-bar { width: 100%; background-color: #e5e7eb; border-radius: 0.5rem; margin-top: 5px; }
     .progress-fill { height: 8px; background-color: #10b981; border-radius: 0.5rem; width: 0%; transition: width 0.3s; }
-    #notification { position: fixed; top: 1rem; right: 1rem; background: #38bdf8; color: white; padding: 1rem; border-radius: 0.5rem; display: none; z-index: 9999; max-width: 300px; }
+    #notification { 
+      position: fixed; top: 1rem; right: 1rem; 
+      background: #38bdf8; color: white; 
+      padding: 1rem; border-radius: 0.5rem; 
+      display: none; z-index: 9999; max-width: 300px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
     .nav-btn {
-    @apply text-left px-3 py-2 rounded hover:bg-green-50 transition;
+      @apply text-left px-3 py-2 rounded text-slate-700 hover:bg-emerald-50 transition duration-150;
     }
     .nav-btn.active {
-    @apply bg-green-100 text-green-800 font-semibold;
+      @apply bg-emerald-100 text-emerald-800 font-semibold;
     }
     .section-title {
-    @apply text-2xl font-bold mb-4 border-b pb-2;
+      @apply text-2xl font-bold mb-4 border-b pb-2 text-slate-800;
     }
     .dash-section {
-    @apply space-y-4;
+      @apply space-y-4;
     }
-    /* 🤖 NEU: Lade-Spinner für Buttons */
+    
+    /* Spinner für Lade-Buttons */
     .spinner {
       border: 2px solid rgba(255,255,255,0.3);
       border-radius: 50%;
       border-top: 2px solid #fff;
-      width: 16px;
-      height: 16px;
+      width: 16px; height: 16px;
       animation: spin 1s linear infinite;
       display: inline-block;
       margin-right: 4px;
     }
-    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    @keyframes spin { 
+      0% { transform: rotate(0deg); } 
+      100% { transform: rotate(360deg); } 
+    }
+    
+    /* 🤖 NEU: Stile für das mobile Slide-Out-Menü */
+    #sidebar {
+      transition: transform 0.3s ease-in-out;
+    }
+    #sidebar-overlay {
+      transition: opacity 0.3s ease-in-out;
+    }
+    /* Klasse, die per JS umgeschaltet wird */
+    body.sidebar-open #sidebar {
+      transform: translateX(0);
+    }
+    body.sidebar-open #sidebar-overlay {
+      opacity: 1;
+      pointer-events: auto;
+    }
   </style>
 </head>
 
-<body class="bg-gray-100">
+<body class="bg-slate-100 font-sans">
   <div id="notification"></div>
 
-  <div id="login-section" class="flex items-center justify-center h-screen">
-    <button id="login-btn"
-      class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded">
-      Admin Login mit Google
-    </button>
+  <div id="login-section" class="flex items-center justify-center h-screen bg-slate-200">
+    <div class="w-full max-w-sm p-8 bg-white rounded-xl shadow-2xl text-center">
+      <h1 class="text-3xl font-bold text-primary mb-4">🏘 Hütten Admin</h1>
+      <p class="text-slate-600 mb-6">Bitte melde dich an, um fortzufahren.</p>
+      
+      <div id="login-error" class="hidden bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded-lg mb-4 text-sm">
+        </div>
+      
+      <button id="login-btn"
+        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200">
+        Mit Google Anmelden
+      </button>
+    </div>
   </div>
 
-  <div id="dashboard" class="hidden min-h-screen flex flex-col md:flex-row">
-    <button id="menu-toggle"
-            class="md:hidden p-2 text-gray-700 border rounded">
-      ☰ Menü
-    </button>
-    <aside id="sidebar" class="w-full md:w-64 bg-white shadow-md md:block hidden md:flex-shrink-0">
-      <div class="p-4 border-b">
-        <h1 class="text-xl font-bold text-green-700">🏘 Hütten Admin</h1>
+  <aside id="sidebar" class="w-64 bg-white shadow-lg fixed top-0 left-0 h-full z-40 
+                           transform -translate-x-full md:translate-x-0 md:relative md:flex-shrink-0">
+    <div class="p-4 border-b">
+      <h1 class="text-xl font-bold text-primary">🏘 Hütten Admin</h1>
+    </div>
+    <nav class="p-4 space-y-1">
+      <button class="nav-btn w-full" onclick="showSection('overview')">📊 Übersicht</button>
+      <button class="nav-btn w-full" onclick="showSection('huts')">🏠 Hüttenliste</button>
+      <button class="nav-btn w-full" onclick="showSection('support')">📨 Support-Tickets</button>
+      <button class="nav-btn w-full" onclick="showSection('profiles')">👤 Profile</button>
+      <button class="nav-btn w-full" onclick="showSection('titles')">👑 Titel</button>
+      <button class="nav-btn w-full" onclick="showSection('badges')">🏅 Abzeichen</button>
+    </nav>
+  </aside>
+  
+  <div id="sidebar-overlay" 
+       class="fixed inset-0 bg-black bg-opacity-50 z-30 opacity-0 pointer-events-none md:hidden"
+       onclick="toggleMenu(false)">
+  </div>
+
+  <div id="dashboard" class="hidden md:flex flex-col flex-1">
+    
+    <header class="sticky top-0 bg-white shadow-md z-20">
+      <div class="flex items-center justify-between p-4">
+        <button id="menu-toggle" onclick="toggleMenu(true)" class="md:hidden p-2 text-slate-700 border rounded-lg">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+          </svg>
+        </button>
+        
+        <h2 id="header-title" class="text-xl font-semibold text-slate-800">Übersicht</h2>
+        
+        <button id="logout-btn" onclick="auth.signOut()" class="bg-red-500 hover:bg-red-600 text-white text-sm font-bold py-2 px-4 rounded-lg">
+          Logout
+        </button>
       </div>
-      <nav class="p-4 space-y-1">
-        <button class="nav-btn w-full" onclick="showSection('overview')">📊 Übersicht</button>
-        <button class="nav-btn w-full" onclick="showSection('huts')">🏠 Hüttenliste</button>
-        <button class="nav-btn w-full" onclick="showSection('support')">📨 Support-Tickets</button>
-        <button class="nav-btn w-full" onclick="showSection('profiles')">👤 Profile</button>
-        <button class="nav-btn w-full" onclick="showSection('titles')">👑 Titel</button>
-        <button class="nav-btn w-full" onclick="showSection('badges')">🏅 Abzeichen</button>
-      </nav>
-    </aside>
+    </header>
 
     <main class="flex-1 p-6 space-y-8 overflow-y-auto">
+      
       <section id="overview" class="dash-section">
         <h2 class="section-title">📊 Übersicht</h2>
         <div id="stats" class="text-gray-700"></div>
         <div id="statsContainer" class="grid grid-cols-1 lg:grid-cols-2 gap-6"></div>
-        <canvas id="statsChart" class="bg-white rounded shadow p-4 mt-6"></canvas>
+        <canvas id="statsChart" class="bg-white rounded-xl shadow-lg p-4 mt-6"></canvas>
         <h2 class="section-title">🆕 Neue Eintragungen</h2>
-        <div id="neueListe" class="space-y-2 bg-gray-50 p-4 rounded shadow"></div>
-
-       <h2 class="section-title">📷 Fotos warten auf Freigabe</h2>
-        <div id="pending-fotos" class="space-y-2 bg-gray-50 p-4 rounded shadow"></div>
+        <div id="neueListe" class="space-y-2 bg-slate-50 p-4 rounded-xl shadow-inner"></div>
+        <h2 class="section-title">📷 Fotos warten auf Freigabe</h2>
+        <div id="pending-fotos" class="space-y-2 bg-slate-50 p-4 rounded-xl shadow-inner"></div>
       </section>
 
       <section id="huts" class="dash-section hidden">
         <h2 class="section-title">🏠 Alle Hütten</h2>
         <div class="flex items-center gap-2 mb-4">
-          <select id="sortSelect" class="p-2 border rounded">
+          <select id="sortSelect" class="p-2 border rounded-lg">
             <option value="name">🔤 Nach Name</option>
             <option value="createdAt">🕒 Neueste zuerst</option>
           </select>
-          <input id="search-input" placeholder="🔍 Suchen..." class="p-2 border rounded w-full">
+          <input id="search-input" placeholder="🔍 Suchen..." class="p-2 border rounded-lg w-full">
         </div>
         <div id="hut-list" class="space-y-4"></div>
         <div id="pagination" class="mt-4 flex flex-wrap justify-center gap-2"></div>
@@ -104,61 +175,62 @@
 
       <section id="support" class="dash-section hidden">
         <h2 class="section-title">📨 Support-Tickets</h2>
-        <div class="overflow-auto bg-white rounded shadow">
+        <div class="overflow-x-auto bg-white rounded-xl shadow-lg">
           <table class="min-w-full text-sm">
-            <thead class="bg-blue-100 text-left">
+            <thead class="bg-slate-100 text-left">
               <tr>
-                <th class="px-4 py-2">Datum</th>
-                <th class="px-4 py-2">User</th>
-                <th class="px-4 py-2">Nachrichten</th>
-                <th class="px-4 py-2">Status</th>
-                <th class="px-4 py-2">Aktionen</th>
+                <th class="px-4 py-3">Datum</th>
+                <th class="px-4 py-3">User</th>
+                <th class="px-4 py-3">Nachrichten</th>
+                <th class="px-4 py-3">AI-Tags</th>
+                <th class="px-4 py-3">Status</th>
+                <th class="px-4 py-3">Aktionen</th>
               </tr>
             </thead>
-            <tbody id="support-tickets-body" class="divide-y divide-gray-200"></tbody>
+            <tbody id="support-tickets-body" class="divide-y divide-slate-200"></tbody>
           </table>
         </div>
       </section>
 
       <div id="support-reply-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
-        <div class="bg-white p-4 rounded shadow max-w-lg w-full">
+        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-lg w-full">
           <h3 class="text-lg font-bold mb-2">Antwort auf Ticket</h3>
-          <div id="modal-ticket-info" class="text-xs text-gray-500 mb-2"></div>
-          <textarea id="modal-reply-text" class="w-full border p-2 rounded mb-2" rows="5" maxlength="500"></textarea>
+          <div id="modal-ticket-info" class="text-xs text-slate-500 mb-2"></div>
+          <textarea id="modal-reply-text" class="w-full border p-2 rounded-lg mb-2" rows="5" maxlength="500"></textarea>
           
-          <button id="gemini-suggest-btn" onclick="geminiSuggestReply(this)" class="bg-purple-600 text-white px-3 py-1 rounded text-sm mb-2 w-full">
+          <button id="gemini-suggest-btn" onclick="geminiSuggestReply(this)" class="bg-ai hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm mb-2 w-full flex items-center justify-center gap-2">
             🤖 Antwort vorschlagen
           </button>
           
-          <div class="text-xs text-gray-500 mb-3" id="modal-reply-counter">500 Zeichen übrig</div>
+          <div class="text-xs text-slate-500 mb-3" id="modal-reply-counter">500 Zeichen übrig</div>
           <div class="flex justify-end gap-2">
-            <button onclick="closeReplyModal()" class="px-3 py-1 bg-gray-300 rounded">Abbrechen</button>
-            <button onclick="sendReply()" class="px-3 py-1 bg-green-600 text-white rounded">Antworten & schließen</button>
+            <button onclick="closeReplyModal()" class="px-3 py-2 bg-slate-200 rounded-lg">Abbrechen</button>
+            <button onclick="sendReply()" class="px-3 py-2 bg-primary text-white rounded-lg">Antworten & schließen</button>
           </div>
         </div>
       </div>
       
       <section id="profiles" class="dash-section hidden">
         <h2 class="section-title">👤 Profile Verwaltung</h2>
-        <div class="bg-white p-4 rounded shadow space-y-3">
+        <div class="bg-white p-6 rounded-xl shadow-lg space-y-3">
           <div class="relative">
-            <input id="profile-search" type="text" class="w-full border p-2 rounded" placeholder="Profil suchen..." />
+            <input id="profile-search" type="text" class="w-full border p-2 rounded-lg" placeholder="Profil suchen (ID oder Name)..." />
             <input type="hidden" id="profile-selected-id">
-            <div id="profile-suggestions" class="absolute bg-white border w-full mt-1 rounded shadow hidden"></div>
+            <div id="profile-suggestions" class="absolute bg-white border w-full mt-1 rounded-lg shadow-lg hidden z-10"></div>
           </div>
-          <div id="profile-admin-area" class="hidden space-y-4">
+          <div id="profile-admin-area" class="hidden space-y-4 pt-4 border-t">
             <div class="flex items-center space-x-4">
-              <img id="profile-pic-admin" class="w-24 h-24 rounded-full border" />
-              <input id="profile-pic-url" class="flex-1 border p-2 rounded" placeholder="Profilbild-URL ändern..." />
+              <img id="profile-pic-admin" class="w-24 h-24 rounded-full border" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
+              <input id="profile-pic-url" class="flex-1 border p-2 rounded-lg" placeholder="Profilbild-URL ändern..." />
             </div>
-            <input id="profile-name-admin" class="w-full border p-2 rounded" placeholder="Name" />
-            <textarea id="profile-bio-admin" class="w-full border p-2 rounded" placeholder="Kurzbeschreibung / Bio"></textarea>
-            <label class="block font-bold">Titel</label>
-            <select id="profile-title-admin" class="w-full border p-2 rounded"></select>
-            <label class="block font-bold">Abzeichen</label>
-            <div id="profile-badges-admin" class="flex flex-wrap gap-2"></div>
-            <label class="block font-bold">Rolle</label>
-            <select id="profile-role-admin" class="w-full border p-2 rounded">
+            <input id="profile-name-admin" class="w-full border p-2 rounded-lg" placeholder="Name" />
+            <textarea id="profile-bio-admin" class="w-full border p-2 rounded-lg" placeholder="Kurzbeschreibung / Bio"></textarea>
+            <label class="block font-bold text-sm">Titel</label>
+            <select id="profile-title-admin" class="w-full border p-2 rounded-lg"></select>
+            <label class="block font-bold text-sm">Abzeichen</label>
+            <div id="profile-badges-admin" class="flex flex-wrap gap-2 p-2 bg-slate-50 rounded-lg"></div>
+            <label class="block font-bold text-sm">Rolle</label>
+            <select id="profile-role-admin" class="w-full border p-2 rounded-lg">
               <option value="user">👤 User</option>
               <option value="admin">👑 Admin</option>
               <option value="mod">🛡️ Moderator</option>
@@ -167,46 +239,48 @@
               <input id="profile-banned-admin" type="checkbox" class="form-checkbox">
               <span>🚫 Account gesperrt</span>
             </label>
-            <div class="text-sm text-gray-600" id="profile-stats"></div>
+            <div class="text-sm text-slate-600" id="profile-stats"></div>
             <div class="flex space-x-2">
-              <button onclick="saveProfileAdmin()" class="bg-green-600 text-white px-3 py-1 rounded">💾 Speichern</button>
-              <button onclick="deleteProfileAdmin()" class="bg-red-600 text-white px-3 py-1 rounded">🗑️ Löschen</button>
-              <button onclick="openProfileLink()" class="bg-purple-600 text-white px-3 py-1 rounded">🔗 Öffnen</button>
+              <button onclick="saveProfileAdmin()" class="bg-primary text-white px-3 py-2 rounded-lg">💾 Speichern</button>
+              <button onclick="deleteProfileAdmin()" class="bg-red-600 text-white px-3 py-2 rounded-lg">🗑️ Löschen</button>
+              <button onclick="openProfileLink()" class="bg-secondary text-white px-3 py-2 rounded-lg">🔗 Öffnen</button>
             </div>
           </div>
         </div>
       </section>
 
       <section id="titles" class="dash-section hidden">
-        <h2 class="text-2xl font-bold mt-10 mb-4 text-indigo-700">👑 Titel Verwaltung</h2>
-        <div id="title-list" class="space-y-2 bg-white p-4 rounded shadow"></div>
-        <form id="title-form" class="mt-4 space-y-2">
-          <input id="title-name" placeholder="Titel-Name" class="border p-2 rounded w-full">
-          <select id="title-condition" class="border p-2 rounded w-full">
+        <h2 class="section-title">👑 Titel Verwaltung</h2>
+        <div id="title-list" class="space-y-2 bg-white p-6 rounded-xl shadow-lg"></div>
+        <form id="title-form" class="mt-4 space-y-3 bg-white p-6 rounded-xl shadow-lg">
+          <h3 class="text-lg font-semibold">Neuen Titel erstellen / Bearbeiten</h3>
+          <input id="title-name" placeholder="Titel-Name" class="border p-2 rounded-lg w-full">
+          <select id="title-condition" class="border p-2 rounded-lg w-full">
             <option value="rides">Anzahl Fahrten</option>
             <option value="distance">Gesamtkilometer</option>
           </select>
-          <input id="title-value" type="number" placeholder="Bedingung Wert" class="border p-2 rounded w-full">
-          <button type="submit" class="bg-green-600 text-white px-3 py-1 rounded">➕ Titel speichern</button>
+          <input id="title-value" type="number" placeholder="Bedingung Wert" class="border p-2 rounded-lg w-full">
+          <button type="submit" class="bg-primary text-white px-4 py-2 rounded-lg">➕ Titel speichern</button>
         </form>
       </section>
 
       <section id="badges" class="dash-section hidden">
         <h2 class="section-title">🏅 Abzeichen Verwaltung</h2>
-        <div id="badge-list-admin" class="space-y-2 bg-white p-4 rounded shadow"></div>
-        <form id="badge-form" class="mt-4 space-y-2">
-          <input id="badge-name" placeholder="Abzeichen-Name" class="border p-2 rounded w-full">
-          <label class="block font-bold">Icon hochladen</label>
-          <input id="badge-icon-file" type="file" accept="image/*" class="w-full border p-2 rounded">
-          <small class="text-gray-500">Oder Emoji eintragen:</small>
-          <input id="badge-icon" placeholder="Emoji/Icon (Fallback)" class="border p-2 rounded w-full">
-          <select id="badge-condition" class="border p-2 rounded w-full">
+        <div id="badge-list-admin" class="space-y-2 bg-white p-6 rounded-xl shadow-lg"></div>
+        <form id="badge-form" class="mt-4 space-y-3 bg-white p-6 rounded-xl shadow-lg">
+          <h3 class="text-lg font-semibold">Neues Abzeichen erstellen / Bearbeiten</h3>
+          <input id="badge-name" placeholder="Abzeichen-Name" class="border p-2 rounded-lg w-full">
+          <label class="block font-bold text-sm">Icon hochladen</label>
+          <input id="badge-icon-file" type="file" accept="image/*" class="w-full border p-2 rounded-lg">
+          <small class="text-slate-500">Oder Emoji eintragen:</small>
+          <input id="badge-icon" placeholder="Emoji/Icon (Fallback)" class="border p-2 rounded-lg w-full">
+          <select id="badge-condition" class="border p-2 rounded-lg w-full">
             <option value="rides">Anzahl Fahrten</option>
             <option value="distance">Gesamtkilometer</option>
             <option value="night">Nachtfahrt</option>
           </select>
-          <input id="badge-value" type="number" placeholder="Bedingung Wert" class="border p-2 rounded w-full">
-          <button type="submit" class="bg-green-600 text-white px-3 py-1 rounded">➕ Abzeichen speichern</button>
+          <input id="badge-value" type="number" placeholder="Bedingung Wert" class="border p-2 rounded-lg w-full">
+          <button type="submit" class="bg-primary text-white px-4 py-2 rounded-lg">➕ Abzeichen speichern</button>
         </form>
       </section>
     </main>
@@ -235,7 +309,7 @@
     { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
   ];
 
-  // Das Gemini-Modell, das wir verwenden (Flash ist schnell und günstig)
+  // Das Gemini-Modell, das wir verwenden
   const model = genAI.getGenerativeModel({
     model: "gemini-1.5-flash",
     safetySettings,
@@ -244,18 +318,19 @@
   console.log("🤖 Gemini AI (Frontend-Modus) initialisiert. Key ist sichtbar!");
 
   // --- Helper-Funktion für Lade-Buttons ---
-  function setButtonLoading(button, isLoading) {
+  function setButtonLoading(button, isLoading, originalText = null) {
     if (isLoading) {
       button.disabled = true;
       button.innerHTML = `<span class="spinner"></span> Bitte warten...`;
     } else {
       button.disabled = false;
-      // Text wird von der aufrufenden Funktion wiederhergestellt
+      if (originalText) {
+        button.innerHTML = originalText;
+      }
     }
   }
   
   // --- 1. KI-FUNKTION: Support-Antwort vorschlagen ---
-  
   // Mache die Funktion im globalen 'window'-Objekt verfügbar,
   // damit der 'onclick'-Handler im HTML sie finden kann.
   window.geminiSuggestReply = async (button) => {
@@ -267,8 +342,7 @@
     
     if (!ticketId) {
       alert("Fehler: Keine Ticket-ID gefunden.");
-      setButtonLoading(button, false);
-      button.innerHTML = originalText;
+      setButtonLoading(button, false, originalText);
       return;
     }
 
@@ -276,8 +350,7 @@
     const history = window.supportMessages[ticketId];
     if (!history || history.length === 0) {
       alert("Fehler: Konnte Nachrichtenverlauf nicht laden.");
-      setButtonLoading(button, false);
-      button.innerHTML = originalText;
+      setButtonLoading(button, false, originalText);
       return;
     }
 
@@ -306,8 +379,7 @@
       console.error("Gemini Fehler (Reply):", e);
       alert("Fehler bei der AI-Anfrage: " + e.message);
     } finally {
-      setButtonLoading(button, false);
-      button.innerHTML = originalText;
+      setButtonLoading(button, false, originalText);
     }
   };
 
@@ -359,9 +431,8 @@
       imagePart = await fetchImageAsBase64(imageUrl);
     } catch (e) {
       console.error(e);
-      alert("Fehler bei der Bildanalyse: " + e.message + "\n\nDies liegt wahrscheinlich an einer CORS-Sperre. Ein Backend (Firebase Function) löst dieses Problem.");
-      setButtonLoading(button, false);
-      button.innerHTML = originalText;
+      alert("Fehler bei der Bildanalyse: " + e.message + "\n\n(Dies liegt oft an CORS. Ein Backend löst das.)");
+      setButtonLoading(button, false, originalText);
       return;
     }
 
@@ -395,8 +466,7 @@
       console.error("Gemini Fehler (Image):", e);
       alert("Fehler bei der AI-Bildanalyse: " + e.message);
     } finally {
-      setButtonLoading(button, false);
-      button.innerHTML = originalText;
+      setButtonLoading(button, false, originalText);
     }
   };
 
@@ -410,8 +480,7 @@
     const hut = window.allHuts.find(h => h.id === hutId);
     if (!hut) {
       alert("Fehler: Hütte nicht gefunden.");
-      setButtonLoading(button, false);
-      button.innerHTML = originalText;
+      setButtonLoading(button, false, originalText);
       return;
     }
 
@@ -454,20 +523,92 @@
       console.error("Gemini Fehler (Audit):", e);
       alert("Fehler beim AI-Audit: " + e.message);
     } finally {
-      setButtonLoading(button, false);
-      button.innerHTML = originalText;
+      setButtonLoading(button, false, originalText);
     }
+  };
+  
+  
+  // 🤖 NEU: --- 4. KI-FUNKTION: Support-Tickets taggen ---
+  window.geminiTagTicket = async (button, ticketId) => {
+    const originalText = button.innerHTML;
+    setButtonLoading(button, true);
+    
+    // Hole die Firebase DB-Instanz aus dem globalen Skript
+    // 'window.db' wird im nächsten Skript-Block gesetzt
+    if (!window.db) {
+        alert("Fehler: DB-Verbindung nicht gefunden.");
+        setButtonLoading(button, false, originalText);
+        return;
+    }
+    
+    let firstMessage = "";
+    try {
+      // Hole die erste Nachricht des Tickets, um sie zu analysieren
+      const msgsSnap = await window.db.collection("support").doc(ticketId)
+                               .collection("messages").orderBy("createdAt", "asc").limit(1).get();
+      firstMessage = msgsSnap.docs[0]?.data().text;
+      
+      if (!firstMessage) {
+        alert("Fehler: Keine Nachricht im Ticket gefunden zum Taggen.");
+        setButtonLoading(button, false, originalText);
+        return;
+      }
+    } catch (e) {
+      alert("Fehler beim Laden der Ticket-Nachricht: " + e.message);
+      setButtonLoading(button, false, originalText);
+      return;
+    }
+    
+    const prompt = `
+      Analysiere diese Support-Anfrage und gib 1-2 relevante Tags zurück.
+      Mögliche Tags sind: 'Abrechnung', 'Bug-Report', 'Foto-Problem', 'Hütten-Info', 'Spam', 'Allgemein'.
+      Antworte NUR mit einem JSON-Array.
+      
+      Text: "${firstMessage}"
+      
+      Beispiel-Antwort:
+      ["Abrechnung"]
+    `;
+    
+    try {
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      let text = response.text().replace(/```json/g, "").replace(/```/g, "").trim();
+      const tags = JSON.parse(text);
+      
+      // Speichere die Tags im Firestore-Dokument
+      await window.db.collection("support").doc(ticketId).update({ aiTags: tags });
+      
+      // Zeige die Tags sofort in der UI an
+      const tagCell = document.getElementById(`ai-tags-${ticketId}`);
+      if(tagCell) {
+        tagCell.innerHTML = tags.map(tag => 
+          `<span class="px-2 py-1 bg-ai text-white rounded-full text-xs font-medium">${tag}</span>`
+        ).join(' ');
+      }
+      
+    } catch (e) {
+      console.error("Gemini Fehler (Tagging):", e);
+      alert("Fehler beim AI-Tagging: " + e.message);
+      // Bei Fehler den Button wiederherstellen
+      setButtonLoading(button, false, originalText);
+    } 
+    // Bei Erfolg wird der Button absichtlich nicht wiederhergestellt, da er durch die Tags ersetzt wird.
   };
 
 </script>
 
 
 <script>
-  // Wichtig: 'window.allHuts' wird für AI-Funktionen benötigt
+  // Mache Firebase global verfügbar, damit das Modul-Skript darauf zugreifen kann
+  window.firebase = firebase; 
+
+  // Globale Variablen für die App
   let allHuts = [];
-  // Wichtig: 'window.supportMessages' wird für AI-Funktionen benötigt
+  window.allHuts = allHuts; // Auch für AI-Funktion global machen
   window.supportMessages = {}; // Speichert Nachrichtenverläufe pro Ticket-ID
 
+  // Firebase-Konfiguration
   const firebaseConfig = {
     apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro",
     authDomain: "eierhuettentour.firebaseapp.com",
@@ -476,24 +617,31 @@
     messagingSenderId: "348272135205",
     appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
   };
-  firebase.initializeApp(firebaseConfig);
+  
+  // Initialisiere Firebase (nur wenn nicht schon geschehen)
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
+  
+  // Firebase-Dienste
   const auth = firebase.auth();
   const db = firebase.firestore();
+  window.db = db; // Global für AI-Tagging-Funktion
   const storage = firebase.storage();
 
+  // DOM-Elemente
   const loginSection = document.getElementById('login-section');
   const dashboard = document.getElementById('dashboard');
   const hutList = document.getElementById('hut-list');
   const searchInput = document.getElementById('search-input');
   const notification = document.getElementById('notification');
   const stats = document.getElementById('stats');
-  let huts = [], currentUser = null;
-  let adminMarker;
-  let adminMap;
-  let adminLocation;
+  
+  // App-Status
+  let currentUser = null;
+  let adminMarker, adminMap, adminLocation;
 
-
-  // === TIERE MAPPING / Normalisierung (global) ===
+  // === TIERE MAPPING (global) ===
   const TIERE_EMOJI_TO_NAME = {
     "🦙": "Alpaka", "🐄": "Kuh", "🐖": "Schwein", "🐐": "Ziege", "🐑": "Schaf",
     "🐶": "Hund", "🐱": "Katze", "🐇": "Hase", "🐔": "Huhn", "🦆": "Ente",
@@ -514,7 +662,9 @@
     }).filter(Boolean);
   }
     
+  // === Initialisierung bei DOM-Ladung ===
   document.addEventListener('DOMContentLoaded', () => {
+    // Leaflet-Karte für Admin-Panel (versteckt)
     adminMap = L.map('admin-map').setView([51.1657, 10.4515], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(adminMap);
     adminMarker = L.marker([51.1657, 10.4515], { draggable: true }).addTo(adminMap);
@@ -528,110 +678,96 @@
       adminMarker.setLatLng([latitude, longitude]);
       adminLocation = new firebase.firestore.GeoPoint(latitude, longitude);
     });
-  });
-
-  // Formular absenden
-  document.getElementById('admin-hut-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!adminLocation) return alert('❌ Bitte wähle einen Standort auf der Karte.');
-    editingData = {
-      name: document.getElementById('admin-hut-name').value.trim(),
-      location: adminLocation, fotos: []
-    };
-    const files = document.getElementById('admin-hut-images').files;
-    if (files.length > 0) {
-      addMessage(`⏳ Lade ${files.length} Bild(er) hoch...`, 'bot');
-      const uploads = [];
-      for (let file of files) {
-        try {
-          const img = await uploadToImgBB(file);
-          uploads.push(img);
-        } catch (err) {
-          console.error('❌ Upload-Fehler:', err);
-          addMessage('❌ Fehler beim Hochladen eines Bildes.', 'bot');
-        }
-      }
-      editingData.fotos = uploads;
-    }
-    submitNewHutAdmin();
-  });
-
-  async function submitNewHutAdmin() {
-    if (!editingData.name || !editingData.location) {
-      addMessage('❌ Bitte gib alle Daten ein (mindestens Name und Standort).', 'bot');
-      return;
-    }
-    const validFotos = (editingData.fotos || []).filter(f =>
-      typeof f === 'object' && f.url && f.delete_url
-    );
-    const hut = {
-      ...editingData,
-      userId: currentUser.uid,
-      erstelltAm: firebase.firestore.FieldValue.serverTimestamp(),
-      status: 'angenommen',
-      fotos: validFotos,
-      aboMonate: null,
-      paypalSubscriptionId: null,
-      datenschutzZustimmung: {
-        bestätigtAm: firebase.firestore.FieldValue.serverTimestamp(),
-        durch: firebase.auth().currentUser?.email || "Admin"
-      }
-    };
-    try {
-      await db.collection('eierhuetten').add(hut);
-      addMessage('✅ Hütte ohne PayPal erfolgreich erstellt und freigeschaltet.', 'bot');
-      step = 0; editingData = {}; showMyHuts();
-    } catch (err) {
-      addMessage('❌ Fehler beim Erstellen der Hütte: ' + err.message, 'bot');
-    }
-  }
     
+    // Event Listener für Suchen & Sortieren
+    document.getElementById("search-input").addEventListener("input", applySearchAndSort);
+    document.getElementById("sortSelect").addEventListener("change", applySearchAndSort);
+  });
+  
+  // (Formular-Submit-Logik für 'admin-hut-form'... übersprungen, da nicht im UI sichtbar)
+    
+  // === UI-Helfer ===
+  
   function showNotification(message) {
     notification.textContent = message;
     notification.style.display = 'block';
     setTimeout(() => notification.style.display = 'none', 4000);
   }
 
+  // === Authentifizierung ===
+  
+  // 🤖 NEU: Auth-Button bleibt gleich, aber onAuthStateChanged ist jetzt "smarter"
   document.getElementById('login-btn').onclick = () => {
-    auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    // Zeige einen Ladezustand
+    const btn = document.getElementById('login-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Verbinde...';
+    
+    auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(error => {
+      // Fehler beim Popup (z.B. geschlossen)
+      const loginError = document.getElementById('login-error');
+      loginError.textContent = `Fehler beim Anmelden: ${error.message}`;
+      loginError.classList.remove('hidden');
+      btn.disabled = false;
+      btn.innerHTML = 'Mit Google Anmelden';
+    });
   };
 
   auth.onAuthStateChanged(async user => {
+    const loginError = document.getElementById('login-error');
+    const loginBtn = document.getElementById('login-btn');
+    
     if (user) {
       currentUser = user;
-      const adminDoc = await db.collection('admins').doc(user.email).get();
-      if (!adminDoc.exists) {
-        alert('Zugriff verweigert: Du bist kein Admin.');
-        return;
+      try {
+        const adminDoc = await db.collection('admins').doc(user.email).get();
+        if (!adminDoc.exists) {
+          // 🤖 NEU: Zeige Fehler in der UI statt alert()
+          loginError.textContent = `Zugriff verweigert. Dein Konto (${user.email}) ist nicht als Admin registriert.`;
+          loginError.classList.remove('hidden');
+          await auth.signOut(); // Automatisch wieder ausloggen
+          loginBtn.disabled = false;
+          loginBtn.innerHTML = 'Mit Google Anmelden';
+          return;
+        }
+        
+        loginSection.classList.add('hidden');
+        // 🤖 NEU: 'flex' statt 'block' für die neue Dashboard-Struktur
+        dashboard.classList.remove('hidden');
+        dashboard.classList.add('flex'); 
+        
+        db.collection('eierhuetten').onSnapshot(() => {
+          showNotification('🔄 Live-Update: Hüttendaten wurden aktualisiert.');
+          loadHuts(); // Lade Hütten bei Live-Update
+        });
+        
+        // Initiales Laden
+        showSection('overview');
+        loadHuts(); // Lade Hütten initial
+        initLiveNewHuts();
+        initLivePendingFotos();
+        ladeSupportTickets();
+        
+      } catch (err) {
+        console.error("Auth-Fehler:", err);
+        loginError.textContent = `Ein Fehler ist aufgetreten: ${err.message}`;
+        loginError.classList.remove('hidden');
+        loginBtn.disabled = false;
+        loginBtn.innerHTML = 'Mit Google Anmelden';
       }
-      loginSection.classList.add('hidden');
-      dashboard.classList.remove('hidden');
-      db.collection('eierhuetten').onSnapshot(() => {
-        showNotification('🔄 Live-Update: Hüttendaten wurden aktualisiert.');
-        loadHuts();
-      });
-      showSection('overview');
-      initLiveNewHuts();
-      initLivePendingFotos();
-      ladeSupportTickets();
+    } else {
+      // User ist ausgeloggt
+      currentUser = null;
+      loginSection.classList.remove('hidden');
+      dashboard.classList.add('hidden');
+      dashboard.classList.remove('flex');
+      // Setze Login-Button zurück
+      loginBtn.disabled = false;
+      loginBtn.innerHTML = 'Mit Google Anmelden';
     }
   });
 
-  searchInput.addEventListener('input', () => {
-    const term = searchInput.value.trim().toLowerCase();
-    if (!term) {
-      filteredHuts = [];
-    } else {
-      filteredHuts = allHuts.filter(hut => {
-        return [
-          hut.name, hut.status, hut.paypalSubscriptionId,
-          hut.strom, hut.sitzplaetze, hut.oeffnungszeiten
-        ].some(field => (field || '').toLowerCase().includes(term));
-      });
-    }
-    currentPage = 1;
-    renderPage();
-  });
+  // === Datenladen & Statistik ===
 
   function normalizeHutId(hutId) {
     if (!hutId && hutId !== 0) return null;
@@ -641,10 +777,10 @@
 
   async function loadHuts() {
     const snapshot = await db.collection('eierhuetten').orderBy('erstelltAm', 'desc').get();
-    // 🤖 Global 'allHuts' aktualisieren, damit AI-Funktionen darauf zugreifen können
     allHuts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    window.allHuts = allHuts; // Für AI-Funktion global bereitstellen
     currentPage = 1;
-    renderPage(currentPage);
+    applySearchAndSort(); // Wende Filter an, anstatt nur renderPage aufzurufen
     renderStats(allHuts);
   }
 
@@ -657,16 +793,16 @@
     const newEntries = list.filter(h => h.status === 'offen').length;
     const pendingFotos = list.reduce((sum, h) =>
         sum + (Array.isArray(h.fotos)
-              ? h.fotos.filter(f => f.status === 'wartet').length
+              ? h.fotos.filter(f => f && typeof f === 'object' && f.status === 'wartet').length
               : 0), 0);
     const c = document.getElementById("statsContainer");
     c.innerHTML = `
-      <div class="bg-white p-4 rounded shadow text-center"><p class="text-3xl font-bold">${total}</p><p class="text-gray-500">Gesamt&nbsp;Hütten</p></div>
-      <div class="bg-white p-4 rounded shadow text-center"><p class="text-3xl font-bold">${newEntries}</p><p class="text-gray-500">Neue&nbsp;Eintragungen</p></div>
-      <div class="bg-white p-4 rounded shadow text-center"><p class="text-3xl font-bold">${withStrom}</p><p class="text-gray-500">mit&nbsp;Strom</p></div>
-      <div class="bg-white p-4 rounded shadow text-center"><p class="text-3xl font-bold">${withFotos}</p><p class="text-gray-500">mit&nbsp;Fotos</p></div>
-      <div class="bg-white p-4 rounded shadow text-center"><p class="text-3xl font-bold">${pendingFotos}</p><p class="text-gray-500">wartende&nbsp;Fotos</p></div>
-      <div class="bg-white p-4 rounded shadow text-center"><p class="text-3xl font-bold">${count247}</p><p class="text-gray-500">24/7 geöffnet</p></div>
+      <div class="bg-white p-4 rounded-xl shadow-lg text-center"><p class="text-3xl font-bold text-primary">${total}</p><p class="text-slate-500">Gesamt&nbsp;Hütten</p></div>
+      <div class="bg-white p-4 rounded-xl shadow-lg text-center"><p class="text-3xl font-bold text-yellow-600">${newEntries}</p><p class="text-slate-500">Neue&nbsp;Eintragungen</p></div>
+      <div class="bg-white p-4 rounded-xl shadow-lg text-center"><p class="text-3xl font-bold text-blue-600">${withStrom}</p><p class="text-slate-500">mit&nbsp;Strom</p></div>
+      <div class="bg-white p-4 rounded-xl shadow-lg text-center"><p class="text-3xl font-bold text-green-600">${withFotos}</p><p class="text-slate-500">mit&nbsp;Fotos</p></div>
+      <div class="bg-white p-4 rounded-xl shadow-lg text-center"><p class="text-3xl font-bold text-red-600">${pendingFotos}</p><p class="text-slate-500">wartende&nbsp;Fotos</p></div>
+      <div class="bg-white p-4 rounded-xl shadow-lg text-center"><p class="text-3xl font-bold text-indigo-600">${count247}</p><p class="text-slate-500">24/7 geöffnet</p></div>
     `;
     const ctx = document.getElementById('statsChart').getContext('2d');
     const data = {
@@ -677,6 +813,7 @@
       }]
     };
     const options = {
+      responsive: true,
       plugins: {
         legend: { position: 'bottom' },
         title: { display: true, text: 'Verteilung besonderer Merkmale' }
@@ -689,6 +826,8 @@
       statsChart = new Chart(ctx, { type: 'doughnut', data, options });
     }
   }
+  
+  // === Foto-Management ===
 
   async function approveFoto(hutId, index) {
     try {
@@ -709,7 +848,7 @@
         zeitpunkt: new Date()
       });
       showNotification('✅ Bild freigegeben');
-      loadHuts();
+      // loadHuts(); // Wird durch onSnapshot-Listener erledigt
     } catch (err) {
       console.error(err);
       showNotification('❌ Fehler beim Freigeben.');
@@ -733,10 +872,11 @@
         zeitpunkt: new Date()
       });
       if (deleteUrl) {
-        try { await fetch(deleteUrl); } catch (e) { console.warn('imgbb delete fehlgeschlagen', e); }
+        // imgbb delete_url ist oft unzuverlässig, daher "fire and forget"
+        try { fetch(deleteUrl, { method: 'GET' }); } catch (e) { console.warn('imgbb delete fehlgeschlagen', e); }
       }
       showNotification('🗑️ Bild entfernt');
-      loadHuts();
+      // loadHuts(); // Wird durch onSnapshot-Listener erledigt
     } catch (err) {
       console.error(err);
       showNotification('❌ Fehler beim Entfernen.');
@@ -758,7 +898,7 @@
       });
       try {
         const formData = new FormData();
-        formData.append('key', '5df04de9bfd2776f101329be4193e44c'); // imgbb API Key
+        formData.append('key', '5df04de9bfd2776f101329be4193e44c'); // ImgBB API Key
         formData.append('image', base64);
         const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: formData });
         const json = await res.json();
@@ -766,7 +906,7 @@
           uploadedObjects.push({
             url: json.data.url,
             delete_url: json.data.delete_url || null,
-            status: 'wartet'
+            status: 'wartet' // Neue Bilder müssen freigegeben werden
           });
         } else {
           console.warn('❌ Upload unvollständig:', json);
@@ -783,7 +923,7 @@
           fotos: firebase.firestore.FieldValue.arrayUnion(...uploadedObjects)
         });
         showNotification('✅ Bilder hochgeladen (warten auf Freigabe).');
-        loadHuts();
+        // loadHuts(); // Wird durch onSnapshot-Listener erledigt
       } catch (err) {
         console.error(err);
         showNotification('❌ Fehler beim Speichern der Bilder: ' + err.message);
@@ -791,11 +931,28 @@
     }
   }
 
+  // === Hütten-CRUD ===
+
   async function updateField(hutId, field, value) {
-    if (field !== "tiere") {
-      if (!confirm(`⚠️ Willst du wirklich das Feld "${field}" auf "${value}" ändern?`)) {
-        return;
+    // Für Tiere gibt es eine eigene Funktion (toggleTier)
+    if (field === "tiere") return; 
+
+    if (!confirm(`⚠️ Willst du wirklich das Feld "${field}" auf "${value}" ändern?`)) {
+      // Lade die Daten neu, um die UI zurückzusetzen
+      const el = document.getElementById(`hut-${hutId}`);
+      const hut = allHuts.find(h => h.id === hutId);
+      if(el && hut) {
+          // Setze das spezifische Feld zurück
+          if(field === 'name') el.querySelector('input[onchange*="name"]').value = hut.name || '';
+          if(field === 'beschreibung') el.querySelector('textarea[onchange*="beschreibung"]').value = hut.beschreibung || '';
+          if(field === 'sitzplaetze') el.querySelector('select[onchange*="sitzplaetze"]').value = hut.sitzplaetze || 'Nein';
+          if(field === 'strom') el.querySelector('select[onchange*="strom"]').value = hut.strom || 'Nein';
+          if(field === 'status') el.querySelector('select[onchange*="status"]').value = hut.status || 'offen';
       }
+      return;
+    }
+    
+    try {
       await db.collection('eierhuetten').doc(hutId).update({ [field]: value });
       await db.collection('eierhuetten').doc(hutId).collection('log').add({
         admin: currentUser.displayName || currentUser.email,
@@ -803,50 +960,67 @@
         wert: value,
         zeitpunkt: new Date()
       });
-      return;
+      showNotification(`✅ Feld "${field}" aktualisiert.`);
+      // loadHuts(); // Wird durch onSnapshot-Listener erledigt
+    } catch (e) {
+      showNotification(`❌ Fehler beim Aktualisieren: ${e.message}`);
     }
-    const ref = db.collection("eierhuetten").doc(hutId);
-    await db.runTransaction(async tx => {
-      const doc = await tx.get(ref);
-      if (!doc.exists) throw new Error("Hütte nicht gefunden");
-      let tiere = Array.isArray(doc.data().tiere) ? doc.data().tiere : [];
-      tiere = normalizeToEmojiArray(tiere);
-      if (tiere.includes(value)) {
-        tiere = tiere.filter(t => t !== value);
-      } else {
-        tiere = tiere.filter(t => t !== "❌");
-        tiere.push(value);
-      }
-      tx.update(ref, { tiere });
-      await ref.collection("log").add({
-        admin: currentUser.displayName || currentUser.email,
-        feld: "tiere",
-        wert: tiere.join(", "),
-        zeitpunkt: new Date()
-      });
-    });
   }
 
+  // === Navigation ===
+  
+  // 🤖 NEU: Funktion zum Steuern des mobilen Menüs
+  function toggleMenu(forceOpen = null) {
+    if (forceOpen === null) {
+      document.body.classList.toggle('sidebar-open');
+    } else if (forceOpen) {
+      document.body.classList.add('sidebar-open');
+    } else {
+      document.body.classList.remove('sidebar-open');
+    }
+  }
+
+  // 🤖 NEU: showSection schließt jetzt das mobile Menü und setzt den Header-Titel
   function showSection(id) {
     document.querySelectorAll('.dash-section').forEach(sec =>
       sec.classList.add('hidden')
     );
     document.getElementById(id).classList.remove('hidden');
-    document.querySelectorAll('.nav-btn').forEach(btn =>
-      btn.classList.remove('active')
-    );
-    document
-      .querySelector(`.nav-btn[onclick="showSection('${id}')"]`)
-      .classList.add('active');
+
+    let title = "Übersicht";
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      const btnOnClick = btn.getAttribute('onclick');
+      if (btnOnClick && btnOnClick.includes(`showSection('${id}')`)) {
+        btn.classList.add('active');
+        title = btn.textContent.trim(); // 📊 Übersicht
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+    
+    // Setze den Header-Titel
+    document.getElementById('header-title').textContent = title;
+    
+    // Schließe das mobile Menü bei Sektionswechsel
+    toggleMenu(false);
   }
 
+  // === Hütten-Rendering ===
+  
   async function renderHuts(list) {
     hutList.innerHTML = '';
+    if (list.length === 0) {
+        hutList.innerHTML = `<p class="text-slate-500 italic text-center">Keine Hütten gefunden, die den Kriterien entsprechen.</p>`;
+        return;
+    }
+    
     for (const hut of list) {
       try {
         const el = document.createElement("div");
-        el.className = "bg-white p-4 rounded shadow space-y-2";
+        // 🤖 NEU: 'rounded-xl shadow-lg' für moderneres Karten-Design
+        el.className = "bg-white p-4 rounded-xl shadow-lg space-y-3"; 
         el.id = `hut-${hut.id}`;
+        
         const fotos = Array.isArray(hut.fotos) ? hut.fotos : [];
         let logs = [];
         try {
@@ -863,7 +1037,7 @@
             ${Object.entries(TIERE_EMOJI_TO_NAME).map(([emoji, name]) => `
               <button type="button"
                 data-hut-id="${hut.id}" data-emoji="${emoji}"
-                class="admin-tiere-btn text-2xl ${selectedEmojis.has(emoji) ? 'bg-yellow-200' : 'bg-gray-100'} rounded p-1"
+                class="admin-tiere-btn text-2xl ${selectedEmojis.has(emoji) ? 'bg-yellow-200' : 'bg-slate-100'} rounded-lg p-1 transition"
                 title="${name}">
                 ${emoji}
               </button>
@@ -872,15 +1046,15 @@
         `;
         
         let tagsHTML = `
-          <div class="flex flex-wrap gap-2">
+          <div class="flex flex-wrap gap-2 items-center">
             ${(Array.isArray(hut.tags)?hut.tags:[]).map(t => `
-              <span class="px-2 py-1 bg-blue-100 rounded-full">
-                ${t} <button type="button" onclick="removeTag('${hut.id}','${t}')">✖</button>
+              <span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
+                ${t} <button type="button" onclick="removeTag('${hut.id}','${t}')" class="ml-1 font-bold">×</button>
               </span>
             `).join('')}
-            <input type="text" placeholder="Neuer Tag" 
-              onkeydown="if(event.key==='Enter'){addTag('${hut.id}',this.value);this.value='';this.placeholder='✔️ gespeichert';setTimeout(()=>this.placeholder='Neuer Tag',1500)}"
-              class="border rounded px-2 py-1">
+            <input type="text" placeholder="+ Tag" 
+              onkeydown="if(event.key==='Enter' && this.value.trim()){addTag('${hut.id}',this.value);this.value='';this.placeholder='✔️';setTimeout(()=>this.placeholder='+ Tag',1500)}"
+              class="border rounded-lg px-2 py-1 text-sm w-24">
           </div>
         `;
         
@@ -889,27 +1063,27 @@
             const f = typeof foto === 'string' ? { url: foto, status: 'freigegeben' } : foto;
             if (f.status !== 'freigegeben') return '';
             return `
-              <div class="relative w-24 h-24 rounded overflow-hidden border border-gray-300">
+              <div class="relative w-24 h-24 rounded-lg overflow-hidden border border-slate-300">
                 <img src="${f.url}" alt="Foto" class="object-cover w-full h-full" />
-                <button type="button" onclick="deleteFoto('${hut.id}', '${f.url}')" 
-                  class="absolute top-0 right-0 bg-red-600 text-white rounded-bl px-1 text-sm font-bold hover:bg-red-700">×</button>
+                <button type="button" onclick="deleteFoto('${hut.id}', ${i})" 
+                  class="absolute top-0 right-0 bg-red-600 text-white rounded-bl-lg px-1 text-sm font-bold hover:bg-red-700" title="Foto löschen">×</button>
               </div>
             `;
-          }).join('') || '<p class="text-gray-500">Keine Fotos</p>';
+          }).join('') || '<p class="text-slate-500 text-sm">Keine Fotos</p>';
         
         let fotosWartend = fotos
           .map((f, i) => {
-            if (typeof f === 'string' || f.status !== 'wartet') return '';
+            if (typeof f === 'string' || !f || typeof f !== 'object' || f.status !== 'wartet') return '';
             return `
-              <div class="relative w-24 h-24 rounded overflow-hidden border border-yellow-400 border-dashed group">
+              <div class="relative w-24 h-24 rounded-lg overflow-hidden border-2 border-yellow-400 border-dashed group">
                 <img src="${f.url}" alt="wartet" class="object-cover w-full h-full opacity-50 grayscale" />
-                <div class="absolute inset-0 flex flex-col items-center justify-center text-xs text-white bg-black/50">
+                <div class="absolute inset-0 flex flex-col items-center justify-center text-xs text-white bg-black/60">
                   ⏳ Wartet
-                  <div class="flex gap-1 mt-1">
-                    <button type="button" onclick="approveFoto('${hut.id}', ${i})" class="bg-green-600 px-1 rounded">✔</button>
+                  <div class="flex gap-1 mt-2">
+                    <button type="button" onclick="approveFoto('${hut.id}', ${i})" class="bg-green-600 p-2 rounded-full" title="Freigeben">✔</button>
                     <button type="button" onclick="geminiAnalyzeImage(this, '${f.url}')" 
-                            class="bg-purple-600 px-1 rounded" title="AI-Check">🤖</button>
-                    <button type="button" onclick="rejectFoto('${hut.id}', ${i})" class="bg-red-600 px-1 rounded">✖</button>
+                            class="bg-ai p-2 rounded-full" title="AI-Check">🤖</button>
+                    <button type="button" onclick="rejectFoto('${hut.id}', ${i})" class="bg-red-600 p-2 rounded-full" title="Löschen">✖</button>
                   </div>
                 </div>
               </div>
@@ -918,54 +1092,62 @@
 
         el.innerHTML = `
           <div class="flex justify-between items-start">
-            <input class="text-xl font-bold w-full mb-2" 
+            <input class="text-xl font-bold w-full mb-2 border-b" 
               value="${hut.name || ''}" 
               onchange="updateField('${hut.id}', 'name', this.value)">
-            <button onclick="geminiAuditHut(this, '${hut.id}')" class="bg-purple-500 text-white px-2 py-1 rounded text-sm whitespace-nowrap ml-2">
+            <button onclick="geminiAuditHut(this, '${hut.id}')" class="bg-ai hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-sm whitespace-nowrap ml-2 flex items-center gap-1">
               🤖 Audit
             </button>
           </div>
-          <label>Beschreibung:
+          <label class="font-medium text-slate-700">Beschreibung:
             <textarea onchange="updateField('${hut.id}','beschreibung',this.value)" 
-              class="w-full border rounded p-1">${hut.beschreibung || ''}</textarea>
+              class="w-full border rounded-lg p-2 mt-1 h-24">${hut.beschreibung || ''}</textarea>
           </label>
-          <div>${tiereHTML}</div>
-          <div><strong>Tags:</strong> ${tagsHTML}</div>
-          <div><strong>Fotos (freigegeben):</strong><div class="flex flex-wrap gap-2 mb-2">${fotosFreigegeben}</div></div>
-          ${fotosWartend ? `<div><strong>Fotos (warten auf Freigabe):</strong><div class="flex flex-wrap gap-2 mb-2">${fotosWartend}</div></div>` : ''}
-          <label class="block mt-2 text-sm">📷 Neues Bild:
-            <input type="file" accept="image/*" onchange="initImageUpload(this, '${hut.id}')" class="upload-image mt-1" />
+          <div><label class="font-medium text-slate-700">Tiere:</label>${tiereHTML}</div>
+          <div><label class="font-medium text-slate-700">Tags:</label>${tagsHTML}</div>
+          <div><label class="font-medium text-slate-700">Fotos (freigegeben):</label><div class="flex flex-wrap gap-2 mt-1">${fotosFreigegeben}</div></div>
+          ${fotosWartend ? `<div><label class="font-medium text-slate-700">Fotos (warten auf Freigabe):</label><div class="flex flex-wrap gap-2 mt-1">${fotosWartend}</div></div>` : ''}
+          <label class="block mt-2 text-sm font-medium text-slate-700">📷 Neues Bild hochladen:
+            <input type="file" accept="image/*" onchange="initImageUpload(this, '${hut.id}')" 
+                   class="upload-image mt-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-primary hover:file:bg-emerald-100" />
           </label>
-          <label>Sitzplätze:
-            <select onchange="updateField('${hut.id}', 'sitzplaetze', this.value)" class="w-full mb-2">
-              ${['Ja','Nein'].map(o => `<option ${o===hut.sitzplaetze?'selected':''}>${o}</option>`).join('')}
-            </select>
-          </label>
-          <label>Strom:
-            <select onchange="updateField('${hut.id}', 'strom', this.value)" class="w-full mb-2">
-              ${['Ja','Nein'].map(o => `<option ${o===hut.strom?'selected':''}>${o}</option>`).join('')}
-            </select>
-          </label>
-          <label>Status:
-            <select onchange="updateField('${hut.id}', 'status', this.value)" class="w-full mb-2">
-              ${['offen','angenommen','abgelehnt'].map(s => `<option ${s===hut.status?'selected':''}>${s}</option>`).join('')}
-            </select>
-          </label>
+          
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <label class="font-medium text-slate-700">Sitzplätze:
+              <select onchange="updateField('${hut.id}', 'sitzplaetze', this.value)" class="w-full mb-2 border rounded-lg p-2 mt-1">
+                ${['Ja','Nein', ''].map(o => `<option value="${o}" ${o===hut.sitzplaetze?'selected':''}>${o || 'k.A.'}</option>`).join('')}
+              </select>
+            </label>
+            <label class="font-medium text-slate-700">Strom:
+              <select onchange="updateField('${hut.id}', 'strom', this.value)" class="w-full mb-2 border rounded-lg p-2 mt-1">
+                ${['Ja','Nein', ''].map(o => `<option value="${o}" ${o===hut.strom?'selected':''}>${o || 'k.A.'}</option>`).join('')}
+              </select>
+            </label>
+            <label class="font-medium text-slate-700">Status:
+              <select onchange="updateField('${hut.id}', 'status', this.value)" class="w-full mb-2 border rounded-lg p-2 mt-1">
+                ${['offen','angenommen','abgelehnt'].map(s => `<option value="${s}" ${s===hut.status?'selected':''}>${s}</option>`).join('')}
+              </select>
+            </label>
+          </div>
+          
           <div class="minimap" id="map-${hut.id}"></div>
+          
           <details class="mt-3">
-            <summary>Bearbeitungs-Log (${logs.length})</summary>
-            <ul class="text-xs max-h-48 overflow-auto">
+            <summary class="cursor-pointer text-sm text-slate-600">Bearbeitungs-Log (${logs.length})</summary>
+            <ul class="text-xs max-h-48 overflow-auto mt-2 p-2 bg-slate-50 rounded-lg">
               ${logs.map(log => `
-                <li><strong>${log.admin}</strong> änderte <em>${log.feld}</em> auf <code>${log.wert}</code> 
-                am ${new Date(log.zeitpunkt?.seconds * 1000 || Date.now()).toLocaleString()}</li>
+                <li class="border-b py-1"><strong>${log.admin || 'System'}</strong> änderte <em>${log.feld}</em> auf <code>${log.wert}</code> 
+                <span class="text-slate-500">am ${new Date(log.zeitpunkt?.seconds * 1000 || Date.now()).toLocaleString()}</span></li>
               `).join('')}
             </ul>
           </details>
+          
           <button type="button" onclick="deleteHut('${hut.id}')" 
-            class="bg-red-600 text-white px-2 py-1 rounded mt-3 w-full">Hütte löschen</button>
+            class="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg mt-3 w-full font-semibold">Hütte löschen</button>
         `;
         hutList.appendChild(el);
 
+        // Karte initialisieren
         if (hut.location?.latitude && hut.location?.longitude) {
           const map = L.map(`map-${hut.id}`, {
             zoomControl: false, dragging: true, scrollWheelZoom: true,
@@ -973,7 +1155,10 @@
           }).setView([hut.location.latitude, hut.location.longitude], 13);
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
           const marker = L.marker([hut.location.latitude, hut.location.longitude], { draggable: true }).addTo(map);
-          setTimeout(() => map.invalidateSize(), 200);
+          
+          // Workaround, um Karten in versteckten Sektionen korrekt zu laden
+          setTimeout(() => map.invalidateSize(), 100); 
+          
           marker.on('dragend', async (e) => {
             const newPos = e.target.getLatLng();
             const kommentar = prompt('Bitte Kommentar zur Standortänderung eingeben:');
@@ -981,44 +1166,57 @@
               marker.setLatLng([hut.location.latitude, hut.location.longitude]);
               return;
             }
-            await db.collection('eierhuetten').doc(hut.id).update({
-              location: { latitude: newPos.lat, longitude: newPos.lng }
-            });
-            await db.collection('eierhuetten').doc(hut.id).collection('log').add({
-              admin: currentUser.displayName || currentUser.email,
-              feld: 'location',
-              wert: `Lat: ${newPos.lat.toFixed(6)}, Lng: ${newPos.lng.toFixed(6)}`,
-              kommentar: kommentar,
-              zeitpunkt: new Date()
-            });
-            showNotification(`📍 Standort von "${hut.name}" wurde aktualisiert.`);
+            try {
+              await db.collection('eierhuetten').doc(hut.id).update({
+                location: new firebase.firestore.GeoPoint(newPos.lat, newPos.lng)
+              });
+              await db.collection('eierhuetten').doc(hut.id).collection('log').add({
+                admin: currentUser.displayName || currentUser.email,
+                feld: 'location',
+                wert: `Lat: ${newPos.lat.toFixed(6)}, Lng: ${newPos.lng.toFixed(6)}`,
+                kommentar: kommentar,
+                zeitpunkt: new Date()
+              });
+              showNotification(`📍 Standort von "${hut.name}" wurde aktualisiert.`);
+            } catch (err) {
+              showNotification(`❌ Fehler beim Speichern des Standorts: ${err.message}`);
+              marker.setLatLng([hut.location.latitude, hut.location.longitude]); // Zurücksetzen
+            }
           });
         }
       } catch (err) {
         console.warn(`❌ Hütte konnte nicht gerendert werden: ${hut?.id || 'unbekannt'}`, err);
         const fallback = document.createElement('div');
-        fallback.className = 'bg-red-100 text-red-800 p-2 rounded mb-2';
+        fallback.className = 'bg-red-100 text-red-800 p-2 rounded-lg mb-2';
         fallback.textContent = `⚠️ Hütte konnte nicht geladen werden (ID: ${hut?.id || 'unbekannt'})`;
         hutList.appendChild(fallback);
       }
     }
   }
 
+  // === Interaktive Elemente (Tiere, Tags) ===
+  
+  // Event-Delegation für Tier-Buttons
   document.addEventListener('click', async (e) => {
     const btn = e.target.closest('.admin-tiere-btn');
     if (!btn) return;
+
     const hutId = btn.dataset.hutId;
     const emoji = btn.dataset.emoji;
     if (!hutId || !emoji) return;
+
+    // Optimistische UI: sofort sichtbar toggeln
     const willSelect = !btn.classList.contains('bg-yellow-200');
     btn.classList.toggle('bg-yellow-200', willSelect);
-    btn.classList.toggle('bg-gray-100', !willSelect);
+    btn.classList.toggle('bg-slate-100', !willSelect);
+
     try {
       await toggleTier(hutId, emoji);
     } catch (err) {
       console.error('toggleTier Fehler:', err);
+      // rollback UI bei Fehler
       btn.classList.toggle('bg-yellow-200', !willSelect);
-      btn.classList.toggle('bg-gray-100', willSelect === false);
+      btn.classList.toggle('bg-slate-100', willSelect === false);
       showNotification('❌ Fehler beim Speichern der Tier-Auswahl');
     }
   });
@@ -1026,22 +1224,34 @@
   async function toggleTier(hutId, emoji) {
     const ref = db.collection('eierhuetten').doc(hutId);
     let newArray = [];
+    
+    // Atomisch mit transaction aktualisieren
     await db.runTransaction(async tx => {
       const doc = await tx.get(ref);
       if (!doc.exists) throw new Error('Hütte nicht gefunden');
+
       let tiere = Array.isArray(doc.data().tiere) ? doc.data().tiere : [];
       tiere = normalizeToEmojiArray(tiere);
+
       const idx = tiere.indexOf(emoji);
       if (idx >= 0) {
-        tiere.splice(idx, 1);
+        tiere.splice(idx, 1); // Abwählen
       } else {
+        // falls "❌ / Keine Tiere" vorhanden → entfernen
         tiere = tiere.filter(t => t !== '❌');
-        tiere.push(emoji);
+        tiere.push(emoji); // Hinzufügen
       }
+      
+      // Wenn "Keine Tiere" (❌) ausgewählt wird, alle anderen löschen
+      if (emoji === '❌' && idx < 0) {
+          tiere = ['❌'];
+      }
+
       newArray = tiere;
       tx.update(ref, { tiere });
     });
-    updateField(hutId, "tiere", emoji); // Note: This calls updateField but it will skip the confirm dialog
+
+    // Log nach der erfolgreichen transaction
     try {
       await db.collection('eierhuetten').doc(hutId).collection('log').add({
         admin: currentUser.displayName || currentUser.email,
@@ -1052,100 +1262,54 @@
     } catch (e) {
       console.warn('Log konnte nicht geschrieben werden', e);
     }
-    showNotification(`🐾 Tiere aktualisiert: ${newArray.map(e => TIERE_EMOJI_TO_NAME[e] || e).join(', ')}`);
-    loadHuts();
-  }
 
-  function parseOeffnungszeiten(data) {
-    if (!data) return { type: "none", days: [] };
-    if (typeof data === "string") return { type: "string", value: data };
-    if (Array.isArray(data)) return { type: "array", days: data };
-    if (typeof data === "object") {
-      const days = Object.keys(data).map(tag => ({
-        tag,
-        von: data[tag]?.start || "",
-        bis: data[tag]?.ende || ""
-      }));
-      return { type: "object", days };
-    }
-    return { type: "none", days: [] };
-  }
-        
-  async function updateOpening(hutId, tag, feld, value) {
-    const docRef = db.collection('eierhuetten').doc(hutId);
-    const hutDoc = await docRef.get();
-    let data = hutDoc.data().oeffnungszeiten;
-    if (typeof data === "string") data = [];
-    if (Array.isArray(data)) {
-      const idx = data.findIndex(d => d.tag === tag);
-      if (idx >= 0) data[idx][feld] = value;
-      else data.push({ tag, von: feld==='von'?value:"", bis: feld==='bis'?value:"" });
-    } else if (typeof data === "object") {
-      if (!data[tag]) data[tag] = {};
-      data[tag][feld==='von'?'start':'ende'] = value;
-    }
-    await docRef.update({ oeffnungszeiten: data });
-  }
-
-  async function addOpeningDay(hutId, tag) {
-    const docRef = db.collection('eierhuetten').doc(hutId);
-    const hutDoc = await docRef.get();
-    let data = hutDoc.data().oeffnungszeiten;
-    if (!Array.isArray(data)) data = [];
-    if (!data.find(d => d.tag === tag)) {
-      data.push({ tag, von: "", bis: "" });
-      await docRef.update({ oeffnungszeiten: data });
-    }
+    showNotification(`🐾 Tiere aktualisiert`);
+    // loadHuts(); // Wird durch onSnapshot-Listener erledigt
   }
 
   async function addTag(hutId, tag) {
+    tag = tag.trim();
     if (!tag) return;
     const docRef = db.collection('eierhuetten').doc(hutId);
-    const hutDoc = await docRef.get();
-    let tags = Array.isArray(hutDoc.data().tags) ? hutDoc.data().tags : [];
-    if (!tags.includes(tag)) {
-      tags.push(tag);
-      await docRef.update({ tags });
+    try {
+      await docRef.update({
+          tags: firebase.firestore.FieldValue.arrayUnion(tag)
+      });
       showNotification(`#${tag} hinzugefügt ✅`);
-      loadHuts();
-    } else {
-      showNotification(`#${tag} existiert bereits ⚠️`);
+      // loadHuts(); // Wird durch onSnapshot-Listener erledigt
+    } catch (e) {
+      showNotification(`❌ Fehler beim Hinzufügen von Tag: ${e.message}`);
     }
   }
 
   async function removeTag(hutId, tag) {
     const docRef = db.collection('eierhuetten').doc(hutId);
-    const hutDoc = await docRef.get();
-    let tags = Array.isArray(hutDoc.data().tags) ? hutDoc.data().tags : [];
-    tags = tags.filter(t => t !== tag);
-    await docRef.update({ tags });
-    showNotification(`#${tag} entfernt ❌`);
-    loadHuts();
+    try {
+      await docRef.update({
+          tags: firebase.firestore.FieldValue.arrayRemove(tag)
+      });
+      showNotification(`#${tag} entfernt ❌`);
+      // loadHuts(); // Wird durch onSnapshot-Listener erledigt
+    } catch (e) {
+      showNotification(`❌ Fehler beim Entfernen von Tag: ${e.message}`);
+    }
   }
 
-  async function deleteMessage(id) {
-    try { await db.collection("hutMessages").doc(id).delete();
-      alert("🗑️ Nachricht gelöscht"); location.reload();
-    } catch (err) { console.error("❌ Fehler beim Löschen:", err); }
-  }
-
-  async function archiveMessage(id) {
-    try { await db.collection("hutMessages").doc(id).update({ archived: true });
-      alert("📦 Nachricht archiviert"); location.reload();
-    } catch (err) { console.error("❌ Fehler beim Archivieren:", err); }
-  }
-
+  // === Paginierung, Suche & Filterung ===
+  
   let filteredHuts = [];
   let currentPage = 1;
   const hutsPerPage = 15;
 
   function renderPage(page) {
-    const start = (page - 1) * hutsPerPage;
+    if (page) currentPage = page;
+    const start = (currentPage - 1) * hutsPerPage;
     const end = start + hutsPerPage;
-    const source = filteredHuts.length ? filteredHuts : allHuts;
-    const hutsToRender = source.slice(start, end);
+    const source = filteredHuts.length > 0 || searchInput.value.trim() ? filteredHuts : allHuts;
+    const hutsToRender = source.slice(start, end); 
+    
     renderHuts(hutsToRender);
-    renderPagination(source.length);
+    renderPagination(source.length); 
   }
 
   function renderPagination(totalItems) {
@@ -1153,138 +1317,141 @@
     const paginationContainer = document.getElementById('pagination');
     paginationContainer.innerHTML = '';
     if (totalPages <= 1) return;
+    
     const createPageBtn = (label, pageNum) => {
       const btn = document.createElement('button');
       btn.textContent = label;
       btn.disabled = pageNum === currentPage;
-      btn.className = 'px-2 py-1 border rounded mx-1';
-      btn.onclick = () => { currentPage = pageNum; renderPage(currentPage); };
+      btn.className = 'px-3 py-1 border rounded-lg mx-1 disabled:bg-slate-200 disabled:text-slate-500 bg-white shadow-sm';
+      btn.onclick = () => renderPage(pageNum);
       return btn;
     };
+    
+    // "Zurück"-Button
+    if (currentPage > 1) {
+      paginationContainer.appendChild(createPageBtn('«', currentPage - 1));
+    }
+    
+    // Seiten-Buttons
     for (let i = 1; i <= totalPages; i++) {
-      paginationContainer.appendChild(createPageBtn(i, i));
+      // Logik, um nur relevante Seiten anzuzeigen (optional, aber gut für viele Seiten)
+      if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+        paginationContainer.appendChild(createPageBtn(i, i));
+      } else if (i === currentPage - 3 || i === currentPage + 3) {
+        const dots = document.createElement('span');
+        dots.textContent = '...';
+        dots.className = 'px-2 py-1';
+        paginationContainer.appendChild(dots);
+      }
+    }
+    
+    // "Vor"-Button
+    if (currentPage < totalPages) {
+      paginationContainer.appendChild(createPageBtn('»', currentPage + 1));
     }
   }
 
   function applySearchAndSort() {
     const search = document.getElementById("search-input")?.value.toLowerCase() || "";
     const sortBy = document.getElementById("sortSelect")?.value || "name";
-    filteredHuts = allHuts.filter(hut => {
-      const name = hut.name?.toLowerCase() || "";
-      const status = hut.status?.toLowerCase() || "";
-      const strom = hut.strom?.toLowerCase() || "";
-      const sitz = hut.sitzplaetze?.toLowerCase() || "";
-      return (name.includes(search) || status.includes(search) ||
-              strom.includes(search) || sitz.includes(search));
-    });
+
+    // Filtern
+    if (search) {
+      filteredHuts = allHuts.filter(hut => {
+        const name   = hut.name?.toLowerCase() || "";
+        const status = hut.status?.toLowerCase() || "";
+        const strom  = hut.strom?.toLowerCase() || "";
+        const sitz   = hut.sitzplaetze?.toLowerCase() || "";
+        const tags   = (hut.tags || []).join(' ').toLowerCase();
+        return (
+          name.includes(search) || status.includes(search) ||
+          strom.includes(search) || sitz.includes(search) ||
+          tags.includes(search)
+        );
+      });
+    } else {
+      filteredHuts = [...allHuts]; // Kopie aller Hütten
+    }
+
+    // Sortieren
     filteredHuts.sort((a, b) => {
-      if (sortBy === "name") return (a.name || "").localeCompare(b.name || "");
+      if (sortBy === "name") {
+        return (a.name || "").localeCompare(b.name || "");
+      }
       if (sortBy === "createdAt") {
-        const timeA = a.createdAt?.toMillis?.() || a.erstelltAm?.toMillis?.() || 0;
-        const timeB = b.createdAt?.toMillis?.() || b.erstelltAm?.toMillis?.() || 0;
-        return timeB - timeA;
+        const timeA = a.erstelltAm?.toMillis?.() || 0;
+        const timeB = b.erstelltAm?.toMillis?.() || 0;
+        return timeB - timeA; // Neueste zuerst
       }
       return 0;
     });
-    currentPage = 1;
-    renderPage(currentPage);
-    const source = filteredHuts.length ? filteredHuts : allHuts;
-    renderStats(source);
+
+    // Neu rendern
+    renderPage(1); // Immer auf Seite 1 starten
+    
+    // renderStats(allHuts); // Statistiken sollten immer *alle* Hütten zeigen
   }
 
-  function uploadFoto(input, hutId) {
-    initImageUpload(input, hutId).then(uploads => console.log('Uploads:', uploads));
-  }
-
-  async function deleteFoto(hutId, index) {
-    const a = Math.floor(Math.random() * 10) + 1, b = Math.floor(Math.random() * 10) + 1;
-    const answer = a + b;
-    const userAnswer = prompt(`Bitte rechne zur Bestätigung: ${a} + ${b} = ?`);
-    if (userAnswer === null) return;
-    if (parseInt(userAnswer) !== answer) return alert('Falsche Antwort. Foto wird nicht gelöscht.');
-    if (!confirm('Foto wirklich löschen?')) return;
-    try {
-      const ref = db.collection('eierhuetten').doc(hutId);
-      const snap = await ref.get();
-      const fotos = Array.isArray(snap.data().fotos) ? [...snap.data().fotos] : [];
-      const f = fotos[index];
-      if (!f) return;
-      const url = typeof f === 'string' ? f : f.url;
-      const deleteUrl = typeof f === 'object' ? f.delete_url : null;
-      fotos.splice(index, 1);
-      await ref.update({ fotos });
-      await ref.collection('log').add({
-        admin: currentUser.displayName || currentUser.email,
-        feld: 'fotos', wert: `Foto gelöscht: ${url}`, zeitpunkt: new Date()
-      });
-      if (deleteUrl) {
-        try { await fetch(deleteUrl); } catch (e) { console.warn('imgbb delete fehlgeschlagen', e); }
-      }
-      showNotification('Foto wurde gelöscht.');
-      loadHuts();
-    } catch (e) {
-      alert('Fehler beim Löschen des Fotos: ' + e.message);
-    }
-  }
+  // === Hütten löschen (mit Abo-Check) ===
 
   async function deleteHut(id) {
-    if (!confirm('Möchtest du diese Hütte wirklich löschen?')) return;
-    db.collection('eierhuetten').doc(id).get().then(doc => {
+    if (!confirm('Möchtest du diese Hütte wirklich löschen? Dies kann nicht rückgängig gemacht werden.')) return;
+    
+    try {
+      const doc = await db.collection('eierhuetten').doc(id).get();
       if (!doc.exists) return showNotification('❌ Hütte nicht gefunden.', 'bot');
+      
       const hut = doc.data();
+
+      // Schritt 1: PayPal-Abo kündigen, falls vorhanden
       if (hut.paypalSubscriptionId) {
         showNotification('🔄 Kündige PayPal-Abo...', 'bot');
         console.log('➡️ Sende Abo-Kündigung für:', hut.paypalSubscriptionId);
-        // HINWEIS: Dieser Cloud Function Call funktioniert weiterhin,
-        // da er nicht die Gemini-API nutzt.
-        fetch('https://us-central1-eierhuettentour.cloudfunctions.net/cancelPaypalSubscription', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subscriptionId: hut.paypalSubscriptionId })
-        })
-        .then(async response => {
-          if (!response.ok) {
-            let errorText = await response.text();
-            try { const errorJson = JSON.parse(errorText); throw new Error(errorJson.error || 'Unbekannter Fehler'); }
-            catch { throw new Error(errorText); }
-          }
-          const result = await response.json();
-          if (result.success) {
+        
+        try {
+          // Annahme: Du hast die Cloud Function 'cancelPaypalSubscription' bereitgestellt
+          const cancelSubscription = firebase.functions().httpsCallable('cancelPaypalSubscription');
+          const result = await cancelSubscription({ subscriptionId: hut.paypalSubscriptionId });
+          
+          if (result.data.success) {
             showNotification('✅ Abo erfolgreich gekündigt.', 'bot');
-            db.collection('eierhuetten').doc(id).delete().then(() => {
-              showNotification('🗑️ Hütte gelöscht.', 'bot');
-              loadHuts();
-            });
           } else {
-            console.error('❌ Fehler bei Kündigung:', result.error || result);
-            if (confirm(`⚠️ Abo konnte nicht gekündigt werden.\nTrotzdem löschen?`)) {
-              db.collection('eierhuetten').doc(id).delete().then(() => {
-                showNotification('🗑️ Hütte gelöscht (Abo evtl. noch aktiv).', 'bot');
-                loadHuts();
-              });
-            } else { showNotification('🚫 Löschvorgang abgebrochen.', 'bot'); }
+            console.error('❌ Fehler bei Kündigung:', result.data.error);
+            if (!confirm(`⚠️ Das PayPal-Abo konnte nicht automatisch gekündigt werden.\nMöchtest du die Hütte trotzdem löschen?`)) {
+              showNotification('🚫 Löschvorgang abgebrochen.', 'bot');
+              return;
+            }
           }
-        })
-        .catch(err => {
-          console.error('❌ Fehler bei Kündigung:', err.message || err);
-          if (confirm(`⚠️ Fehler bei PayPal-Kündigung: ${err.message || 'Unbekannt'}\nTrotzdem löschen?`)) {
-            db.collection('eierhuetten').doc(id).delete().then(() => {
-              showNotification('🗑️ Hütte gelöscht (Abo evtl. noch aktiv).', 'bot');
-              loadHuts();
-            });
-          } else { showNotification('🚫 Löschvorgang abgebrochen.', 'bot'); }
-        });
-      } else {
-        db.collection('eierhuetten').doc(id).delete().then(() => {
-          showNotification('🗑️ Hütte gelöscht.', 'bot');
-          loadHuts();
+        } catch (err) {
+          console.error('❌ Fehler bei Kündigung (Cloud Function Call):', err.message || err);
+          if (!confirm(`⚠️ Fehler bei der PayPal-Kündigung: ${err.message || 'Unbekannt'}\nMöchtest du die Hütte trotzdem löschen?`)) {
+            showNotification('🚫 Löschvorgang abgebrochen.', 'bot');
+            return;
+          }
+        }
+      }
+
+      // Schritt 2: Fotos bei imgbb löschen (Fire-and-forget)
+      if (Array.isArray(hut.fotos)) {
+        hut.fotos.forEach(f => {
+          if (f && typeof f === "object" && f.delete_url) {
+            fetch(f.delete_url).catch(e => console.warn(`Konnte imgbb-Foto nicht löschen: ${e.message}`));
+          }
         });
       }
-    }).catch(err => {
-      console.error('❌ Fehler beim Abrufen der Hütte:', err.message || err);
+
+      // Schritt 3: Hütte aus Firestore löschen
+      await db.collection('eierhuetten').doc(id).delete();
+      showNotification('🗑️ Hütte endgültig gelöscht.', 'bot');
+      // loadHuts(); // Wird durch onSnapshot-Listener erledigt
+      
+    } catch (err) {
+      console.error('❌ Fehler beim Löschen der Hütte:', err.message || err);
       showNotification('❌ Fehler beim Löschen der Hütte.', 'bot');
-    });
+    }
   }
+  
+  // === Live-Updates für Dashboard ===
 
   function initLivePendingFotos() {
     db.collection('eierhuetten').onSnapshot(snapshot => {
@@ -1297,7 +1464,7 @@
         }
       });
       renderPendingFotos(pending);
-      showNotification('🔄 Live-Update: Wartende Fotos wurden aktualisiert.');
+      // showNotification('🔄 Live-Update: Wartende Fotos wurden aktualisiert.');
     }, err => console.error("❌ Fehler Live-Update wartende Fotos:", err));
   }
 
@@ -1306,23 +1473,30 @@
     const container = document.getElementById("pending-fotos");
     container.innerHTML = "";
     if (!Array.isArray(list) || list.length === 0) {
-      container.innerHTML = "<p class='italic text-gray-500'>Keine Fotos warten.</p>";
+      container.innerHTML = "<p class='italic text-slate-500'>Keine Fotos warten auf Freigabe.</p>";
       return;
     }
+    
+    // Filtern nach Hütten, die tatsächlich wartende Fotos haben
     const huettenMitPending = list.filter(h =>
       Array.isArray(h.fotos) && h.fotos.some(f => f && typeof f === 'object' && f.status === 'wartet')
     );
     if (huettenMitPending.length === 0) {
-      container.innerHTML = "<p class='italic text-gray-500'>Keine Fotos warten.</p>";
+      container.innerHTML = "<p class='italic text-slate-500'>Keine Fotos warten auf Freigabe.</p>";
       return;
     }
+    
     huettenMitPending.forEach(hut => {
       const wartende = (hut.fotos || [])
-        .map((f, i) => ({ f, i }))
+        .map((f, i) => ({ f, i })) // Objekt mit Foto und originalem Index
         .filter(item => item.f && typeof item.f === 'object' && item.f.status === 'wartet');
+      
       if (wartende.length === 0) return;
+
       const card = document.createElement('div');
-      card.className = "bg-blue-50 border p-3 rounded mb-4";
+      card.className = "bg-white border p-3 rounded-lg mb-4 shadow-sm";
+      
+      // Header mit Checkbox und "Gehe zu"-Button
       const header = document.createElement('div');
       header.className = "flex justify-between items-center mb-2";
       const label = document.createElement('label');
@@ -1330,10 +1504,10 @@
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.checked = pendingSelected.has(hut.id);
-      checkbox.addEventListener('change', (ev) => {
+      checkbox.onchange = (ev) => {
         if (ev.target.checked) pendingSelected.add(hut.id);
         else pendingSelected.delete(hut.id);
-      });
+      };
       const title = document.createElement('span');
       title.className = "font-semibold";
       title.textContent = `${hut.name} – ${wartende.length} Foto(s)`;
@@ -1341,11 +1515,13 @@
       label.appendChild(title);
       header.appendChild(label);
       const btn = document.createElement('button');
-      btn.className = "bg-blue-600 text-white px-2 py-1 rounded";
+      btn.className = "bg-blue-600 text-white px-2 py-1 rounded-lg text-sm";
       btn.textContent = "🔎 Anzeigen";
-      btn.addEventListener('click', () => scrollToHut(hut.id));
+      btn.onclick = () => scrollToHut(hut.id);
       header.appendChild(btn);
       card.appendChild(header);
+
+      // Galerie der wartenden Fotos
       const gallery = document.createElement('div');
       gallery.className = "flex flex-wrap gap-2";
       wartende.forEach(item => {
@@ -1354,32 +1530,30 @@
         const img = document.createElement('img');
         img.src = item.f.url;
         img.title = "Klicken zum Freigeben";
-        img.className = "w-24 h-24 object-cover rounded border cursor-pointer hover:ring-4 hover:ring-green-400";
-        img.addEventListener('click', async () => {
+        img.className = "w-24 h-24 object-cover rounded-lg border cursor-pointer hover:ring-4 hover:ring-green-400";
+        img.onclick = async () => {
           img.style.opacity = '0.6';
           try {
-            await approveSingleFoto(hut.id, item.i);
-            wrapper.remove();
+            await approveSingleFoto(hut.id, item.i); // Wichtig: item.i ist der originale Index
+            wrapper.remove(); // Foto aus der Übersicht entfernen
           } catch (e) {
             console.error(e);
             showNotification('❌ Fehler beim Freigeben des Fotos.');
             img.style.opacity = '1';
           }
-        });
-        const overlay = document.createElement('span');
-        overlay.className = "absolute top-1 right-1 bg-black/50 text-white text-xs px-1 rounded hidden group-hover:block";
-        overlay.textContent = "✅";
+        };
         wrapper.appendChild(img);
-        wrapper.appendChild(overlay);
         gallery.appendChild(wrapper);
       });
       card.appendChild(gallery);
       container.appendChild(card);
     });
+
+    // Massenfreigabe-Button
     const massBtn = document.createElement('button');
     massBtn.textContent = "✅ Ausgewählte Hütten freigeben";
-    massBtn.className = "mt-4 bg-green-600 text-white px-4 py-2 rounded";
-    massBtn.addEventListener('click', async () => {
+    massBtn.className = "mt-4 bg-green-600 text-white px-4 py-2 rounded-lg";
+    massBtn.onclick = async () => {
       if (pendingSelected.size === 0) return showNotification('ℹ️ Keine Hütten ausgewählt.');
       massBtn.disabled = true;
       for (const id of Array.from(pendingSelected)) {
@@ -1388,30 +1562,43 @@
       pendingSelected.clear();
       massBtn.disabled = false;
       showNotification('✅ Ausgewählte Fotos freigegeben.');
-    });
+    };
     container.appendChild(massBtn);
   }
+  
+  async function approveAllFotosForHut(hutId) {
+      // Diese Funktion muss alle 'wartet'-Indizes finden und sie nacheinander freigeben
+      try {
+        const ref = db.collection('eierhuetten').doc(hutId);
+        const snap = await ref.get();
+        if (!snap.exists) return;
+        
+        let fotos = Array.isArray(snap.data().fotos) ? [...snap.data().fotos] : [];
+        let hasChanged = false;
+        
+        const indicesToApprove = [];
+        fotos.forEach((f, i) => {
+            if(f && typeof f === 'object' && f.status === 'wartet') {
+                indicesToApprove.push(i);
+            }
+        });
 
-  async function approveSingleFoto(hutId, fotoIndex) {
-    try {
-      const docRef = db.collection('eierhuetten').doc(hutId);
-      const snap = await docRef.get();
-      if (!snap.exists) return showNotification('❌ Hütte nicht gefunden.');
-      const fotos = Array.isArray(snap.data().fotos) ? snap.data().fotos.slice() : [];
-      const f = fotos[fotoIndex];
-      if (!f || typeof f === 'string') return showNotification('ℹ️ Foto nicht gefunden oder bereits als String.');
-      fotos[fotoIndex] = { ...f, status: 'freigegeben' };
-      await docRef.update({ fotos });
-      await docRef.collection('log').add({
-        admin: currentUser.displayName || currentUser.email,
-        feld: 'fotos', wert: `Foto freigegeben: ${f.url}`, zeitpunkt: new Date()
-      });
-      showNotification('✅ Foto freigegeben');
-    } catch (err) {
-      console.error(err);
-      showNotification('❌ Fehler beim Freigeben.');
-      throw err;
-    }
+        if (indicesToApprove.length > 0) {
+            indicesToApprove.forEach(index => {
+                fotos[index] = { ...fotos[index], status: 'freigegeben' };
+            });
+            await ref.update({ fotos });
+            await ref.collection('log').add({
+              admin: currentUser.displayName || currentUser.email,
+              feld: 'fotos',
+              wert: `${indicesToApprove.length} Foto(s) per Massenfreigabe angenommen.`,
+              zeitpunkt: new Date()
+            });
+        }
+      } catch (err) {
+          console.error(`Fehler bei Massenfreigabe für ${hutId}:`, err);
+          showNotification(`❌ Fehler bei Massenfreigabe für Hütte ${hutId}`);
+      }
   }
 
   function scrollToHut(hutId) {
@@ -1420,8 +1607,8 @@
       const target = document.getElementById(`hut-${hutId}`);
       if (target) {
         target.scrollIntoView({ behavior: "smooth", block: "start" });
-        target.classList.add("ring-4", "ring-yellow-400");
-        setTimeout(() => target.classList.remove("ring-4", "ring-yellow-400"), 2000);
+        target.classList.add("ring-4", "ring-yellow-400", "transition-all", "duration-300");
+        setTimeout(() => target.classList.remove("ring-4", "ring-yellow-400"), 2500);
       } else {
         console.warn("❗ Hütte mit ID", hutId, "nicht gefunden");
       }
@@ -1435,9 +1622,10 @@
         const neue = [];
         snapshot.forEach(doc => neue.push({ id: doc.id, ...doc.data() }));
         renderNewEntries(neue);
-        showNotification('🔄 Live-Update: Neue Eintragungen wurden aktuallisiert.');
-        const source = filteredHuts.length ? filteredHuts : allHuts;
-        renderStats(source);
+        // showNotification('🔄 Live-Update: Neue Eintragungen wurden aktuallisiert.');
+        // Statistiken aktualisieren
+        const source = filteredHuts.length > 0 || searchInput.value.trim() ? filteredHuts : allHuts;
+        renderStats(source.length > 0 ? source : allHuts);
       }, err => console.error("❌ Fehler Live-Update neue Hütten:", err));
   }
 
@@ -1445,78 +1633,100 @@
     const neueListe = document.getElementById("neueListe");
     const neue = list.filter(h => h.status === "offen");
     if (neue.length === 0) {
-      neueListe.innerHTML = "<p class='italic text-gray-500'>Keine neuen Eintragungen.</p>";
+      neueListe.innerHTML =
+        "<p class='italic text-slate-500'>Keine neuen Eintragungen.</p>";
       return;
     }
     neueListe.innerHTML = "";
     neue.forEach(hut => {
       const row = document.createElement("div");
-      row.className = "flex items-center justify-between bg-white shadow rounded px-3 py-2";
+      row.className =
+        "flex items-center justify-between bg-white shadow-sm rounded-lg px-3 py-2";
       row.innerHTML = `
-        <a href="#hut-${hut.id}" class="font-medium text-blue-600 hover:underline truncate max-w-[60%] block"
-          title="${hut.name}">${hut.name}</a>
-        <p>${hut.id}</p>
+        <a href="javascript:void(0)" onclick="scrollToHut('${hut.id}')"
+           class="font-medium text-blue-600 hover:underline truncate max-w-[50%] block"
+           title="${hut.name}">
+           ${hut.name}
+        </a>
         <div class="flex space-x-2 flex-shrink-0">
           <button onclick="updateField('${hut.id}', 'status', 'angenommen')"
-                  class="px-2 py-1 bg-green-500 text-white rounded whitespace-nowrap">Annehmen</button>
+                  class="px-2 py-1 bg-green-500 text-white rounded-lg whitespace-nowrap text-sm">
+            Annehmen
+          </button>
           <button onclick="updateField('${hut.id}', 'status', 'abgelehnt')"
-                  class="px-2 py-1 bg-red-500 text-white rounded whitespace-nowrap">Ablehnen</button>
+                  class="px-2 py-1 bg-red-500 text-white rounded-lg whitespace-nowrap text-sm">
+            Ablehnen
+          </button>
         </div>
       `;
       neueListe.appendChild(row);
     });
   }
-
-  document.addEventListener('DOMContentLoaded', () => {
-    firebase.auth().onAuthStateChanged(user => {
-      if (user) {
-        ladeSupportTickets();
-      }
-    });
-    document.getElementById("search-input").addEventListener("input", applySearchAndSort);
-    document.getElementById("sortSelect").addEventListener("change", applySearchAndSort);
-  });
-
-  function logout() {
-    firebase.auth().signOut().then(() => location.reload());
-  }
-  function goToMainPage() { window.location.href = '/'; }
-  function refresh() { location.reload(); }
-
+  
+  // === Support-Ticket-Logik ===
+  
   // 🤖 NEU: Globale Variablen für AI-Funktion
   window.currentReplyTicketId = null;
   window.currentReplyEmail = null;
 
   async function ladeSupportTickets() {
-    const snapshot = await db.collection('support').orderBy('createdAt', 'desc').get();
+    const snapshot = await db.collection('support').orderBy('createdAt', 'desc').limit(50).get();
     const body = document.getElementById('support-tickets-body');
     body.innerHTML = '';
+    
+    if (snapshot.empty) {
+        body.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500 italic">Keine Support-Tickets gefunden.</td></tr>';
+        return;
+    }
+    
     snapshot.forEach(doc => {
       const ticket = doc.data();
       const id = doc.id;
       const datum = ticket.createdAt?.toDate().toLocaleString('de-DE') || '-';
       const email = ticket.mail || '-';
       const status = ticket.status || 'offen';
+      
+      // 🤖 NEU: AI-Tags rendern
+      let aiTagsHTML = '';
+      if (Array.isArray(ticket.aiTags) && ticket.aiTags.length > 0) {
+        aiTagsHTML = ticket.aiTags.map(tag => 
+          `<span class="px-2 py-1 bg-ai text-white rounded-full text-xs font-medium">${tag}</span>`
+        ).join(' ');
+      } else if (status === 'offen') {
+        // 🤖 NEU: Button zum Taggen anzeigen, wenn noch keine Tags vorhanden
+        aiTagsHTML = `<button onclick="geminiTagTicket(this, '${id}')" 
+                              class="bg-slate-200 text-slate-700 text-xs px-2 py-1 rounded-lg hover:bg-slate-300">
+                        🤖 Taggen
+                      </button>`;
+      }
+
       const row = document.createElement('tr');
-      row.className = "align-top";
+      row.className = "align-top hover:bg-slate-50";
+      // 🤖 NEU: ID zur Zeile hinzugefügt, damit AI-Tag-Funktion sie finden kann
+      row.id = `ticket-row-${id}`; 
       row.innerHTML = `
-        <td class="px-4 py-2 text-xs text-gray-600">${datum}</td>
-        <td class="px-4 py-2 text-xs">
-          ${email}<br><span class="text-[10px] text-gray-400">ID: ${id}</span>
+        <td class="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">${datum}</td>
+        <td class="px-4 py-3 text-xs">
+          ${email}<br><span class="text-[10px] text-slate-400">ID: ${id}</span>
         </td>
-        <td class="px-4 py-2 text-xs">
-          <div id="msgs-${id}" class="space-y-1">⏳ Lade Nachrichten…</div>
+        <td class="px-4 py-3 text-xs">
+          <div id="msgs-${id}" class="space-y-1 max-w-xs">⏳ Lade Nachrichten…</div>
         </td>
-        <td class="px-4 py-2">
-          <select onchange="updateSupportStatus('${id}', this.value)" class="border rounded px-2 py-1 text-xs">
+        <td class="px-4 py-3">
+          <div id="ai-tags-${id}" class="flex flex-col gap-1 items-start">
+            ${aiTagsHTML}
+          </div>
+        </td>
+        <td class="px-4 py-3">
+          <select onchange="updateSupportStatus('${id}', this.value)" class="border rounded-lg px-2 py-1 text-xs">
             ${['offen', 'bearbeitet', 'geschlossen', 'archiviert'].map(opt => `
               <option value="${opt}" ${opt === status ? 'selected' : ''}>${opt}</option>
             `).join('')}
           </select>
         </td>
-        <td class="px-4 py-2 space-x-1">
-          <button onclick="openReplyModal('${id}','${email}')" class="bg-green-600 text-white text-xs px-2 py-1 rounded">Antworten</button>
-          <button onclick="loescheSupportTicket('${id}')" class="bg-red-600 text-white text-xs px-2 py-1 rounded">Löschen</button>
+        <td class="px-4 py-3 space-x-1 whitespace-nowrap">
+          <button onclick="openReplyModal('${id}','${email}')" class="bg-primary text-white text-xs px-2 py-1 rounded-md">Antworten</button>
+          <button onclick="loescheSupportTicket('${id}')" class="bg-red-600 text-white text-xs px-2 py-1 rounded-md">Löschen</button>
         </td>
       `;
       body.appendChild(row);
@@ -1528,33 +1738,37 @@
     const wrap = document.getElementById("msgs-" + ticketId);
     if (!wrap) return;
 
+    // Lade Nachrichten (kein Live-Snapshot, um Lesevorgänge zu sparen)
     db.collection("support").doc(ticketId).collection("messages")
       .orderBy("createdAt", "asc")
-      .onSnapshot(snap => {
+      .get()
+      .then(snap => {
         wrap.innerHTML = "";
         
-        // 🤖 NEU: Nachrichtenverlauf für AI-Funktion speichern
         const messagesForAI = [];
         window.supportMessages[ticketId] = messagesForAI;
 
         if (snap.empty) {
-          wrap.innerHTML = "<div class='text-gray-500'>(keine Nachrichten)</div>";
+          wrap.innerHTML = "<div class='text-slate-500'>(keine Nachrichten)</div>";
           return;
         }
         snap.forEach(mdoc => {
           const d = mdoc.data();
           const zeit = d.createdAt?.toDate?.().toLocaleString('de-DE') || "-";
           
-          // 🤖 NEU: Nachricht zum AI-Verlauf hinzufügen
           messagesForAI.push({ sender: d.sender || 'Unbekannt', text: d.text || '' });
           
           wrap.innerHTML += `
-            <div class="border rounded p-1 bg-white mb-1">
-              <div class="text-xs">${d.text || ''}</div>
-              <div class="text-[10px] text-gray-500">${d.sender || '-'} · ${zeit}</div>
+            <div class="border rounded-lg p-2 ${d.sender === 'Admin' ? 'bg-blue-50' : 'bg-white'} mb-1 shadow-sm">
+              <div class="text-xs text-slate-800">${d.text || ''}</div>
+              <div class="text-[10px] text-slate-500 mt-1">${d.sender || '-'} · ${zeit}</div>
             </div>
           `;
         });
+      })
+      .catch(err => {
+          console.error(`Fehler beim Laden der Nachrichten für ${ticketId}:`, err);
+          wrap.innerHTML = "<div class='text-red-500'>Fehler beim Laden</div>";
       });
   }
 
@@ -1581,17 +1795,20 @@
   async function sendReply() {
     const text = document.getElementById("modal-reply-text").value.trim();
     if (!text || !window.currentReplyTicketId) return;
+
     try {
       await db.collection("support").doc(window.currentReplyTicketId).collection("messages").add({
-        text, sender: "Admin",
+        text, 
+        sender: "Admin",
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
       await db.collection("support").doc(window.currentReplyTicketId).update({
-        status: "geschlossen"
+        status: "geschlossen" // Antwort schließt Ticket automatisch
       });
+
       showNotification("✅ Antwort gesendet & Ticket geschlossen");
       closeReplyModal();
-      ladeSupportTickets();
+      ladeSupportTickets(); // Tabelle neu laden
     } catch (err) {
       console.error("sendReply error", err);
       alert("Fehler: " + err.message);
@@ -1599,137 +1816,217 @@
   }
 
   async function updateSupportStatus(id, neuerStatus) {
-    await db.collection('support').doc(id).update({ status: neuerStatus });
-    showNotification('✅ Status aktualisiert');
+    try {
+      await db.collection('support').doc(id).update({ status: neuerStatus });
+      showNotification('✅ Status aktualisiert');
+      // Wenn Status auf 'offen' zurückgesetzt wird, Tags neu prüfen
+      if(neuerStatus === 'offen') {
+          ladeSupportTickets();
+      }
+    } catch (e) {
+      showNotification(`❌ Fehler: ${e.message}`);
+    }
   }
 
   async function loescheSupportTicket(id) {
-    if (!confirm('Dieses Support-Ticket wirklich löschen?')) return;
-    await db.collection('support').doc(id).delete();
-    showNotification('🗑️ Ticket gelöscht');
-    ladeSupportTickets();
+    if (!confirm('Dieses Support-Ticket und alle Nachrichten darin wirklich löschen?')) return;
+    try {
+      // Hinweis: Sub-Collections werden nicht automatisch gelöscht.
+      // Für eine saubere Löschung wäre eine Cloud Function nötig.
+      // Hier löschen wir nur das Hauptdokument.
+      await db.collection('support').doc(id).delete();
+      showNotification('🗑️ Ticket gelöscht');
+      ladeSupportTickets();
+    } catch (e) {
+      showNotification(`❌ Fehler: ${e.message}`);
+    }
   }
 
+  // Counter im Modal aktualisieren
   document.getElementById("modal-reply-text").addEventListener("input", e => {
     const left = 500 - e.target.value.length;
     document.getElementById("modal-reply-counter").innerText = `${left} Zeichen übrig`;
   });
 
-  async function adminReplySupport(ticketId) {
-    const inp = document.getElementById("reply-" + ticketId);
-    if (!inp) return;
-    const text = inp.value.trim();
-    if (!text) return;
-    try {
-      await db.collection("support").doc(ticketId).collection("messages").add({
-        text, sender: "Admin",
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      await db.collection("support").doc(ticketId).update({ status: "bearbeitet" });
-      inp.value = "";
-      showNotification("✅ Antwort gesendet (Status: bearbeitet)");
-      ladeSupportTickets();
-    } catch (err) {
-      console.error("adminReplySupport error", err);
-      showNotification("❌ Fehler beim Antworten");
-    }
-  }
-
-  //Profil:
+  
+  // === Profil-Sektion ===
+  
   let currentProfileId = null;
-  async function loadProfileAdmin(id) { // Nimmt jetzt ID entgegen
+  
+  async function loadProfileAdmin(id) {
     const queryId = id || document.getElementById("profile-selected-id").value;
-    if (!queryId) {
-      const queryName = document.getElementById("profile-search").value.trim();
-      if (!queryName) return alert("Bitte ID oder Name eingeben.");
-      
-      let snap = await db.collection("profiles").doc(queryName).get();
-      if (!snap.exists) {
-        const q = await db.collection("profiles").where("name","==",queryName).get();
-        if (q.empty) return alert("Kein Profil gefunden!");
-        snap = q.docs[0];
-      }
-      currentProfileId = snap.id;
+    let snap;
+    
+    if (queryId) {
+        currentProfileId = queryId;
+        snap = await db.collection("profiles").doc(currentProfileId).get();
     } else {
-      currentProfileId = queryId;
+        const queryName = document.getElementById("profile-search").value.trim();
+        if (!queryName) return alert("Bitte ID oder Name eingeben.");
+        
+        // Versuche zuerst, nach Name zu suchen
+        const q = await db.collection("profiles").where("name","==",queryName).limit(1).get();
+        if (!q.empty) {
+            snap = q.docs[0];
+            currentProfileId = snap.id;
+        } else {
+            // Wenn Name nicht klappt, versuche als ID
+            try {
+                snap = await db.collection("profiles").doc(queryName).get();
+                currentProfileId = snap.id;
+            } catch (e) {
+                return alert("Kein Profil gefunden (weder Name noch ID).");
+            }
+        }
     }
 
-    const snap = await db.collection("profiles").doc(currentProfileId).get();
     if (!snap.exists) return alert("Profil nicht gefunden!");
     
     const data = snap.data();
     
     document.getElementById("profile-admin-area").classList.remove("hidden");
-    document.getElementById("profile-pic-admin").src = data.pic || "default.jpg";
+    document.getElementById("profile-pic-admin").src = data.pic || "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
     document.getElementById("profile-pic-url").value = data.pic || "";
     document.getElementById("profile-name-admin").value = data.name || "";
     document.getElementById("profile-bio-admin").value = data.bio || "";
     document.getElementById("profile-role-admin").value = data.role || "user";
     document.getElementById("profile-banned-admin").checked = data.banned || false;
     document.getElementById("profile-stats").textContent =
-      `Fahrten: ${data.rides || 0} | Km: ${data.km || 0} | Letzter Login: ${data.lastLogin || "–"}`;
+      `Fahrten: ${data.rides || 0} | Km: ${data.km || 0} | Letzter Login: ${data.lastLogin?.toDate()?.toLocaleString('de-DE') || "–"}`;
     
+    // Titel laden
     const titleSel = document.getElementById("profile-title-admin");
     titleSel.innerHTML = "<option value=''>Kein Titel</option>";
     const titleSnap = await db.collection("titles").get();
     titleSnap.forEach(doc => {
       const t = doc.data();
       const opt = document.createElement("option");
-      opt.value = t.name; opt.textContent = t.name;
+      opt.value = t.name; 
+      opt.textContent = t.name;
       titleSel.appendChild(opt);
     });
     titleSel.value = data.title || "";
     
+    // Abzeichen laden
     const badgeContainer = document.getElementById("profile-badges-admin");
     badgeContainer.innerHTML = "";
     const badgeSnap = await db.collection("badgesDefs").get();
     badgeSnap.forEach(doc => {
       const b = doc.data();
+      const id = `badge-chk-${doc.id}`;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'flex items-center gap-1';
       const chk = document.createElement("input");
-      chk.type = "checkbox"; chk.value = doc.id;
+      chk.type = "checkbox"; 
+      chk.value = doc.id;
+      chk.id = id;
       chk.checked = (data.badges || []).includes(doc.id);
-      badgeContainer.appendChild(chk);
+      wrapper.appendChild(chk);
       const lbl = document.createElement("label");
+      lbl.setAttribute('for', id);
+      lbl.className = 'cursor-pointer';
       lbl.textContent = `${b.icon || "🏅"} ${b.name}`;
-      badgeContainer.appendChild(lbl);
+      wrapper.appendChild(lbl);
+      badgeContainer.appendChild(wrapper);
     });
   }
 
   async function saveProfileAdmin() {
     if (!currentProfileId) return;
     const badges = [...document.querySelectorAll("#profile-badges-admin input:checked")].map(i => i.value);
-    await db.collection("profiles").doc(currentProfileId).update({
-      name: document.getElementById("profile-name-admin").value,
-      pic: document.getElementById("profile-pic-url").value,
-      bio: document.getElementById("profile-bio-admin").value,
-      title: document.getElementById("profile-title-admin").value,
-      role: document.getElementById("profile-role-admin").value,
-      banned: document.getElementById("profile-banned-admin").checked,
-      badges: badges
-    });
-    alert("✔️ Profil gespeichert!");
+    
+    try {
+      await db.collection("profiles").doc(currentProfileId).update({
+        name: document.getElementById("profile-name-admin").value,
+        pic: document.getElementById("profile-pic-url").value,
+        bio: document.getElementById("profile-bio-admin").value,
+        title: document.getElementById("profile-title-admin").value,
+        role: document.getElementById("profile-role-admin").value,
+        banned: document.getElementById("profile-banned-admin").checked,
+        badges: badges
+      });
+      alert("✔️ Profil gespeichert!");
+    } catch (e) {
+      alert(`❌ Fehler beim Speichern: ${e.message}`);
+    }
   }
 
   async function deleteProfileAdmin() {
     if (!currentProfileId) return;
-    if (!confirm("Soll dieses Profil wirklich gelöscht werden?")) return;
-    await db.collection("profiles").doc(currentProfileId).delete();
-    alert("🗑️ Profil gelöscht!");
-    document.getElementById("profile-admin-area").classList.add("hidden");
+    if (!confirm(`Soll dieses Profil (${currentProfileId}) wirklich gelöscht werden? Dies löscht nicht den Firebase-Auth-User!`)) return;
+    try {
+      await db.collection("profiles").doc(currentProfileId).delete();
+      alert("🗑️ Profil gelöscht!");
+      document.getElementById("profile-admin-area").classList.add("hidden");
+      document.getElementById("profile-search").value = "";
+      currentProfileId = null;
+    } catch (e) {
+      alert(`❌ Fehler beim Löschen: ${e.message}`);
+    }
   }
 
   function openProfileLink() {
     if (!currentProfileId) return;
-    window.open(`https://deine-app.web.app/profile.html?id=${currentProfileId}`, "_blank");
+    // Passe 'eierhuettentour.web.app' an deine echte URL an
+    window.open(`https://eierhuettentour.web.app/profile.html?id=${currentProfileId}`, "_blank");
   }
 
-  // ---- TITEL Verwaltung ----
+  // Live-Suche für Profile
+  document.getElementById('profile-search').addEventListener('input', async e => {
+    const q = e.target.value.trim();
+    const box = document.getElementById('profile-suggestions');
+    if (q.length < 3) { 
+      box.classList.add('hidden'); 
+      document.getElementById('profile-selected-id').value = '';
+      return; 
+    }
+    
+    // Suche nach Namen
+    const snap = await db.collection('profiles')
+      .where('name', '>=', q)
+      .where('name', '<=', q + '\uf8ff')
+      .limit(5).get();
+
+    box.innerHTML = snap.empty
+      ? "<p class='p-2 text-slate-500 italic'>Keine Treffer</p>"
+      : snap.docs.map(d => {
+          const name = d.data().name;
+          // Ersetze Anführungszeichen im Namen, um HTML-Fehler zu vermeiden
+          const safeName = name.replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+          return `
+            <div class="p-2 hover:bg-slate-100 cursor-pointer"
+                onclick="selectProfile('${d.id}', '${safeName}')">
+              ${name}
+            </div>`;
+        }).join('');
+    box.classList.remove('hidden');
+  });
+  
+  // Wird von der Live-Suche aufgerufen
+  window.selectProfile = (id, name) => {
+    document.getElementById('profile-search').value = name;
+    document.getElementById('profile-selected-id').value = id;
+    document.getElementById('profile-suggestions').classList.add('hidden');
+    loadProfileAdmin(id); // Lade das ausgewählte Profil
+  };
+  
+  // Lade Profil, wenn Enter gedrückt wird (falls keine Auswahl getroffen)
+  document.getElementById('profile-search').addEventListener('keydown', e => {
+      if(e.key === 'Enter') {
+          document.getElementById('profile-suggestions').classList.add('hidden');
+          loadProfileAdmin(); // Lade, was in der Box steht (ID oder Name)
+      }
+  });
+
+
+  // === Titel & Abzeichen Sektionen ===
   (async () => {
+    // --- Titel Verwaltung ---
     const titleList = document.getElementById("title-list");
     const titleForm = document.getElementById("title-form");
-    const nameEl = document.getElementById("title-name");
-    const condEl = document.getElementById("title-condition");
-    const valEl = document.getElementById("title-value");
+    const titleNameEl = document.getElementById("title-name");
+    const titleCondEl = document.getElementById("title-condition");
+    const titleValEl = document.getElementById("title-value");
     let titleEditId = null;
 
     async function loadTitles() {
@@ -1739,12 +2036,12 @@
       snap.forEach(doc => {
         const t = doc.data();
         const row = document.createElement("div");
-        row.className = "p-2 border rounded flex justify-between items-center";
+        row.className = "p-2 border rounded-lg flex justify-between items-center";
         row.innerHTML = `
           <span><strong>${t.name}</strong> — Regel: ${t.conditionType} ≥ ${t.conditionValue}</span>
           <div class="space-x-2">
-            <button class="px-2 py-1 bg-blue-600 text-white rounded" onclick="editTitle('${doc.id}')">✏️</button>
-            <button class="px-2 py-1 bg-red-600 text-white rounded" onclick="deleteTitle('${doc.id}')">🗑️</button>
+            <button type="button" class="px-2 py-1 bg-blue-600 text-white rounded-lg" onclick="editTitle('${doc.id}')">✏️</button>
+            <button type="button" class="px-2 py-1 bg-red-600 text-white rounded-lg" onclick="deleteTitle('${doc.id}')">🗑️</button>
           </div>`;
         titleList.appendChild(row);
       });
@@ -1754,9 +2051,9 @@
       const doc = await db.collection("titles").doc(id).get();
       const t = doc.data();
       titleEditId = id;
-      if (nameEl) nameEl.value = t.name || "";
-      if (condEl) condEl.value = t.conditionType || "rides";
-      if (valEl) valEl.value = t.conditionValue ?? 0;
+      if (titleNameEl) titleNameEl.value = t.name || "";
+      if (titleCondEl) titleCondEl.value = t.conditionType || "rides";
+      if (titleValEl) titleValEl.value = t.conditionValue ?? 0;
     };
 
     window.deleteTitle = async function(id) {
@@ -1769,9 +2066,9 @@
       titleForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         const payload = {
-          name: (nameEl?.value || "").trim(),
-          conditionType: condEl?.value || "rides",
-          conditionValue: parseInt(valEl?.value || "0", 10) || 0
+          name: (titleNameEl?.value || "").trim(),
+          conditionType: titleCondEl?.value || "rides",
+          conditionValue: parseInt(titleValEl?.value || "0", 10) || 0
         };
         if (!payload.name) { alert("Bitte einen Titel-Namen angeben."); return; }
         if (titleEditId) {
@@ -1784,34 +2081,31 @@
         await loadTitles();
       });
     }
-    document.addEventListener("DOMContentLoaded", loadTitles);
-  })();
-
-  // ---- ABZEICHEN Verwaltung ----
-  (async () => {
+    
+    // --- Abzeichen Verwaltung ---
     const badgeList = document.getElementById("badge-list-admin");
     const badgeForm = document.getElementById("badge-form");
-    const nameEl = document.getElementById("badge-name");
-    const iconEl = document.getElementById("badge-icon");
-    const condEl = document.getElementById("badge-condition");
-    const valEl = document.getElementById("badge-value");
+    const badgeNameEl = document.getElementById("badge-name");
+    const badgeIconEl = document.getElementById("badge-icon");
+    const badgeCondEl = document.getElementById("badge-condition");
+    const badgeValEl = document.getElementById("badge-value");
     let badgeEditId = null;
 
     async function loadBadges() {
+      if (!badgeList) return;
       const snap = await db.collection("badgesDefs").get();
-      const list = document.getElementById("badge-list-admin");
-      list.innerHTML = "";
+      badgeList.innerHTML = "";
       snap.forEach(doc => {
         const b = doc.data();
         const displayIcon = b.iconUrl
           ? `<img src="${b.iconUrl}" class="w-6 h-6 inline-block rounded" />`
           : (b.icon || "🏅");
-        list.innerHTML += `
-          <div class="p-2 border rounded flex justify-between items-center">
+        badgeList.innerHTML += `
+          <div class="p-2 border rounded-lg flex justify-between items-center">
             <span>${displayIcon} <strong>${b.name}</strong> — Regel: ${b.conditionType} ≥ ${b.conditionValue}</span>
             <div class="space-x-2">
-              <button onclick="editBadge('${doc.id}')" class="px-2 py-1 bg-blue-600 text-white rounded">✏️</button>
-              <button onclick="deleteBadge('${doc.id}')" class="px-2 py-1 bg-red-600 text-white rounded">🗑️</button>
+              <button type="button" onclick="editBadge('${doc.id}')" class="px-2 py-1 bg-blue-600 text-white rounded-lg">✏️</button>
+              <button type="button" onclick="deleteBadge('${doc.id}')" class="px-2 py-1 bg-red-600 text-white rounded-lg">🗑️</button>
             </div>
           </div>`;
       });
@@ -1821,10 +2115,10 @@
       const doc = await db.collection("badgesDefs").doc(id).get();
       const b = doc.data();
       badgeEditId = id;
-      if (nameEl) nameEl.value = b.name || "";
-      if (iconEl) iconEl.value = b.icon || "";
-      if (condEl) condEl.value = b.conditionType || "rides";
-      if (valEl) valEl.value = b.conditionValue ?? 0;
+      if (badgeNameEl) badgeNameEl.value = b.name || "";
+      if (badgeIconEl) badgeIconEl.value = b.icon || "";
+      if (badgeCondEl) badgeCondEl.value = b.conditionType || "rides";
+      if (badgeValEl) badgeValEl.value = b.conditionValue ?? 0;
     };
 
     window.deleteBadge = async function(id) {
@@ -1841,6 +2135,7 @@
         const conditionType = document.getElementById("badge-condition").value;
         const conditionValue = parseInt(document.getElementById("badge-value").value) || 0;
         if (!name) return alert("Bitte Abzeichen-Namen eingeben!");
+        
         let iconUrl = "";
         const fileInput = document.getElementById("badge-icon-file");
         if (fileInput.files.length > 0) {
@@ -1849,16 +2144,29 @@
           } catch (err) {
             console.error(err);
             alert("❌ Fehler beim ImgBB-Upload");
+            return; // Abbrechen bei Upload-Fehler
           }
         }
-        await db.collection("badgesDefs").add({
-          name, icon: emojiFallback, iconUrl,
-          conditionType, conditionValue,
+        
+        const payload = {
+          name,
+          icon: emojiFallback,
+          iconUrl,
+          conditionType,
+          conditionValue,
           createdAt: new Date()
-        });
+        };
+        
+        if (badgeEditId) {
+            await db.collection("badgesDefs").doc(badgeEditId).update(payload);
+            badgeEditId = null;
+        } else {
+            await db.collection("badgesDefs").add(payload);
+        }
+        
         alert("✅ Abzeichen gespeichert");
         e.target.reset();
-        loadBadges();
+        await loadBadges();
       });
     }
 
@@ -1868,53 +2176,28 @@
         reader.onload = async () => {
           const base64 = reader.result.split(",")[1];
           const formData = new FormData();
-          formData.append("key", "5df04de9bfd2776f101329be4193e44c");
+          formData.append("key", "5df04de9bfd2776f101329be4193e44c"); // ImgBB Key
           formData.append("image", base64);
           try {
             const res = await fetch("https://api.imgbb.com/1/upload", { method: "POST", body: formData });
             const json = await res.json();
             if (json?.data?.url) resolve(json.data.url);
-            else reject("❌ ImgBB Fehler");
+            else reject(`ImgBB Fehler: ${json.error?.message || 'Unbekannt'}`);
           } catch (err) { reject(err); }
         };
         reader.onerror = () => reject("❌ Datei konnte nicht gelesen werden.");
         reader.readAsDataURL(file);
       });
     }
-    document.addEventListener("DOMContentLoaded", loadBadges);
+    
+    // Initiales Laden beim Start
+    document.addEventListener("DOMContentLoaded", () => {
+        loadTitles();
+        loadBadges();
+    });
   })();
-
-  document.getElementById('profile-search').addEventListener('input', async e => {
-    const q = e.target.value.trim();
-    const box = document.getElementById('profile-suggestions');
-    if (q.length < 3) { box.classList.add('hidden'); return; }
-    const snap = await db.collection('profiles')
-      .where('name', '>=', q)
-      .where('name', '<=', q + '\uf8ff')
-      .limit(5).get();
-    box.innerHTML = snap.empty
-      ? "<p class='p-2 text-gray-500 italic'>Keine Treffer</p>"
-      : snap.docs.map(d => {
-          const name = d.data().name;
-          return `
-            <div class="p-2 hover:bg-gray-100 cursor-pointer"
-                onclick="selectProfile('${d.id}', '${name.replace(/'/g,"\\'")}')">
-              ${name}
-            </div>`;
-        }).join('');
-    box.classList.remove('hidden');
-  });
-
-  window.selectProfile = (id, name) => {
-    document.getElementById('profile-search').value = name;
-    document.getElementById('profile-selected-id').value = id;
-    document.getElementById('profile-suggestions').classList.add('hidden');
-    loadProfileAdmin(id);
-  };
-
-  document.getElementById('menu-toggle').addEventListener('click', () => {
-    document.getElementById('sidebar').classList.toggle('hidden');
-  });
+  
 </script>
+
 </body>
-  </html>
+          </html>
