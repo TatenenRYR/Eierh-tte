@@ -3258,6 +3258,60 @@
         firebaseManager.init();
         userManager.init();
 
+          document.addEventListener('DOMContentLoaded', () => {
+        uiManager.setLoading(true);
+        uiManager.init(); // Handles i18n init now
+        mapManager.init(config.map.defaultCenter, config.map.defaultZoom);
+        firebaseManager.init();
+        userManager.init();
+
+        // ==========================================================
+        //  NEU: Automatische Aktualisierung bei Rückkehr zur App
+        // ==========================================================
+        document.addEventListener('visibilitychange', () => {
+            // Prüfen, ob der Tab wieder sichtbar (aktiv) ist
+            if (document.visibilityState === 'visible') {
+                console.log("Tab wieder sichtbar. Aktualisiere Standort...");
+                
+                // Hole sofort die aktuelle Position (mit hoher Genauigkeit)
+                userManager.getCurrentPosition(true).then(pos => {
+                    
+                    // 1. Zentriere die Karte neu auf den aktuellen Standort
+                    if (mapManager.map) {
+                        mapManager.map.panTo(pos);
+                    }
+                    
+                    // 2. Lade aktuelles Wetter für den neuen Standort
+                    weatherManager.fetchWeather(pos.lat, pos.lng);
+
+                    // 3. Aktualisiere die Position im Raum (falls in einem)
+                    if (appState.currentRoom.id) {
+                        firebaseManager.updateUserPositionInRoom(pos);
+                    }
+
+                    // 4. Wenn die Navigation (appState.isNavigating) aktiv ist,
+                    // wird der 'watchPosition'-Dienst vom Browser automatisch 
+                    // reaktiviert und die Routen-Abweichungsprüfung 
+                    // (checkDeviation) greift von selbst.
+                    
+                }).catch(err => {
+                    console.warn("Position beim Reaktivieren des Tabs nicht verfügbar:", err);
+                });
+                
+                // 5. Firebase (Hütten, Raum, Warnungen) sollte sich 
+                // automatisch neu verbinden, falls die Verbindung getrennt wurde.
+            }
+        });
+        // ==========================================================
+        //  Ende des neuen Blocks
+        // ==========================================================
+
+
+        // NEU: Handle room invite link from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        // ... (Rest deines Codes) ...
+    });
+
         // NEU: Handle room invite link from URL
         const urlParams = new URLSearchParams(window.location.search);
         const roomIdFromUrl = urlParams.get('room');
