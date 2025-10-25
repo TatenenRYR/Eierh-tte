@@ -3171,54 +3171,78 @@
             if (code >= 95 && code <= 99) return '🌩️'; // Thunderstorm
             return '-'; // Default
         },
-
         async fetchElevation(coordinates) {
-            if (!navigator.onLine) {
-                uiManager.showToast(i18nManager.getString('toast.offlineElevationError'));
-                return null;
+            // ... (deine bestehende fetchElevation Funktion) ...
+        },
+
+        // NEU: Diese Funktion hinzufügen
+        showHourlyForecast() {
+            if (!this.currentWeather || !this.currentWeather.hourly || !this.currentWeather.current_weather) {
+                uiManager.showToast(i18nManager.getString('general.loading')); // Zeige "Lade..."
+                return;
             }
-             // Reduce number of points to avoid overly long URLs
-            const sampleRate = Math.max(1, Math.floor(coordinates.length / 150)); // Sample approx every N points, max ~150 points
-            const sampledCoords = coordinates.filter((_, i) => i % sampleRate === 0);
-
-            // Ensure coordinates are valid numbers before joining
-             const lats = sampledCoords.map(c => typeof c[0] === 'number' ? c[0].toFixed(4) : '').filter(Boolean).join(',');
-             const lngs = sampledCoords.map(c => typeof c[1] === 'number' ? c[1].toFixed(4) : '').filter(Boolean).join(',');
-
-
-            // Check if we have valid coordinates after sampling/filtering
-             if (!lats || !lngs) {
-                 console.warn("No valid coordinates to fetch elevation for.");
-                 return null;
-             }
-
-            const url = `https://api.open-meteo.com/v1/elevation?latitude=${lats}&longitude=${lngs}`;
 
             try {
-                const response = await fetch(url);
-                if (!response.ok) throw new Error('Höhen-API nicht erreichbar oder zu viele Punkte.');
-                const data = await response.json();
-                if (!data || !data.elevation || !Array.isArray(data.elevation)) throw new Error('Ungültige Höhendaten.');
+                const hourlyData = this.currentWeather.hourly;
+                const currentTime = this.currentWeather.current_weather.time;
+                
+                // Finde den Index der aktuellen Stunde in den stündlichen Daten
+                const currentIndex = hourlyData.time.findIndex(t => t.startsWith(currentTime.substring(0, 13)));
 
-                // Basic data validation: check for nulls or non-numeric values
-                 const validElevations = data.elevation.filter(e => typeof e === 'number');
-                 if (validElevations.length !== data.elevation.length) {
-                     console.warn("Received invalid elevation data points, filtering nulls/non-numbers.");
-                     data.elevation = validElevations; // Use only valid numbers
-                 }
-                  if (data.elevation.length === 0) {
-                      throw new Error("Keine gültigen Höhendaten erhalten.");
-                  }
+                if (currentIndex === -1) {
+                    console.error("Konnte aktuelle Stunde in Wetterdaten nicht finden.", currentTime, hourlyData.time);
+                    uiManager.showToast("Fehler bei Wettervorschau.");
+                    return;
+                }
 
+                const forecastHours = [];
+                // Sammle die nächsten 4 Stunden
+                for (let i = 1; i <= 4; i++) {
+                    const index = currentIndex + i;
+                    if (index >= hourlyData.time.length) break; // Nicht über das Array-Ende hinausgehen
+                    forecastHours.push({
+                        time: hourlyData.time[index],
+                        temp: Math.round(hourlyData.temperature_2m[index]),
+                        code: hourlyData.weathercode[index],
+                        wind: Math.round(hourlyData.windspeed_10m[index]) // Windgeschwindigkeit
+                    });
+                }
 
-                return data;
+                if (forecastHours.length === 0) {
+                     uiManager.showToast("Keine Vorschau verfügbar.");
+                     return;
+                }
+
+                // Generiere HTML für das Popup
+                let htmlContent = '<div class="space-y-3">';
+                forecastHours.forEach(hour => {
+                    // Zeit basierend auf der App-Sprache formatieren
+                    const hourString = new Date(hour.time).toLocaleTimeString(appState.currentLang, { hour: '2-digit', minute: '2-digit' });
+                    const icon = this.getWeatherIcon(hour.code);
+                    
+                    htmlContent += `
+                        <div class="flex items-center justify-between p-2 rounded-lg bg-gray-100 dark:bg-gray-700 gap-2">
+                            <span class="font-bold text-lg w-16 flex-shrink-0">${hourString}</span>
+                            <span class="text-2xl flex-shrink-0">${icon}</span>
+                            <span class="text-lg font-semibold w-16 text-center flex-shrink-0">${hour.temp}°C</span>
+                            <span class="text-sm text-gray-600 dark:text-gray-300 w-24 text-right flex-shrink-0">💨 ${hour.wind} km/h</span>
+                        </div>`;
+                });
+                htmlContent += '</div>';
+                
+                // Öffne das Popup (das sich durch Klick daneben schließt)
+                // Wir verwenden hier einen hardcodierten deutschen Titel
+                uiManager.openPopup("Wettervorschau 🌦️", htmlContent);
+
             } catch (error) {
-                console.error("Fehler beim Laden des Höhenprofils:", error);
-                uiManager.showToast(i18nManager.getString('toast.elevationError'));
-                return null;
+                console.error("Fehler beim Erstellen der Wettervorschau:", error);
+                uiManager.showToast("Fehler bei Wettervorschau.");
             }
         }
-    };
+    }; // (Stelle sicher, dass dies die schließende Klammer des weatherManager-Objekts ist)
+
+        
+    
 
     // ----------------------------------------------------------
     //  6. INITIALISIERUNG
