@@ -1835,7 +1835,7 @@
 
         updateUserMarker(latlng, accuracy, bearing) {
             const iconHtml = `
-                <svg width="48" height="48" viewBox="0 0 48 48" style="transform: rotate(${bearing}deg); transition: transform 0.2s linear;">
+                <svg width="48" height="48" viewBox="0 0 48 48" style="transform: rotate(${bearing}deg); transition: transform 0.5s ease-out;">
                     <circle cx="24" cy="24" r="20" fill="#4285F4" fill-opacity="0.2" class="pulse-circle"/>
                     <path d="M24 4 L34 28 H14 Z" fill="#4285F4" stroke="white" stroke-width="2" style="filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.4));"/>
                 </svg>
@@ -2249,6 +2249,7 @@
     const userManager = { /* User manager code - see previous version, uses i18nManager for toasts */
         watchId: null,
         lastPosition: null,
+        lastBearing: 0,
         userId: localStorage.getItem('radlMapUserId') || `user_${Math.random().toString(36).substring(2, 9)}`,
         warnedAbout: new Set(),
 
@@ -2289,18 +2290,39 @@
         startWatchingPosition() {
             if (this.watchId) return;
             const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
-            this.watchId = navigator.geolocation.watchPosition(
+                        this.watchId = navigator.geolocation.watchPosition(
                 pos => {
                     const currentPos = L.latLng(pos.coords.latitude, pos.coords.longitude);
-                    let bearing = this.lastPosition ? this.getBearing(this.lastPosition, currentPos) : 0;
-
                     let speedKmh = null;
+                    
+                    // 1. Geschwindigkeit ermitteln
                     if (pos.coords.speed !== null && pos.coords.speed >= 0) {
                         speedKmh = pos.coords.speed * 3.6;
                     }
                     uiManager.updateSpeedWidget(speedKmh);
 
-                    mapManager.updateUserMarker(currentPos, pos.coords.accuracy, bearing);
+                    // 2. Peilung nur berechnen, wenn wir uns bewegen (z.B. > 1.5 km/h)
+                    //    Die Peilung ist bei Stillstand oder langsamer Fahrt extrem ungenau.
+                    if (this.lastPosition && speedKmh !== null && speedKmh > 1.5) {
+                        // Neue Peilung berechnen
+                        const calculatedBearing = this.getBearing(this.lastPosition, currentPos);
+                        
+                        // 3. Peilung glätten (Exponential Moving Average)
+                        //    Dies verhindert das "Springen" und mischt den alten Wert (80%)
+                        //    mit dem neuen Wert (20%).
+                        const smoothingFactor = 0.2; // Kleinerer Wert = stärkere Glättung
+                        this.lastBearing = (calculatedBearing * smoothingFactor) + (this.lastBearing * (1 - smoothingFactor));
+
+                    } else if (!this.lastPosition) {
+                        // Beim allerersten Mal auf 0 setzen
+                        this.lastBearing = 0;
+                    }
+                    // Wenn der Nutzer steht (speedKmh <= 1.5), behalten wir einfach 'this.lastBearing' bei.
+
+                    // 4. Marker mit der geglätteten Peilung aktualisieren
+                    mapManager.updateUserMarker(currentPos, pos.coords.accuracy, this.lastBearing);
+
+                    // --- Restlicher Code (bleibt gleich) ---
                     if (appState.isFollowing) mapManager.map.panTo(currentPos);
 
                     if(appState.isNavigating) {
