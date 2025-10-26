@@ -346,9 +346,13 @@
 
   <!-- Schnellnavigation -->
   <div class="absolute left-4 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-3">
-       <a href="index.html" class="bg-[var(--ui-bg)] backdrop-blur-md shadow-lg rounded-full p-3 border border-[var(--border-color)]">
+     <!---  <a href="index.html" class="bg-[var(--ui-bg)] backdrop-blur-md shadow-lg rounded-full p-3 border border-[var(--border-color)]">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
-      </a>
+      </a>--->
+           <button onclick="userManager.recenterMap()" class="bg-[var(--ui-bg)] backdrop-blur-md shadow-lg rounded-full p-3 border border-[var(--border-color)]">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+      </button>
+
       <button onclick="uiManager.toggleSidebar()" class="bg-[var(--ui-bg)] backdrop-blur-md shadow-lg rounded-full p-3 border border-[var(--border-color)]">
          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
       </button>
@@ -629,8 +633,15 @@
     const i18nManager = {
         translations: {
             de: { /* German translations - see previous version */
-              "popup.weatherTitle": "Wettervorschau 🌦️",
-              "app.title": "RadlMap Navigation 🚲 (Smarter)",
+                              // ... (deine bestehenden 'de' Strings) ...
+                "popup.weatherTitle": "Wettervorschau 🌦️", // (Falls du den von vorhin nutzt)
+                "chart.elevation": "Höhe (m)", // (Falls du den von vorhin nutzt)
+                "nav.in_meters": "In {meters} Metern {instruction}",
+                "nav.now": "Jetzt {instruction}",
+                "nav.arrive": "Sie haben Ihr Ziel erreicht",
+                "nav.continue": "Weiter geradeaus",
+                "nav.depart": "Starten Sie",
+                "app.title": "RadlMap Navigation 🚲 (Smarter)",
                 "loader.text": "Karte wird geladen...",
                 "general.offline": "OFFLINE",
                 "general.save": "Speichern",
@@ -758,7 +769,13 @@
                 "popup.hut.removeBtn": "Von Tour entfernen",
             },
             en: { /* English translations - see previous version */
-              "popup.weatherTitle": "Weather Forecast 🌦️",
+                "popup.weatherTitle": "Weather Forecast 🌦️",
+                "chart.elevation": "Elevation (m)",
+                "nav.in_meters": "In {meters} meters, {instruction}",
+                "nav.now": "Now, {instruction}",
+                "nav.arrive": "You have reached your destination",
+                "nav.continue": "Continue straight",
+                "nav.depart": "Depart",
                 "app.title": "RadlMap Navigation 🚲 (Smarter)",
                 "loader.text": "Loading map...",
                 "general.offline": "OFFLINE",
@@ -1930,28 +1947,10 @@
         async speak(text) {
             if (!appState.isVoiceOn || !text) return;
             speechSynthesis.cancel();
-
+            
             const targetLang = appState.currentLang || 'de';
-            let textToSpeak = text;
-
-            try {
-                // Only translate if the original text is likely German and target is not German
-                // Basic check, could be improved
-                const isGermanText = /^[ äöüÄÖÜß.,!?0-9a-zA-Z]+$/.test(text); // Simple check
-                 if (targetLang !== 'de' && isGermanText && navigator.onLine) {
-                    textToSpeak = await geminiManager.translateText(text, targetLang);
-                } else if (targetLang !== i18nManager.currentLang && navigator.onLine){
-                    // If app lang changed but TTS text didn't match German, try translating
-                     textToSpeak = await geminiManager.translateText(text, targetLang);
-                }
-            } catch (e) {
-                console.error("Fehler beim Übersetzen:", e);
-                textToSpeak = text;
-            }
-
-            if (!textToSpeak) textToSpeak = text;
-
-            const utterance = new SpeechSynthesisUtterance(textToSpeak);
+            
+            const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = targetLang;
 
             const voices = speechSynthesis.getVoices();
@@ -1961,7 +1960,6 @@
             } else {
                  console.warn(`No voice found for language ${targetLang}`);
             }
-
 
             speechSynthesis.speak(utterance);
         }
@@ -2009,49 +2007,52 @@
                 const step = this.routeData.steps[i];
                 let instructionText = step.maneuver.instruction;
 
-                // Basic instruction generation if missing (German base)
+                // Basis-Anweisung generieren, falls sie fehlt
                 if (!instructionText || instructionText.trim() === '') {
                     const type = step.maneuver.type;
                     const modifier = step.maneuver.modifier || '';
-                    const road = step.name ? ` auf ${step.name}` : '';
+                    const road = step.name ? ` auf ${step.name}` : ''; // Bleibt sprachunabhängig
 
-                    if (type === 'continue' || type === 'new name') instructionText = `Weiter geradeaus ${road}`;
-                    else if (type === 'arrive') instructionText = `Sie haben Ihr Ziel erreicht${road}`;
-                    else if (type === 'depart') instructionText = `Starten Sie ${road}`;
-                    else instructionText = `${modifier.replace(/_/g, ' ')}${road}`;
-                    instructionText = instructionText.charAt(0).toUpperCase() + instructionText.slice(1);
+                    // Nutze i18n-Keys (oder einfachen Text für Straßennamen)
+                    if (type === 'continue' || type === 'new name') instructionText = `${i18nManager.getString('nav.continue')}${road}`;
+                    else if (type === 'arrive') instructionText = `${i18nManager.getString('nav.arrive')}${road}`;
+                    else if (type === 'depart') instructionText = `${i18nManager.getString('nav.depart')}${road}`;
+                    else instructionText = `${modifier.replace(/_/g, ' ')}${road}`; // z.B. "links abbiegen auf Hauptstraße"
+                    
+                    // Großschreibung ist nicht mehr nötig, da es von i18n kommt
                 }
-
 
                 const stepLocation = L.latLng(step.maneuver.location[1], step.maneuver.location[0]);
                 const distance = userPos.distanceTo(stepLocation);
 
                 if (!this.announcedSteps[i]) this.announcedSteps[i] = { pre: false, imminent: false };
 
+                // "In ... Metern" - Ansage
                 if (distance < 150 && distance > 40 && !this.announcedSteps[i].pre) {
                     this.announcedSteps[i].pre = true;
-                     // Base instruction in German, translation handled by ttsManager.speak
-                    const instructionBase = `In ${Math.round(distance/10)*10} Metern ${instructionText}`;
+                    const roundedDist = Math.round(distance / 10) * 10;
+                    
+                    // NEU: Verwende i18n-String
+                    const hintText = i18nManager.getString('nav.in_meters', { meters: roundedDist, instruction: instructionText });
                     const icon = uiManager.getTurnIcon(step.maneuver.type);
-                    // Show hint in current app language
-                    ttsManager.translateText(instructionBase, appState.currentLang).then(translatedHint => {
-                         uiManager.showNavHint(icon, translatedHint || instructionBase);
-                    });
-                    ttsManager.speak(instructionBase); // Speak handles translation
+
+                    uiManager.showNavHint(icon, hintText); // UI-Hinweis
+                    ttsManager.speak(hintText); // Sprachausgabe
                     break;
                 }
 
+                // "Jetzt" - Ansage
                 if (distance < 25 && !this.announcedSteps[i].imminent) {
                     this.announcedSteps[i].imminent = true;
-                     // Base instruction in German
-                    const instructionBase = `Jetzt ${instructionText}`;
+                    
+                    // NEU: Verwende i18n-String
+                    const hintText = i18nManager.getString('nav.now', { instruction: instructionText });
                     const icon = uiManager.getTurnIcon(step.maneuver.type);
-                     // Show hint in current app language
-                    ttsManager.translateText(instructionBase, appState.currentLang).then(translatedHint => {
-                         uiManager.showNavHint(icon, translatedHint || instructionBase);
-                    });
-                    ttsManager.speak(instructionBase); // Speak handles translation
+                    
+                    uiManager.showNavHint(icon, hintText);
+                    ttsManager.speak(hintText);
 
+                    // ... (deine bestehende Logik für visitedStops bleibt gleich) ...
                     const nextHut = appState.selectedHuts.find(hut => L.latLng(hut.lat, hut.lng).distanceTo(stepLocation) < 50);
                     if (nextHut && !appState.visitedStops.has(nextHut.id)) {
                        appState.visitedStops.add(nextHut.id);
@@ -2382,7 +2383,25 @@
              // Message remains universal/simple
             const message = `🚨 NOTRUF 🚨 Ich brauche Hilfe! Mein Standort: ${link}`;
             window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
+        },
+      async recenterMap() {
+            try {
+                const pos = await this.getCurrentPosition(true); // Hohe Genauigkeit
+                if (mapManager.map && pos) {
+                    mapManager.map.flyTo(pos, config.map.navigationZoom, {
+                         duration: 1.5 // Sanfter Flug
+                    });
+                    // Optional: Follow-Modus wieder aktivieren, falls er aus war
+                    if (!appState.isFollowing) {
+                        appState.toggleFollow();
+                    }
+                }
+            } catch (err) {
+                console.error("Fehler beim Zentrieren der Karte:", err);
+                uiManager.showToast("Position konnte nicht abgerufen werden.");
+            }
         }
+    
     };
 
     const geminiManager = { /* Gemini manager code - see previous version, uses appState.currentLang for prompts */
