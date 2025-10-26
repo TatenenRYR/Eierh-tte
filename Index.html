@@ -578,6 +578,7 @@
         navigationZoom: 18,
       },
       routing: {
+        osrmHost: 'https://router.project-osrm.org',
         profile: 'cycling-regular',
         deviationThresholdMeters: 10,
         recalcDebounceMs: 8000,
@@ -628,7 +629,8 @@
     const i18nManager = {
         translations: {
             de: { /* German translations - see previous version */
-                "app.title": "RadlMap Navigation 🚲 (Smarter)",
+              "popup.weatherTitle": "Wettervorschau 🌦️",
+              "app.title": "RadlMap Navigation 🚲 (Smarter)",
                 "loader.text": "Karte wird geladen...",
                 "general.offline": "OFFLINE",
                 "general.save": "Speichern",
@@ -756,6 +758,7 @@
                 "popup.hut.removeBtn": "Von Tour entfernen",
             },
             en: { /* English translations - see previous version */
+              "popup.weatherTitle": "Weather Forecast 🌦️",
                 "app.title": "RadlMap Navigation 🚲 (Smarter)",
                 "loader.text": "Loading map...",
                 "general.offline": "OFFLINE",
@@ -884,6 +887,7 @@
                 "popup.hut.removeBtn": "Remove from Tour",
             },
             es: { /* Spanish translations - see previous version */
+                "popup.weatherTitle": "Pronóstico del Tiempo 🌦️",
                 "app.title": "RadlMap Navegación 🚲 (Smarter)",
                 "loader.text": "Cargando mapa...",
                 "general.offline": "SIN CONEXIÓN",
@@ -1012,6 +1016,7 @@
                 "popup.hut.removeBtn": "Quitar de Ruta",
             },
             fr: { /* French translations - see previous version */
+                "popup.weatherTitle": "Prévisions Météo 🌦️",
                 "app.title": "RadlMap Navigation 🚲 (Smarter)",
                 "loader.text": "Chargement de la carte...",
                 "general.offline": "HORS LIGNE",
@@ -1141,6 +1146,7 @@
             },
             // NEU: Niederländische Übersetzungen
             nl: {
+                "popup.weatherTitle": "Weersverwachting 🌦️",
                 "app.title": "RadlMap Navigatie 🚲 (Slimmer)",
                 "loader.text": "Kaart laden...",
                 "general.offline": "OFFLINE",
@@ -1973,7 +1979,7 @@
                 ...waypoints.map(h => `${h.lng},${h.lat}`)
             ].join(';');
 
-            const url = `https://router.project-osrm.org/route/v1/bicycle/${coordinatesString}?overview=full&geometries=geojson&steps=true`;
+            const url = `${config.routing.osrmHost}/route/v1/bicycle/${coordinatesString}?overview=full&geometries=geojson&steps=true`;
 
             try {
                 const response = await fetch(url);
@@ -3234,9 +3240,9 @@
                 });
                 htmlContent += '</div>';
                 
-                // Öffne das Popup (das sich durch Klick daneben schließt)
-                // Wir verwenden hier einen hardcodierten deutschen Titel
-                uiManager.openPopup("Wettervorschau 🌦️", htmlContent);
+                                // Öffne das Popup (das sich durch Klick daneben schließt)
+                // NEU: Verwende i18n für den Titel
+                uiManager.openPopup(i18nManager.getString("popup.weatherTitle"), htmlContent);
 
             } catch (error) {
                 console.error("Fehler beim Erstellen der Wettervorschau:", error);
@@ -3248,7 +3254,7 @@
         
     
 
-    // ----------------------------------------------------------
+        // ----------------------------------------------------------
     //  6. INITIALISIERUNG
     // ----------------------------------------------------------
     document.addEventListener('DOMContentLoaded', () => {
@@ -3258,27 +3264,22 @@
         firebaseManager.init();
         userManager.init();
 
-          document.addEventListener('DOMContentLoaded', () => {
-        uiManager.setLoading(true);
-        uiManager.init(); // Handles i18n init now
-        mapManager.init(config.map.defaultCenter, config.map.defaultZoom);
-        firebaseManager.init();
-        userManager.init();
-
         // ==========================================================
-        //  NEU: Automatische Aktualisierung bei Rückkehr zur App
+        //  Automatische Aktualisierung bei Rückkehr zur App
         // ==========================================================
         document.addEventListener('visibilitychange', () => {
             // Prüfen, ob der Tab wieder sichtbar (aktiv) ist
             if (document.visibilityState === 'visible') {
                 console.log("Tab wieder sichtbar. Aktualisiere Standort...");
                 
-                // Hole sofort die aktuelle Position (mit hoher Genauigkeit)
                 userManager.getCurrentPosition(true).then(pos => {
                     
-                    // 1. Zentriere die Karte neu auf den aktuellen Standort
-                    if (mapManager.map) {
-                        mapManager.map.panTo(pos);
+                    // 1. Zentriere die Karte neu NUR, wenn der 'Follow'-Modus
+                    //    aktiv ist oder die Navigation läuft.
+                    if (appState.isFollowing || appState.isNavigating) {
+                        if (mapManager.map) {
+                            mapManager.map.panTo(pos);
+                        }
                     }
                     
                     // 2. Lade aktuelles Wetter für den neuen Standort
@@ -3288,11 +3289,6 @@
                     if (appState.currentRoom.id) {
                         firebaseManager.updateUserPositionInRoom(pos);
                     }
-
-                    // 4. Wenn die Navigation (appState.isNavigating) aktiv ist,
-                    // wird der 'watchPosition'-Dienst vom Browser automatisch 
-                    // reaktiviert und die Routen-Abweichungsprüfung 
-                    // (checkDeviation) greift von selbst.
                     
                 }).catch(err => {
                     console.warn("Position beim Reaktivieren des Tabs nicht verfügbar:", err);
@@ -3303,24 +3299,19 @@
             }
         });
         // ==========================================================
-        //  Ende des neuen Blocks
+        //  Ende des Blocks
         // ==========================================================
 
 
-        // NEU: Handle room invite link from URL
-        const urlParams = new URLSearchParams(window.location.search);
-        // ... (Rest deines Codes) ...
-    });
-
-        // NEU: Handle room invite link from URL
+        // Handle room invite link from URL
         const urlParams = new URLSearchParams(window.location.search);
         const roomIdFromUrl = urlParams.get('room');
         if (roomIdFromUrl) {
             // Delay joining slightly to ensure Firebase is likely initialized
             setTimeout(() => {
                  firebaseManager.joinRoom(roomIdFromUrl);
-                 // Optionally remove the room parameter from URL after joining
-                 // window.history.replaceState({}, document.title, window.location.pathname);
+                 // NEU: Entferne den 'room'-Parameter aus der URL, um Re-Joins beim Neuladen zu verhindern
+                 window.history.replaceState({}, document.title, window.location.pathname);
             }, 1500);
         }
          else {
