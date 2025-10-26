@@ -2831,44 +2831,44 @@
             }
         },
 
-        joinRoom(id = null) {
+        async joinRoom(id = null) { // <-- NEU: async
             let roomId = id; // Start with ID from param (e.g., URL or rejoin)
             if (!roomId) {
+                 // Only get from input if no ID was passed
                  roomId = document.getElementById('roomIdInput').value.trim();
             }
 
+            // *** FIX: Check if roomId is empty ***
             if (!roomId) {
                 uiManager.showToast(i18nManager.getString('toast.roomEnterId'));
-                return;
+                return; // Stop if no ID is provided
             }
-
-            // --- NEUER BLOCK: Raum-Dokument sicherstellen ---
-            // Wir verwenden .set() mit {merge: true}.
-            // Das erstellt das Dokument, WENN es nicht existiert,
-            // oder aktualisiert nur den Zeitstempel, WENN es bereits existiert.
-            // Dies löst das "Auto-Leave"-Problem (Race Condition).
+            
             try {
-                this.db.collection("rooms").doc(roomId).set({
-                    // Wir setzen ein 'updatedAt' Feld, falls es ein neuer Raum ist
-                    // oder um einen alten Raum "aktiv" zu halten
+                // NEU: Wir WARTEN (await), bis der Raum sicher erstellt/bestätigt ist
+                await this.db.collection("rooms").doc(roomId).set({
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                }, { merge: true }); // WICHTIG: merge: true
+                }, { merge: true });
             } catch (err) {
                 console.error("Fehler beim Erstellen/Sicherstellen des Raums:", err);
                 uiManager.showToast("Fehler beim Beitreten des Raums.");
                 return;
             }
-            // --- ENDE NEUER BLOCK ---
-
+            
+            // Jetzt, da der Raum 100% existiert, können wir weitermachen
             appState.currentRoom.id = roomId;
             localStorage.setItem('lastRoomId', roomId);
 
-            this.listenToRoom(roomId); // Dieser Listener wird jetzt nicht mehr !doc.exists finden
+            this.listenToRoom(roomId); // Dieser Listener wird jetzt doc.exists = true finden
             this.listenToUsersInRoom(roomId);
 
-            uiManager.updateRoomUI(appState.currentRoom);
+            // Wir rufen dies sofort auf, um die ID im UI anzuzeigen.
+            // Die Listener werden den Rest (Guide-Status, User-Liste) nachladen.
+            uiManager.updateRoomUI(appState.currentRoom, []); 
+
             uiManager.showToast(i18nManager.getString('toast.roomJoined', { id: roomId }));
 
+             // NEU: Clear input field after successful join
             document.getElementById('roomIdInput').value = '';
         },
 
