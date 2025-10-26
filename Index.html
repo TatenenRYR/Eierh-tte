@@ -1722,25 +1722,30 @@
         /**
          * NEU: Kopiert den Einladungslink für den aktuellen Raum.
          */
+        /**
+         * NEU: Kopiert den Einladungslink für den aktuellen Raum.
+         * ERWEITERT: Erstellt einen neuen Raum, falls man in keinem ist.
+         */
         copyInviteLink() {
-            if (!appState.currentRoom.id) return;
-            const roomId = appState.currentRoom.id;
-            // Generate link based on current URL structure
-            const inviteLink = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
-
-            // Try modern clipboard API first
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(inviteLink).then(() => {
-                    uiManager.showToast(i18nManager.getString('toast.inviteLinkCopied'));
-                }).catch(err => {
-                    console.error('Async clipboard copy failed:', err);
-                    // Fallback to execCommand
-                    this.fallbackCopyTextToClipboard(inviteLink);
-                });
-            } else {
-                // Fallback for older browsers or insecure contexts
-                this.fallbackCopyTextToClipboard(inviteLink);
+            // --- NEUER BLOCK: Raum erstellen, falls nicht vorhanden ---
+            if (!appState.currentRoom.id) {
+                // Generiere eine neue, einfache Raum-ID
+                const newRoomId = `raum_${Math.random().toString(36).substring(2, 7)}`;
+                
+                // Tritt dem Raum bei (dies erstellt ihn jetzt auch, dank unserer Änderung oben)
+                firebaseManager.joinRoom(newRoomId);
+                
+                // Kurze Verzögerung, damit der Link kopiert werden kann,
+                // nachdem der state (appState.currentRoom.id) gesetzt wurde.
+                setTimeout(() => {
+                    this.copyRoomLinkToClipboard(newRoomId);
+                }, 300); // 300ms Puffer
+                return;
             }
+            // --- ENDE NEUER BLOCK ---
+
+            // Code für bestehenden Raum (wird jetzt von der Hilfsfunktion erledigt)
+            this.copyRoomLinkToClipboard(appState.currentRoom.id);
         },
 
         /**
@@ -1780,6 +1785,26 @@
             }
 
             document.body.removeChild(textArea);
+        },
+      
+
+        // NEU: Hilfsfunktion zum Kopieren, um Duplizierung zu vermeiden
+        copyRoomLinkToClipboard(roomId) {
+            const inviteLink = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+
+            // Try modern clipboard API first
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(inviteLink).then(() => {
+                    uiManager.showToast(i18nManager.getString('toast.inviteLinkCopied'));
+                }).catch(err => {
+                    console.error('Async clipboard copy failed:', err);
+                    // Fallback to execCommand
+                    this.fallbackCopyTextToClipboard(inviteLink);
+                });
+            } else {
+                // Fallback for older browsers or insecure contexts
+                this.fallbackCopyTextToClipboard(inviteLink);
+            }
         }
     };
 
@@ -2809,28 +2834,41 @@
         joinRoom(id = null) {
             let roomId = id; // Start with ID from param (e.g., URL or rejoin)
             if (!roomId) {
-                 // Only get from input if no ID was passed
                  roomId = document.getElementById('roomIdInput').value.trim();
             }
 
-            // *** FIX: Check if roomId is empty ***
             if (!roomId) {
                 uiManager.showToast(i18nManager.getString('toast.roomEnterId'));
-                return; // Stop if no ID is provided
+                return;
             }
-            // *** END FIX ***
+
+            // --- NEUER BLOCK: Raum-Dokument sicherstellen ---
+            // Wir verwenden .set() mit {merge: true}.
+            // Das erstellt das Dokument, WENN es nicht existiert,
+            // oder aktualisiert nur den Zeitstempel, WENN es bereits existiert.
+            // Dies löst das "Auto-Leave"-Problem (Race Condition).
+            try {
+                this.db.collection("rooms").doc(roomId).set({
+                    // Wir setzen ein 'updatedAt' Feld, falls es ein neuer Raum ist
+                    // oder um einen alten Raum "aktiv" zu halten
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true }); // WICHTIG: merge: true
+            } catch (err) {
+                console.error("Fehler beim Erstellen/Sicherstellen des Raums:", err);
+                uiManager.showToast("Fehler beim Beitreten des Raums.");
+                return;
+            }
+            // --- ENDE NEUER BLOCK ---
 
             appState.currentRoom.id = roomId;
             localStorage.setItem('lastRoomId', roomId);
 
-            this.listenToRoom(roomId);
+            this.listenToRoom(roomId); // Dieser Listener wird jetzt nicht mehr !doc.exists finden
             this.listenToUsersInRoom(roomId);
-           // userManager.startWatchingPosition(); // Ensure position updates are sent
 
             uiManager.updateRoomUI(appState.currentRoom);
             uiManager.showToast(i18nManager.getString('toast.roomJoined', { id: roomId }));
 
-             // NEU: Clear input field after successful join
             document.getElementById('roomIdInput').value = '';
         },
 
