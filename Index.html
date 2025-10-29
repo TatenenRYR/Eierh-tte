@@ -29,7 +29,7 @@
 
   <!-- NEU: Chart.js für Höhenprofil -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 
   <style>
     /* Inter Schriftart für ein modernes UI */
@@ -310,6 +310,55 @@
   </style>
 </head>
 <body class="antialiased">
+<div id="loginScreen" class="flex items-center justify-center min-h-screen bg-gradient-to-br from-green-50 to-green-100 hidden">
+  <div class="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full transform transition hover:scale-[1.01]">
+    
+    <div class="text-center mb-6">
+        <h1 class="text-3xl font-extrabold text-green-700">Willkommen!</h1>
+        <p class="text-gray-500 mt-2">Bitte melde dich an, um fortzufahren.</p>
+    </div>
+
+    <div id="authFormContainer">
+        <form id="loginForm" class="space-y-4">
+            <input id="loginEmail" type="email" placeholder="E-Mail" class="w-full border p-3 rounded-lg" required>
+            <input id="loginPassword" type="password" placeholder="Passwort" class="w-full border p-3 rounded-lg" required>
+            <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition">Anmelden</button>
+            <p class="text-xs text-center text-gray-500">
+                <a href="#" onclick="showPasswordReset()" class="text-green-600 hover:underline">Passwort vergessen?</a>
+            </p>
+        </form>
+        
+        <form id="registerForm" class="hidden space-y-4">
+            <input id="registerName" type="text" placeholder="Dein Name" class="w-full border p-3 rounded-lg" required>
+            <input id="registerEmail" type="email" placeholder="E-Mail" class="w-full border p-3 rounded-lg" required>
+            <input id="registerPassword" type="password" placeholder="Passwort" class="w-full border p-3 rounded-lg" required>
+            <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition">Registrieren</button>
+        </form>
+
+        <p class="text-center text-sm mt-4">
+            <a href="#" id="authToggle" class="text-green-600 hover:underline">Noch kein Account? Jetzt registrieren</a>
+        </p>
+    </div>
+    
+    <div class="flex items-center my-6">
+        <hr class="flex-grow border-t border-gray-300">
+        <span class="px-3 text-gray-500 text-sm">oder</span>
+        <hr class="flex-grow border-t border-gray-300">
+    </div>
+
+    <button onclick="doGoogleLogin()" 
+      class="flex items-center gap-3 px-6 py-3 bg-white border border-gray-300 text-gray-700 rounded-xl shadow-sm transition w-full justify-center font-medium hover:bg-gray-50">
+      <img src="https://www.svgrepo.com/show/475656/google-color.svg" 
+           class="w-6 h-6" />
+      <span>Mit Google anmelden</span>
+    </button>
+    
+    <div id="authError" class="mt-4 text-center text-red-500 text-sm"></div>
+  </div>
+</div>
+
+
+  <div id="mainApp" class="flex min-h-screen hidden">
 
   <!-- Ladebildschirm -->
   <div id="loader">
@@ -553,7 +602,7 @@
             </div>
         </div>
     </div>
-
+  </div>
 
   <!-- Scripte: Firebase & Logik -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -565,17 +614,108 @@
     // ==========================================================
 
     const GEMINI_API_KEY = "AIzaSyB3FT8CdN9WkNjfQ5vutbjLCEibGSl3nnQ";
+/***********************
+     * AUTHENTICATION
+     ***********************/
 
+    async function doGoogleLogin() {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        try {
+            await firebase.auth().signInWithPopup(provider);
+            showToast("✅ Erfolgreich mit Google angemeldet");
+        } catch (e) {
+            handleAuthError(e);
+        }
+    }
+
+    async function handleRegistration(event) {
+        event.preventDefault();
+        const name = document.getElementById('registerName').value;
+        const email = document.getElementById('registerEmail').value;
+        const password = document.getElementById('registerPassword').value;
+        try {
+            const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, password);
+            await userCredential.user.updateProfile({ displayName: name });
+            showToast("✅ Registrierung erfolgreich!");
+        } catch (e) {
+            handleAuthError(e);
+        }
+    }
+
+    async function handleLogin(event) {
+        event.preventDefault();
+        const email = document.getElementById('loginEmail').value;
+        const password = document.getElementById('loginPassword').value;
+        try {
+            await firebase.auth().signInWithEmailAndPassword(email, password);
+            showToast("✅ Anmeldung erfolgreich!");
+        } catch (e) {
+            handleAuthError(e);
+        }
+    }
+
+    function showPasswordReset() {
+        const email = prompt("Bitte gib deine E-Mail-Adresse ein, um dein Passwort zurückzusetzen:");
+        if (email) {
+            firebase.auth().sendPasswordResetEmail(email)
+                .then(() => alert("E-Mail zum Zurücksetzen des Passworts wurde gesendet."))
+                .catch(handleAuthError);
+        }
+    }
+
+    function handleAuthError(error) {
+        const errorElement = document.getElementById('authError');
+        let message = "Ein unbekannter Fehler ist aufgetreten.";
+        switch (error.code) {
+            case 'auth/email-already-in-use': message = "Diese E-Mail-Adresse wird bereits verwendet."; break;
+            case 'auth/weak-password': message = "Das Passwort ist zu schwach (mind. 6 Zeichen)."; break;
+            case 'auth/user-not-found': message = "Kein Account mit dieser E-Mail-Adresse gefunden."; break;
+            case 'auth/wrong-password': message = "Falsches Passwort."; break;
+            case 'auth/invalid-email': message = "Ungültige E-Mail-Adresse."; break;
+        }
+        errorElement.textContent = message;
+    }
+    
+    function setupAuthForms() {
+        document.getElementById('loginForm')?.addEventListener('submit', handleLogin);
+        document.getElementById('registerForm')?.addEventListener('submit', handleRegistration);
+        
+        const authToggle = document.getElementById('authToggle');
+        authToggle?.addEventListener('click', (e) => {
+            e.preventDefault();
+            const loginForm = document.getElementById('loginForm');
+            const registerForm = document.getElementById('registerForm');
+            if (loginForm.classList.contains('hidden')) {
+                loginForm.classList.remove('hidden');
+                registerForm.classList.add('hidden');
+                authToggle.textContent = 'Noch kein Account? Jetzt registrieren';
+            } else {
+                loginForm.classList.add('hidden');
+                registerForm.classList.remove('hidden');
+                authToggle.textContent = 'Bereits einen Account? Anmelden';
+            }
+        });
+    }
+    // Call setup function once the DOM is ready
+    document.addEventListener('DOMContentLoaded', setupAuthForms);
+
+
+    function logout() {
+        firebase.auth().signOut();
+    }
     // ----------------------------------------------------------
     //  1. KONFIGURATION & ZUSTAND
     // ----------------------------------------------------------
 
     const config = {
       firebase: {
-        apiKey: "5b3ce3597851110001cf624866907189b4974b88e5541b15dfed2e1603067f5b85cd6da44c68ee87", // Consider securing this
-        authDomain: "eierhuettentour.firebaseapp.com",
-        projectId: "eierhuettentour"
-      },
+    apiKey: "AIzaSyAu39z49KEJy9zso-etFIScmaFnWw8vhro", // <-- aus Assistent
+    authDomain: "eierhuettentour.firebaseapp.com",
+    projectId: "eierhuettentour",
+    storageBucket: "eierhuettentour.appspot.com",
+    messagingSenderId: "348272135205",
+    appId: "1:348272135205:web:f39a7d26d927fbf28dc3cc"
+  },
       map: {
         defaultCenter: [47.3, 11.4],
         defaultZoom: 13,
@@ -2644,7 +2784,7 @@
 
         init() {
             try {
-                firebase.initializeApp(config.firebase);
+               // firebase.initializeApp(config.firebase);
                 this.db = firebase.firestore();
                 this.loadHuts();
                 this.listenToWarnings();
@@ -3335,60 +3475,115 @@
         
     
 
-        // ----------------------------------------------------------
-    //  6. INITIALISIERUNG
-    // ----------------------------------------------------------
-    document.addEventListener('DOMContentLoaded', () => {
-        uiManager.setLoading(true);
-        uiManager.init(); // Handles i18n init now
-        mapManager.init(config.map.defaultCenter, config.map.defaultZoom);
-        firebaseManager.init();
-        userManager.init();
-
-                // ==========================================================
-        //  Automatische Aktualisierung bei Rückkehr zur App
         // ==========================================================
-        document.addEventListener('visibilitychange', () => {
-            // Prüfen, ob der Tab wieder sichtbar (aktiv) ist
-            if (document.visibilityState === 'visible') {
-                console.log("Tab wieder sichtbar. Aktualisiere Standort...");
+    //  6. INITIALISIERUNG (NEUE VERSION MIT LOGIN-CHECK)
+    // ==========================================================
+    document.addEventListener('DOMContentLoaded', () => {
+        
+        // A. Firebase zentral initialisieren
+        try {
+            firebase.initializeApp(config.firebase); // Nutzt die aktualisierte config aus Schritt 4
+            firebaseManager.db = firebase.firestore();
+        } catch(e) {
+            console.error("Firebase Init Fehler:", e);
+            const errorElement = document.getElementById('authError');
+            if (errorElement) errorElement.textContent = "Firebase Init Fehler: " + e.message;
+            // Stoppen, wenn Firebase fehlschlägt
+            return;
+        }
+
+        // B. Login-Formulare aktivieren
+        setupAuthForms(); // (Kopiert aus Assistent)
+
+        // C. Auth-Status-Listener (Der "Gatekeeper")
+        firebase.auth().onAuthStateChanged(user => {
+            if (user) {
+                // ---- BENUTZER IST EINGELOGGT ----
+                console.log("User logged in:", user.email);
                 
-                userManager.getCurrentPosition(true).then(pos => { // pos ist ein L.latLng Objekt
-                    
-                    // NEU: Marker-Position sofort aktualisieren.
-                    // Wir erzwingen ein Update, falls der 'watchPosition'
-                    // Dienst noch nicht wieder angesprungen ist.
-                    // Wir verwenden Standardwerte für Genauigkeit (20) und Peilung (0),
-                    // da 'getCurrentPosition' diese nicht liefert.
-                    if (mapManager.userMarker) {
-                         mapManager.updateUserMarker(pos, 20, 0); 
-                    }
+                // 1. UI umschalten
+                document.getElementById("loginScreen").classList.add("hidden");
+                document.getElementById("mainApp").classList.remove("hidden");
 
-                    // 1. Zentriere die Karte neu NUR, wenn der 'Follow'-Modus
-                    //    aktiv ist oder die Navigation läuft.
-                    if (appState.isFollowing || appState.isNavigating) {
-                        if (mapManager.map) {
-                            mapManager.map.panTo(pos);
-                        }
-                    }
-                    
-                    // 2. Lade aktuelles Wetter für den neuen Standort
-                    weatherManager.fetchWeather(pos.lat, pos.lng);
+                // 2. Einen Logout-Button zum Profil-Tab hinzufügen
+                const profileTab = document.getElementById('tab-nutzer');
+                if (profileTab && !document.getElementById('logoutBtn')) { // Prüfen, ob schon vorhanden
+                    const logoutBtn = document.createElement('button');
+                    logoutBtn.id = 'logoutBtn';
+                    logoutBtn.innerHTML = 'Logout';
+                    logoutBtn.className = 'w-full bg-gray-500 hover:bg-gray-600 text-white p-2 rounded-lg text-sm font-medium mt-4';
+                    logoutBtn.onclick = () => firebase.auth().signOut();
+                    profileTab.appendChild(logoutBtn);
+                }
+                
+                // 3. Die RadlMap-App initialisieren
+                // (Der ursprüngliche Inhalt von DOMContentLoaded)
+                uiManager.setLoading(true);
+                uiManager.init();
+                mapManager.init(config.map.defaultCenter, config.map.defaultZoom);
+                
+                // firebaseManager.init() wird jetzt *ohne* initializeApp aufgerufen
+                // (Wir haben die Funktion in Schritt 4 angepasst)
+                firebaseManager.init(); 
+                
+                userManager.init();
 
-                    // 3. Aktualisiere die Position im Raum (falls in einem)
-                    if (appState.currentRoom.id) {
-                        firebaseManager.updateUserPositionInRoom(pos);
+                // (Der Rest der ursprünglichen DOMContentLoaded-Logik)
+                document.addEventListener('visibilitychange', () => {
+                    // Prüfen, ob der Tab wieder sichtbar (aktiv) ist
+                    if (document.visibilityState === 'visible') {
+                        console.log("Tab wieder sichtbar. Aktualisiere Standort...");
+                        
+                        userManager.getCurrentPosition(true).then(pos => { // pos ist ein L.latLng Objekt
+                            
+                            if (mapManager.userMarker) {
+                                 mapManager.updateUserMarker(pos, 20, 0); 
+                            }
+
+                            if (appState.isFollowing || appState.isNavigating) {
+                                if (mapManager.map) {
+                                    mapManager.map.panTo(pos);
+                                }
+                            }
+                            
+                            weatherManager.fetchWeather(pos.lat, pos.lng);
+
+                            if (appState.currentRoom.id) {
+                                firebaseManager.updateUserPositionInRoom(pos);
+                            }
+                            
+                        }).catch(err => {
+                            console.warn("Position beim Reaktivieren des Tabs nicht verfügbar:", err);
+                        });
                     }
-                    
-                }).catch(err => {
-                    console.warn("Position beim Reaktivieren des Tabs nicht verfügbar:", err);
                 });
                 
-                // 5. Firebase (Hütten, Raum, Warnungen) sollte sich 
-                // automatisch neu verbinden, falls die Verbindung getrennt wurde.
+                const urlParams = new URLSearchParams(window.location.search);
+                const roomIdFromUrl = urlParams.get('room');
+                if (roomIdFromUrl) {
+                    setTimeout(() => {
+                         firebaseManager.joinRoom(roomIdFromUrl);
+                         window.history.replaceState({}, document.title, window.location.pathname);
+                    }, 1500);
+                }
+                 else {
+                    firebaseManager.rejoinLastRoom();
+                }
+
+            } else {
+                // ---- BENUTZER IST AUSGELOGGT ----
+                console.log("User logged out.");
+                
+                // 1. UI umschalten
+                document.getElementById("loginScreen").classList.remove("hidden");
+                document.getElementById("mainApp").classList.add("hidden");
+
+                // 2. Lade-Overlay der Karte ausblenden
+                uiManager.setLoading(false);
             }
         });
 
+    });
         // ==========================================================
         //  Ende des Blocks
         // ==========================================================
