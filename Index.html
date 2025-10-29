@@ -459,6 +459,9 @@
             <div id="elevation-chart-container" class="hidden w-full h-32 mt-2">
                 <canvas id="elevation-chart"></canvas>
             </div>
+          <button id="save-tour-btn" onclick="uiManager.showSaveTourPopup()" class="w-full bg-indigo-500 text-white p-2 rounded-lg text-sm font-medium hover:bg-indigo-600 transition">
+          💾 Aktuelle Tour speichern
+          </button>
 
             <button id="summarize-tour-btn" onclick="geminiManager.summarizeTour()" class="w-full bg-purple-500 text-white p-2 rounded-lg text-sm font-medium hover:bg-purple-600 transition" data-i18n="tour.aiSummaryBtn">
                 ✨ Tour-Zusammenfassung
@@ -501,11 +504,11 @@
       <section id="tab-nutzer" class="tab-panel hidden space-y-4">
           <h3 class="font-bold" data-i18n="profile.title">👤 Mein Profil</h3>
           <div>
-              <label class="text-sm font-medium" data-i18n="profile.nameLabel">Dein Name</label>
-              <div class="flex gap-2 mt-1">
-                  <input id="usernameInput" type="text" class="flex-1 p-2 border border-[var(--border-color)] rounded-lg bg-transparent" data-i18n-placeholder="profile.namePlaceholder" placeholder="Dein Anzeigename">
-                  <button onclick="userManager.saveUsername()" class="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium" data-i18n="general.save">Speichern</button>
-              </div>
+    <label class="text-sm font-medium" data-i18n="profile.nameLabel">Dein Name</label>
+    <div id="usernameDisplay" class="flex-1 p-3 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 mt-1 font-semibold">
+        Lade Name...
+    </div>
+    <p class="text-xs text-gray-500 mt-1">Dein Google Account-Name wird für Räume und Nachrichten verwendet.</p>
           </div>
            <button onclick="userManager.sendSOS()" class="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-3 rounded-lg font-bold shadow-lg transition" data-i18n="profile.sosBtn">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
@@ -515,11 +518,11 @@
 
       <!-- NEU: Statistik Tab -->
       <section id="tab-stats" class="tab-panel hidden space-y-4">
-          <h3 class="font-bold" data-i18n="stats.title">📊 Meine Statistiken</h3>
-          <p class="text-xs text-gray-500 -mt-3" data-i18n="stats.desc">Hier sind deine gespeicherten Touren.</p>
-          <div id="stats-list" class="space-y-3">
-              <p data-i18n="stats.loading">Lade Statistiken...</p>
-          </div>
+    <h3 class="font-bold">📊 Meine gespeicherten Touren</h3>
+    <p class="text-xs text-gray-500 -mt-3">Hier sind deine gespeicherten Touren.</p>
+    <div id="stats-list" class="space-y-3">
+        <p data-i18n="stats.loading">Lade Touren...</p>
+    </div>
       </section>
 
       <!-- Einstellungen Tab -->
@@ -1689,7 +1692,7 @@
                     document.getElementById(tabId).classList.remove('hidden');
 
                     if (tabId === 'tab-stats') {
-                        firebaseManager.loadTourLogs();
+                      firebaseManager.loadUserTours(); // Neue Funktion aufrufen
                     }
                 });
             });
@@ -1945,7 +1948,13 @@
                 // Fallback for older browsers or insecure contexts
                 this.fallbackCopyTextToClipboard(inviteLink);
             }
-        }
+        },
+      showSaveTourPopup() {
+    const tourName = prompt("Wie möchtest du diese Tour nennen?", "Meine Tour");
+    if (tourName && tourName.trim() !== "") {
+        firebaseManager.saveUserTour(tourName.trim());
+    }
+}
     };
 
     // ----------------------------------------------------------
@@ -2415,14 +2424,22 @@
         watchId: null,
         lastPosition: null,
         lastBearing: 0,
-        userId: localStorage.getItem('radlMapUserId') || `user_${Math.random().toString(36).substring(2, 9)}`,
+        userId: uid,
+      displayName: 'Anonymer Nutzer', // NEU: Standardwert hinzufügen
         warnedAbout: new Set(),
 
-        init() {
-            localStorage.setItem('radlMapUserId', this.userId);
-            const savedName = localStorage.getItem('username');
-            if(savedName) document.getElementById('usernameInput').value = savedName;
+        init(uid, displayName) { // Empfängt jetzt uid UND displayName
+    // NEU: Google-Namen in das neue Feld schreiben
+    const nameDisplay = document.getElementById('usernameDisplay');
+    if(nameDisplay) {
+        nameDisplay.textContent = displayName || 'Anonymer Nutzer'; // Fallback
+    }
 
+    // NEU: Den Namen im State speichern, damit andere Funktionen ihn nutzen können
+    this.displayName = displayName || 'Anonymer Nutzer';
+    this.userId = uid; // WICHTIG: userId hier setzen
+
+    this.getCurrentPosition(true).then(pos => {
             this.getCurrentPosition(true).then(pos => {
                 mapManager.updateUserMarker(pos, 20, 0);
                 mapManager.map.setView(pos, config.map.defaultZoom);
@@ -3117,8 +3134,8 @@
 
         updateUserPositionInRoom(pos) {
             if(!appState.currentRoom.id) return;
-            const name = localStorage.getItem('username') || 'Anonym'; // Use 'Anonym' as default
-            const colors = ['#e11d48', '#2563eb', '#16a34a', '#f97316', '#9333ea'];
+            const name = this.displayName; // Verwendet jetzt den gespeicherten Google-Namen
+          const colors = ['#e11d48', '#2563eb', '#16a34a', '#f97316', '#9333ea'];
             // Simple hash function to get a consistent color index
             let hash = 0;
             for (let i = 0; i < userManager.userId.length; i++) {
@@ -3145,8 +3162,8 @@
         setGuide() {
             if(!appState.currentRoom.id) return;
             let newGuideId = userManager.userId;
-            let newGuideName = localStorage.getItem('username') || 'Anonym';
-
+            let newGuideName = userManager.displayName; // Verwendet jetzt den gespeicherten Google-Namen
+          
             if (appState.currentRoom.guideId === userManager.userId) { // If self is guide, relinquish role
                 newGuideId = null;
                 newGuideName = null;
@@ -3239,8 +3256,130 @@
                  // Handle error, maybe show a toast
             });
         },
+      // NEU: Speichert die aktuelle Tour für den eingeloggten Nutzer
+    saveUserTour(tourName) {
+        if (!userManager.userId) {
+            uiManager.showToast("Fehler: Nicht eingeloggt.");
+            return;
+        }
+        if (appState.selectedHuts.length === 0) {
+            uiManager.showToast("Bitte wähle zuerst Stopps für die Tour.");
+            return;
+        }
 
-        saveTourLog(routeData, selectedHuts, visitedStops) {
+        const hutIds = appState.selectedHuts.map(hut => hut.id);
+
+        const tourData = {
+            userId: userManager.userId,
+            name: tourName,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            hutIds: hutIds, // Array von Hut-IDs
+            hutNames: appState.selectedHuts.map(hut => hut.name) // Zur Vorschau
+        };
+
+        this.db.collection('user_tours').add(tourData)
+            .then(() => {
+                uiManager.showToast("Tour '" + tourName + "' gespeichert!");
+            })
+            .catch(err => {
+                console.error("Fehler beim Speichern der Tour:", err);
+                uiManager.showToast("Fehler beim Speichern.");
+            });
+    },
+
+    // NEU: Lädt die Touren des Nutzers und zeigt sie im Statistik-Tab an
+    async loadUserTours() {
+        const statsListEl = document.getElementById('stats-list');
+        if (!statsListEl || !userManager.userId) {
+            if (statsListEl) statsListEl.innerHTML = `<p>Bitte einloggen, um Touren zu sehen.</p>`;
+            return;
+        }
+
+        statsListEl.innerHTML = `<p>${i18nManager.getString('stats.loading')}</p>`;
+
+        try {
+            const snapshot = await this.db.collection('user_tours')
+                .where('userId', '==', userManager.userId)
+                .orderBy('createdAt', 'desc')
+                .get();
+
+            if (snapshot.empty) {
+                statsListEl.innerHTML = `<p>Du hast noch keine Touren gespeichert.</p>`;
+                return;
+            }
+
+            statsListEl.innerHTML = snapshot.docs.map(doc => {
+                const tour = doc.data();
+                const tourId = doc.id;
+                const date = tour.createdAt.toDate().toLocaleDateString(appState.currentLang, { day: '2-digit', month: '2-digit' });
+
+                return `
+                    <div class="p-3 rounded-lg bg-gray-100 dark:bg-gray-700 space-y-2">
+                        <div class="flex justify-between items-center">
+                            <span class="font-semibold">${tour.name} <span class="text-xs text-gray-500">(${date})</span></span>
+                            <button onclick="firebaseManager.deleteUserTour('${tourId}')" class="p-1 text-red-500 hover:text-red-700">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">${tour.hutNames.join(' → ')}</p>
+                        <button onclick="firebaseManager.loadTourByIds(['${tour.hutIds.join("','")}'])" class="w-full bg-green-500 text-white p-2 rounded-lg text-sm font-medium hover:bg-green-600 transition">
+                            Tour laden
+                        </button>
+                    </div>
+                `;
+            }).join('');
+
+        } catch (error) {
+            console.error("Fehler beim Laden der Touren:", error);
+            statsListEl.innerHTML = `<p>Fehler beim Laden der Touren.</p>`;
+        }
+    },
+
+    // NEU: Lädt eine gespeicherte Tour in den aktuellen Status
+    loadTourByIds(hutIds) {
+        // Finde die vollen Hut-Objekte aus dem globalen appState.allHuts
+        const loadedHuts = hutIds.map(id => 
+            appState.allHuts.find(hut => hut.id === id)
+        ).filter(Boolean); // .filter(Boolean) entfernt alle "undefined", falls eine Hütte gelöscht wurde
+
+        if (loadedHuts.length !== hutIds.length) {
+            uiManager.showToast("Einige Stopps dieser Tour existieren nicht mehr.");
+        }
+
+        if (loadedHuts.length > 0) {
+            appState.selectedHuts = loadedHuts;
+            uiManager.updateSelectedList();
+            routeManager.recalculatePreviewRoute();
+            uiManager.showToast("Tour geladen!");
+
+            // Zum Tour-Tab wechseln und Sidebar schließen (optional, aber nützlich)
+            document.querySelector('.tab-btn[data-tab="tab-tour"]').click();
+            if (appState.isSidebarOpen) {
+                uiManager.toggleSidebar();
+            }
+        } else {
+            uiManager.showToast("Konnte Tour nicht laden.");
+        }
+    },
+
+    // NEU: Löscht eine gespeicherte Tour
+    deleteUserTour(tourId) {
+        if (!tourId || !confirm("Möchtest du diese gespeicherte Tour wirklich löschen?")) {
+            return;
+        }
+
+        this.db.collection('user_tours').doc(tourId).delete()
+            .then(() => {
+                uiManager.showToast("Tour gelöscht.");
+                this.loadUserTours(); // Liste neu laden
+            })
+            .catch(err => {
+                console.error("Fehler beim Löschen der Tour:", err);
+                uiManager.showToast("Fehler beim Löschen.");
+            });
+    },
+
+       saveTourLog(routeData, selectedHuts, visitedStops) {
             if (!routeData || !userManager.userId) {
                 console.warn("Cannot save tour log: Missing route data or user ID.");
                 return;
@@ -3497,8 +3636,8 @@
 
         // C. UI & Übersetzungen initialisieren (WICHTIG: VOR dem Login-Check)
         // Dies behebt den "weißen Bildschirm", da i18nManager jetzt verfügbar ist.
-        uiManager.init(); 
-        
+        userManager.init(user.uid, user.displayName); // Firebase-UID und Anzeigename übergeben
+      
         // D. Ladebildschirm anzeigen (jetzt sicher, da i18nManager initialisiert ist)
         uiManager.setLoading(true, i18nManager.getString('loader.text'));
 
