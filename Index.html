@@ -3727,6 +3727,145 @@
             }
         });
     });
+
+
+    // --- In-App Konsole (Version 2: Fängt alle Fehler) ---
+(function() {
+  // 👉 hier kannst du die Konsole global aktivieren/deaktivieren
+  const ENABLE_APP_CONSOLE = true;  // auf false setzen = deaktiviert
+
+  if (!ENABLE_APP_CONSOLE) return; // komplett abschalten
+
+  const consoleDiv = document.createElement("div");
+  consoleDiv.id = "appConsole";
+  consoleDiv.style.cssText = `
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-height: 200px;
+    overflow-y: auto;          /* Scrollbalken aktiv */
+    background: rgba(0,0,0,0.85);
+    color: #0f0;
+    font-family: monospace;
+    font-size: 12px;
+    padding: 5px;
+    z-index: 9999;
+    display: none;             /* startet versteckt */
+    box-sizing: border-box;
+    user-select: text;      /* Markieren/Kopieren erlaubt */
+    cursor: text;           /* Cursor als Textanzeige */
+  `;
+  document.body.appendChild(consoleDiv);
+
+  // Toggle-Button
+  const toggleBtn = document.createElement("button");
+  toggleBtn.textContent = "📝 Logs";
+  toggleBtn.style.cssText = `
+    position: fixed;
+    bottom: 210px;
+    right: 10px;
+    padding: 5px 10px;
+    background: #222;
+    color: white;
+    border: 1px solid #555;
+    border-radius: 6px;
+    font-size: 14px;
+    z-index: 10000;
+    cursor: pointer;
+  `;
+  document.body.appendChild(toggleBtn);
+
+  let consoleVisible = false;
+  toggleBtn.onclick = () => {
+    consoleVisible = !consoleVisible;
+    consoleDiv.style.display = consoleVisible ? "block" : "none";
+    toggleBtn.textContent = consoleVisible ? "📕 Logs schließen" : "📝 Logs";
+  };
+
+  /**
+   * Formatiert Argumente für die Konsolenausgabe.
+   * Error-Objekte werden mit ihrem Stack Trace angezeigt.
+   */
+  function formatArgs(args) {
+    return args.map(a => {
+      if (a instanceof Error) {
+        // Wenn es ein Error-Objekt ist, zeige den Stack!
+        return a.stack || a.message;
+      }
+      if (typeof a === "object" && a !== null) {
+        try {
+          return JSON.stringify(a, null, 2); // Objekte schön formatieren
+        } catch (e) {
+          return "[Unserializable Object]";
+        }
+      }
+      return String(a); // Normale Strings, Zahlen etc.
+    }).join(" ");
+  }
+
+  function printToConsole(type, args) {
+    const msg = document.createElement("div");
+    msg.style.whiteSpace = "pre-wrap"; // Wichtig für Zeilenumbrüche (z.B. im Stack Trace)
+    msg.style.wordBreak = "break-all"; // Bricht lange Zeilen um
+    msg.style.padding = "2px 0";
+    msg.style.borderBottom = "1px solid #333";
+    msg.style.color =
+      type === "error" ? "#ff8a8a" : // Helleres Rot
+      type === "warn"  ? "#f6e05e" : // Gelb
+      "#50fa7b"; // Helleres Grün
+
+    // Verwende die neue formatArgs-Funktion
+    msg.textContent = `[${type.toUpperCase()}] ` + formatArgs(args);
+    consoleDiv.appendChild(msg);
+
+    // automatisch nach unten scrollen
+    consoleDiv.scrollTop = consoleDiv.scrollHeight;
+  }
+
+  // Original-Methoden sichern
+  const origLog = console.log;
+  const origWarn = console.warn;
+  const origError = console.error;
+
+  console.log = function(...args) {
+    origLog.apply(console, args); // An echte Konsole weiterleiten
+    printToConsole("log", args);
+  };
+  console.warn = function(...args) {
+    origWarn.apply(console, args); // An echte Konsole weiterleiten
+    printToConsole("warn", args);
+  };
+  console.error = function(...args) {
+    origError.apply(console, args); // An echte Konsole weiterleiten
+    printToConsole("error", args);
+  };
+
+  console.log("🟢 In-App Konsole gestartet (fängt jetzt alle Fehler).");
+
+  // 👉 Fängt normale JavaScript-Fehler ab (AKTIVIERT)
+  window.addEventListener("error", function (event) {
+    // Formatiere die Fehlermeldung mit Dateiname und Zeilennummer
+    const filename = event.filename.substring(event.filename.lastIndexOf('/') + 1);
+    const errorMsg = `Uncaught Error: ${event.message}\n@ ${filename}:${event.lineno}:${event.colno}`;
+    
+    // Sende den formatierten String an unser `console.error`
+    console.error(errorMsg); 
+  });
+
+  // 👉 Fängt Promise-Fehler (async/await) ab (AKTIVIERT)
+  window.addEventListener("unhandledrejection", function (event) {
+    let reason = event.reason;
+    if (reason instanceof Error) {
+      // Wenn der Grund ein Error ist, nutze den Stack Trace
+      reason = reason.stack || reason.message;
+    } else {
+      reason = JSON.stringify(reason);
+    }
+    
+    console.error(`Unhandled Promise Rejection:\n${reason}`);
+  });
+})();
   </script>
 </body>
               </html>
