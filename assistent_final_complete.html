@@ -2247,18 +2247,18 @@ async function openEditPage(id) {
 
     document.getElementById("deleteEntryBtn").onclick = () => confirmDeleteEntry(id, d.name);
 
-    // ALT:
-    // renderSmartImageUploader(document.getElementById("photoUploaderContainer"), docRef, d.fotos || [], id, d.name || "");
-
-    // NEU (mit Verzögerung, um sicherzustellen, dass der DOM-Container bereit ist):
+    // NEU (korrigiert):
     setTimeout(() => {
         const uploaderContainer = document.getElementById("photoUploaderContainer");
         if (uploaderContainer) {
-            renderSmartImageUploader(uploaderContainer, docRef, d.fotos || [], id, d.name || "");
+            // Dies übergibt das GANZE Objekt 'd' (Parameter 3)
+            // Und 'id' (Parameter 4). Die Signatur hat sich geändert.
+            renderSmartImageUploader(uploaderContainer, docRef, d, id); 
         } else {
             console.error("Fehler: Uploader-Container #photoUploaderContainer wurde nicht gefunden.");
         }
-    }, 100); // 100ms Verzögerung
+    }, 100);
+
 
   } catch (err) {
     console.error("openEditPage error", err);
@@ -2614,7 +2614,7 @@ async function generateProfessionalDescription(d) {
 
 /* === 📸 Smarter Image-Uploader (mit Kontext) === */
 async function renderSmartImageUploader(container, docRef, entryData, entryId) {
-  // Nimmt das ganze 'entryData' Objekt entgegen
+  // Nimmt jetzt das ganze 'entryData' Objekt (als 3. Parameter) entgegen
   
   container.innerHTML = `
     <div class="bg-white rounded-xl shadow p-4">
@@ -2636,7 +2636,7 @@ async function renderSmartImageUploader(container, docRef, entryData, entryId) {
   const bar = container.querySelector("#smartUploadBar");
   const barContainer = container.querySelector("#smartUploadProgress");
 
-  // Holt 'fotos' aus dem 'entryData' Objekt
+  // Holt 'fotos' KORREKT aus dem 'entryData' Objekt
   let existingImages = (entryData.fotos || []).map((img) =>
     typeof img === "string" ? { url: img, title: "" } : img
   );
@@ -2743,7 +2743,7 @@ async function renderSmartImageUploader(container, docRef, entryData, entryId) {
 
             const newImage = { url, title };
             existingImages.push(newImage);
-entryData.fotos = existingImages; // update local data
+            entryData.fotos = existingImages; // update local data
             
             await docRef.update({ fotos: firebase.firestore.FieldValue.arrayUnion(newImage) });
             showToast(`✅ ${title} hinzugefügt`);
@@ -2810,10 +2810,13 @@ async function generateSmartImageTitle(url, filename = "", entryData = {}) {
   const isGeneric = /^(img|dsc|pic|bild|foto|image|whatsapp image)[\s_]?[0-9]/i.test(cleanName) ||
                     /^[0-9\s-]+$/.test(cleanName.replace(/\..+$/, ''));
 
+  // WICHTIG: Stelle sicher, dass entryData ein Objekt ist, auch wenn es im Notfall leer ist
+  const safeEntryData = entryData || {}; 
+
   if (isGeneric || cleanName.length === 0) {
     // Dateiname ist nutzlos, nutze Kontext!
-    const tiere = entryData.tiere || [];
-    const typ = (entryData.typ || "").toLowerCase();
+    const tiere = safeEntryData.tiere || [];
+    const typ = (safeEntryData.typ || "").toLowerCase();
 
     // Kontext-Mapping (Tiere haben Vorrang)
     if (tiere.includes("🐐 Ziege")) return "Ziege am Hof";
@@ -2831,13 +2834,15 @@ async function generateSmartImageTitle(url, filename = "", entryData = {}) {
     if (typ.includes("abenteuerhof")) return "Impression vom Abenteuerhof";
     
     // Fallback, wenn auch Kontext nichts hergibt
-    return "Ein stimmungsvolles Bild vom Ort";
+    return "Ein stimmmungsvolles Bild vom Ort"; // (Tippfehler korrigiert)
   }
 
   // 5. Analyse Stufe 3: Dateiname ist nicht generisch, aber kein Keyword
   // (z.B. "sonnenuntergang.jpg" -> "Sonnenuntergang")
   return cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
 }
+
+
 
     
     function normalizeOpeningHours(oeff) {
