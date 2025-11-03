@@ -2109,6 +2109,38 @@ async function openEditPage(id) {
     if (!docSnap.exists) return showToast("❌ Eintrag nicht gefunden");
     const d = docSnap.data();
 
+    // --- NEU: Premium-Status prüfen ---
+    // Wir holen die Betreiber-Daten, um den Premium-Status zu prüfen
+    const betreiberDoc = await db.collection("betreiber").doc(currentUser.uid).get();
+    const isPremium = betreiberDoc.data()?.premium === true;
+
+    // --- NEU: HTML für Smarte Helfer vorbereiten ---
+    // Dieser HTML-Block wird nur erstellt, wenn der Nutzer Premium ist.
+    let smarteHelferHtml = '';
+    if (isPremium) {
+      smarteHelferHtml = `
+        <div class="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-lg">
+            <h5 class="font-bold text-green-800">✨ Smarte Helfer (Premium)</h5>
+            <p class="text-sm text-green-700 mb-3">Lasse die KI die Arbeit für dich erledigen.</p>
+            <div class="flex gap-2">
+                <button id="generateDescBtn" class="flex-1 px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition">KI-Beschreibung</button>
+                <button onclick="suggestTagsForEdit('${id}')" class="flex-1 px-3 py-2 bg-blue-500 text-white rounded text-sm hover:bg-blue-600">KI-Tags</button>
+            </div>
+        </div>
+      `;
+    } else {
+      // Optional: Zeige einen "Upgrade"-Hinweis für Nicht-Premium-Nutzer
+      smarteHelferHtml = `
+        <div class="bg-gray-50 border-l-4 border-gray-300 p-4 rounded-r-lg text-center">
+            <h5 class="font-bold text-gray-700">✨ Smarte Helfer freischalten</h5>
+            <p class="text-sm text-gray-600 mb-3">Erhalte KI-Vorschläge für Beschreibungen, Tags & Bilder als Unterstützer.</p>
+            <button onclick="navigateTo('btnDashboard', showPremiumUpgrade)" class="px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition">
+              🌟 Jetzt Unterstützer werden
+            </button>
+        </div>
+      `;
+    }
+
     const container = document.getElementById("question-area");
     container.innerHTML = `
       <div class="max-w-5xl mx-auto">
@@ -2127,14 +2159,7 @@ async function openEditPage(id) {
                 <input id="editName" value="${escapeAttr(d.name || "")}" class="w-full border rounded p-2 mt-1">
               </label>
               
-              <div class="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-lg">
-                  <h5 class="font-bold text-green-800">✨ Smarte Helfer</h5>
-                  <p class="text-sm text-green-700 mb-3">Lasse die KI die Arbeit für dich erledigen.</p>
-                  <div class="flex gap-2">
-                      <button id="generateDescBtn" class="flex-1 px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition">KI-Beschreibung</button>
-                      <button onclick="suggestTagsForEdit('${id}')" class="flex-1 px-3 py-2 bg-blue-500 text-white rounded text-sm hover:bg-blue-600">KI-Tags</button>
-                  </div>
-              </div>
+              ${smarteHelferHtml}
 
               <label class="block">
                 <span class="text-gray-700">Beschreibung</span>
@@ -2220,13 +2245,16 @@ async function openEditPage(id) {
       if (d.beschreibung) quill.root.innerHTML = d.beschreibung;
     }, 120);
 
-    document.getElementById("generateDescBtn").onclick = async () => {
-      const previewText = await generateProfessionalDescription(d);
-      const confirmAdd = confirm("Vorschlag der KI-Beschreibung:\n\n" + previewText + "\n\n➡️ Möchtest du sie übernehmen?");
-      if (confirmAdd && quill) {
-        quill.root.innerHTML = `<p>${previewText.replace(/\n/g, '</p><p>')}</p>`;
-      }
-    };
+    // --- NEU: Event-Listener nur hinzufügen, wenn der Button existiert (also Premium) ---
+    if (isPremium) {
+      document.getElementById("generateDescBtn").onclick = async () => {
+        const previewText = await generateProfessionalDescription(d);
+        const confirmAdd = confirm("Vorschlag der KI-Beschreibung:\n\n" + previewText + "\n\n➡️ Möchtest du sie übernehmen?");
+        if (confirmAdd && quill) {
+          quill.root.innerHTML = `<p>${previewText.replace(/\n/g, '</p><p>')}</p>`;
+        }
+      };
+    }
 
     document.getElementById("saveEntryBtn").onclick = async () => {
       const beschreibung = quill?.root.innerHTML || "";
@@ -2253,7 +2281,8 @@ async function openEditPage(id) {
         if (uploaderContainer) {
             // Dies übergibt das GANZE Objekt 'd' (Parameter 3)
             // Und 'id' (Parameter 4). Die Signatur hat sich geändert.
-            renderSmartImageUploader(uploaderContainer, docRef, d, id); 
+            // WICHTIG: Wir übergeben auch 'isPremium', damit der Uploader den KI-Button für Titel steuern kann.
+            renderSmartImageUploader(uploaderContainer, docRef, d, id, isPremium); 
         } else {
             console.error("Fehler: Uploader-Container #photoUploaderContainer wurde nicht gefunden.");
         }
@@ -2265,6 +2294,7 @@ async function openEditPage(id) {
     showToast("❌ Fehler: " + err.message);
   }
 }
+
 
 
 
@@ -2611,10 +2641,9 @@ async function generateProfessionalDescription(d) {
                                           
 }
     
-
-/* === 📸 Smarter Image-Uploader (mit Kontext) === */
-async function renderSmartImageUploader(container, docRef, entryData, entryId) {
-  // Nimmt jetzt das ganze 'entryData' Objekt (als 3. Parameter) entgegen
+/* === 📸 Smarter Image-Uploader (mit Kontext & Premium-Check) === */
+async function renderSmartImageUploader(container, docRef, entryData, entryId, isPremium) {
+  // Nimmt jetzt 'isPremium' als 5. Parameter entgegen
   
   container.innerHTML = `
     <div class="bg-white rounded-xl shadow p-4">
@@ -2636,7 +2665,6 @@ async function renderSmartImageUploader(container, docRef, entryData, entryId) {
   const bar = container.querySelector("#smartUploadBar");
   const barContainer = container.querySelector("#smartUploadProgress");
 
-  // Holt 'fotos' KORREKT aus dem 'entryData' Objekt
   let existingImages = (entryData.fotos || []).map((img) =>
     typeof img === "string" ? { url: img, title: "" } : img
   );
@@ -2651,11 +2679,17 @@ async function renderSmartImageUploader(container, docRef, entryData, entryId) {
       const card = document.createElement("div");
       card.className =
         "relative group w-32 h-40 border rounded overflow-hidden bg-gray-50 p-2 flex flex-col items-center shadow-sm";
+      
+      // NEU: KI-Button nur für Premium anzeigen
+      const kiButtonHtml = isPremium ? 
+        `<button class="kiBtn text-xs bg-blue-600 text-white rounded px-2 py-0.5 hover:bg-blue-700">🪄 KI</button>` :
+        ''; // Leer, wenn kein Premium
+
       card.innerHTML = `
         <img src="${img.url}" class="object-cover w-full h-24 rounded mb-2">
         <input data-idx="${idx}" class="imageTitleInput w-full text-xs border rounded p-1 text-center" value="${img.title || ""}" placeholder="Titel...">
         <div class="flex justify-between gap-1 mt-1">
-          <button class="kiBtn text-xs bg-blue-600 text-white rounded px-2 py-0.5 hover:bg-blue-700">🪄 KI</button>
+          ${kiButtonHtml}
           <button class="removeBtn text-xs bg-red-600 text-white rounded px-2 py-0.5 hover:bg-red-700">✕</button>
         </div>
       `;
@@ -2666,7 +2700,7 @@ async function renderSmartImageUploader(container, docRef, entryData, entryId) {
 
       card.querySelector(".imageTitleInput").addEventListener("input", (e) => {
         existingImages[idx].title = e.target.value.trim();
-        entryData.fotos = existingImages; // update local data
+        entryData.fotos = existingImages;
         docRef.update({ fotos: existingImages });
       });
       
@@ -2674,26 +2708,27 @@ async function renderSmartImageUploader(container, docRef, entryData, entryId) {
         e.stopPropagation();
       });
 
-      // KI-Button
-      card.querySelector(".kiBtn").onclick = async () => {
-        const urlParts = (img.url || "").split('/');
-        const pseudoFilename = urlParts[urlParts.length - 1] || "";
-        
-        // Übergibt den Kontext 'entryData' an die KI-Funktion
-        const suggestion = await generateSmartImageTitle(img.url, pseudoFilename, entryData);
-        
-        existingImages[idx].title = suggestion;
-        entryData.fotos = existingImages; // update local data
-        card.querySelector(".imageTitleInput").value = suggestion;
-        await docRef.update({ fotos: existingImages });
-        showToast("🧠 KI-Titel aktualisiert");
-      };
+      // NEU: KI-Button-Listener nur hinzufügen, wenn der Button existiert
+      if (isPremium) {
+        card.querySelector(".kiBtn").onclick = async () => {
+          const urlParts = (img.url || "").split('/');
+          const pseudoFilename = urlParts[urlParts.length - 1] || "";
+          
+          const suggestion = await generateSmartImageTitle(img.url, pseudoFilename, entryData);
+          
+          existingImages[idx].title = suggestion;
+          entryData.fotos = existingImages;
+          card.querySelector(".imageTitleInput").value = suggestion;
+          await docRef.update({ fotos: existingImages });
+          showToast("🧠 KI-Titel aktualisiert");
+        };
+      }
 
       // Entfernen
       card.querySelector(".removeBtn").onclick = async () => {
         if (!confirm("Bild wirklich entfernen?")) return;
         existingImages.splice(idx, 1);
-        entryData.fotos = existingImages; // update local data
+        entryData.fotos = existingImages;
         await docRef.update({ fotos: existingImages });
         renderExisting();
       };
@@ -2724,6 +2759,13 @@ async function renderSmartImageUploader(container, docRef, entryData, entryId) {
     barContainer.classList.remove("hidden");
 
     for (let i = 0; i < list.length; i++) {
+        // --- NEU: FOTO-LIMIT PRÜFEN ---
+        const fotoLimit = isPremium ? 10 : 3; // z.B. 10 für Premium, 3 für Standard
+        if (existingImages.length >= fotoLimit) {
+            showToast(`❌ Limit erreicht (${fotoLimit} Fotos). Werde Unterstützer für mehr!`, 4000);
+            break; // Stoppt die Upload-Schleife
+        }
+        
         const file = list[i];
         bar.style.width = `${((i + 1) / list.length) * 100}%`;
         const formData = new FormData();
@@ -2738,12 +2780,20 @@ async function renderSmartImageUploader(container, docRef, entryData, entryId) {
             if(!data.success) throw new Error(data.error.message);
             
             const url = data.data.url;
-            // Übergibt den Kontext 'entryData' an die KI-Funktion
-            const title = await generateSmartImageTitle(url, file.name, entryData);
+            
+            // NEU: KI-Titel nur für Premium, sonst Standard-Titel (oder leer)
+            let title = "";
+            if (isPremium) {
+                title = await generateSmartImageTitle(url, file.name, entryData);
+            } else {
+                // Standard-Nutzer bekommen einen einfachen Titel (oder einen leeren)
+                title = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
+                title = title.charAt(0).toUpperCase() + title.slice(1);
+            }
 
             const newImage = { url, title };
             existingImages.push(newImage);
-            entryData.fotos = existingImages; // update local data
+            entryData.fotos = existingImages;
             
             await docRef.update({ fotos: firebase.firestore.FieldValue.arrayUnion(newImage) });
             showToast(`✅ ${title} hinzugefügt`);
