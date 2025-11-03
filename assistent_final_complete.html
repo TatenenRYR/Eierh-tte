@@ -2611,6 +2611,7 @@ async function generateProfessionalDescription(d) {
                                           
 }
     
+
 /* === 📸 Smarter Image-Uploader mit KI-Button pro Bild === */
 async function renderSmartImageUploader(container, docRef, existingImages = [], entryId) {
   container.innerHTML = `
@@ -2656,7 +2657,7 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
         </div>
       `;
 
-      // Stop Click auf KI-Button → kein Upload-Trigger
+      // Stop Click auf Buttons → kein Upload-Trigger
       card.querySelectorAll("button").forEach((btn) => {
         btn.addEventListener("click", (e) => e.stopPropagation());
       });
@@ -2666,21 +2667,16 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
         existingImages[idx].title = e.target.value.trim();
         docRef.update({ fotos: existingImages });
       });
-
-      // =================================================================
-      // KORREKTUR 1a: Verhindert, dass Klick auf Input den Upload-Dialog öffnet
-      // =================================================================
+      
+      // Stop Click auf Input → kein Upload-Trigger
       card.querySelector(".imageTitleInput").addEventListener("click", (e) => {
         e.stopPropagation();
       });
 
       // KI-Button → neuen Titel generieren
       card.querySelector(".kiBtn").onclick = async () => {
-        // =================================================================
-        // KORREKTUR 2: Extrahiere Dateinamen aus URL für bessere KI-Titel
-        // =================================================================
         const urlParts = (img.url || "").split('/');
-        const pseudoFilename = urlParts[urlParts.length - 1] || ""; // z.B. "meine-kuh.jpg"
+        const pseudoFilename = urlParts[urlParts.length - 1] || "";
         
         const suggestion = await generateSmartImageTitle(img.url, pseudoFilename);
         existingImages[idx].title = suggestion;
@@ -2703,9 +2699,7 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
 
   // Upload
   zone.addEventListener("click", (e) => {
-    // =================================================================
-    // KORREKTUR 1b: Klick-Sperre auch auf INPUT-Felder erweitern
-    // =================================================================
+    // Klick nicht auslösen, wenn auf Button oder Input geklickt wurde
     if (e.target.tagName === "BUTTON" || e.target.closest("button") || e.target.tagName === "INPUT") return;
     input.click();
   });
@@ -2760,6 +2754,71 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
   }
 }
 
+/* === 🧠 KI-Lite Titelgenerator (Heuristisch) === */
+async function generateSmartImageTitle(url, filename = "") {
+  // 1. Normalisierung: "Mein_Hof-Bild.jpg" -> "mein hof bild"
+  const cleanName = filename.replace(/\.[^/.]+$/, "") // Endung entfernen
+                            .toLowerCase()           // kleinschreiben
+                            .replace(/[-_]/g, " ");  // Striche durch Leerzeichen ersetzen
+
+  // 2. "Wissensdatenbank" (Keyword-Mapping mit Priorität/Score)
+  // Spezifische Begriffe (Hühner) bekommen einen höheren Score als generische (Hof).
+  const keywordDatabase = {
+    // Top-Priorität (Produkte/Tiere)
+    'automat': { title: 'Verkaufsautomat mit frischen Produkten', score: 10 },
+    'hühner': { title: 'Hühner am Hof', score: 9 },
+    'huhn': { title: 'Huhn am Hof', score: 9 },
+    'kühe': { title: 'Kühe auf der Weide', score: 9 },
+    'kuh': { title: 'Kuh auf der Weide', score: 9 },
+    'ziege': { title: 'Ziegen am Hof', score: 9 },
+    'ziegen': { title: 'Ziegen am Hof', score: 9 },
+
+    // Mittlere Priorität (Orte)
+    'hütte': { title: 'Selbstbedienungshütte im Grünen', score: 8 },
+    'huette': { title: 'Selbstbedienungshütte im Grünen', score: 8 },
+    'hofladen': { title: 'Hofladen-Ansicht', score: 8 },
+    'markt': { title: 'Kleiner Hofmarkt', score: 7 },
+    'landschaft': { title: 'Landschaftspanorama', score: 5 },
+    
+    // Niedrige Priorität (Allgemein)
+    'hof': { title: 'Idyllischer Bauernhof', score: 3 }
+  };
+
+  let bestMatch = { title: '', score: 0 };
+
+  // 3. Keyword-Analyse (Scoring)
+  // Wir prüfen den Dateinamen gegen die Wissensdatenbank
+  for (const keyword in keywordDatabase) {
+    if (cleanName.includes(keyword)) {
+      const match = keywordDatabase[keyword];
+      // Wenn dieser Treffer besser ist als der bisherige, speichern wir ihn
+      if (match.score > bestMatch.score) {
+        bestMatch = match;
+      }
+    }
+  }
+
+  // 4. Ergebnis-Filterung
+  if (bestMatch.score > 0) {
+    return bestMatch.title; // Wir haben einen Top-Treffer gefunden!
+  }
+
+  // 5. Fallback-Logik (wenn kein Keyword passte)
+  // Prüfen, ob der Name generisch ist (z.B. IMG_1234, 2025-11-03, Whatsapp Image)
+  const isGeneric = /^(img|dsc|pic|bild|foto|image|whatsapp image)[\s_]?[0-9]/i.test(cleanName) ||
+                    /^[0-9\s-]+$/.test(cleanName.replace(/\..+$/, '')); // Nur Zahlen/Bindestriche
+
+  if (isGeneric || cleanName.length === 0) {
+    // 5a. Name ist generisch -> Standard-Titel
+    return "Ein stimmungsvolles Bild vom Ort";
+  } else {
+    // 5b. Name ist beschreibend (z.B. "sonnenuntergang") -> Formatieren und nutzen
+    // "sonnenuntergang am hof" -> "Sonnenuntergang am hof"
+    return cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
+  }
+}
+
+      
 
 /* === 🧠 Kostenlose KI-Titelerkennung (heuristisch) === */
 async function generateSmartImageTitle(url, filename = "") {
