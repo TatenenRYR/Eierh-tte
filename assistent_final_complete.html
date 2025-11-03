@@ -849,16 +849,21 @@ const stripe = Stripe("pk_test_51SFLgEBghOTdsn6RBYuZr6x4R2BC6lhq4NFWmcKTtyNahatW
  ***********************/
 async function showDashboard() {
     const qa = document.getElementById("question-area");
+    // WICHTIG: IDs für Container hinzugefügt (viewsChartContainer, smartTipsContainer)
     qa.innerHTML = `<div class="max-w-6xl mx-auto animate-fadeIn">
         <h2 class="text-3xl font-bold text-gray-800 mb-6">Mein Dashboard</h2>
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div class="lg:col-span-2 space-y-6">
                 <div id="statsArea" class="grid grid-cols-1 md:grid-cols-3 gap-6">Lade Statistiken...</div>
-                <div class="bg-white p-6 rounded-xl shadow-md">
+                
+                <div id="viewsChartContainer" class="bg-white p-6 rounded-xl shadow-md">
                     <h3 class="font-bold text-lg mb-4 text-gray-700">Aufrufe der letzten 7 Tage</h3>
                     <canvas id="viewsChart" height="120"></canvas>
                 </div>
-                <div id="smartTips" class="bg-white p-6 rounded-xl shadow-md"></div>
+                
+                <div id="smartTipsContainer" class="bg-white p-6 rounded-xl shadow-md">
+                    </div>
+
             </div>
             <div class="space-y-6">
                 <div class="bg-white p-6 rounded-xl shadow-md">
@@ -880,13 +885,48 @@ async function showDashboard() {
         return;
     }
 
+    // --- NEU: Premium-Status wird hier als Erstes geprüft ---
+    const betreiberDoc = await db.collection("betreiber").doc(user.uid).get();
+    const isPremium = betreiberDoc.data()?.premium === true;
+
     // Load all data in parallel
     await Promise.all([
-        renderDashboardStats(user.uid),
-        renderViewsChart(user.uid),
-        generateDashboardTips(user.uid),
-        showEventsSection(user) // For Premium users
+        renderDashboardStats(user.uid), // Frei für alle
+        isPremium ? renderViewsChart(user.uid) : Promise.resolve(), // Nur für Premium
+        isPremium ? generateDashboardTips(user.uid) : Promise.resolve(), // Nur für Premium
+        showEventsSection(user) // Ist bereits Premium
     ]);
+
+    // --- NEU: Upsell-Nachrichten anzeigen, wenn nicht Premium ---
+    if (!isPremium) {
+        const chartContainer = document.getElementById("viewsChartContainer");
+        if (chartContainer) {
+            chartContainer.innerHTML = `
+                <h3 class="font-bold text-lg mb-4 text-gray-700">Aufrufe der letzten 7 Tage</h3>
+                <div class="text-center p-6 bg-gray-50 rounded-lg">
+                    <h4 class="font-semibold text-gray-700">🌟 Detaillierte Statistiken</h4>
+                    <p class="text-sm text-gray-600 my-2">Sieh, an welchen Tagen deine Einträge am beliebtesten sind.</p>
+                    <button onclick="navigateTo('btnDashboard', showPremiumUpgrade)" class="px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition">
+                      Jetzt Unterstützer werden
+                    </button>
+                </div>`;
+        }
+        
+        const tipsContainer = document.getElementById("smartTipsContainer"); // ID korrigiert
+        if (tipsContainer) {
+            // ID von "smartTips" (aus generateDashboardTips) muss zu "smartTipsContainer" passen
+            tipsContainer.id = "smartTips"; 
+            tipsContainer.innerHTML = `
+                <h3 class="font-bold text-lg mb-4 text-gray-700">💡 Smarte Tipps</h3>
+                <div class="text-center p-6 bg-gray-50 rounded-lg">
+                    <h4 class="font-semibold text-gray-700">🌟 Smarte Tipps & Analysen</h4>
+                    <p class="text-sm text-gray-600 my-2">Erhalte automatische Vorschläge, um deine Einträge zu verbessern.</p>
+                    <button onclick="navigateTo('btnDashboard', showPremiumUpgrade)" class="px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition">
+                      Jetzt Unterstützer werden
+                    </button>
+                </div>`;
+        }
+    }
 }
 
 async function renderDashboardStats(uid) {
@@ -1988,6 +2028,10 @@ async function showMyEntries() {
   list.innerHTML = `<div class="text-gray-500 text-center py-10">⏳ Lade Eintragungen…</div>`;
 
   try {
+    // --- NEU: Premium-Status holen ---
+    const betreiberDoc = await db.collection("betreiber").doc(uid).get();
+    const isPremium = betreiberDoc.data()?.premium === true;
+
     const snap = await db.collection("eierhuetten").where("userId", "==", uid).orderBy("erstelltAm", "desc").get();
     const docs = snap.docs.filter(d => d.data().status !== 'archiviert' && d.data().status !== 'deleted');
 
@@ -2025,6 +2069,11 @@ async function showMyEntries() {
           tagsHTML += `<span class="bg-gray-200 text-gray-700 text-xs px-2 py-1 rounded-full">+${(d.tags || []).length - 4}</span>`;
       }
 
+      // --- NEU: Premium-Badge-Logik ---
+      const premiumBadgeHtml = isPremium ? 
+        `<span class="text-yellow-800 bg-yellow-100 px-2 py-1 text-xs font-semibold rounded-full">🌟 Premium</span>` :
+        '';
+
       card.innerHTML = `
         <div class="p-5">
             <div class="flex justify-between items-start mb-4">
@@ -2043,7 +2092,7 @@ async function showMyEntries() {
                         <div class="text-xs text-gray-500">Qualität</div>
                     </div>
                     ${statusBadges[d.status] || d.status}
-                </div>
+                    ${premiumBadgeHtml} </div>
             </div>
 
             <p class="text-gray-600 text-sm mb-4 h-10 overflow-hidden">${stripHtml(d.beschreibung) || 'Keine Beschreibung vorhanden.'}</p>
@@ -2100,8 +2149,7 @@ function confirmDeleteEntry(id, name) {
 // ================================
 // Detailseite: Statistik + Bearbeitungsformular
 // ================================
- 
-async function openEditPage(id) {
+ async function openEditPage(id) {
   if (!id) return;
   try {
     const docRef = db.collection("eierhuetten").doc(id);
@@ -2109,13 +2157,11 @@ async function openEditPage(id) {
     if (!docSnap.exists) return showToast("❌ Eintrag nicht gefunden");
     const d = docSnap.data();
 
-    // --- NEU: Premium-Status prüfen ---
-    // Wir holen die Betreiber-Daten, um den Premium-Status zu prüfen
+    // --- Premium-Status prüfen ---
     const betreiberDoc = await db.collection("betreiber").doc(currentUser.uid).get();
     const isPremium = betreiberDoc.data()?.premium === true;
 
-    // --- NEU: HTML für Smarte Helfer vorbereiten ---
-    // Dieser HTML-Block wird nur erstellt, wenn der Nutzer Premium ist.
+    // --- HTML für Smarte Helfer (wie im letzten Schritt) ---
     let smarteHelferHtml = '';
     if (isPremium) {
       smarteHelferHtml = `
@@ -2129,7 +2175,6 @@ async function openEditPage(id) {
         </div>
       `;
     } else {
-      // Optional: Zeige einen "Upgrade"-Hinweis für Nicht-Premium-Nutzer
       smarteHelferHtml = `
         <div class="bg-gray-50 border-l-4 border-gray-300 p-4 rounded-r-lg text-center">
             <h5 class="font-bold text-gray-700">✨ Smarte Helfer freischalten</h5>
@@ -2141,15 +2186,45 @@ async function openEditPage(id) {
       `;
     }
 
+    // --- NEU: HTML für Kontaktfelder ---
+    let contactFieldsHtml = '';
+    if (isPremium) {
+      contactFieldsHtml = `
+        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg space-y-3">
+          <h5 class="font-bold text-yellow-800">📞 Kontakt-Angaben (Premium)</h5>
+          <label class="block">
+            <span class="text-sm text-gray-700">Webseite (mit https://)</span>
+            <input id="editWebsite" value="${escapeAttr(d.website || "")}" class="w-full border rounded p-2 mt-1" placeholder="https://dein-hof.de">
+          </label>
+          <label class="block">
+            <span class="text-sm text-gray-700">Telefon (Öffentlich)</span>
+            <input id="editPhone" value="${escapeAttr(d.phone || "")}" class="w-full border rounded p-2 mt-1" placeholder="0123 456789">
+          </label>
+          <label class="block">
+            <span class="text-sm text-gray-700">E-Mail (Öffentlich)</span>
+            <input id="editContactEmail" value="${escapeAttr(d.contactEmail || "")}" class="w-full border rounded p-2 mt-1" placeholder="info@dein-hof.de">
+          </label>
+        </div>
+      `;
+    } else {
+      contactFieldsHtml = `
+        <div class="bg-gray-50 border-l-4 border-gray-300 p-4 rounded-r-lg text-center">
+            <h5 class="font-bold text-gray-700">📞 Kontaktfelder freischalten</h5>
+            <p class="text-sm text-gray-600 mb-3">Ermögliche Besuchern, dich direkt zu kontaktieren (Telefon, E-Mail, Webseite).</p>
+            <button onclick="navigateTo('btnDashboard', showPremiumUpgrade)" class="px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition">
+              🌟 Jetzt Unterstützer werden
+            </button>
+        </div>
+      `;
+    }
+
+
     const container = document.getElementById("question-area");
     container.innerHTML = `
       <div class="max-w-5xl mx-auto">
         <button id="backToList" class="mb-4 text-sm text-blue-600 hover:underline">⬅️ Zurück zur Übersicht</button>
-
         <div class="flex flex-col md:flex-row gap-6">
-
           <div id="photoUploaderContainer" class="w-full md:w-1/3 bg-white rounded-xl p-4 shadow"></div>
-
           <div class="w-full md:w-2/3">
             <div class="bg-white rounded-xl p-6 shadow space-y-4">
               <h4 class="font-semibold text-lg mb-2">Bearbeitungsformular</h4>
@@ -2172,6 +2247,8 @@ async function openEditPage(id) {
                     <input id="editTags" value="${Array.isArray(d.tags) ? escapeAttr(d.tags.join(", ")) : ""}" class="w-full border rounded p-2 mt-1">
                 </div>
               </label>
+
+              ${contactFieldsHtml}
 
               <div class="grid grid-cols-2 gap-3">
                 <label>
@@ -2216,6 +2293,7 @@ async function openEditPage(id) {
 
     document.getElementById("backToList").onclick = () => showMyEntries();
 
+    // (Code für Tiere-Buttons... bleibt unverändert)
     const animals = ["🐐 Ziege", "🐄 Kuh", "🐓 Huhn", "🐕 Hund", "🐇 Hase", "🐈 Katze", "Keine Tiere"];
     const tiereContainer = document.getElementById("tiereButtons");
     const selected = d.tiere || [];
@@ -2245,7 +2323,6 @@ async function openEditPage(id) {
       if (d.beschreibung) quill.root.innerHTML = d.beschreibung;
     }, 120);
 
-    // --- NEU: Event-Listener nur hinzufügen, wenn der Button existiert (also Premium) ---
     if (isPremium) {
       document.getElementById("generateDescBtn").onclick = async () => {
         const previewText = await generateProfessionalDescription(d);
@@ -2258,6 +2335,8 @@ async function openEditPage(id) {
 
     document.getElementById("saveEntryBtn").onclick = async () => {
       const beschreibung = quill?.root.innerHTML || "";
+      
+      // Basis-Daten, die alle speichern
       const updated = {
         name: document.getElementById("editName").value.trim(),
         sitzplaetze: document.getElementById("editSitz").value,
@@ -2268,34 +2347,35 @@ async function openEditPage(id) {
         beschreibung,
         oeffnungszeiten: typeof collectOpeningHours === "function" ? collectOpeningHours(id) : d.oeffnungszeiten,
       };
+
+      // --- NEU: Premium-Kontaktfelder nur hinzufügen, wenn Premium ---
+      if (isPremium) {
+        updated.website = document.getElementById("editWebsite")?.value.trim() || '';
+        updated.phone = document.getElementById("editPhone")?.value.trim() || '';
+        updated.contactEmail = document.getElementById("editContactEmail")?.value.trim() || '';
+      }
+
       await docRef.update(updated);
       showToast("✅ Gespeichert");
-      openEditPage(id);
+      openEditPage(id); // Neu laden, um Daten zu bestätigen
     };
 
     document.getElementById("deleteEntryBtn").onclick = () => confirmDeleteEntry(id, d.name);
 
-    // NEU (korrigiert):
     setTimeout(() => {
         const uploaderContainer = document.getElementById("photoUploaderContainer");
         if (uploaderContainer) {
-            // Dies übergibt das GANZE Objekt 'd' (Parameter 3)
-            // Und 'id' (Parameter 4). Die Signatur hat sich geändert.
-            // WICHTIG: Wir übergeben auch 'isPremium', damit der Uploader den KI-Button für Titel steuern kann.
             renderSmartImageUploader(uploaderContainer, docRef, d, id, isPremium); 
         } else {
             console.error("Fehler: Uploader-Container #photoUploaderContainer wurde nicht gefunden.");
         }
     }, 100);
 
-
   } catch (err) {
     console.error("openEditPage error", err);
     showToast("❌ Fehler: " + err.message);
   }
 }
-
-
 
 
 /* === 💫 Vorschau mit Stil-Auswahl & Neu-Generieren === */
