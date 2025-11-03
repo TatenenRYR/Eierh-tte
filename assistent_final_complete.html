@@ -2612,8 +2612,10 @@ async function generateProfessionalDescription(d) {
 }
     
 
-/* === 📸 Smarter Image-Uploader mit KI-Button pro Bild === */
-async function renderSmartImageUploader(container, docRef, existingImages = [], entryId) {
+/* === 📸 Smarter Image-Uploader (mit Kontext) === */
+async function renderSmartImageUploader(container, docRef, entryData, entryId) {
+  // Nimmt das ganze 'entryData' Objekt entgegen
+  
   container.innerHTML = `
     <div class="bg-white rounded-xl shadow p-4">
       <h3 class="text-sm font-semibold mb-3">📸 Fotos verwalten</h3>
@@ -2634,7 +2636,8 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
   const bar = container.querySelector("#smartUploadBar");
   const barContainer = container.querySelector("#smartUploadProgress");
 
-  existingImages = (existingImages || []).map((img) =>
+  // Holt 'fotos' aus dem 'entryData' Objekt
+  let existingImages = (entryData.fotos || []).map((img) =>
     typeof img === "string" ? { url: img, title: "" } : img
   );
 
@@ -2657,29 +2660,30 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
         </div>
       `;
 
-      // Stop Click auf Buttons → kein Upload-Trigger
       card.querySelectorAll("button").forEach((btn) => {
         btn.addEventListener("click", (e) => e.stopPropagation());
       });
 
-      // Titeländerung
       card.querySelector(".imageTitleInput").addEventListener("input", (e) => {
         existingImages[idx].title = e.target.value.trim();
+        entryData.fotos = existingImages; // update local data
         docRef.update({ fotos: existingImages });
       });
       
-      // Stop Click auf Input → kein Upload-Trigger
       card.querySelector(".imageTitleInput").addEventListener("click", (e) => {
         e.stopPropagation();
       });
 
-      // KI-Button → neuen Titel generieren
+      // KI-Button
       card.querySelector(".kiBtn").onclick = async () => {
         const urlParts = (img.url || "").split('/');
         const pseudoFilename = urlParts[urlParts.length - 1] || "";
         
-        const suggestion = await generateSmartImageTitle(img.url, pseudoFilename);
+        // Übergibt den Kontext 'entryData' an die KI-Funktion
+        const suggestion = await generateSmartImageTitle(img.url, pseudoFilename, entryData);
+        
         existingImages[idx].title = suggestion;
+        entryData.fotos = existingImages; // update local data
         card.querySelector(".imageTitleInput").value = suggestion;
         await docRef.update({ fotos: existingImages });
         showToast("🧠 KI-Titel aktualisiert");
@@ -2689,6 +2693,7 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
       card.querySelector(".removeBtn").onclick = async () => {
         if (!confirm("Bild wirklich entfernen?")) return;
         existingImages.splice(idx, 1);
+        entryData.fotos = existingImages; // update local data
         await docRef.update({ fotos: existingImages });
         renderExisting();
       };
@@ -2699,14 +2704,10 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
 
   // Upload
   zone.addEventListener("click", (e) => {
-    // Klick nicht auslösen, wenn auf Button oder Input geklickt wurde
     if (e.target.tagName === "BUTTON" || e.target.closest("button") || e.target.tagName === "INPUT") return;
     input.click();
   });
-  zone.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    zone.classList.add("bg-green-100");
-  });
+  zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("bg-green-100"); });
   zone.addEventListener("dragleave", () => zone.classList.remove("bg-green-100"));
   zone.addEventListener("drop", (e) => {
     e.preventDefault();
@@ -2720,7 +2721,6 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
   async function handleFiles(files) {
     const list = Array.from(files);
     if (!list.length) return;
-
     barContainer.classList.remove("hidden");
 
     for (let i = 0; i < list.length; i++) {
@@ -2738,10 +2738,14 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
             if(!data.success) throw new Error(data.error.message);
             
             const url = data.data.url;
-            const title = await generateSmartImageTitle(url, file.name);
+            // Übergibt den Kontext 'entryData' an die KI-Funktion
+            const title = await generateSmartImageTitle(url, file.name, entryData);
 
-            existingImages.push({ url, title });
-            await docRef.update({ fotos: firebase.firestore.FieldValue.arrayUnion({url, title}) });
+            const newImage = { url, title };
+            existingImages.push(newImage);
+entryData.fotos = existingImages; // update local data
+            
+            await docRef.update({ fotos: firebase.firestore.FieldValue.arrayUnion(newImage) });
             showToast(`✅ ${title} hinzugefügt`);
         } catch(e) {
             showToast(`❌ Fehler bei Upload: ${e.message}`, 5000);
@@ -2754,87 +2758,88 @@ async function renderSmartImageUploader(container, docRef, existingImages = [], 
   }
 }
 
-/* === 🧠 KI-Lite Titelgenerator (Heuristisch) === */
-async function generateSmartImageTitle(url, filename = "") {
-  // 1. Normalisierung: "Mein_Hof-Bild.jpg" -> "mein hof bild"
-  const cleanName = filename.replace(/\.[^/.]+$/, "") // Endung entfernen
-                            .toLowerCase()           // kleinschreiben
-                            .replace(/[-_]/g, " ");  // Striche durch Leerzeichen ersetzen
 
-  // 2. "Wissensdatenbank" (Keyword-Mapping mit Priorität/Score)
-  // Spezifische Begriffe (Hühner) bekommen einen höheren Score als generische (Hof).
+/* === 🧠 "Smarte" KI-Lite Titelfunktion (Kontextbasiert) V2 === */
+async function generateSmartImageTitle(url, filename = "", entryData = {}) {
+  // 1. Normalisierung des Dateinamens
+  const cleanName = filename.replace(/\.[^/.]+$/, "").toLowerCase().replace(/[-_]/g, " ");
+
+  // 2. "Wissensdatenbank" (Keyword-Mapping für Dateinamen)
+  // Höchste Priorität: Direkte Treffer im Dateinamen
   const keywordDatabase = {
-    // Top-Priorität (Produkte/Tiere)
+    // Tiere & Produkte
     'automat': { title: 'Verkaufsautomat mit frischen Produkten', score: 10 },
-    'hühner': { title: 'Hühner am Hof', score: 9 },
-    'huhn': { title: 'Huhn am Hof', score: 9 },
-    'kühe': { title: 'Kühe auf der Weide', score: 9 },
-    'kuh': { title: 'Kuh auf der Weide', score: 9 },
-    'ziege': { title: 'Ziegen am Hof', score: 9 },
-    'ziegen': { title: 'Ziegen am Hof', score: 9 },
-
-    // Mittlere Priorität (Orte)
-    'hütte': { title: 'Selbstbedienungshütte im Grünen', score: 8 },
-    'huette': { title: 'Selbstbedienungshütte im Grünen', score: 8 },
-    'hofladen': { title: 'Hofladen-Ansicht', score: 8 },
-    'markt': { title: 'Kleiner Hofmarkt', score: 7 },
-    'landschaft': { title: 'Landschaftspanorama', score: 5 },
+    'eierautomat': { title: 'Verkaufsautomat mit frischen Produkten', score: 10 },
+    'hühner': { title: 'Hühner am Hof', score: 9 }, 'huhn': { title: 'Huhn am Hof', score: 9 },
+    'eier': { title: 'Frische Eier', score: 9 },
+    'kühe': { title: 'Kühe auf der Weide', score: 9 }, 'kuh': { title: 'Kuh auf der Weide', score: 9 },
+    'milch': { title: 'Frische Milch', score: 9 },
+    'ziege': { title: 'Ziegen am Hof', score: 9 }, 'ziegen': { title: 'Ziegen am Hof', score: 9 },
     
-    // Niedrige Priorität (Allgemein)
+    // Orte
+    'hütte': { title: 'Selbstbedienungshütte im Grünen', score: 8 }, 'huette': { title: 'Selbstbedienungshütte im Grünen', score: 8 },
+    'häuschen': { title: 'Selbstbedienungshäuschen', score: 8 },
+    'selbstbedienung': { title: 'Selbstbedienungs-Angebot', score: 8 },
+    'hofladen': { title: 'Hofladen-Ansicht', score: 8 }, 'laden': { title: 'Hofladen-Ansicht', score: 8 },
+    'spielplatz': { title: 'Spielplatz-Impression', score: 7 },
+    'schaukel': { title: 'Schaukel auf dem Spielplatz', score: 7 },
+    'rutsche': { title: 'Rutsche auf dem Spielplatz', score: 7 },
+    'spielgerät': { title: 'Spielgerät', score: 7 },
+    
+    // Allgemein
+    'landschaft': { title: 'Landschaftspanorama', score: 5 },
+    'panorama': { title: 'Panorama-Aussicht', score: 5 },
     'hof': { title: 'Idyllischer Bauernhof', score: 3 }
   };
 
+  // 3. Analyse Stufe 1: Dateiname
   let bestMatch = { title: '', score: 0 };
-
-  // 3. Keyword-Analyse (Scoring)
-  // Wir prüfen den Dateinamen gegen die Wissensdatenbank
   for (const keyword in keywordDatabase) {
     if (cleanName.includes(keyword)) {
       const match = keywordDatabase[keyword];
-      // Wenn dieser Treffer besser ist als der bisherige, speichern wir ihn
       if (match.score > bestMatch.score) {
         bestMatch = match;
       }
     }
   }
-
-  // 4. Ergebnis-Filterung
   if (bestMatch.score > 0) {
-    return bestMatch.title; // Wir haben einen Top-Treffer gefunden!
+    return bestMatch.title; // Höchste Priorität: Treffer im Dateinamen!
   }
 
-  // 5. Fallback-Logik (wenn kein Keyword passte)
-  // Prüfen, ob der Name generisch ist (z.B. IMG_1234, 2025-11-03, Whatsapp Image)
+  // 4. Analyse Stufe 2: Eintrags-Kontext (Nur wenn Dateiname generisch ist)
   const isGeneric = /^(img|dsc|pic|bild|foto|image|whatsapp image)[\s_]?[0-9]/i.test(cleanName) ||
-                    /^[0-9\s-]+$/.test(cleanName.replace(/\..+$/, '')); // Nur Zahlen/Bindestriche
+                    /^[0-9\s-]+$/.test(cleanName.replace(/\..+$/, ''));
 
   if (isGeneric || cleanName.length === 0) {
-    // 5a. Name ist generisch -> Standard-Titel
+    // Dateiname ist nutzlos, nutze Kontext!
+    const tiere = entryData.tiere || [];
+    const typ = (entryData.typ || "").toLowerCase();
+
+    // Kontext-Mapping (Tiere haben Vorrang)
+    if (tiere.includes("🐐 Ziege")) return "Ziege am Hof";
+    if (tiere.includes("🐄 Kuh")) return "Kuh auf der Weide";
+    if (tiere.includes("🐓 Huhn")) return "Huhn am Hof";
+    if (tiere.includes("🐇 Hase")) return "Hase im Gehege";
+    if (tiere.includes("🐕 Hund")) return "Hofhund";
+
+    // Kontext-Mapping (Typ)
+    if (typ.includes("spielplatz")) return "Spielgerät auf dem Spielplatz";
+    if (typ.includes("automat")) return "Verkaufsautomat";
+    if (typ.includes("hofladen")) return "Produkte im Hofladen";
+    if (typ.includes("eierhütte")) return "Eierhütte (Selbstbedienung)";
+    if (typ.includes("selbstbedienung")) return "Selbstbedienungs-Angebot";
+    if (typ.includes("abenteuerhof")) return "Impression vom Abenteuerhof";
+    
+    // Fallback, wenn auch Kontext nichts hergibt
     return "Ein stimmungsvolles Bild vom Ort";
-  } else {
-    // 5b. Name ist beschreibend (z.B. "sonnenuntergang") -> Formatieren und nutzen
-    // "sonnenuntergang am hof" -> "Sonnenuntergang am hof"
-    return cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
   }
+
+  // 5. Analyse Stufe 3: Dateiname ist nicht generisch, aber kein Keyword
+  // (z.B. "sonnenuntergang.jpg" -> "Sonnenuntergang")
+  return cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
 }
 
-      
-
-/* === 🧠 Kostenlose KI-Titelerkennung (heuristisch) === */
-async function generateSmartImageTitle(url, filename = "") {
-  const cleanName = filename.replace(/\.[^/.]+$/, "").toLowerCase();
-  if (cleanName.includes("automat")) return "Verkaufsautomat mit frischen Produkten";
-  if (cleanName.includes("huhn")) return "Hühner am Hof";
-  if (cleanName.includes("kuh")) return "Kuh auf der Weide";
-  if (cleanName.includes("hütte") || cleanName.includes("huette"))
-    return "Selbstbedienungshütte im Grünen";
-  if (cleanName.includes("hof")) return "Idyllischer Bauernhof";
-  if (cleanName.includes("landschaft")) return "Landschaftspanorama";
-  if (cleanName.includes("markt")) return "Kleiner Hofladen";
-  // einfache Farb-/Licht-Analyse für Stimmung
-  return "Ein stimmungsvolles Bild vom Ort";
-}
-
+    
     function normalizeOpeningHours(oeff) {
       if (!oeff) return {}; // Default zu geschlossen
 
