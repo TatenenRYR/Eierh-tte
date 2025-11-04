@@ -2149,7 +2149,11 @@ function confirmDeleteEntry(id, name) {
 // ================================
 // Detailseite: Statistik + Bearbeitungsformular
 // ================================
- async function openEditPage(id) {
+// ================================
+// Detailseite: Statistik + Bearbeitungsformular (MIT KARTE & SOCIAL MEDIA)
+// ================================
+ 
+async function openEditPage(id) {
   if (!id) return;
   try {
     const docRef = db.collection("eierhuetten").doc(id);
@@ -2161,7 +2165,7 @@ function confirmDeleteEntry(id, name) {
     const betreiberDoc = await db.collection("betreiber").doc(currentUser.uid).get();
     const isPremium = betreiberDoc.data()?.premium === true;
 
-    // --- HTML für Smarte Helfer (wie im letzten Schritt) ---
+    // --- HTML für Smarte Helfer ---
     let smarteHelferHtml = '';
     if (isPremium) {
       smarteHelferHtml = `
@@ -2186,12 +2190,12 @@ function confirmDeleteEntry(id, name) {
       `;
     }
 
-    // --- NEU: HTML für Kontaktfelder ---
+    // --- HTML für Kontaktfelder (MIT SOCIAL MEDIA) ---
     let contactFieldsHtml = '';
     if (isPremium) {
       contactFieldsHtml = `
         <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg space-y-3">
-          <h5 class="font-bold text-yellow-800">📞 Kontakt-Angaben (Premium)</h5>
+          <h5 class="font-bold text-yellow-800">📞 Kontakt & Social Media (Premium)</h5>
           <label class="block">
             <span class="text-sm text-gray-700">Webseite (mit https://)</span>
             <input id="editWebsite" value="${escapeAttr(d.website || "")}" class="w-full border rounded p-2 mt-1" placeholder="https://dein-hof.de">
@@ -2204,13 +2208,28 @@ function confirmDeleteEntry(id, name) {
             <span class="text-sm text-gray-700">E-Mail (Öffentlich)</span>
             <input id="editContactEmail" value="${escapeAttr(d.contactEmail || "")}" class="w-full border rounded p-2 mt-1" placeholder="info@dein-hof.de">
           </label>
+          
+          <h6 class="font-semibold text-sm text-yellow-700 pt-2">Social Media (Vollständige URLs)</h6>
+          <label class="block">
+            <span class="text-sm text-gray-700">Instagram URL</span>
+            <input id="editInstagram" value="${escapeAttr(d.instagram || "")}" class="w-full border rounded p-2 mt-1" placeholder="https://www.instagram.com/deinhof">
+          </label>
+          <label class="block">
+            <span class="text-sm text-gray-700">Facebook URL</span>
+            <input id="editFacebook" value="${escapeAttr(d.facebook || "")}" class="w-full border rounded p-2 mt-1" placeholder="https://www.facebook.com/deinhof">
+          </label>
+          <label class="block">
+            <span class="text-sm text-gray-700">TikTok URL</span>
+            <input id="editTiktok" value="${escapeAttr(d.tiktok || "")}" class="w-full border rounded p-2 mt-1" placeholder="https://www.tiktok.com/@deinhof">
+          </label>
         </div>
       `;
     } else {
+      // Upsell für Kontakt & Social Media
       contactFieldsHtml = `
         <div class="bg-gray-50 border-l-4 border-gray-300 p-4 rounded-r-lg text-center">
-            <h5 class="font-bold text-gray-700">📞 Kontaktfelder freischalten</h5>
-            <p class="text-sm text-gray-600 mb-3">Ermögliche Besuchern, dich direkt zu kontaktieren (Telefon, E-Mail, Webseite).</p>
+            <h5 class="font-bold text-gray-700">📞 Kontakt & Social Media freischalten</h5>
+            <p class="text-sm text-gray-600 mb-3">Hinterlege deine Webseite, Telefonnummer und Social-Media-Kanäle.</p>
             <button onclick="navigateTo('btnDashboard', showPremiumUpgrade)" class="px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition">
               🌟 Jetzt Unterstützer werden
             </button>
@@ -2247,6 +2266,16 @@ function confirmDeleteEntry(id, name) {
                     <input id="editTags" value="${Array.isArray(d.tags) ? escapeAttr(d.tags.join(", ")) : ""}" class="w-full border rounded p-2 mt-1">
                 </div>
               </label>
+
+              <div class="pt-2">
+                <h4 class="font-semibold text-lg mb-2">📍 Standort</h4>
+                <div class="relative mb-2">
+                  <input id="addressSearch" class="w-full border p-2 rounded" placeholder="Adresse suchen…" />
+                  <div id="addressSuggestions" class="absolute left-0 right-0 bg-white border rounded mt-1 hidden z-50 max-h-48 overflow-y-auto"></div>
+                </div>
+                <button id="gpsBtn" class="px-3 py-2 mb-3 bg-blue-600 text-white rounded">📡 Mein Standort</button>
+                <div id="overview-map" class="h-64 rounded border mb-4"></div>
+              </div>
 
               ${contactFieldsHtml}
 
@@ -2325,6 +2354,9 @@ function confirmDeleteEntry(id, name) {
 
     if (isPremium) {
       document.getElementById("generateDescBtn").onclick = async () => {
+        // (d) muss hier aktuell sein, falls Nutzer was geändert hat
+        d.beschreibung = quill?.root.innerHTML || "";
+        d.name = document.getElementById("editName").value.trim();
         const previewText = await generateProfessionalDescription(d);
         const confirmAdd = confirm("Vorschlag der KI-Beschreibung:\n\n" + previewText + "\n\n➡️ Möchtest du sie übernehmen?");
         if (confirmAdd && quill) {
@@ -2336,7 +2368,6 @@ function confirmDeleteEntry(id, name) {
     document.getElementById("saveEntryBtn").onclick = async () => {
       const beschreibung = quill?.root.innerHTML || "";
       
-      // Basis-Daten, die alle speichern
       const updated = {
         name: document.getElementById("editName").value.trim(),
         sitzplaetze: document.getElementById("editSitz").value,
@@ -2348,11 +2379,19 @@ function confirmDeleteEntry(id, name) {
         oeffnungszeiten: typeof collectOpeningHours === "function" ? collectOpeningHours(id) : d.oeffnungszeiten,
       };
 
-      // --- NEU: Premium-Kontaktfelder nur hinzufügen, wenn Premium ---
+      // NEU: Standort aus 'editingData' lesen (wird von Karte aktualisiert)
+      if (editingData.location?.lat && editingData.location?.lng) {
+        updated.location = new firebase.firestore.GeoPoint(editingData.location.lat, editingData.location.lng);
+      }
+
+      // NEU: Premium-Felder (Kontakt & Social Media)
       if (isPremium) {
         updated.website = document.getElementById("editWebsite")?.value.trim() || '';
         updated.phone = document.getElementById("editPhone")?.value.trim() || '';
         updated.contactEmail = document.getElementById("editContactEmail")?.value.trim() || '';
+        updated.instagram = document.getElementById("editInstagram")?.value.trim() || '';
+        updated.facebook = document.getElementById("editFacebook")?.value.trim() || '';
+        updated.tiktok = document.getElementById("editTiktok")?.value.trim() || '';
       }
 
       await docRef.update(updated);
@@ -2362,14 +2401,77 @@ function confirmDeleteEntry(id, name) {
 
     document.getElementById("deleteEntryBtn").onclick = () => confirmDeleteEntry(id, d.name);
 
+    // NEU: Map-Logik & Uploader-Logik
     setTimeout(() => {
+        // Uploader (wie gehabt)
         const uploaderContainer = document.getElementById("photoUploaderContainer");
         if (uploaderContainer) {
             renderSmartImageUploader(uploaderContainer, docRef, d, id, isPremium); 
         } else {
             console.error("Fehler: Uploader-Container #photoUploaderContainer wurde nicht gefunden.");
         }
-    }, 100);
+
+        // --- NEU: Map-Initialisierung (aus Step 10 kopiert) ---
+
+        // 1. Setze Startposition (gespeicherter Ort oder Standard)
+        const startLat = d.location?.latitude || 51.1657;
+        const startLng = d.location?.longitude || 10.4515;
+        const startZoom = d.location ? 15 : 6; // Nah ran, wenn Ort bekannt
+        
+        // WICHTIG: Setze editingData.location, damit die Karte den Wert speichert
+        editingData.location = { lat: startLat, lng: startLng };
+
+        initOverviewMap(startLat, startLng, startZoom);
+
+        // 2. GPS-Button aktivieren
+        const gpsBtn = document.getElementById("gpsBtn");
+        if (gpsBtn) gpsBtn.addEventListener("click", locateGPS); // locateGPS ist global
+
+        // 3. Adress-Suche aktivieren
+        const addr = document.getElementById("addressSearch");
+        const suggestionBox = document.getElementById("addressSuggestions");
+        if (addr) {
+            addr.addEventListener("input", async e => {
+              const query = e.target.value.trim();
+              if (query.length < 3) {
+                suggestionBox.innerHTML = "";
+                suggestionBox.classList.add("hidden");
+                return;
+              }
+              try {
+                const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`;
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (!data.length) {
+                  suggestionBox.innerHTML = "<div class='p-2 text-gray-500'>Keine Treffer</div>";
+                  suggestionBox.classList.remove("hidden");
+                  return;
+                }
+
+                suggestionBox.innerHTML = data.map(item => `
+                  <div class="p-2 hover:bg-gray-100 cursor-pointer" data-lat="${item.lat}" data-lon="${item.lon}">
+                    ${item.display_name}
+                  </div>`).join("");
+                suggestionBox.classList.remove("hidden");
+
+                suggestionBox.querySelectorAll("div").forEach(div => {
+                  div.addEventListener("click", () => {
+                    const lat = parseFloat(div.dataset.lat);
+                    const lon = parseFloat(div.dataset.lon);
+                    addr.value = div.textContent;
+                    suggestionBox.classList.add("hidden");
+                    // Globales initOverviewMap aufrufen, um Marker & editingData zu setzen
+                    initOverviewMap(lat, lon, 15); 
+                  });
+                });
+              } catch (err) {
+                console.error("Fehler bei Nominatim:", err);
+              }
+            });
+        }
+        
+    }, 150); // Leicht erhöht auf 150ms
 
   } catch (err) {
     console.error("openEditPage error", err);
