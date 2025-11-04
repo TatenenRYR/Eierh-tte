@@ -847,6 +847,9 @@ const stripe = Stripe("pk_test_51SFLgEBghOTdsn6RBYuZr6x4R2BC6lhq4NFWmcKTtyNahatW
 /***********************
  * DASHBOARD
  ***********************/
+/***********************
+ * DASHBOARD
+ ***********************/
 async function showDashboard() {
     const qa = document.getElementById("question-area");
     // WICHTIG: IDs für Container hinzugefügt (viewsChartContainer, smartTipsContainer)
@@ -854,7 +857,11 @@ async function showDashboard() {
         <h2 class="text-3xl font-bold text-gray-800 mb-6">Mein Dashboard</h2>
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div class="lg:col-span-2 space-y-6">
+                
                 <div id="statsArea" class="grid grid-cols-1 md:grid-cols-3 gap-6">Lade Statistiken...</div>
+                
+                <div id="premiumStatsArea" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    </div>
                 
                 <div id="viewsChartContainer" class="bg-white p-6 rounded-xl shadow-md">
                     <h3 class="font-bold text-lg mb-4 text-gray-700">Aufrufe der letzten 7 Tage</h3>
@@ -885,20 +892,25 @@ async function showDashboard() {
         return;
     }
 
-    // --- NEU: Premium-Status wird hier als Erstes geprüft ---
+    // --- Premium-Status wird hier als Erstes geprüft ---
     const betreiberDoc = await db.collection("betreiber").doc(user.uid).get();
     const isPremium = betreiberDoc.data()?.premium === true;
 
     // Load all data in parallel
     await Promise.all([
         renderDashboardStats(user.uid), // Frei für alle
+        isPremium ? renderPremiumDashboardStats(user.uid) : Promise.resolve(), // NEU: Premium Stats
         isPremium ? renderViewsChart(user.uid) : Promise.resolve(), // Nur für Premium
         isPremium ? generateDashboardTips(user.uid) : Promise.resolve(), // Nur für Premium
         showEventsSection(user) // Ist bereits Premium
     ]);
 
-    // --- NEU: Upsell-Nachrichten anzeigen, wenn nicht Premium ---
+    // --- Upsell-Nachrichten anzeigen, wenn nicht Premium ---
     if (!isPremium) {
+        // Verstecke den leeren Premium-Container
+        const premiumContainer = document.getElementById("premiumStatsArea");
+        if (premiumContainer) premiumContainer.style.display = 'none';
+
         const chartContainer = document.getElementById("viewsChartContainer");
         if (chartContainer) {
             chartContainer.innerHTML = `
@@ -912,10 +924,9 @@ async function showDashboard() {
                 </div>`;
         }
         
-        const tipsContainer = document.getElementById("smartTipsContainer"); // ID korrigiert
+        const tipsContainer = document.getElementById("smartTipsContainer");
         if (tipsContainer) {
-            // ID von "smartTips" (aus generateDashboardTips) muss zu "smartTipsContainer" passen
-            tipsContainer.id = "smartTips"; 
+            tipsContainer.id = "smartTips"; // Behält die ID für Konsistenz
             tipsContainer.innerHTML = `
                 <h3 class="font-bold text-lg mb-4 text-gray-700">💡 Smarte Tipps</h3>
                 <div class="text-center p-6 bg-gray-50 rounded-lg">
@@ -927,6 +938,69 @@ async function showDashboard() {
                 </div>`;
         }
     }
+}
+
+/**
+ * NEU: Zeigt erweiterte Statistik-Karten nur für Premium-Nutzer an
+ */
+async function renderPremiumDashboardStats(uid) {
+    const premiumStatsArea = document.getElementById("premiumStatsArea");
+    if (!premiumStatsArea) return; // Sicherheits-Check
+
+    const snapshot = await db.collection("eierhuetten").where("userId", "==", uid).get();
+
+    if (snapshot.empty) {
+        premiumStatsArea.innerHTML = ""; // Keine Einträge, keine Stats
+        return;
+    }
+
+    let totalViews = 0;
+    let totalRoutes = 0;
+    let totalQualityScore = 0;
+    let bestHut = { name: "N/A", views: -1 };
+
+    snapshot.forEach(doc => {
+        const data = doc.data();
+        const views = data.views || 0;
+        
+        totalViews += views;
+        totalRoutes += data.routeStarts || 0;
+        
+        // Nutzt die vorhandene Funktion 'calculateEntryScore'
+        totalQualityScore += calculateEntryScore(data); 
+
+        // Finde den Eintrag mit den meisten Views
+        if (views > bestHut.views) {
+            bestHut = { name: data.name, views: views };
+        }
+    });
+
+    const avgQuality = (totalQualityScore / snapshot.size).toFixed(0);
+    
+    // Division durch Null verhindern
+    const avgConversion = totalViews > 0 ? ((totalRoutes / totalViews) * 100).toFixed(1) : 0;
+
+    // HTML für die neuen Premium-Karten
+    premiumStatsArea.innerHTML = `
+      <div class="bg-white p-5 rounded-xl shadow-md text-center border-2 border-yellow-300">
+        <div class="text-3xl mb-2">🏆</div>
+        <h3 class="font-semibold text-gray-600">Top Eintrag (Aufrufe)</h3>
+        <p class="text-xl font-bold text-green-700 truncate" title="${escapeAttr(bestHut.name)}">${escapeHtml(bestHut.name)}</p>
+        <span class="text-sm text-gray-500">${bestHut.views} Aufrufe</span>
+      </div>
+      <div class="bg-white p-5 rounded-xl shadow-md text-center border-2 border-yellow-300">
+        <div class="text-3xl mb-2">🎯</div>
+        <h3 class="font-semibold text-gray-600">Ø Qualität</h3>
+        <p class="text-3xl font-bold text-green-700">${avgQuality}%</p>
+        <span class="text-sm text-gray-500">Qualitäts-Score</span>
+      </div>
+      <div class="bg-white p-5 rounded-xl shadow-md text-center border-2 border-yellow-300">
+        <div class="text-3xl mb-2">⚡</div>
+        <h3 class="font-semibold text-gray-600">Ø Effektivität</h3>
+        <p class="text-3xl font-bold text-green-700">${avgConversion}%</p>
+        <span class="text-sm text-gray-500">(Route / Aufrufe)</span>
+      </div>
+    `;
 }
 
 async function renderDashboardStats(uid) {
