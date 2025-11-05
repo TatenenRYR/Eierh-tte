@@ -3689,48 +3689,52 @@
             }
         }
     }; // (Stelle sicher, dass dies die schließende Klammer des weatherManager-Objekts ist)
-
-        
-    // ==========================================================
+// ==========================================================
 //  6. INITIALISIERUNG (KORRIGIERTE VERSION)
 // ==========================================================
 document.addEventListener('DOMContentLoaded', () => {
-    
+
     // C. UI & Übersetzungen ZUERST initialisieren (nur Kernfunktionen)
-    uiManager.initCore(); // <--- GEÄNDERT (ruft nur noch Theme & i18n auf)
+    uiManager.initCore();
 
     // A. Firebase zentral initialisieren
-    let firebaseInitialized = false; // Wir brauchen eine Variable, um den Status zu speichern
+    let firebaseInitialized = false;
     try {
+        // Im ersten 'try' NUR die App initialisieren
         firebase.initializeApp(config.firebase);
-        firebaseManager.db = firebase.firestore();
         firebaseInitialized = true; // Hat geklappt
-    } catch(e) {
+    } catch (e) {
         console.error("Firebase Init Fehler:", e);
         const errorElement = document.getElementById('authError');
         if (errorElement) errorElement.textContent = "Firebase Init Fehler: " + e.message;
-        
-        // KORREKTUR: Nicht 'return', sondern Login-Screen anzeigen und Lade-Spinner stoppen
+
+        // Login-Screen anzeigen und Lade-Spinner stoppen
         document.getElementById("loginScreen").classList.remove("hidden");
-        // setLoading braucht i18n, das in initCore() geladen wurde.
-        uiManager.setLoading(false); 
+        uiManager.setLoading(false);
+        // WICHTIG: Hier abbrechen. Ohne Firebase funktioniert nichts.
+        // Die Login-Formulare werden NICHT aktiviert.
+        return; 
     }
 
-    // B. Login-Formulare aktivieren
-    setupAuthForms();
-
-    // D. & E. Nur ausführen, wenn Firebase erfolgreich initialisiert wurde
+    // D. & E. ALLES ANDERE nur ausführen, wenn Firebase erfolgreich initialisiert wurde
     if (firebaseInitialized) {
+        
+        // JETZT die Dienste initialisieren
+        firebaseManager.db = firebase.firestore();
+
+        // B. Login-Formulare aktivieren
+        setupAuthForms(); // <--- JETZT HIER INNEN
+
         // D. Ladebildschirm anzeigen
-        // i18nManager wurde schon in initCore() geladen, getString ist sicher
         uiManager.setLoading(true, i18nManager.getString('loader.text'));
 
         // E. Auth-Status-Listener (Der "Gatekeeper")
+        // (Initialisiert den Auth-Dienst beim ersten Aufruf)
         firebase.auth().onAuthStateChanged(user => {
             if (user) {
                 // ---- BENUTZER IST EINGELOGGT ----
                 console.log("User logged in:", user.email);
-                
+
                 // 1. UI umschalten
                 document.getElementById("loginScreen").classList.add("hidden");
                 document.getElementById("mainApp").classList.remove("hidden");
@@ -3740,47 +3744,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (profileTab && !document.getElementById('logoutBtn')) { // Prüfen, ob schon vorhanden
                     const logoutBtn = document.createElement('button');
                     logoutBtn.id = 'logoutBtn';
-                    logoutBtn.innerHTML = 'Logout'; // Sie können hier i18nManager.getString(...) verwenden
+                    logoutBtn.innerHTML = 'Logout';
                     logoutBtn.className = 'w-full bg-gray-500 hover:bg-gray-600 text-white p-2 rounded-lg text-sm font-medium mt-4';
                     logoutBtn.onclick = () => firebase.auth().signOut();
                     profileTab.appendChild(logoutBtn);
                 }
-                
+
                 // 3. Die RadlMap-App initialisieren
                 mapManager.init(config.map.defaultCenter, config.map.defaultZoom);
-                
-                firebaseManager.init(); 
-                
+
+                firebaseManager.init();
+
                 // NEU: UI-Elemente der Haupt-App JETZT ERST initialisieren
-                uiManager.initMainAppUI(); // <--- HIERHIN VERSCHOBEN
+                uiManager.initMainAppUI();
 
                 // KORRIGIERTER AUFRUF: mit uid und displayName
-                userManager.init(user.uid, user.displayName); 
+                userManager.init(user.uid, user.displayName);
 
                 // (Der Rest der ursprünglichen DOMContentLoaded-Logik)
                 document.addEventListener('visibilitychange', () => {
-                    // Prüfen, ob der Tab wieder sichtbar (aktiv) ist
                     if (document.visibilityState === 'visible') {
                         console.log("Tab wieder sichtbar. Aktualisiere Standort...");
                         
-                        userManager.getCurrentPosition(true).then(pos => { // pos ist ein L.latLng Objekt
-                            
+                        userManager.getCurrentPosition(true).then(pos => {
                             if (mapManager.userMarker) {
                                  mapManager.updateUserMarker(pos, 20, 0); 
                             }
-
                             if (appState.isFollowing || appState.isNavigating) {
                                 if (mapManager.map) {
                                     mapManager.map.panTo(pos);
                                 }
                             }
-                            
                             weatherManager.fetchWeather(pos.lat, pos.lng);
-
                             if (appState.currentRoom.id) {
                                 firebaseManager.updateUserPositionInRoom(pos);
                             }
-                            
                         }).catch(err => {
                             console.warn("Position beim Reaktivieren des Tabs nicht verfügbar:", err);
                         });
@@ -3802,7 +3800,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 // ---- BENUTZER IST AUSGELOGGT ----
                 console.log("User logged out.");
-                
+
                 // 1. UI umschalten
                 document.getElementById("loginScreen").classList.remove("hidden");
                 document.getElementById("mainApp").classList.add("hidden");
@@ -3814,7 +3812,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } // Ende von if (firebaseInitialized)
 });
 
-    
+
 
 
     // --- In-App Konsole (Version 2: Fängt alle Fehler) ---
