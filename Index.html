@@ -3761,20 +3761,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 // KORRIGIERTER AUFRUF: mit uid und displayName
                 userManager.init(user.uid, user.displayName);
 
-                // (Der Rest der ursprünglichen DOMContentLoaded-Logik)
+                // FINALER CODE (mit Routen-Trigger)
                 document.addEventListener('visibilitychange', () => {
                     if (document.visibilityState === 'visible') {
-                        console.log("Tab wieder sichtbar. Aktualisiere Standort...");
+                        console.log("Tab wieder sichtbar. Aktualisiere Standort & Routenführung...");
                         
                         userManager.getCurrentPosition(true).then(pos => {
+                            // 1. Marker sofort mit der LETZTEN bekannten Peilung aktualisieren
                             if (mapManager.userMarker) {
-                                 mapManager.updateUserMarker(pos, 20, 0); 
+                                mapManager.updateUserMarker(pos, 20, userManager.lastBearing || 0);
                             }
-                            if (appState.isFollowing || appState.isNavigating) {
+
+                            // 2. Wichtige globale Position aktualisieren
+                            // Dies ist wichtig für die nächste Peilungsberechnung im watchPosition
+                            userManager.lastPosition = pos; 
+
+                            // 3. Wenn wir navigieren (oder folgen), sanft hinfliegen
+                            if (appState.isNavigating || appState.isFollowing) {
                                 if (mapManager.map) {
-                                    mapManager.map.panTo(pos);
+                                    mapManager.map.flyTo(pos, config.map.navigationZoom, {
+                                        duration: 1.5 
+                                    });
                                 }
                             }
+
+                            // 4. ROUTENFÜHRUNG SOFORT TRIGGERN (Das ist der neue Teil)
+                            if (appState.isNavigating) {
+                                console.log("Trigger Routen-Check (Manöver & Abweichung)");
+                                
+                                // Manuell die Routenlogik mit der neuen Position anstoßen,
+                                // um nicht auf den nächsten "watchPosition"-Tick warten zu müssen.
+                                routeManager.checkNextManeuver(pos);
+                                routeManager.checkDeviation(pos);
+                            }
+
+                            // 5. Restliche Updates
                             weatherManager.fetchWeather(pos.lat, pos.lng);
                             if (appState.currentRoom.id) {
                                 firebaseManager.updateUserPositionInRoom(pos);
@@ -3784,6 +3805,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                     }
                 });
+
                 
                 const urlParams = new URLSearchParams(window.location.search);
                 const roomIdFromUrl = urlParams.get('room');
