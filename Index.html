@@ -700,7 +700,7 @@
         });
     }
     // Call setup function once the DOM is ready
-    document.addEventListener('DOMContentLoaded', setupAuthForms);
+    //document.addEventListener('DOMContentLoaded', setupAuthForms);
 
 
     function logout() {
@@ -1565,14 +1565,17 @@
     const uiManager = {
         elevationChartInstance: null,
 
-        init() {
-            this.initTheme();
-            this.initTabs();
-            this.updateVoiceButton();
-            this.updateFollowButton();
+            // ----------------------------------------------------------
+    //  3. UI MANAGER
+    // ----------------------------------------------------------
+    const uiManager = {
+        elevationChartInstance: null,
 
-            i18nManager.init(); // Initialize translations first
-            ttsManager.init();  // Initialize TTS after i18n
+        // Hieß vorher init()
+        initCore() {
+            this.initTheme();
+            // i18n MUSS hier sein für den Ladebildschirm-Text
+            i18nManager.init(); 
 
             window.addEventListener('offline', () => {
                 document.getElementById('offline-indicator').classList.remove('hidden');
@@ -1586,6 +1589,15 @@
             }
         },
 
+        // NEU: Diese Funktion initialisiert die UI der Haupt-App,
+        // NACHDEM der Login erfolgreich war.
+        initMainAppUI() {
+            this.initTabs();
+            this.updateVoiceButton();
+            this.updateFollowButton();
+            ttsManager.init(); // Hängt von appLangSelect ab
+        },
+
         toggleSidebar() {
             appState.isSidebarOpen = !appState.isSidebarOpen;
             document.getElementById('sidebar-panel').classList.toggle('open', appState.isSidebarOpen);
@@ -1593,6 +1605,9 @@
                 setTimeout(() => mapManager.map.invalidateSize(), 400);
             }
         },
+
+
+        
 
         initTheme() {
             const savedTheme = localStorage.getItem('theme');
@@ -3687,9 +3702,8 @@
 // ==========================================================
 document.addEventListener('DOMContentLoaded', () => {
     
-    // C. UI & Übersetzungen ZUERST initialisieren
-    // Dies behebt den "weißen Bildschirm", da i18nManager jetzt verfügbar ist.
-    uiManager.init(); 
+    // C. UI & Übersetzungen ZUERST initialisieren (nur Kernfunktionen)
+    uiManager.initCore(); // <--- GEÄNDERT (ruft nur noch Theme & i18n auf)
 
     // A. Firebase zentral initialisieren
     let firebaseInitialized = false; // Wir brauchen eine Variable, um den Status zu speichern
@@ -3704,6 +3718,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // KORREKTUR: Nicht 'return', sondern Login-Screen anzeigen und Lade-Spinner stoppen
         document.getElementById("loginScreen").classList.remove("hidden");
+        // setLoading braucht i18n, das in initCore() geladen wurde.
         uiManager.setLoading(false); 
     }
 
@@ -3712,7 +3727,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // D. & E. Nur ausführen, wenn Firebase erfolgreich initialisiert wurde
     if (firebaseInitialized) {
-        // D. Ladebildschirm anzeigen (jetzt sicher, da uiManager initialisiert ist)
+        // D. Ladebildschirm anzeigen
+        // i18nManager wurde schon in initCore() geladen, getString ist sicher
         uiManager.setLoading(true, i18nManager.getString('loader.text'));
 
         // E. Auth-Status-Listener (Der "Gatekeeper")
@@ -3741,6 +3757,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 firebaseManager.init(); 
                 
+                // NEU: UI-Elemente der Haupt-App JETZT ERST initialisieren
+                uiManager.initMainAppUI(); // <--- HIERHIN VERSCHOBEN
+
                 // KORRIGIERTER AUFRUF: mit uid und displayName
                 userManager.init(user.uid, user.displayName); 
 
