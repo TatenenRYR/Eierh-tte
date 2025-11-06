@@ -385,9 +385,7 @@
         <span id="weather-icon" class="text-2xl">🌤️</span> <span id="weather-temp">--°C</span> <span id="offline-indicator" class="hidden text-xs text-red-500 font-bold" data-i18n="general.offline">OFFLINE</span>
       </div>
       <!-- NEU: KMH Anzeige -->
-      <div id="speed-widget" class="hidden bg-[var(--ui-bg)] backdrop-blur-md shadow-lg rounded-full px-4 py-3 border border-[var(--border-color)] flex items-center gap-2 text-lg font-semibold">
-          <span>-- km/h</span>
-      </div>
+            <div id="speed-widget" onclick="uiManager.showNavStatsPopup()" class="hidden bg-[var(--ui-bg)] backdrop-blur-md shadow-lg rounded-full px-4 py-3 border border-[var(--border-color)] flex items-center gap-2 text-lg font-semibold cursor-pointer">
   </div>
 
   <!-- Schnellnavigation -->
@@ -408,22 +406,6 @@
     
     <div id="navHint" class="hidden items-center gap-3 bg-[var(--ui-bg)] text-[var(--text-color)] rounded-full px-4 py-2 max-w-sm mx-auto shadow-lg border border-[var(--border-color)] pointer-events-auto">
         </div>
-
-    <div id="navStats" class="hidden items-center justify-around gap-4 bg-[var(--ui-bg)] text-[var(--text-color)] rounded-full px-4 py-2 w-full max-w-sm mx-auto shadow-lg border border-[var(--border-color)] pointer-events-auto">
-        <div class="text-center">
-            <div class="text-xs text-gray-500" data-i18n="navstats.remaining">Verbleibend</div>
-            <div id="statRemainingDist" class="font-bold text-lg">-- km</div>
-        </div>
-        <div class="text-center">
-            <div class="text-xs text-gray-500" data-i18n="navstats.eta">Ankunft</div>
-            <div id="statEta" class="font-bold text-lg">--:--</div>
-        </div>
-        <div class="text-center">
-            <div class="text-xs text-gray-500" data-i18n="navstats.traveled">Gefahren</div>
-            <div id="statTraveledDist" class="font-bold text-lg">-- km</div>
-        </div>
-    </div>
-
 </div>
 <!-- Dashboard/Seitenleiste -->
   <aside id="sidebar-panel">
@@ -756,6 +738,11 @@
       isNavigating: false,
       isSidebarOpen: false,
       navStatsTimer: null,
+      liveStats: {
+          remainingDist: "-- km",
+          eta: "--:--",
+          traveledDist: "-- km"
+      },
       currentLang: 'de', // Default language
       selectedHuts: [],
       allHuts: [],
@@ -782,13 +769,13 @@
         uiManager.showToast(i18nManager.getString(this.isVoiceOn ? 'toast.voiceOn' : 'toast.voiceOff'));
       },
     };
-
     // ----------------------------------------------------------
     //  2. i18n MANAGER
     // ----------------------------------------------------------
     const i18nManager = {
         translations: {
             de: { /* German translations - see previous version */
+              "navstats.popupTitle": "Live-Statistiken",
               "navstats.remaining": "Verbleibend",
 "navstats.eta": "Ankunft",
 "navstats.traveled": "Gefahren",
@@ -938,6 +925,7 @@
                 "popup.hut.removeBtn": "Von Tour entfernen"
             },
             en: { /* English translations - see previous version */
+              "navstats.popupTitle": "Live Statistics",
               "navstats.remaining": "Remaining",
 "navstats.eta": "Arrival",
 "navstats.traveled": "Traveled",
@@ -1086,6 +1074,7 @@
                 "popup.hut.removeBtn": "Remove from Tour"
             },
             es: { /* Spanish translations - see previous version */
+              "navstats.popupTitle": "Estadísticas en Vivo",
               "navstats.remaining": "Restante",
 "navstats.eta": "Llegada",
 "navstats.traveled": "Recorrido",
@@ -1228,6 +1217,7 @@
                 "popup.hut.removeBtn": "Quitar de Ruta"
             },
             fr: { /* French translations - see previous version */
+              "navstats.popupTitle": "Statistiques en Direct",
               "navstats.remaining": "Restant",
 "navstats.eta": "Arrivée",
 "navstats.traveled": "Parcouru",
@@ -1371,6 +1361,7 @@
             },
             // NEU: Niederländische Übersetzungen
             nl: {
+              "navstats.popupTitle": "Live Statistieken",
               "navstats.remaining": "Resterend",
 "navstats.eta": "Aankomst",
 "navstats.traveled": "Afgelegd",
@@ -1753,7 +1744,7 @@
             document.getElementById('stopBtn').classList.toggle('hidden', !isNavigating || guidedTourActive);
             document.getElementById('resetBtn').disabled = guidedTourActive;
             document.getElementById('follow-toggle').classList.toggle('hidden', !isNavigating);
-            document.getElementById('navStats').classList.toggle('hidden', !isNavigating);
+           // document.getElementById('navStats').classList.toggle('hidden', !isNavigating);
             document.getElementById('speed-widget').classList.toggle('hidden', !isNavigating);
 
             if(!isNavigating) {
@@ -1836,7 +1827,6 @@
 
             if(inRoom) {
                 document.getElementById('current-room-id').textContent = roomData.id;
-debugger;
                 const guideInfo = document.getElementById('guide-info');
                 const guideBtn = document.getElementById('guide-btn');
                 const isSelfGuide = roomData.guideId === userManager.userId;
@@ -1900,7 +1890,9 @@ debugger;
         updateNavStats() {
             // Prüfen, ob wir noch navigieren und alle Daten da sind
             if (!appState.isNavigating || !routeManager.routeData || !appState.navigationStartTime) {
-                if(appState.navStatsTimer) clearInterval(appState.navStatsTimer); // Timer stoppen, falls Zustand inkonsistent
+                if(appState.navStatsTimer) clearInterval(appState.navStatsTimer); // Timer stoppen
+                // Stats zurücksetzen, wenn Navigation stoppt
+                appState.liveStats = { remainingDist: "-- km", eta: "--:--", traveledDist: "-- km" };
                 return;
             }
 
@@ -1918,19 +1910,51 @@ debugger;
             const etaDate = new Date(etaTimestamp);
             const etaHours = etaDate.getHours().toString().padStart(2, '0');
             const etaMinutes = etaDate.getMinutes().toString().padStart(2, '0');
-            document.getElementById('statEta').textContent = `${etaHours}:${etaMinutes}`;
-
-            // 3. Strecken-Berechnungen (proportional zur abgelaufenen Zeit)
-            // Dies ist die stabilste Schätzung (wie bei Google Maps etc.)
+            
+            // 3. Strecken-Berechnungen
             const percentComplete = Math.min(1, timeElapsed_sec / totalDur_sec);
             const traveledDist_m = totalDist_m * percentComplete;
             const remainingDist_m = Math.max(0, totalDist_m - traveledDist_m);
 
-            document.getElementById('statTraveledDist').textContent = `${(traveledDist_m / 1000).toFixed(1)} km`;
-            document.getElementById('statRemainingDist').textContent = `${(remainingDist_m / 1000).toFixed(1)} km`;
+            // NEU: In appState speichern statt direkt ins DOM
+            appState.liveStats = {
+                remainingDist: `${(remainingDist_m / 1000).toFixed(1)} km`,
+                eta: `${etaHours}:${etaMinutes}`,
+                traveledDist: `${(traveledDist_m / 1000).toFixed(1)} km`
+            };
         },
+showNavStatsPopup() {
+            // Nur anzeigen, wenn wir navigieren
+            if (!appState.isNavigating) return;
 
+            // Hole die übersetzten Titel
+            const titleRemaining = i18nManager.getString('navstats.remaining');
+            const titleEta = i18nManager.getString('navstats.eta');
+            const titleTraveled = i18nManager.getString('navstats.traveled');
+            const titlePopup = i18nManager.getString('navstats.popupTitle');
 
+            // Hole die Live-Werte aus dem appState
+            const stats = appState.liveStats;
+
+            const htmlContent = `
+                <div class="flex justify-around gap-4 text-center">
+                    <div>
+                        <div class="text-sm text-gray-500">${titleRemaining}</div>
+                        <div class="font-bold text-2xl">${stats.remainingDist}</div>
+                    </div>
+                    <div>
+                        <div class="text-sm text-gray-500">${titleEta}</div>
+                        <div class="font-bold text-2xl">${stats.eta}</div>
+                    </div>
+                    <div>
+                        <div class="text-sm text-gray-500">${titleTraveled}</div>
+                        <div class="font-bold text-2xl">${stats.traveledDist}</div>
+                    </div>
+                </div>
+            `;
+            
+            this.openPopup(titlePopup, htmlContent);
+        },
         displayElevationChart(elevationData) {
             const container = document.getElementById('elevation-chart-container');
             const ctx = document.getElementById('elevation-chart').getContext('2d');
