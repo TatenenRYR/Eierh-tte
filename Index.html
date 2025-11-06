@@ -1,11 +1,9 @@
 <!DOCTYPE html>
-<!-- NEU: Sprachattribut wird dynamisch gesetzt -->
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <!-- NEU: Titel wird dynamisch gesetzt -->
-  <title data-i18n="app.title">RadlMap Navigation 🚲 (Smarter)</title>
+  <title data-i18n="app.title">RadlMap Navigation 🚲</title>
 
   <!-- Meta Tags für Social Media Vorschau -->
   <meta property="og:title" content="🏠🚲 RadlMap Tourplaner" />
@@ -606,16 +604,33 @@
     </div>
   </div>
 
+
+    <div id="navHint" class="hidden items-center gap-3 bg-[var(--ui-bg)] ...">
+      </div>
+
+  <div id="navStats" class="hidden items-center justify-around gap-4 bg-[var(--ui-bg)] text-[var(--text-color)] rounded-full px-4 py-2 max-w-sm mx-auto mt-2 shadow-lg border border-[var(--border-color)] pointer-events-auto">
+      <div class="text-center">
+          <div class="text-xs text-gray-500" data-i18n="navstats.remaining">Verbleibend</div>
+          <div id="statRemainingDist" class="font-bold text-lg">-- km</div>
+      </div>
+      <div class="text-center">
+          <div class="text-xs text-gray-500" data-i18n="navstats.eta">Ankunft</div>
+          <div id="statEta" class="font-bold text-lg">--:--</div>
+      </div>
+      <div class="text-center">
+          <div class="text-xs text-gray-500" data-i18n="navstats.traveled">Gefahren</div>
+          <div id="statTraveledDist" class="font-bold text-lg">-- km</div>
+      </div>
+  </div>
+
+
   <!-- Scripte: Firebase & Logik -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script>
-    // ==========================================================
-    //  🚲 RADLMAP - V6.0 - NL, Invite Link, Room Fix, Stats
-    // ==========================================================
-
+    
     const GEMINI_API_KEY = "AIzaSyB3FT8CdN9WkNjfQ5vutbjLCEibGSl3nnQ";
 /***********************
      * AUTHENTICATION
@@ -743,6 +758,7 @@
       isDarkTheme: false,
       isNavigating: false,
       isSidebarOpen: false,
+      navStatsTimer: null,
       currentLang: 'de', // Default language
       selectedHuts: [],
       allHuts: [],
@@ -776,6 +792,10 @@
     const i18nManager = {
         translations: {
             de: { /* German translations - see previous version */
+              "navstats.remaining": "Verbleibend",
+"navstats.eta": "Ankunft",
+"navstats.traveled": "Gefahren",
+
               "toast.stopReached": "Stopp {stopName} erreicht!",
 "toast.stopReached.speak": "Ziel {stopName} erreicht. Nächster Stopp: {nextStopName}.",
               "popup.hut.premiumInfo": "Premium Info",
@@ -921,6 +941,9 @@
                 "popup.hut.removeBtn": "Von Tour entfernen"
             },
             en: { /* English translations - see previous version */
+              "navstats.remaining": "Remaining",
+"navstats.eta": "Arrival",
+"navstats.traveled": "Traveled",
               "toast.stopReached": "Stop {stopName} reached!",
 "toast.stopReached.speak": "Destination {stopName} reached. Next stop: {nextStopName}.",
               "popup.hut.premiumInfo": "Premium Info",
@@ -1066,6 +1089,9 @@
                 "popup.hut.removeBtn": "Remove from Tour"
             },
             es: { /* Spanish translations - see previous version */
+              "navstats.remaining": "Restante",
+"navstats.eta": "Llegada",
+"navstats.traveled": "Recorrido",
               "toast.stopReached": "¡Parada {stopName} alcanzada!",
 "toast.stopReached.speak": "Destino {stopName} alcanzado. Próxima parada: {nextStopName}.",
               "popup.hut.premiumInfo": "Info Premium",
@@ -1205,6 +1231,9 @@
                 "popup.hut.removeBtn": "Quitar de Ruta"
             },
             fr: { /* French translations - see previous version */
+              "navstats.remaining": "Restant",
+"navstats.eta": "Arrivée",
+"navstats.traveled": "Parcouru",
               "toast.stopReached": "Arrêt {stopName} atteint !",
 "toast.stopReached.speak": "Destination {stopName} atteinte. Prochain arrêt : {nextStopName}.",
               "popup.hut.premiumInfo": "Info Premium",
@@ -1345,6 +1374,9 @@
             },
             // NEU: Niederländische Übersetzungen
             nl: {
+              "navstats.remaining": "Resterend",
+"navstats.eta": "Aankomst",
+"navstats.traveled": "Afgelegd",
               "toast.stopReached": "Stop {stopName} bereikt!",
 "toast.stopReached.speak": "Bestemming {stopName} bereikt. Volgende stop: {nextStopName}.",
               "popup.hut.premiumInfo": "Premium Info",
@@ -1724,7 +1756,7 @@
             document.getElementById('stopBtn').classList.toggle('hidden', !isNavigating || guidedTourActive);
             document.getElementById('resetBtn').disabled = guidedTourActive;
             document.getElementById('follow-toggle').classList.toggle('hidden', !isNavigating);
-
+            document.getElementById('navStats').classList.toggle('hidden', !isNavigating);
             document.getElementById('speed-widget').classList.toggle('hidden', !isNavigating);
 
             if(!isNavigating) {
@@ -1863,6 +1895,44 @@ debugger;
             document.getElementById('add-warning-modal').classList.add('hidden');
             document.getElementById('warning-description').value = ''; // Clear description
         },
+              
+        /**
+         * Aktualisiert die Live-Statistik-Leiste während der Navigation.
+         * Diese Funktion wird von einem 1-Sekunden-Timer aufgerufen.
+         */
+        updateNavStats() {
+            // Prüfen, ob wir noch navigieren und alle Daten da sind
+            if (!appState.isNavigating || !routeManager.routeData || !appState.navigationStartTime) {
+                if(appState.navStatsTimer) clearInterval(appState.navStatsTimer); // Timer stoppen, falls Zustand inkonsistent
+                return;
+            }
+
+            const totalDist_m = routeManager.routeData.distance;
+            const totalDur_sec = routeManager.routeData.duration;
+            const startTime = appState.navigationStartTime;
+            const now = Date.now();
+
+            // 1. Zeit-Berechnungen
+            const timeElapsed_sec = (now - startTime) / 1000;
+            const timeRemaining_sec = Math.max(0, totalDur_sec - timeElapsed_sec);
+            
+            // 2. Ankunftszeit (ETA)
+            const etaTimestamp = now + (timeRemaining_sec * 1000);
+            const etaDate = new Date(etaTimestamp);
+            const etaHours = etaDate.getHours().toString().padStart(2, '0');
+            const etaMinutes = etaDate.getMinutes().toString().padStart(2, '0');
+            document.getElementById('statEta').textContent = `${etaHours}:${etaMinutes}`;
+
+            // 3. Strecken-Berechnungen (proportional zur abgelaufenen Zeit)
+            // Dies ist die stabilste Schätzung (wie bei Google Maps etc.)
+            const percentComplete = Math.min(1, timeElapsed_sec / totalDur_sec);
+            const traveledDist_m = totalDist_m * percentComplete;
+            const remainingDist_m = Math.max(0, totalDist_m - traveledDist_m);
+
+            document.getElementById('statTraveledDist').textContent = `${(traveledDist_m / 1000).toFixed(1)} km`;
+            document.getElementById('statRemainingDist').textContent = `${(remainingDist_m / 1000).toFixed(1)} km`;
+        },
+
 
         displayElevationChart(elevationData) {
             const container = document.getElementById('elevation-chart-container');
@@ -2490,6 +2560,9 @@ debugger;
                  firebaseManager.saveTourLog(this.routeData, appState.selectedHuts, appState.visitedStops);
             }
 
+          // NEU: Stoppe den Statistik-Timer
+            if (appState.navStatsTimer) clearInterval(appState.navStatsTimer);
+            appState.navStatsTimer = null;
           //  userManager.stopWatchingPosition();
             mapManager.clearRoute();
             this.routeData = null;
