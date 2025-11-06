@@ -776,6 +776,8 @@
     const i18nManager = {
         translations: {
             de: { /* German translations - see previous version */
+              "toast.stopReached": "Stopp {stopName} erreicht!",
+"toast.stopReached.speak": "Ziel {stopName} erreicht. Nächster Stopp: {nextStopName}.",
               "popup.hut.premiumInfo": "Premium Info",
 "popup.hut.website": "Webseite", // NEU
 "popup.hut.phone": "Telefon",   // NEU
@@ -919,6 +921,8 @@
                 "popup.hut.removeBtn": "Von Tour entfernen"
             },
             en: { /* English translations - see previous version */
+              "toast.stopReached": "Stop {stopName} reached!",
+"toast.stopReached.speak": "Destination {stopName} reached. Next stop: {nextStopName}.",
               "popup.hut.premiumInfo": "Premium Info",
 "popup.hut.website": "Website", // NEU
 "popup.hut.phone": "Phone",     // NEU
@@ -1062,6 +1066,8 @@
                 "popup.hut.removeBtn": "Remove from Tour"
             },
             es: { /* Spanish translations - see previous version */
+              "toast.stopReached": "¡Parada {stopName} alcanzada!",
+"toast.stopReached.speak": "Destino {stopName} alcanzado. Próxima parada: {nextStopName}.",
               "popup.hut.premiumInfo": "Info Premium",
 "popup.hut.website": "Sitio Web", // NEU
 "popup.hut.phone": "Teléfono",    // NEU
@@ -1199,6 +1205,8 @@
                 "popup.hut.removeBtn": "Quitar de Ruta"
             },
             fr: { /* French translations - see previous version */
+              "toast.stopReached": "Arrêt {stopName} atteint !",
+"toast.stopReached.speak": "Destination {stopName} atteinte. Prochain arrêt : {nextStopName}.",
               "popup.hut.premiumInfo": "Info Premium",
 "popup.hut.website": "Site Web", // NEU
 "popup.hut.phone": "Téléphone",  // NEU
@@ -1337,6 +1345,8 @@
             },
             // NEU: Niederländische Übersetzungen
             nl: {
+              "toast.stopReached": "Stop {stopName} bereikt!",
+"toast.stopReached.speak": "Bestemming {stopName} bereikt. Volgende stop: {nextStopName}.",
               "popup.hut.premiumInfo": "Premium Info",
 "popup.hut.website": "Website", // NEU
 "popup.hut.phone": "Telefoon",  // NEU
@@ -2289,18 +2299,42 @@ debugger;
                     uiManager.showNavHint(icon, hintText);
                     ttsManager.speak(hintText);
 
-                    // ... (deine bestehende Logik für visitedStops bleibt gleich) ...
-                    const nextHut = appState.selectedHuts.find(hut => L.latLng(hut.lat, hut.lng).distanceTo(stepLocation) < 50);
-                    if (nextHut && !appState.visitedStops.has(nextHut.id)) {
+                                        // --- VERBESSERTE ZIEL-ERREICHT-LOGIK ---
+                    // Finde das nächste Ziel, das wir gerade erreichen UND das noch nicht besucht wurde
+                    const nextHut = appState.selectedHuts.find(hut => 
+                        !appState.visitedStops.has(hut.id) && // Finde nur noch nicht besuchte
+                        L.latLng(hut.lat, hut.lng).distanceTo(stepLocation) < 50
+                    );
+
+                    if (nextHut) { // Wir haben ein Ziel auf diesem "arrive" Step erreicht
                        appState.visitedStops.add(nextHut.id);
                        uiManager.updateChallengeStatus();
+                       
+                       // FALL 1: Das war das LETZTE Ziel
                        if(appState.visitedStops.size === appState.selectedHuts.length) {
                            uiManager.showToast(i18nManager.getString('toast.allStopsReached'));
                            ttsManager.speak(i18nManager.getString('toast.allStopsReached.speak'));
                            firebaseManager.saveTourLog(this.routeData, appState.selectedHuts, appState.visitedStops);
+                           
+                           // WICHTIG: Navigation jetzt beenden
+                           this.stopNavigation();
+                       
+                       } else {
+                           // FALL 2: Das war ein ZWISCHENZIEL
+                           const nextStopIndex = appState.visitedStops.size; // Index des NÄCHSTEN Ziels
+                           const nextStopName = appState.selectedHuts[nextStopIndex].name;
+                           
+                           // Nutze die neuen Übersetzungen
+                           const toastMsg = i18nManager.getString('toast.stopReached', { stopName: nextHut.name });
+                           const speakMsg = i18nManager.getString('toast.stopReached.speak', { stopName: nextHut.name, nextStopName: nextStopName });
+                           
+                           uiManager.showToast(toastMsg);
+                           ttsManager.speak(speakMsg);
+                           // Die Navigation läuft automatisch weiter zum nächsten Ziel
                        }
                     }
-                    break;
+                    break; // break für die "Jetzt" (distance < 25) Ansage
+
                 }
             }
         },
