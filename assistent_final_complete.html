@@ -9,6 +9,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-functions-compat.js"></script>
 
   <script src="https://cdn.tailwindcss.com"></script>
 
@@ -2860,39 +2861,48 @@ function renderAIPreview(previewBox, quill, data, photos) {
    - Keine externe KI erforderlich
 */
     /* === Professionelle Beschreibung, die Bildtitel nutzt === */
+/**
+ * 🧠 Ruft die ECHTE KI-Cloud-Function auf
+ */
 async function generateProfessionalDescription(d) {
-  const name = (d.name || 'dieser Ort').trim();
-  const extras = d.extras ? `Hier gibt es ${d.extras}.` : '';
-  const tiere = Array.isArray(d.tiere) && d.tiere.length && !d.tiere.includes('Keine Tiere')
-    ? `Rund um ${name} kannst du ${d.tiere.join(', ')} entdecken.` : '';
+  
+  // Zeige dem Benutzer, dass etwas passiert
+  showToast("🧠 KI-Beschreibung wird generiert...", 4000);
 
-  // fotos kann array von {url, title} oder strings sein
-  const photoTitles = (d.fotos || []).map(f => typeof f === 'string' ? (decodeURIComponent(f.split('/').pop().split('.')[0]) || '') : (f.title || f.name || decodeURIComponent((f.url||'').split('/').pop().split('.')[0]) || '')).filter(Boolean);
+  try {
+    // 1. Hole eine Referenz auf deine Cloud Function
+    //    (Der Name muss exakt mit dem in 'exports.NAME = ...' übereinstimmen)
+    const generateDescription = 
+        firebase.functions().httpsCallable('generateDescriptionFromAI');
 
-  let fotosTxt = '';
-  if (photoTitles.length === 1) fotosTxt = `Auf einem Foto sieht man ${photoTitles[0]}.`;
-  else if (photoTitles.length === 2) fotosTxt = `Die Fotos zeigen ${photoTitles[0]} und ${photoTitles[1]}.`;
-  else if (photoTitles.length > 2) {
-    const last = photoTitles[photoTitles.length-1];
-    const rest = photoTitles.slice(0,-1).join(', ');
-    fotosTxt = `Die Bilder fangen die Stimmung ein – ${rest} und ${last}.`;
+    // 2. Rufe die Funktion auf und sende die Hütten-Daten (das 'd'-Objekt) mit
+    //    'entryData' ist der Name, den wir im Backend (in der Cloud Function) erwarten
+    const result = await generateDescription({ entryData: d });
+
+    // 3. Gebe den Text zurück, den die KI generiert hat
+    //    (result.data.description kommt von 'return { description: text }' im Backend)
+    if (result.data && result.data.description) {
+      return result.data.description;
+    } else {
+      throw new Error("KI hat keine gültige Beschreibung zurückgegeben.");
+    }
+
+  } catch (error) {
+    // 4. Fehlerbehandlung im Client
+    console.error("Fehler beim Aufruf der Cloud Function:", error);
+    
+    let errorMessage = "Ein unbekannter KI-Fehler ist aufgetreten.";
+    if (error.message.includes("unauthenticated")) {
+        errorMessage = "Fehler: Du bist nicht angemeldet.";
+    } else {
+        errorMessage = `❌ KI-Fehler: ${error.message}`;
+    }
+    
+    showToast(errorMessage, 3000);
+    
+    // Fallback-Text, damit die App nicht abstürzt
+    return "Ein schöner Ort mit tollen Angeboten. (Beschreibung konnte nicht geladen werden)";
   }
-
-  const tone = ['idyllisch', 'einladend', 'malerisch', 'authentisch'][Math.floor(Math.random()*4)];
-  const landscape = ['weiten Wiesen', 'alten Obstbäumen', 'sanften Hügeln', 'duftenden Feldern'][Math.floor(Math.random()*4)];
-  const ending = ['Ein Ort zum Verweilen.', 'Hier spürt man die Liebe zur Natur.', 'Ein Platz, der Ruhe und Genuss vereint.'];
-
-  // build multi-paragraph, professional text
-  const paragraphs = [];
-  paragraphs.push(`${name} ist ein ${tone}er Ort, eingebettet zwischen ${landscape}.`);
-  if (extras) paragraphs.push(extras);
-  if (tiere) paragraphs.push(tiere);
-  if (fotosTxt) paragraphs.push(fotosTxt);
-  paragraphs.push(ending[Math.floor(Math.random()*ending.length)]);
-
-  // join with double newline for clarity (Quill will handle HTML)
-  return paragraphs.join('\n');
-                                          
 }
     
 /* === 📸 Smarter Image-Uploader (mit Kontext & Premium-Check) === */
