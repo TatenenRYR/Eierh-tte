@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quiz Karte (Auto-Template)</title>
+    <title>Quiz Karte (Voice Edition + Save Dialog)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Rye&family=Roboto+Slab:wght@700&display=swap" rel="stylesheet">
     <style>
@@ -16,53 +16,83 @@
               linear-gradient(-45deg, transparent 75%, #ccc 75%);
             background-size: 20px 20px;
         }
+        /* Animation für aktives Mikrofon */
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .mic-active {
+            background-color: #fee2e2 !important; /* light red bg */
+            color: #ef4444 !important; /* red text */
+            animation: pulse-red 1.5s infinite;
+            border-color: #ef4444 !important;
+        }
     </style>
 </head>
 <body class="bg-slate-100 min-h-screen flex flex-col items-center py-10 font-sans">
 
-    <div class="bg-white p-6 rounded-xl shadow-xl w-full max-w-2xl border border-gray-200">
+    <div class="bg-white p-6 rounded-xl shadow-xl w-full max-w-2xl border border-gray-200 relative z-10">
         <h1 class="text-3xl font-bold text-center text-amber-800 mb-6 font-['Rye']">Quiz-Karten Generator</h1>
 
         <!-- Status Anzeige -->
         <div id="statusMessage" class="bg-blue-50 text-blue-600 border border-blue-200 p-3 rounded-lg mb-6 text-center text-sm">
-            Suche nach "template.png"...
+            Suche nach Vorlage...
         </div>
 
         <!-- Inputs Section -->
-        <div class="grid grid-cols-1 gap-4 mb-6">
+        <div class="grid grid-cols-1 gap-6 mb-6">
+            
+            <!-- Frage Eingabe mit Mic -->
             <div>
                 <label class="block text-sm font-bold text-gray-700 mb-1">Frage (Oben)</label>
-                <textarea id="questionInput" rows="2" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none shadow-sm" placeholder="Frage hier eingeben..."></textarea>
+                <div class="flex gap-2">
+                    <textarea id="questionInput" rows="2" class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none shadow-sm resize-none" placeholder="Frage hier eingeben..."></textarea>
+                    <button onclick="toggleDictation('questionInput', this)" class="bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 rounded-lg px-4 flex items-center justify-center transition" title="Diktieren">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                        </svg>
+                    </button>
+                </div>
             </div>
+
+            <!-- Antwort Eingabe mit Mic -->
             <div>
                 <label class="block text-sm font-bold text-gray-700 mb-1">Antwort (Unten)</label>
-                <input type="text" id="answerInput" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none shadow-sm" placeholder="Antwort hier eingeben...">
+                <div class="flex gap-2">
+                    <input type="text" id="answerInput" class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none shadow-sm" placeholder="Antwort hier eingeben...">
+                    <button onclick="toggleDictation('answerInput', this)" class="bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 rounded-lg px-4 flex items-center justify-center transition" title="Diktieren">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                        </svg>
+                    </button>
+                </div>
             </div>
         </div>
 
         <!-- Canvas Preview -->
         <div class="mb-6 flex justify-center">
-            <div class="border-2 border-gray-200 rounded-lg overflow-hidden checkerboard shadow-lg bg-white">
+            <div class="border-2 border-gray-200 rounded-lg overflow-hidden checkerboard shadow-lg bg-white relative group">
                 <canvas id="memeCanvas" class="max-w-full h-auto block"></canvas>
             </div>
         </div>
 
         <!-- Buttons -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <!-- Kopieren Button (Wie Screenshot) -->
+            <!-- Kopieren Button -->
             <button id="copyBtn" class="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow transition transform hover:-translate-y-0.5">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
                 </svg>
-                Kopieren
+                In Zwischenablage
             </button>
 
-            <!-- Download Button -->
-            <button id="downloadBtn" class="flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 px-6 rounded-lg shadow transition transform hover:-translate-y-0.5">
+            <!-- Open Save Dialog Button -->
+            <button id="openSaveDialogBtn" class="flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 px-6 rounded-lg shadow transition transform hover:-translate-y-0.5">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
-                Speichern
+                Speichern als...
             </button>
         </div>
         
@@ -73,21 +103,56 @@
         </div>
     </div>
 
+    <!-- ================= SPEICHERN DIALOG (MODAL) ================= -->
+    <div id="saveModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full flex items-center justify-center z-50">
+        <div class="bg-white p-5 rounded-lg shadow-xl w-full max-w-md mx-4">
+            <h3 class="text-lg font-bold mb-4 text-gray-800">Karte speichern</h3>
+            <label class="block text-sm font-bold text-gray-700 mb-2">Dateiname wählen:</label>
+            
+            <!-- Eingabefeld mit .png Endung -->
+            <div class="flex items-center border border-gray-300 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-amber-500">
+                <input type="text" id="filenameInput" class="flex-1 p-3 outline-none text-gray-700" placeholder="mein_quiz_name">
+                <span class="bg-gray-100 text-gray-500 p-3 border-l border-gray-300 font-mono">.png</span>
+            </div>
+            <p class="text-xs text-gray-500 mt-2">Erlaubte Zeichen: Buchstaben, Zahlen, Bindestrich, Unterstrich.</p>
+
+            <div class="flex justify-end gap-3 mt-6">
+                <button id="cancelSaveBtn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded transition">
+                    Abbrechen
+                </button>
+                <button id="confirmSaveBtn" class="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-6 rounded shadow transition">
+                    Speichern bestätigen
+                </button>
+            </div>
+        </div>
+    </div>
+    <!-- ================= ENDE MODAL ================= -->
+
+
     <script>
         const questionInput = document.getElementById('questionInput');
         const answerInput = document.getElementById('answerInput');
         const canvas = document.getElementById('memeCanvas');
         const ctx = canvas.getContext('2d');
-        const downloadBtn = document.getElementById('downloadBtn');
+        const openSaveDialogBtn = document.getElementById('openSaveDialogBtn');
         const copyBtn = document.getElementById('copyBtn');
         const statusMsg = document.getElementById('statusMessage');
         const resetBtn = document.getElementById('resetBtn');
 
+        // Modal Elemente
+        const saveModal = document.getElementById('saveModal');
+        const filenameInput = document.getElementById('filenameInput');
+        const confirmSaveBtn = document.getElementById('confirmSaveBtn');
+        const cancelSaveBtn = document.getElementById('cancelSaveBtn');
+
         let templateImage = new Image();
+        
+        // --- NEUER DATEINAME ---
         const FILENAME = '1000133550-removebg-preview.png'; 
 
         // Bild laden
         templateImage.src = FILENAME;
+        statusMsg.textContent = `Suche nach "${FILENAME}"...`;
         
         templateImage.onload = function() {
             canvas.width = templateImage.width;
@@ -98,17 +163,59 @@
         };
 
         templateImage.onerror = function() {
-            statusMsg.innerHTML = `⚠️ <b>Bild fehlt:</b> Bitte lege dein Bild als <code>${FILENAME}</code> in denselben Ordner.`;
-            statusMsg.className = "bg-red-50 text-red-600 border border-red-200 p-3 rounded-lg mb-6 text-center text-sm";
-            // Fallback
+            statusMsg.innerHTML = `⚠️ <b>Bild fehlt:</b> Bitte lege dein Bild exakt unter dem Namen: <br><code>${FILENAME}</code><br> in denselben Ordner.`;
+            statusMsg.className = "bg-red-50 text-red-600 border border-red-200 p-3 rounded-lg mb-6 text-center text-sm break-all";
             canvas.width = 600;
-            canvas.height = 600;
+            canvas.height = 400;
             ctx.fillStyle = "#f3f4f6";
-            ctx.fillRect(0,0,600,600);
+            ctx.fillRect(0,0,canvas.width, canvas.height);
             ctx.fillStyle = "#9ca3af";
             ctx.textAlign = "center";
-            ctx.fillText("Keine Vorlage gefunden", 300, 300);
+            ctx.fillText("Keine Vorlage gefunden", canvas.width/2, canvas.height/2);
         };
+
+        // --- SPRACHERKENNUNG LOGIK ---
+        let recognition = null;
+        let isRecording = false;
+        let activeInputId = null;
+        let activeButton = null;
+
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'de-DE';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+
+            recognition.onstart = function() {
+                isRecording = true;
+                if(activeButton) activeButton.classList.add('mic-active');
+            };
+            recognition.onend = function() {
+                isRecording = false;
+                if(activeButton) activeButton.classList.remove('mic-active');
+                activeButton = null;
+            };
+            recognition.onresult = function(event) {
+                const transcript = event.results[0][0].transcript;
+                if (activeInputId) {
+                    document.getElementById(activeInputId).value = transcript;
+                    drawCanvas();
+                }
+            };
+            recognition.onerror = function(event) {
+                console.error("Spracherkennungsfehler:", event.error);
+                if(activeButton) activeButton.classList.remove('mic-active');
+            };
+        }
+
+        function toggleDictation(inputId, btnElement) {
+            if (!recognition) { alert("Browser unterstützt keine Spracherkennung."); return; }
+            if (isRecording) { recognition.stop(); return; }
+            activeInputId = inputId; activeButton = btnElement;
+            recognition.start();
+        }
+
 
         questionInput.addEventListener('input', drawCanvas);
         answerInput.addEventListener('input', drawCanvas);
@@ -123,7 +230,6 @@
             ctx.textBaseline = 'middle';
             ctx.fillStyle = '#3e2c1c'; 
             
-            // Konfiguration
             const qX = canvas.width * 0.5;
             const qY = canvas.height * 0.48; 
             const qMaxWidth = canvas.width * 0.70; 
@@ -144,82 +250,103 @@
         function wrapText(context, text, x, y, maxWidth, lineHeight) {
             if(!text) return;
             const words = text.split(' ');
-            let line = '';
-            let lines = [];
+            let line = ''; let lines = [];
             for(let n = 0; n < words.length; n++) {
                 const testLine = line + words[n] + ' ';
                 const metrics = context.measureText(testLine);
-                if (metrics.width > maxWidth && n > 0) {
-                    lines.push(line);
-                    line = words[n] + ' ';
-                } else {
-                    line = testLine;
-                }
+                if (metrics.width > maxWidth && n > 0) { lines.push(line); line = words[n] + ' '; }
+                else { line = testLine; }
             }
             lines.push(line);
-            let totalHeight = lines.length * lineHeight;
-            let startY = y - (totalHeight / 2) + (lineHeight / 2);
-            for(let k = 0; k < lines.length; k++) {
-                context.fillText(lines[k], x, startY + (k * lineHeight));
-            }
+            let startY = y - (lines.length * lineHeight / 2) + (lineHeight / 2);
+            for(let k = 0; k < lines.length; k++) { context.fillText(lines[k], x, startY + (k * lineHeight)); }
         }
 
-        // --- Hilfsfunktion für Dateinamen ---
-        function generateFilename() {
+        // --- DATEINAMEN GENERATOR HILFE ---
+        function generateSafeNameSuggestion() {
             let name = questionInput.value.trim();
             if(!name) return 'quiz_karte';
-
-            // 1. Alles klein schreiben
             name = name.toLowerCase();
-            // 2. Umlaute ersetzen
             name = name.replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss');
-            // 3. Nur Buchstaben und Zahlen erlauben, Rest wird Unterstrich
-            name = name.replace(/[^a-z0-9]/g, '_');
-            // 4. Doppelte Unterstriche entfernen
-            name = name.replace(/__+/g, '_');
-            // 5. Auf 40 Zeichen kürzen und End-Unterstriche entfernen
-            name = name.substring(0, 40).replace(/_$/, '');
-
-            return `quiz_${name}`; // z.B. quiz_wie_heisst_die_hauptstadt
+            // Erlaube nur a-z, 0-9, und Leerzeichen für den Vorschlag im Inputfeld
+            name = name.replace(/[^a-z0-9 ]/g, ' ').trim();
+            name = name.replace(/\s+/g, '_'); // Leerzeichen zu Unterstrich
+            return name.substring(0, 40);
         }
 
-        // DOWNLOAD BUTTON
-        downloadBtn.addEventListener('click', function() {
-            if (!templateImage.complete || templateImage.naturalWidth === 0) return;
-            
-            const link = document.createElement('a');
-            link.download = generateFilename() + '.png';
-            link.href = canvas.toDataURL('image/png');
-            link.click();
+
+        // ================= SPEICHERN DIALOG LOGIK =================
+
+        // 1. Dialog öffnen
+        openSaveDialogBtn.addEventListener('click', function() {
+            if (!templateImage.complete || templateImage.naturalWidth === 0) {
+                alert("Bitte erst Vorlage laden."); return;
+            }
+            // Vorschlag generieren und ins Inputfeld schreiben
+            filenameInput.value = generateSafeNameSuggestion();
+            // Modal anzeigen
+            saveModal.classList.remove('hidden');
+            // Fokus ins Feld setzen
+            filenameInput.focus();
         });
 
-        // COPY BUTTON (SCREENSHOT FUNKTION)
+        // 2. Abbrechen
+        cancelSaveBtn.addEventListener('click', closeSaveModal);
+
+        // 3. Bestätigen und Download ausführen
+        confirmSaveBtn.addEventListener('click', performDownload);
+
+        // Auch Enter-Taste im Inputfeld erlaubt das Speichern
+        filenameInput.addEventListener('keypress', (e) => {
+             if(e.key === 'Enter') performDownload();
+        });
+
+        function closeSaveModal() {
+             saveModal.classList.add('hidden');
+        }
+
+        function performDownload() {
+            let rawName = filenameInput.value.trim();
+            
+            // Letzte Sicherheits-Säuberung des Namens (nur erlaubte Zeichen für Dateisysteme)
+            // Erlaubt: Buchstaben, Zahlen, Bindestrich, Unterstrich, Leerzeichen (wobei Leerzeichen oft unpraktisch sind)
+            let safeName = rawName.replace(/[^a-zA-Z0-9\-_ ]/g, '');
+            
+            if(safeName === "") {
+                 safeName = "unbenanntes_quiz";
+            }
+
+            // Endgültiger Name mit Endung
+            const finalFileName = safeName + '.png';
+            
+            const link = document.createElement('a');
+            link.download = finalFileName;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+
+            closeSaveModal();
+        }
+
+        // ==========================================================
+
+
         copyBtn.addEventListener('click', async function() {
             if (!templateImage.complete || templateImage.naturalWidth === 0) return;
-
             try {
-                // Canvas als Blob holen
                 canvas.toBlob(async function(blob) {
-                    // Clipboard Item erstellen
                     const item = new ClipboardItem({ 'image/png': blob });
                     await navigator.clipboard.write([item]);
-                    
-                    // Button Feedback
                     const originalText = copyBtn.innerHTML;
                     copyBtn.innerHTML = `✅ Kopiert!`;
                     copyBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
                     copyBtn.classList.add('bg-green-600', 'hover:bg-green-700');
-                    
                     setTimeout(() => {
                         copyBtn.innerHTML = originalText;
                         copyBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
                         copyBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
                     }, 2000);
                 });
-            } catch (err) {
-                alert("Kopieren nicht unterstützt oder fehlgeschlagen. Bitte benutze den Speichern-Button.");
-                console.error(err);
-            }
+            } catch (err) { alert("Kopieren fehlgeschlagen. Browser blockiert es evtl."); }
         });
 
         resetBtn.addEventListener('click', () => {
