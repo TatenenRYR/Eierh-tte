@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Karte (Auto-Template)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Rye&family=Roboto+Slab:wght@700&display=swap" rel="stylesheet">
+    <style>
+        .checkerboard {
+            background-color: #eee;
+            background-image:
+              linear-gradient(45deg, #ccc 25%, transparent 25%),
+              linear-gradient(-45deg, #ccc 25%, transparent 25%),
+              linear-gradient(45deg, transparent 75%, #ccc 75%),
+              linear-gradient(-45deg, transparent 75%, #ccc 75%);
+            background-size: 20px 20px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center py-10 font-sans">
+
+    <div class="bg-white p-6 rounded-xl shadow-xl w-full max-w-2xl border border-gray-200">
+        <h1 class="text-3xl font-bold text-center text-amber-700 mb-6 font-['Rye']">Quiz-Karten Generator</h1>
+
+        <!-- Status Anzeige -->
+        <div id="statusMessage" class="bg-blue-100 text-blue-700 p-3 rounded-lg mb-4 text-center text-sm">
+            Suche nach "template.png"...
+        </div>
+
+        <!-- Inputs Section -->
+        <div class="grid grid-cols-1 gap-4 mb-6">
+            <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">Frage (Oben)</label>
+                <textarea id="questionInput" rows="2" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" placeholder="Frage hier eingeben..."></textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">Antwort (Unten)</label>
+                <input type="text" id="answerInput" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" placeholder="Antwort hier eingeben...">
+            </div>
+        </div>
+
+        <!-- Canvas Preview -->
+        <div class="mb-6 flex justify-center">
+            <div class="border border-gray-300 rounded-lg overflow-hidden checkerboard shadow-lg">
+                <canvas id="memeCanvas" class="max-w-full h-auto block"></canvas>
+            </div>
+        </div>
+
+        <!-- Buttons -->
+        <div class="flex gap-4">
+            <button id="downloadBtn" class="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 px-6 rounded-lg shadow transition disabled:opacity-50 disabled:cursor-not-allowed">
+                📥 Karte speichern
+            </button>
+            <button id="resetBtn" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 px-6 rounded-lg transition">
+                Neu
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const questionInput = document.getElementById('questionInput');
+        const answerInput = document.getElementById('answerInput');
+        const canvas = document.getElementById('memeCanvas');
+        const ctx = canvas.getContext('2d');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const statusMsg = document.getElementById('statusMessage');
+        const resetBtn = document.getElementById('resetBtn');
+
+        let templateImage = new Image();
+        
+        // WICHTIG: Hier wird der Dateiname festgelegt
+        const FILENAME = 'template.png'; 
+
+        // Start: Bild laden
+        templateImage.src = FILENAME;
+        
+        templateImage.onload = function() {
+            canvas.width = templateImage.width;
+            canvas.height = templateImage.height;
+            statusMsg.textContent = "✅ Vorlage geladen! Du kannst jetzt tippen.";
+            statusMsg.className = "bg-green-100 text-green-700 p-3 rounded-lg mb-4 text-center text-sm";
+            drawCanvas();
+        };
+
+        templateImage.onerror = function() {
+            statusMsg.innerHTML = `❌ <b>Fehler:</b> Bild nicht gefunden.<br>Bitte nenne dein Bild <code>${FILENAME}</code> und lege es in denselben Ordner wie diese Datei.`;
+            statusMsg.className = "bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-center text-sm";
+            
+            // Fallback Canvas Größe
+            canvas.width = 600;
+            canvas.height = 400;
+            ctx.fillStyle = "#f8f8f8";
+            ctx.fillRect(0,0,600,400);
+            ctx.fillStyle = "#999";
+            ctx.textAlign = "center";
+            ctx.fillText("Bild fehlt", 300, 200);
+        };
+
+        // Live-Update
+        questionInput.addEventListener('input', drawCanvas);
+        answerInput.addEventListener('input', drawCanvas);
+
+        function drawCanvas() {
+            // Nur zeichnen wenn Bild geladen ist
+            if (!templateImage.complete || templateImage.naturalWidth === 0) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(templateImage, 0, 0);
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#3e2c1c'; 
+            
+            // Positionierung (angepasst an dein Bild)
+            const qX = canvas.width * 0.5;
+            const qY = canvas.height * 0.48; 
+            const qMaxWidth = canvas.width * 0.70; 
+            const qFontSize = canvas.width * 0.05; 
+            
+            ctx.font = `bold ${qFontSize}px "Roboto Slab", "Georgia", serif`;
+            wrapText(ctx, questionInput.value, qX, qY, qMaxWidth, qFontSize * 1.3);
+
+            const aX = canvas.width * 0.5;
+            const aY = canvas.height * 0.795; 
+            const aMaxWidth = canvas.width * 0.70;
+            const aFontSize = canvas.width * 0.045; 
+
+            ctx.font = `bold ${aFontSize}px "Roboto Slab", "Georgia", serif`;
+            ctx.fillText(answerInput.value, aX, aY);
+        }
+
+        function wrapText(context, text, x, y, maxWidth, lineHeight) {
+            if(!text) return;
+            const words = text.split(' ');
+            let line = '';
+            let lines = [];
+            for(let n = 0; n < words.length; n++) {
+                const testLine = line + words[n] + ' ';
+                const metrics = context.measureText(testLine);
+                if (metrics.width > maxWidth && n > 0) {
+                    lines.push(line);
+                    line = words[n] + ' ';
+                } else {
+                    line = testLine;
+                }
+            }
+            lines.push(line);
+            let totalHeight = lines.length * lineHeight;
+            let startY = y - (totalHeight / 2) + (lineHeight / 2);
+            for(let k = 0; k < lines.length; k++) {
+                context.fillText(lines[k], x, startY + (k * lineHeight));
+            }
+        }
+
+        downloadBtn.addEventListener('click', function() {
+            if (!templateImage.complete || templateImage.naturalWidth === 0) {
+                alert("Kein Bild geladen!");
+                return;
+            }
+            const link = document.createElement('a');
+            const qText = questionInput.value.substring(0, 10).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            link.download = `quiz_karte_${qText || 'neu'}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        });
+
+        resetBtn.addEventListener('click', () => {
+            questionInput.value = '';
+            answerInput.value = '';
+            drawCanvas();
+        });
+    </script>
+</body>
+</html>
+
