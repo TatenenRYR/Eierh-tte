@@ -689,17 +689,76 @@
   
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script>
-    if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then((registration) => {
-        console.log('Service Worker erfolgreich registriert mit Scope:', registration.scope);
-      })
-      .catch((error) => {
-        console.error('Service Worker Registrierung fehlgeschlagen:', error);
-      });
-  });
+    let deferredPrompt;
+
+// 1. Service Worker Registrierung (WICHTIG: Muss im Root liegen)
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('SW registriert:', reg.scope))
+            .catch(err => console.error('SW Fehler:', err));
+    });
 }
+
+// 2. Installations-Prompt abfangen
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    console.log("PWA: Installationsbereitschaft erkannt.");
+
+    // Falls der User bereits eingeloggt ist, Banner direkt prüfen
+    if (firebase.auth().currentUser) {
+        showInstallBannerSmart();
+    }
+});
+
+// 3. Hilfsfunktion: Banner smart anzeigen
+function showInstallBannerSmart() {
+    const banner = document.getElementById('pwa-install-banner');
+    if (!banner) return;
+
+    // Nur zeigen, wenn Prompt da ist und nicht in dieser Session geschlossen wurde
+    if (deferredPrompt && !sessionStorage.getItem('pwa-banner-closed')) {
+        setTimeout(() => {
+            banner.style.display = 'block';
+        }, 2000); // 2 Sekunden Verzögerung für bessere UX
+    }
+}
+
+// 4. In deinen bestehenden onAuthStateChanged einfügen (Logik-Trigger)
+// Suche in deinem Code die Stelle 'firebase.auth().onAuthStateChanged' und 
+// stelle sicher, dass 'showInstallBannerSmart()' gerufen wird, wenn 'user' existiert.
+
+// 5. Button-Logik initialisieren
+window.addEventListener('load', () => {
+    const installBtn = document.getElementById('pwa-install-btn');
+    const closeBtn = document.getElementById('close-pwa');
+    const banner = document.getElementById('pwa-install-banner');
+
+    installBtn.addEventListener('click', async () => {
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            console.log(`User Antwort: ${outcome}`);
+            deferredPrompt = null;
+            banner.style.display = 'none';
+        }
+    });
+
+    closeBtn.addEventListener('click', () => {
+        banner.style.display = 'none';
+        sessionStorage.setItem('pwa-banner-closed', 'true');
+    });
+});
+
+// 6. Erfolgs-Meldung
+window.addEventListener('appinstalled', (evt) => {
+    console.log('RadlMap wurde installiert');
+    document.getElementById('pwa-install-banner').style.display = 'none';
+    document.getElementById('pwa-success-overlay').style.display = 'flex';
+    ttsManager.speak("Installation abgeschlossen. Viel Spaß mit RadlMap!");
+});
+
 
 /***********************
      * AUTHENTICATION
@@ -4248,57 +4307,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     
-    let deferredPrompt;
-const banner = document.getElementById('pwa-install-banner');
-const installBtn = document.getElementById('pwa-install-btn');
-const closeBtn = document.getElementById('close-pwa');
-
-// 1. Event abfangen
-window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredPrompt = e;
     
-    // Prüfen, ob der User den Banner in dieser Session schon geschlossen hat
-    if (!sessionStorage.getItem('pwa-banner-closed')) {
-        banner.style.display = 'block';
-    }
-});
-
-// 2. Installations-Logik
-installBtn.addEventListener('click', async () => {
-    if (deferredPrompt) {
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        if (outcome === 'accepted') {
-            console.log('User hat installiert');
-        }
-        deferredPrompt = null;
-        banner.style.display = 'none';
-    }
-});
-
-// 3. Schließen-Logik (X)
-closeBtn.addEventListener('click', () => {
-    banner.style.display = 'none';
-    // Merken, dass der Banner für diese Session geschlossen wurde
-    sessionStorage.setItem('pwa-banner-closed', 'true');
-});
-window.addEventListener('appinstalled', (evt) => {
-    console.log('RadlMap wurde installiert');
-    
-    // 1. Installations-Banner verstecken
-    const banner = document.getElementById('pwa-install-banner');
-    if (banner) banner.style.display = 'none';
-
-    // 2. Erfolgs-Overlay anzeigen
-    const successOverlay = document.getElementById('pwa-success-overlay');
-    if (successOverlay) {
-        successOverlay.style.display = 'flex';
-    }
-
-    // Optional: Den User daran erinnern, den Browser-Tab zu schließen
-    ttsManager.speak("Installation abgeschlossen. Du kannst RadlMap jetzt als App starten.");
-});
 
   </script>
   
