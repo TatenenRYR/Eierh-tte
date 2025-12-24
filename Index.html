@@ -2255,12 +2255,8 @@ showNavStatsPopup() {
 
        
 addTileLayer() {
-    if (this.tileLayer) {
-        this.map.removeLayer(this.tileLayer);
-    }
-    if (this.bikeOverlay) {
-        this.map.removeLayer(this.bikeOverlay);
-    }
+    if (this.tileLayer) this.map.removeLayer(this.tileLayer);
+    if (this.bikeOverlay) this.map.removeLayer(this.bikeOverlay);
 
     const dayTiles = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
     const nightTiles = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
@@ -2268,14 +2264,14 @@ addTileLayer() {
     const currentUrl = appState.isDarkTheme ? nightTiles : dayTiles;
 
     this.tileLayer = L.tileLayer(currentUrl, { 
-        attribution: '© OpenStreetMap contributors, © CARTO', 
+        attribution: '© OpenStreetMap, © BRouter', 
         maxZoom: 19 
     }).addTo(this.map);
 
-    // NEU: Das Radwege-Overlay für Sichtbarkeit
+    // Das ist die "Geheimwaffe" für Fahrrad-Apps:
     this.bikeOverlay = L.tileLayer('https://tile.waymarkedtrails.org/cycling/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        opacity: 0.8 // Hohe Deckkraft für Kontrast im Dark Mode
+        opacity: 0.8 // Schön kräftig, damit man es nachts sieht
     }).addTo(this.map);
 },
         updateUserMarker(latlng, accuracy, bearing) {
@@ -2429,37 +2425,42 @@ addTileLayer() {
         lastRecalcTime: 0,
 
         async fetchRoute(startCoords, waypoints) {
-            const coordinatesString = [
-                `${startCoords.lng},${startCoords.lat}`,
-                ...waypoints.map(h => `${h.lng},${h.lat}`)
-            ].join(';');
+    const allPoints = [startCoords, ...waypoints];
+    
+    // BRouter Format: lon,lat|lon,lat|lon,lat
+    const coordinatesString = allPoints
+        .map(p => `${p.lng},${p.lat}`)
+        .join('|');
 
+    // Wir nutzen das Profil 'safety', das Radwege priorisiert und Autobahnen/Bundesstraßen meidet
+    const url = `https://brouter.de/brouter?lonlats=${coordinatesString}&profile=safety&alternativeidx=0&format=geojson`;
 
-          
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('BRouter Fehler');
+        const data = await response.json();
+        
+        if (!data.features || data.features.length === 0) {
+            throw new Error('Keine Route gefunden');
+        }
 
-          
-const url = `https://brouter.de/brouter?lonlats=${coordinatesString.replace(/;/g, '|')}&profile=safety&alternativeidx=0&format=geojson`;
-        //    const url = `https://router.project-osrm.org/route/v1/bicycle/${coordinatesString}?overview=full&geometries=geojson&steps=true&continue_straight=true`;
-          try {
-                const response = await fetch(url);
-                if (!response.ok) throw new Error(`OSRM API Fehler: ${response.statusText}`);
-                const data = await response.json();
-                if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) throw new Error('OSRM konnte keine Route finden.');
+        // BRouter liefert ein FeatureCollection zurück
+        const route = data.features[0];
+        const properties = route.properties;
 
-                const route = data.routes[0];
-                this.routeData = {
-                    coords: route.geometry.coordinates.map(p => [p[1], p[0]]),
-                    distance: route.distance,
-                    duration: route.duration,
-                    steps: route.legs.flatMap(leg => leg.steps)
-                };
-                return this.routeData;
-            } catch (error) {
-                console.error("Fehler bei der Routenberechnung:", error);
-                uiManager.showToast(i18nManager.getString('toast.routeError'));
-                return null;
-            }
-        },
+        this.routeData = {
+            // Koordinaten bei BRouter GeoJSON sind [lon, lat] -> wir brauchen [lat, lon]
+            coords: route.geometry.coordinates.map(p => [p[1], p[0]]),
+            distance: properties['track-length'], // in Metern
+            duration: properties['total-time'],   // in Sekunden
+            steps: [] // BRouter liefert Abbiegehinweise anders, lassen wir für die Linie erstmal leer
+        };
+        return this.routeData;
+    } catch (error) {
+        console.error("BRouter-Routing-Fehler:", error);
+        return null;
+    }
+},
 
         checkNextManeuver(userPos) {
             if (!this.routeData || !this.routeData.steps) return;
